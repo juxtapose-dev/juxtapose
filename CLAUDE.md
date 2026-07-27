@@ -142,10 +142,20 @@ printed. "Tests pass" means you ran them.
 ## Commands
 
 ```bash
-pnpm build          # all packages
-pnpm test           # vitest
-pnpm typecheck
+pnpm build              # all packages
+pnpm test               # vitest
+pnpm typecheck          # tsc --build across project references
+pnpm lint               # eslint
+pnpm format             # prettier --write
+pnpm check:determinism  # capture the examples repeatedly, assert byte-stability
 ```
+
+CI runs all of these. `check:determinism` needs `pnpm build` and a built
+example workbench first; it is the one that catches races, so run it after any
+change to `capture/` rather than trusting a single green run.
+
+Releases go through changesets. Add one with `pnpm changeset` when a change
+should ship; merging to main without a changeset publishes nothing.
 
 Committing baselines (`juxtapose.manifest.json` + `.juxtapose/baselines/`) is
 normal and intended — it is what makes approval a reviewable diff. The
