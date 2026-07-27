@@ -396,11 +396,26 @@ function footer(report: RunReport, artifactUrl?: string): string {
     `${(report.durationMs / 1000).toFixed(1)}s`,
   ];
   const meta = `<sub>juxtapose · ${parts.join(' · ')}</sub>`;
-  // Describes the destination, not the content: it resolves to a run page with
-  // a zip, which is a true statement even if the upload step was skipped.
-  return artifactUrl
-    ? `${meta}\n\n<sub>[CI run — report.html is in the artifacts](${artifactUrl})</sub>`
-    : meta;
+  if (!artifactUrl) return meta;
+
+  // Say what the click costs. A CI that serves the report directly gets one
+  // click; Actions gets a run page, a download and an unzip. Promising the
+  // first and delivering the second is how a link stops being trusted.
+  const label = artifactUrlIsDirect(artifactUrl)
+    ? 'View the diffs'
+    : 'CI run — report.html is in the artifacts';
+  return `${meta}\n\n<sub>[${label}](${artifactUrl})</sub>`;
+}
+
+/**
+ * Whether the link lands on the report itself or on a page listing artifacts.
+ *
+ * A property of the URL rather than of any provider, which is why it lives here
+ * and not next to the Actions-specific resolution: a CI that serves
+ * `report.html` directly earns the shorter promise regardless of who it is.
+ */
+function artifactUrlIsDirect(url: string): boolean {
+  return /\.html?(\?|#|$)/i.test(url);
 }
 
 /** Never show "0.00%" next to the word "changed" — it reads as a tool bug. */

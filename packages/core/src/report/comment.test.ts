@@ -371,4 +371,14 @@ describe('buildComment', () => {
       '[CI run — report.html is in the artifacts](https://x/y)',
     );
   });
+
+  it('promises one click only when the link is the report itself', () => {
+    // A CI that serves report.html directly costs a click; an Actions run page
+    // costs a click, a download and an unzip. Overpromising the second is how a
+    // link stops being trusted.
+    const r = report([result('a', 'fail', 1)]);
+    const direct = buildComment({ report: r, artifactUrl: 'https://ci/out/report.html' });
+    expect(direct).toContain('[View the diffs](https://ci/out/report.html)');
+    expect(direct).not.toContain('in the artifacts');
+  });
 });

@@ -88,6 +88,30 @@ lets the PR comment link somewhere useful — the comment adds that link only
 when a report was actually written, so a run without `--html` gets no link
 rather than one pointing at an empty artifacts list.
 
+### Other CI providers
+
+The comment is posted through the GitHub API, not through Actions, so anything
+that can reach GitHub can post it. Supply what Actions would have injected:
+
+```yaml
+# CircleCI
+- run:
+    command: npx jux run --comment --html
+    environment:
+      GITHUB_TOKEN: $GITHUB_PAT # a token you create; only Actions grants one free
+      GITHUB_REPOSITORY: acme/web
+      GITHUB_REF: refs/pull/${CIRCLE_PR_NUMBER}/merge
+      JUXTAPOSE_REPORT_URL: https://output.circle-artifacts.com/.../report.html
+- store_artifacts:
+    path: .juxtapose/runs
+```
+
+`JUXTAPOSE_REPORT_URL` overrides the report link and is the only piece that
+cannot be derived. Most providers host artifacts themselves at a stable URL, so
+this is usually an improvement on Actions: point it straight at `report.html`
+and the comment says "View the diffs" — one click, no zip. We can only guess the
+URL on Actions, where the artifact's own address is auth-gated and expires.
+
 Outside a pull request — locally, or on a push — `--comment` is a no-op and
 never changes the exit code: a reporting problem should not fail a build that
 otherwise passed.

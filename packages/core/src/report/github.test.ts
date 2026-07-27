@@ -112,4 +112,37 @@ describe('resolveArtifactUrl', () => {
   it('returns nothing outside Actions', () => {
     expect(resolveArtifactUrl(true, {})).toBeUndefined();
   });
+
+  it('lets any CI point at its own artifact storage', () => {
+    // Most providers host artifacts themselves at a stable URL. We cannot
+    // construct those — they carry a build number and an artifact path only the
+    // provider knows — so the escape hatch is the whole non-Actions story.
+    expect(
+      resolveArtifactUrl(true, {
+        JUXTAPOSE_REPORT_URL: 'https://output.circle-artifacts.com/.../report.html',
+      }),
+    ).toBe('https://output.circle-artifacts.com/.../report.html');
+  });
+
+  it('prefers an explicit url over the Actions run page', () => {
+    expect(
+      resolveArtifactUrl(true, {
+        ...actions,
+        JUXTAPOSE_REPORT_URL: 'https://mine/r.html',
+      }),
+    ).toBe('https://mine/r.html');
+  });
+
+  it('ignores an empty explicit url rather than linking nowhere', () => {
+    // A CI that exports the variable unset would otherwise produce `[...]()`.
+    expect(resolveArtifactUrl(true, { ...actions, JUXTAPOSE_REPORT_URL: '  ' })).toBe(
+      'https://github.com/acme/web/actions/runs/12345',
+    );
+  });
+
+  it('still writes no link when there is no report', () => {
+    expect(
+      resolveArtifactUrl(false, { JUXTAPOSE_REPORT_URL: 'https://mine/r.html' }),
+    ).toBeUndefined();
+  });
 });

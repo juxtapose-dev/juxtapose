@@ -32,7 +32,7 @@ Common options
 run
   --since <commit>               only capture stories affected since this commit
   --all                          capture everything, skip affected-analysis
-  --comment                      post a summary as a PR comment (GitHub Actions)
+  --comment                      post a summary as a GitHub PR comment
   --html                         write a self-contained report.html to the run dir
 
 approve

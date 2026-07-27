@@ -46,21 +46,34 @@ export async function resolveGitHubContext(
 }
 
 /**
- * The Actions run page, where uploaded artifacts are listed.
+ * Where to send someone who wants the pixels.
+ *
+ * `JUXTAPOSE_REPORT_URL` wins when set, and is the only thing a non-Actions CI
+ * needs. It exists because most providers host artifacts themselves at a stable
+ * URL — CircleCI can serve `report.html` directly, so a reader clicks once and
+ * sees the diffs instead of landing on a run page and hunting for a zip. That
+ * is strictly better than what Actions allows, and no amount of provider
+ * detection would let us construct it: the URL contains a build number and an
+ * artifact path only the provider knows.
+ *
+ * Falling back to the Actions run page rather than the artifact file is not a
+ * preference — on Actions the file's own URL is auth-gated and expires.
  *
  * Deliberately not derived from env vars alone. `GITHUB_RUN_ID` is set on every
  * Actions run including ones that upload nothing, so keying off it would
  * produce a link to an empty artifacts list — a promise to a dead end, which
  * costs the reader a click and some trust. The caller passes `hasArtifact` only
  * when it actually wrote a report, so no report means no link.
- *
- * We cannot link the artifact file itself: that URL is auth-gated and expires.
  */
 export function resolveArtifactUrl(
   hasArtifact: boolean,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   if (!hasArtifact) return undefined;
+
+  const explicit = env.JUXTAPOSE_REPORT_URL?.trim();
+  if (explicit) return explicit;
+
   const server = env.GITHUB_SERVER_URL;
   const repository = env.GITHUB_REPOSITORY;
   const runId = env.GITHUB_RUN_ID;
