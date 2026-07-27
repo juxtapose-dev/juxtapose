@@ -1,0 +1,6 @@
+{
+  "platform": "ladle",
+  "buildDir": "build",
+  "viewport": { "width": 800, "height": 600 },
+  "concurrency": 4
+}

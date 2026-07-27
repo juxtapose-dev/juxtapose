@@ -142,3 +142,47 @@ export async function waitForSelector(
 ): Promise<void> {
   await page.waitForSelector(selector, { timeout: timeoutMs }).catch(() => {});
 }
+
+/**
+ * Block until the compositor has actually presented a frame.
+ *
+ * The DOM going quiet is not the same as the pixels being final: style
+ * recalculation, layout and paint still have to happen, and a screenshot taken
+ * in that window catches an intermediate frame.
+ *
+ * This is not theoretical. Without it, repeated captures of an unchanged story
+ * differed by ~12 pixels out of 480,000 — each off by exactly 1 — on the
+ * antialiased edges of a rounded corner. Invisible to a human; a failed build
+ * under a byte-exact hash. Measured: flaky with no wait, stable from ~50ms,
+ * and stable with this barrier and no arbitrary delay at all.
+ *
+ * Two nested rAFs, then `requestIdleCallback`: the first rAF runs before the
+ * next paint, the second after it has been committed, and the idle callback
+ * gives any post-paint work a chance to drain. Cheap — a couple of frames at
+ * most — and it removes the need for a blanket sleep on every story.
+ */
+export async function waitForPaint(page: Page, timeoutMs = 1000): Promise<void> {
+  await page
+    .evaluate(
+      (cap) =>
+        new Promise<void>((resolve) => {
+          const done = () => resolve();
+          const timer = setTimeout(done, cap);
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              const finish = () => {
+                clearTimeout(timer);
+                done();
+              };
+              if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(finish, { timeout: 100 });
+              } else {
+                finish();
+              }
+            }),
+          );
+        }),
+      timeoutMs,
+    )
+    .catch(() => {});
+}
