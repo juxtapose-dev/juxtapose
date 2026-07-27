@@ -17,9 +17,24 @@ interface Box {
 const DEFAULT_GAP = 8;
 
 /**
+ * Is this pixel one pixelmatch marked as changed?
+ *
+ * Subtle and worth stating, because getting it wrong is silent: pixelmatch
+ * writes the WHOLE frame into the diff buffer, not just the differences.
+ * Unchanged pixels come back as the faded original at full alpha; changed
+ * pixels are painted in its diff colour, red by default.
+ *
+ * So testing `alpha > 0` matches every pixel in the image and collapses every
+ * report into one full-viewport region — which is exactly the bug this
+ * replaced. Test for the red marking instead.
+ */
+function isChanged(diff: Buffer, offset: number): boolean {
+  return diff[offset] > 200 && diff[offset + 1] < 100 && diff[offset + 2] < 100;
+}
+
+/**
  * Extract merged bounding boxes of changed pixel clusters.
  *
- * `diff` is RGBA; pixelmatch marks changed pixels with a non-zero alpha.
  * Boxes within `gap` pixels of each other merge, so antialiased edges and
  * inter-letter spacing don't fragment one logical change into many.
  */
@@ -35,7 +50,7 @@ export function computeChangedRegions(
   for (let y = 0; y < height; y++) {
     let start = -1;
     for (let x = 0; x <= width; x++) {
-      const changed = x < width && diff[(y * width + x) * 4 + 3] > 0;
+      const changed = x < width && isChanged(diff, (y * width + x) * 4);
       if (changed && start === -1) start = x;
       else if (!changed && start !== -1) {
         spans.push({ y, x1: start, x2: x - 1 });

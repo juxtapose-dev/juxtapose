@@ -1,0 +1,21 @@
+{
+  "name": "@juxtapose/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "jux — visual regression testing CLI for Storybook, Ladle and friends.",
+  "bin": {
+    "jux": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@juxtapose/core": "workspace:*",
+    "@juxtapose/ladle": "workspace:*",
+    "@juxtapose/storybook": "workspace:*",
+    "playwright": "^1.48.0"
+  }
+}
