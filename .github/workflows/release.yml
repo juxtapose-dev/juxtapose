@@ -46,7 +46,7 @@ jobs:
       # spend those names.
       #
       # To start publishing:
-      #   gh variable set PUBLISH_ENABLED --body true --repo <owner>/<repo>
+      #   gh variable set PUBLISH_ENABLED --body true --repo juxtapose-dev/juxtapose
       - uses: changesets/action@v1
         with:
           version: pnpm version-packages

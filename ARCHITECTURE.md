@@ -20,8 +20,9 @@ packages/
   core/               @juxtapose/core        capture, diff, storage, analysis — no platform knowledge
   adapter-storybook/  @juxtapose/adapter-storybook   index.json enumeration + preview channel driver
   adapter-ladle/      @juxtapose/adapter-ladle       meta.json enumeration + Ladle's ready signal
-  cli/                @juxtapose/cli         `jux` — run, serve, approve, check
-  addon-storybook/    @juxtapose/storybook   panel, test provider, sidebar decoration
+  cli/                @juxtapose/cli         `jux` — init, run, approve, check, handoff
+  server/             @juxtapose/server      local review API; the addon is a skin over it
+  addon-storybook/    @juxtapose/storybook   panel, test provider, sidebar decoration, watch mode
 ```
 
 `core` never imports an adapter. Adapters depend on `core` for types only. The
@@ -29,35 +30,49 @@ CLI resolves an adapter at runtime from config or autodetection.
 
 ## The platform adapter seam
 
-Everything Storybook-specific in the original tool reduces to four operations.
-That is the entire interface:
+Everything Storybook-specific reduces to a handful of operations. Two of them —
+showing a story and waiting for it to render — are the whole of it; the rest is
+metadata the core needs to do its own work.
 
 ```ts
 interface Platform {
+  readonly name: string;
+  /** Is this the platform in use here? Drives autodetection. */
+  detect(target: EnumerateTarget): Promise<boolean>;
   /** Discover stories. Storybook: index.json. Ladle: meta.json. */
-  enumerate(target: Target): Promise<StoryManifest[]>;
-
-  /** URL for a single story in isolation. */
-  storyUrl(baseUrl: string, storyId: string): string;
-
+  enumerate(target: EnumerateTarget): Promise<StoryManifest[]>;
+  /** Get a story on screen, however this platform does that. */
+  showStory(page: Page, storyId: string, baseUrl: string): Promise<void>;
+  previewUrl(baseUrl: string): string;
   /** Wait until a story has finished rendering. The hard part. */
-  settle(page: Page, story: StoryManifest, opts: SettleOptions): Promise<void>;
+  settle(page: Page, ctx: SettleContext): Promise<void>;
 
+  /** Where config lives, so a change there can force a full run. */
+  readonly configDirs: readonly string[];
+  readonly storyFileGlobs: readonly string[];
+
+  /** Optional: a human-visitable URL, for reports. Not the capture path. */
+  storyUrl?(baseUrl: string, storyId: string): string;
   /** Optional: switch story in a warm page without a navigation. */
-  switchStory?(page: Page, storyId: string): Promise<boolean>;
+  switchStory?(page: Page, storyId: string, ctx: SettleContext): Promise<boolean>;
+  /** Optional: read per-story params the static index dropped. */
+  readLiveParams?(page: Page, storyId: string): Promise<StoryParams | undefined>;
 }
 ```
 
-`switchStory` is optional because it is an optimization, not a requirement. A
-platform that cannot do it still works, just slower — the pool falls back to
-`goto`. See "Warm-page switching" below for why it matters so much.
+The optional three are all recoveries rather than requirements. `switchStory`
+is an optimization — a platform without it still works, just slower, because
+the pool falls back to `goto`. `readLiveParams` exists because Storybook
+serializes only a whitelist of parameters into `index.json`, so `skip` and
+per-story viewports are invisible until you ask the running preview. Ladle
+needs neither: its `meta` is statically extracted and complete.
 
 ## Data model
 
 Carried over almost unchanged from the original, which got this right. The
 platform-specific leakage was confined to `StoryManifest`.
 
-- **`StoryManifest`** — `{ storyId, title, name, componentPath, parameters }`.
+- **`StoryManifest`** — `{ storyId, title, name, componentPath, params }`.
   `componentPath` is the absolute path to the source file; it is what makes
   affected-story analysis possible. Adapters populate it.
 - **`Snapshot`** — captured image + viewport + timestamp. Stored as WebP.
@@ -75,21 +90,32 @@ and false diffs train people to ignore the tool. The pipeline, in order:
 
 1. **Viewport** — set only if changed from the last story on this page (skips a
    CDP round-trip).
-2. **Navigate or switch** — cold `goto`, or warm channel switch.
-3. **Render-ready** — platform-specific. Storybook fires render-phase events;
+2. **Arm the observer** — a `MutationObserver` installed via `page.evaluate`
+   _before_ the render is triggered, so it is already watching when the story
+   mounts. It resolves after 150ms of no mutations, capped at 500ms.
+3. **Navigate or switch** — cold `goto`/`showStory`, or warm channel switch.
+4. **Freeze animations** — inject CSS zeroing transitions/animations so
+   spinners and shimmer don't randomize the frame. Opt out per story with
+   `animations: 'play'`. **This runs before the render signal, not after**:
+   injected styles survive a warm story switch but not a navigation, so
+   freezing afterwards makes warm and cold captures of the same story disagree.
+   Moving it is a behaviour change, not a refactor.
+5. **Render-ready** — platform-specific. Storybook fires render-phase events;
    resolve at `playing` to capture pre-interaction state, or at `played` when
    the story opts into `captureAfterPlay`.
-4. **DOM quiescence** — a `MutationObserver` that resolves after 150ms of no
-   mutations, capped at 3s. Installed once per page via `addInitScript`.
-5. **Network drain + image decode** — awaited in a _single_ `page.evaluate`
-   rather than three, collapsing 3 CDP round-trips into 1.
-6. **Freeze animations** — inject CSS zeroing transitions/animations, once per
-   page, so spinners and shimmer don't randomize the frame. Opt out per story
-   with `animations: 'play'`.
-7. **Screenshot** → PNG → WebP.
+6. **Live params** — re-read `parameters.juxtapose` from the running preview,
+   because Storybook drops custom parameters from its static index. Honours a
+   late `skip`, and re-settles if the story declares its own viewport.
+7. **Quiescence** — `waitForSelector` if declared, then network drain and image
+   decode in a _single_ `page.evaluate` rather than three, then an optional
+   fixed `delay`.
+8. **Paint barrier** — two nested rAFs plus an idle callback. A quiet DOM is
+   not a painted frame; without this, captures intermittently catch an
+   intermediate one.
+9. **Screenshot** → PNG → lossless WebP.
 
-Steps 4–6 are platform-neutral and live in `core`. Only step 3 is delegated to
-the adapter.
+Everything except steps 5 and 6 is platform-neutral and lives in `core`; those
+two are the adapter's only contribution to settling.
 
 ### Warm-page switching
 
@@ -141,17 +167,20 @@ adoption tax for what is fundamentally a local tool, so the default inverts:
 interface BaselineStore {
   get(storyId: string): Promise<Buffer | null>;
   put(storyId: string, image: Buffer, meta: ApprovalMeta): Promise<void>;
-  manifest(): Promise<BaselineManifest>;
+  remove(storyId: string): Promise<void>;
+  readManifest(): Promise<BaselineManifest>;
+  writeManifest(manifest: BaselineManifest): Promise<void>;
 }
 ```
 
 - **`git` (default)** — baselines committed under `.juxtapose/baselines/` as
   WebP. Zero infra, baselines version with the code, review happens in the PR
-  diff, and branches get correct baselines by construction. Costs repo size;
-  WebP at quality 90 keeps it tolerable.
-- **`s3`** — the proven path for large story counts or repos that won't carry
-  binaries. Works against R2 unchanged.
-- **`fs`** — a local directory. For trying the tool out.
+  diff, and branches get correct baselines by construction. Costs repo size,
+  though lossless WebP of a flat UI render is usually smaller than the PNG.
+- **`fs`** — the same store pointed at a directory you choose, rather than a
+  separate implementation.
+- **`s3`** — declared in `StorageConfig` but **not implemented**: the CLI
+  throws if you select it. Intended for suites too large to carry in git.
 
 The `BaselineManifest` is committed in every case. Even with the S3 store, the
 manifest in git is what defines "approved" — the bucket only holds the bytes.
