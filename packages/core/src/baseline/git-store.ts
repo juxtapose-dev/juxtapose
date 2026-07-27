@@ -107,7 +107,12 @@ export class GitBaselineStore implements BaselineStore {
  * directory, so encode anything outside a conservative allowlist.
  */
 export function encodeStoryId(storyId: string): string {
-  return storyId.replace(/[^a-zA-Z0-9._-]/g, (c) =>
+  // `.` is deliberately NOT in the allowlist. Escaping only separators would
+  // leave `..` intact, which cannot traverse without a `/` but still yields
+  // filenames that read as relative paths — a trap for anything downstream
+  // that joins, splits, or normalizes them. Encoding every dot makes the
+  // result inert by construction rather than by argument.
+  return storyId.replace(/[^a-zA-Z0-9_-]/g, (c) =>
     '%' + c.charCodeAt(0).toString(16).padStart(2, '0'),
   );
 }
