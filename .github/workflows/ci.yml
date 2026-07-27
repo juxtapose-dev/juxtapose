@@ -47,6 +47,7 @@ jobs:
       - name: Build example workbenches
         run: |
           pnpm --filter example-storybook build
+          pnpm --filter example-storybook-vue build
           pnpm --filter example-ladle build
         env:
           STORYBOOK_DISABLE_TELEMETRY: '1'
@@ -62,6 +63,12 @@ jobs:
       # that repeated captures on the SAME machine agree.
       - name: Determinism (Storybook)
         run: node scripts/check-determinism.mjs examples/storybook 3
+
+      # Vue is here to keep "works with Storybook" honest: the adapter is
+      # renderer-agnostic, and this is what would catch it if that stopped
+      # being true.
+      - name: Determinism (Storybook, Vue)
+        run: node scripts/check-determinism.mjs examples/storybook-vue 3
 
       - name: Determinism (Ladle)
         run: node scripts/check-determinism.mjs examples/ladle 3

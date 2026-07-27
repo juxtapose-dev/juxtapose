@@ -1,0 +1,6 @@
+{
+  "platform": "storybook",
+  "buildDir": "storybook-static",
+  "viewport": { "width": 800, "height": 600 },
+  "concurrency": 4
+}

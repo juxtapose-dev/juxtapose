@@ -17,10 +17,18 @@ Both start with everything `new` (no baselines are committed — see below).
 
 ```
 examples/
-  components/   shared React components, plain JSX, no build step
-  storybook/    Storybook 8 + @storybook/react-vite
-  ladle/        Ladle 5
+  components/      shared React components, plain JSX, no build step
+  storybook/       Storybook 8 + @storybook/react-vite
+  storybook-vue/   Storybook 8 + @storybook/vue3-vite
+  ladle/           Ladle 5
 ```
+
+`storybook-vue` exists to keep "works with Storybook" honest. Storybook's
+indexing is core rather than per-renderer, so the adapter should be
+renderer-agnostic — but that is a claim worth proving rather than asserting.
+It runs in CI alongside the others, and captures 9 stories byte-identically
+with `skip` and per-story viewport overrides behaving exactly as they do on
+React.
 
 ## What the stories cover
 

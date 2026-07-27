@@ -3,7 +3,8 @@
 Visual regression testing for component workbenches. Captures every story,
 compares against approved baselines, and tells you exactly what changed.
 
-Works with **Storybook** and **Ladle** through the same CLI. Baselines live in
+Works with **Storybook** — any renderer, not just React — and **Ladle**,
+through the same CLI. Baselines live in
 your repo by default — no bucket, no account, no service.
 
 ```bash
