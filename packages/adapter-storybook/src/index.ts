@@ -29,10 +29,6 @@ interface StorybookIndex {
   entries: Record<string, StorybookIndexEntry>;
 }
 
-/** How long to wait for the preview runtime to appear before giving up on the
- *  warm path and falling back to a navigation. */
-const PREVIEW_READY_TIMEOUT_MS = 5000;
-
 /**
  * Phases where the story is settled enough to screenshot.
  *
@@ -244,24 +240,6 @@ export class StorybookPlatform implements Platform {
     '**/*.stories.@(ts|tsx|js|jsx|mjs|svelte)',
     '**/*.story.@(ts|tsx|js|jsx|mjs|svelte)',
   ];
-}
-
-/** Wait for the preview runtime's channel to exist. */
-export async function waitForPreview(
-  page: Page,
-  timeoutMs = PREVIEW_READY_TIMEOUT_MS,
-): Promise<boolean> {
-  return page
-    .waitForFunction(
-      () => {
-        const w = window as unknown as { __STORYBOOK_PREVIEW__?: { channel?: unknown } };
-        return !!w.__STORYBOOK_PREVIEW__?.channel;
-      },
-      undefined,
-      { timeout: timeoutMs },
-    )
-    .then(() => true)
-    .catch(() => false);
 }
 
 async function waitForRenderPhase(page: Page, ctx: SettleContext): Promise<void> {

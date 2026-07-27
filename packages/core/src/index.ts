@@ -37,7 +37,7 @@ export {
   DOM_IDLE_MS,
   DOM_IDLE_TIMEOUT_MS,
 } from './capture/settle.js';
-export { captureStory, requiresColdPage, type CaptureDeps } from './capture/capture.js';
+export { captureStory, type CaptureDeps } from './capture/capture.js';
 export {
   deterministicLaunchOptions,
   DETERMINISTIC_CHROMIUM_ARGS,
@@ -45,7 +45,6 @@ export {
 } from './capture/launch.js';
 export {
   capturePool,
-  LivePool,
   DEFAULT_CONCURRENCY,
   type PoolOptions,
   type CaptureOutcome,

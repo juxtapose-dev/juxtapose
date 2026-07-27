@@ -1,8 +1,8 @@
-// Worker pool. One implementation for both the CLI (build once, capture, exit)
-// and the live/dev-server case (long-lived, capture on demand) — the original
-// had two near-identical copies of this logic that drifted apart.
+// Worker pool: fan stories across N parallel pages, yielding results as they
+// complete. Used by both the CLI and the dev-server review API, which is why
+// it takes a Browser rather than owning one.
 
-import type { Browser, BrowserContext, Page } from 'playwright';
+import type { Browser } from 'playwright';
 import type { Platform } from '../platform.js';
 import type { Snapshot, StoryManifest, Viewport } from '../types.js';
 import { captureStory, type CaptureDeps } from './capture.js';
@@ -134,48 +134,6 @@ export async function* capturePool(
   }
 
   await all;
-}
-
-/** Long-lived pool for the dev-server case: keeps the browser and its pages
- *  warm across separate capture requests so the bundle is parsed once. */
-export class LivePool {
-  private contexts: BrowserContext[] = [];
-  private pages: Page[] = [];
-
-  constructor(
-    private readonly browser: Browser,
-    private readonly viewport: Viewport,
-    private readonly concurrency: number = DEFAULT_CONCURRENCY,
-  ) {}
-
-  /**
-   * Navigate every page to the blank preview ahead of first use.
-   *
-   * The first story on a cold page pays for bundle compile and service-worker
-   * registration. Doing that at startup rather than on the user's first click
-   * is the difference between a snappy addon and a sticky one.
-   */
-  async prewarm(previewUrl: string): Promise<void> {
-    if (this.pages.length === 0) {
-      for (let i = 0; i < this.concurrency; i++) {
-        const context = await this.browser.newContext({
-          viewport: this.viewport,
-          deviceScaleFactor: 1,
-        });
-        this.contexts.push(context);
-        this.pages.push(await context.newPage());
-      }
-    }
-    await Promise.all(
-      this.pages.map((p) => p.goto(previewUrl, { waitUntil: 'load' }).catch(() => {})),
-    );
-  }
-
-  async close(): Promise<void> {
-    await Promise.all(this.contexts.map((c) => c.close().catch(() => {})));
-    this.contexts = [];
-    this.pages = [];
-  }
 }
 
 function shuffle<T>(items: T[]): T[] {

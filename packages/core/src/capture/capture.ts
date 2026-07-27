@@ -164,19 +164,14 @@ async function ensureViewport(page: Page, viewport: Viewport): Promise<void> {
  * Inject the freeze stylesheet, once per page.
  *
  * Note the interaction with warm-page reuse: the style tag survives a story
- * switch, so a story with `animations: 'play'` landing on a page that already
- * froze would still be frozen. Rather than track and remove the tag, such
- * stories are routed to a cold page by the caller — animation stories are rare
- * and a navigation is cheaper than making this stateful.
+ * switch but not a navigation, so a story with `animations: 'play'` landing on
+ * an already-frozen page would still be frozen. The warm check above excludes
+ * those stories for that reason, forcing them down the cold path where the
+ * navigation clears the tag.
  */
 async function freezeAnimations(page: Page, params: StoryParams): Promise<void> {
   if (params.animations === 'play') return;
   if (styleInjected.has(page)) return;
   await page.addStyleTag({ content: FREEZE_ANIMATIONS_CSS }).catch(() => {});
   styleInjected.add(page);
-}
-
-/** True if this story must not reuse a page that has been frozen. */
-export function requiresColdPage(story: StoryManifest): boolean {
-  return story.params.animations === 'play';
 }
