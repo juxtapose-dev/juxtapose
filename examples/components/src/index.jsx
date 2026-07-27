@@ -189,8 +189,8 @@ export const TextSpecimen = () => (
       Subheading in a lighter tone
     </p>
     <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6 }}>
-      The quick brown fox jumps over the lazy dog. Antialiased glyph edges are the
-      most sensitive input a pixel differ receives.
+      The quick brown fox jumps over the lazy dog. Antialiased glyph edges are the most
+      sensitive input a pixel differ receives.
     </p>
     <code
       style={{

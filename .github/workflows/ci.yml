@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: typecheck, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm exec prettier --check .
+      - run: pnpm test
+
+  determinism:
+    name: determinism
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Install Chromium
+        run: pnpm --filter @juxtapose/cli exec playwright install --with-deps chromium
+
+      - name: Build example workbenches
+        run: |
+          pnpm --filter example-storybook build
+          pnpm --filter example-ladle build
+        env:
+          STORYBOOK_DISABLE_TELEMETRY: '1'
+
+      # The invariant the whole design rests on: pass/fail is a byte-exact
+      # hash, so a story that captures differently on identical input is a
+      # permanently failing build. This is a race, and a race that shows up
+      # one run in five will pass a single-shot check — hence repeated runs.
+      #
+      # Note this does NOT compare against committed baselines. Antialiasing
+      # differs across machines and Chromium versions, so a baseline captured
+      # on a developer's Mac would never match a CI runner. What must hold is
+      # that repeated captures on the SAME machine agree.
+      - name: Determinism (Storybook)
+        run: node scripts/check-determinism.mjs examples/storybook 3
+
+      - name: Determinism (Ladle)
+        run: node scripts/check-determinism.mjs examples/ladle 3

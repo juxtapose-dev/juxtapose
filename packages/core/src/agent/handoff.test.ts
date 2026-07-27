@@ -30,7 +30,9 @@ describe('buildHandoffPrompt', () => {
   });
 
   it('points at the machine-readable sidecar', () => {
-    expect(buildHandoffPrompt(base)).toContain('/repo/.juxtapose/runs/1/diffs/button.json');
+    expect(buildHandoffPrompt(base)).toContain(
+      '/repo/.juxtapose/runs/1/diffs/button.json',
+    );
   });
 
   it('names the component and how to check its history', () => {
@@ -70,7 +72,12 @@ describe('buildHandoffPrompt', () => {
   });
 
   it('truncates a pathological region list', () => {
-    const many = Array.from({ length: 50 }, (_, i) => ({ x: i, y: i, width: 2, height: 2 }));
+    const many = Array.from({ length: 50 }, (_, i) => ({
+      x: i,
+      y: i,
+      width: 2,
+      height: 2,
+    }));
     const out = buildHandoffPrompt({ ...base, changedRegions: many });
     expect(out).toContain('and 38 more');
   });
@@ -86,13 +93,21 @@ describe('describeRegion', () => {
   });
 
   it('identifies each corner and the centre', () => {
-    expect(describeRegion({ x: 1100, y: 10, width: 10, height: 10 }, vp)).toContain('top-right');
-    expect(describeRegion({ x: 10, y: 850, width: 10, height: 10 }, vp)).toContain('bottom-left');
-    expect(describeRegion({ x: 590, y: 440, width: 10, height: 10 }, vp)).toContain('middle-center');
+    expect(describeRegion({ x: 1100, y: 10, width: 10, height: 10 }, vp)).toContain(
+      'top-right',
+    );
+    expect(describeRegion({ x: 10, y: 850, width: 10, height: 10 }, vp)).toContain(
+      'bottom-left',
+    );
+    expect(describeRegion({ x: 590, y: 440, width: 10, height: 10 }, vp)).toContain(
+      'middle-center',
+    );
   });
 
   it('reports area as a fraction of the viewport', () => {
     // 600x450 = 270000 of 1080000 = 25%
-    expect(describeRegion({ x: 0, y: 0, width: 600, height: 450 }, vp)).toContain('25% of viewport');
+    expect(describeRegion({ x: 0, y: 0, width: 600, height: 450 }, vp)).toContain(
+      '25% of viewport',
+    );
   });
 });

@@ -81,9 +81,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       continue;
     }
 
-    results.push(
-      await judge(outcome.snapshot, outcome.story, manifest, opts),
-    );
+    results.push(await judge(outcome.snapshot, outcome.story, manifest, opts));
   }
 
   const summary = tally(results);

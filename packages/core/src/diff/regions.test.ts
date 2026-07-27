@@ -51,13 +51,27 @@ describe('computeChangedRegions', () => {
   });
 
   it('keeps far-apart clusters separate', () => {
-    const regions = computeChangedRegions(buf(100, 100, [[1, 1], [90, 90]]), 100, 100);
+    const regions = computeChangedRegions(
+      buf(100, 100, [
+        [1, 1],
+        [90, 90],
+      ]),
+      100,
+      100,
+    );
     expect(regions).toHaveLength(2);
   });
 
   it('merges clusters within the gap tolerance', () => {
     // 4px apart, default gap is 8 — one region.
-    const regions = computeChangedRegions(buf(100, 100, [[10, 10], [14, 10]]), 100, 100);
+    const regions = computeChangedRegions(
+      buf(100, 100, [
+        [10, 10],
+        [14, 10],
+      ]),
+      100,
+      100,
+    );
     expect(regions).toEqual([{ x: 10, y: 10, width: 5, height: 1 }]);
   });
 
@@ -120,8 +134,12 @@ describe('computeChangedRegions', () => {
     // The regression the original had: two separate columns established first,
     // then a row that touches both. A greedy first-match merge reports 2.
     const pixels: [number, number][] = [
-      [0, 0], [0, 1], [0, 2],       // left column
-      [40, 0], [40, 1], [40, 2],    // right column, beyond gap
+      [0, 0],
+      [0, 1],
+      [0, 2], // left column
+      [40, 0],
+      [40, 1],
+      [40, 2], // right column, beyond gap
     ];
     // Bridge row spanning both, added last.
     for (let x = 0; x <= 40; x++) pixels.push([x, 3]);

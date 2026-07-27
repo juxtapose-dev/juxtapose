@@ -5,7 +5,11 @@ import type { BaselineManifest } from '../types.js';
 
 const img = (s: string) => Buffer.from(s);
 
-function manifestWith(storyId: string, image: Buffer, commit = 'a'.repeat(40)): BaselineManifest {
+function manifestWith(
+  storyId: string,
+  image: Buffer,
+  commit = 'a'.repeat(40),
+): BaselineManifest {
   return {
     version: 1,
     baselines: {
@@ -63,7 +67,9 @@ describe('toDiffStatus', () => {
 
 describe('encodeStoryId', () => {
   it('leaves ordinary ids alone', () => {
-    expect(encodeStoryId('components-button--primary')).toBe('components-button--primary');
+    expect(encodeStoryId('components-button--primary')).toBe(
+      'components-button--primary',
+    );
   });
 
   it('encodes path separators so ids cannot escape the baseline dir', () => {

@@ -35,7 +35,12 @@ export interface Context {
 }
 
 /** Candidate build outputs, in the order we'd expect to find them. */
-const BUILD_DIR_CANDIDATES = ['storybook-static', 'build', '.ladle/build', 'dist/storybook'];
+const BUILD_DIR_CANDIDATES = [
+  'storybook-static',
+  'build',
+  '.ladle/build',
+  'dist/storybook',
+];
 
 export async function resolveContext(flags: CommonFlags): Promise<Context> {
   const projectRoot = path.resolve(flags.project ?? process.cwd());
@@ -48,7 +53,11 @@ export async function resolveContext(flags: CommonFlags): Promise<Context> {
   };
 
   const origin = flags.origin ?? config.origin;
-  const buildDir = resolveBuildDir(projectRoot, flags['build-dir'] ?? config.buildDir, origin);
+  const buildDir = resolveBuildDir(
+    projectRoot,
+    flags['build-dir'] ?? config.buildDir,
+    origin,
+  );
 
   const target = { projectRoot, buildDir, origin };
   const platform = await resolvePlatform(flags.platform ?? config.platform, target);
@@ -114,14 +123,18 @@ function createStore(projectRoot: string, config: ProjectConfig): BaselineStore 
     case 'fs':
       return new GitBaselineStore({ projectRoot, dir: storage.dir });
     case 's3':
-      throw new Error('the s3 baseline store is not implemented yet; use the default git store');
+      throw new Error(
+        'the s3 baseline store is not implemented yet; use the default git store',
+      );
   }
 }
 
 async function loadConfig(projectRoot: string): Promise<ProjectConfig> {
   for (const name of ['juxtapose.config.json', '.juxtaposerc.json']) {
     try {
-      return JSON.parse(await readFile(path.join(projectRoot, name), 'utf8')) as ProjectConfig;
+      return JSON.parse(
+        await readFile(path.join(projectRoot, name), 'utf8'),
+      ) as ProjectConfig;
     } catch {
       // try next
     }
@@ -153,7 +166,11 @@ export function isGitRepo(cwd: string): boolean {
 
 function git(args: string[], cwd: string): string | null {
   try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
   } catch {
     return null;
   }

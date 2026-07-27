@@ -45,7 +45,9 @@ export async function checkCommand(flags: CommonFlags): Promise<number> {
   } else if (blocking.length === 0) {
     process.stdout.write('jux: all stories approved\n');
   } else {
-    process.stdout.write(`jux: ${blocking.length} ${blocking.length === 1 ? 'story needs' : 'stories need'} review\n`);
+    process.stdout.write(
+      `jux: ${blocking.length} ${blocking.length === 1 ? 'story needs' : 'stories need'} review\n`,
+    );
     for (const r of blocking.slice(0, 20)) {
       process.stdout.write(`  ${r.status.padEnd(6)} ${r.storyId}\n`);
     }

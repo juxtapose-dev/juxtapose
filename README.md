@@ -114,24 +114,24 @@ Scale to core count.
 Per-story, via the platform's own parameter mechanism
 (`parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle):
 
-| option | purpose |
-|---|---|
-| `skip` | never capture this story |
-| `viewport` | override the capture size |
-| `animations: 'play'` | let animations run (for stories testing animation) |
-| `captureAfterPlay` | screenshot after interactions, not at first render |
-| `waitForSelector` | wait for async content the network drain can't see |
-| `delay` | fixed extra wait; last resort |
-| `threshold` / `minDiffPercent` | tune the *reported* diff, not pass/fail |
+| option                         | purpose                                            |
+| ------------------------------ | -------------------------------------------------- |
+| `skip`                         | never capture this story                           |
+| `viewport`                     | override the capture size                          |
+| `animations: 'play'`           | let animations run (for stories testing animation) |
+| `captureAfterPlay`             | screenshot after interactions, not at first render |
+| `waitForSelector`              | wait for async content the network drain can't see |
+| `delay`                        | fixed extra wait; last resort                      |
+| `threshold` / `minDiffPercent` | tune the _reported_ diff, not pass/fail            |
 
 ## Packages
 
-| package | what it is |
-|---|---|
-| `@juxtapose/core` | capture, diff, baselines, analysis — no platform knowledge |
-| `@juxtapose/storybook` | Storybook adapter |
-| `@juxtapose/ladle` | Ladle adapter |
-| `@juxtapose/cli` | the `jux` command |
+| package                | what it is                                                 |
+| ---------------------- | ---------------------------------------------------------- |
+| `@juxtapose/core`      | capture, diff, baselines, analysis — no platform knowledge |
+| `@juxtapose/storybook` | Storybook adapter                                          |
+| `@juxtapose/ladle`     | Ladle adapter                                              |
+| `@juxtapose/cli`       | the `jux` command                                          |
 
 Supporting a new workbench means implementing four methods — enumerate,
 storyUrl, settle, and optionally switchStory. Both existing adapters were

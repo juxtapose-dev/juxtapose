@@ -65,10 +65,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   }
 
   if (p.diffDataPath) {
-    lines.push(
-      `Read \`${p.diffDataPath}\` for the full machine-readable diff.`,
-      '',
-    );
+    lines.push(`Read \`${p.diffDataPath}\` for the full machine-readable diff.`, '');
   }
 
   lines.push('## What changed');
@@ -122,7 +119,9 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
 
   lines.push('');
   lines.push('---');
-  lines.push(`Generated for \`${p.projectRoot}\`. If your session is rooted elsewhere, stop — this prompt is for a different repository.`);
+  lines.push(
+    `Generated for \`${p.projectRoot}\`. If your session is rooted elsewhere, stop — this prompt is for a different repository.`,
+  );
 
   return lines.join('\n');
 }
@@ -165,8 +164,14 @@ export function describeRegion(r: ChangedRegion, viewport: Viewport): string {
   const areaPct = ((r.width * r.height) / (viewport.width * viewport.height)) * 100;
   const cx = r.x + r.width / 2;
   const cy = r.y + r.height / 2;
-  const vertical = cy < viewport.height / 3 ? 'top' : cy > (viewport.height * 2) / 3 ? 'bottom' : 'middle';
-  const horizontal = cx < viewport.width / 3 ? 'left' : cx > (viewport.width * 2) / 3 ? 'right' : 'center';
+  const vertical =
+    cy < viewport.height / 3
+      ? 'top'
+      : cy > (viewport.height * 2) / 3
+        ? 'bottom'
+        : 'middle';
+  const horizontal =
+    cx < viewport.width / 3 ? 'left' : cx > (viewport.width * 2) / 3 ? 'right' : 'center';
   return `(${r.x}, ${r.y}) ${r.width}×${r.height}px — ${vertical}-${horizontal}, ${round(areaPct)}% of viewport`;
 }
 

@@ -30,7 +30,7 @@ If captures start flaking, check these before theorizing. Each cost real
 debugging time and each is now guarded:
 
 **Ordering in `captureStory` is load-bearing.** The animation-freeze stylesheet
-is injected *before* the render signal, not after. Injected styles survive a
+is injected _before_ the render signal, not after. Injected styles survive a
 warm story switch but not a navigation, so freezing after render means a warm
 story renders frozen while a cold story renders unfrozen — different pixels for
 the same story. Moving that call is not a refactor; it is a behavior change.
@@ -59,8 +59,8 @@ viewport. For flat UI renders lossless is usually smaller anyway.
 
 Every significant bug in this repo so far was invisible to unit tests and
 obvious the moment the tool ran against a real workbench. The sharpest example:
-`computeChangedRegions` tested `alpha > 0`, but pixelmatch writes the *whole
-frame* into its diff buffer — unchanged pixels as the faded original at full
+`computeChangedRegions` tested `alpha > 0`, but pixelmatch writes the _whole
+frame_ into its diff buffer — unchanged pixels as the faded original at full
 alpha. Every diff reported as one full-viewport region. The unit fixtures
 encoded the same wrong assumption, so they passed while production was broken.
 

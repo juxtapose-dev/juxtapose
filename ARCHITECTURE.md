@@ -82,7 +82,7 @@ and false diffs train people to ignore the tool. The pipeline, in order:
    the story opts into `captureAfterPlay`.
 4. **DOM quiescence** — a `MutationObserver` that resolves after 150ms of no
    mutations, capped at 3s. Installed once per page via `addInitScript`.
-5. **Network drain + image decode** — awaited in a *single* `page.evaluate`
+5. **Network drain + image decode** — awaited in a _single_ `page.evaluate`
    rather than three, collapsing 3 CDP round-trips into 1.
 6. **Freeze animations** — inject CSS zeroing transitions/animations, once per
    page, so spinners and shimmer don't randomize the frame. Opt out per story
@@ -97,12 +97,12 @@ the adapter.
 The single largest optimization, and the reason `switchStory` exists in the
 interface. Measured on the original tool, 738 stories:
 
-| strategy | wall-clock | per-story |
-|---|---|---|
-| sequential, one page | ~600s | 1.5s |
-| 16 parallel contexts, `goto` per story | 222s | 4.8s |
-| 16 parallel, **warm channel switch** | **57s** | **1.2s** |
-| 32 parallel, warm switch | 87s | 3.8s |
+| strategy                               | wall-clock | per-story |
+| -------------------------------------- | ---------- | --------- |
+| sequential, one page                   | ~600s      | 1.5s      |
+| 16 parallel contexts, `goto` per story | 222s       | 4.8s      |
+| 16 parallel, **warm channel switch**   | **57s**    | **1.2s**  |
+| 32 parallel, warm switch               | 87s        | 3.8s      |
 
 Two lessons encoded as defaults:
 
@@ -162,7 +162,7 @@ manifest in git is what defines "approved" — the bucket only holds the bytes.
 The most important design decision in the tool, and the least obvious:
 
 **A story passes if `sha256(webp) === manifest[storyId].hash`.** Byte-exact.
-The pixel diff does not decide anything — it runs *only after* a hash mismatch,
+The pixel diff does not decide anything — it runs _only after_ a hash mismatch,
 purely to produce artifacts a reviewer (or agent) can act on: mismatch percent,
 changed regions, diff overlay.
 
@@ -177,12 +177,12 @@ runs for stories that already failed.
 
 Status resolution, in order:
 
-| condition | status |
-|---|---|
-| no manifest entry | `new` |
-| `hash` differs | `fail` |
+| condition                                  | status  |
+| ------------------------------------------ | ------- |
+| no manifest entry                          | `new`   |
+| `hash` differs                             | `fail`  |
 | baseline commit is not an ancestor of HEAD | `stale` |
-| otherwise | `pass` |
+| otherwise                                  | `pass`  |
 
 `stale` matters: a baseline approved on a branch that never merged is not a
 valid baseline for HEAD. Detecting it needs a `git merge-base --is-ancestor`
@@ -196,9 +196,9 @@ Only for stories that already failed the hash check.
 `sharp` decode → `pixelmatch(threshold, includeAA: false)` → changed-region
 extraction → WebP encode. Thresholds resolve per story: story params override
 project config override the default of 0.1. `minDiffPercent` suppresses
-sub-pixel AA noise in the *reported* percentage.
+sub-pixel AA noise in the _reported_ percentage.
 
-Note these thresholds tune what gets *reported*, not what passes — the hash
+Note these thresholds tune what gets _reported_, not what passes — the hash
 already decided that. They exist so a reviewer can tell "one word changed" from
 "the whole layout moved".
 
@@ -215,13 +215,13 @@ But there are three places native code genuinely pays, and none of them are
 1. **The diff path, on a heavily-failing run.** pixelmatch with
    `includeAA: false` runs an 8-neighbour antialiasing scan per differing
    pixel, single-threaded JS over ~1M pixels. It is also embarrassingly
-   parallel — across stories *and* across rows — where JS gets one event loop
+   parallel — across stories _and_ across rows — where JS gets one event loop
    and `Promise.all` over CPU-bound work is concurrency theatre. SIMD + rayon
    is plausibly 10-30x here. Mitigated by the hash-first design: on a green run
    this cost is zero.
 
 2. **The dependency scanner.** `madge` parses every source file with a JS AST
-   parser on every run, uncached, and it sits on the critical path *before* any
+   parser on every run, uncached, and it sits on the critical path _before_ any
    capture starts. On a large monorepo that is seconds to tens of seconds of
    dead time. An `oxc`-based import scanner with an mtime-keyed incremental
    cache is the easiest large win available — and it helps every run, passing

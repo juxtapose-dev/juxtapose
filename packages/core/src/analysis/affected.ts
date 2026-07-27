@@ -68,8 +68,7 @@ export async function resolveAffected(
     return { stories, reason: 'no-baseline' };
   }
 
-  const changed =
-    opts.changedFiles ?? gitChangedFiles(sinceCommit!, opts.projectRoot);
+  const changed = opts.changedFiles ?? gitChangedFiles(sinceCommit!, opts.projectRoot);
 
   if (changed === null) return { stories, reason: 'git-unavailable' };
   if (changed.length === 0) return { stories: [], reason: 'no-changes' };
@@ -134,10 +133,7 @@ function buildReverseGraph(manifest: ViteManifest): Map<string, Set<string>> {
 
 /** Transitive dependents, including the seeds themselves — a changed story
  *  file is its own story's entry point. */
-function walkDependents(
-  reverse: Map<string, Set<string>>,
-  seeds: string[],
-): Set<string> {
+function walkDependents(reverse: Map<string, Set<string>>, seeds: string[]): Set<string> {
   const seen = new Set<string>();
   const stack = [...seeds];
   while (stack.length > 0) {
@@ -164,12 +160,14 @@ async function loadViteManifest(buildDir: string): Promise<ViteManifest | null> 
 
 function gitChangedFiles(sinceCommit: string, cwd: string): string[] | null {
   try {
-    const out = execFileSync(
-      'git',
-      ['diff', '--name-only', `${sinceCommit}..HEAD`],
-      { cwd, encoding: 'utf8' },
-    );
-    return out.split('\n').map((s) => s.trim()).filter(Boolean);
+    const out = execFileSync('git', ['diff', '--name-only', `${sinceCommit}..HEAD`], {
+      cwd,
+      encoding: 'utf8',
+    });
+    return out
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
   } catch {
     return null;
   }

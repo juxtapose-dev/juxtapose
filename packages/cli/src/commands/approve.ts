@@ -69,7 +69,9 @@ export async function approveCommand(flags: CommonFlags): Promise<number> {
     process.stdout.write(`jux: approved ${approved.length} ${plural(approved.length)}\n`);
     for (const f of failed) process.stderr.write(`  skipped ${f.storyId}: ${f.reason}\n`);
     if (approved.length > 0) {
-      process.stdout.write('\n  Commit juxtapose.manifest.json and .juxtapose/baselines/ to record this.\n');
+      process.stdout.write(
+        '\n  Commit juxtapose.manifest.json and .juxtapose/baselines/ to record this.\n',
+      );
     }
   }
 
