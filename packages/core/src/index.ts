@@ -63,4 +63,11 @@ export {
   type AffectedResult,
 } from './analysis/affected.js';
 
-export { buildHandoffPrompt, type HandoffPayload } from './agent/handoff.js';
+export {
+  runCapture,
+  DEFAULT_VIEWPORT,
+  type RunOptions,
+  type RunArtifact,
+} from './run/run.js';
+
+export { buildHandoffPrompt, describeRegion, type HandoffPayload } from './agent/handoff.js';

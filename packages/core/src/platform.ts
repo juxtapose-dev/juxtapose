@@ -33,6 +33,11 @@ export interface Platform {
   /** URL that renders one story in isolation, no workbench chrome. */
   storyUrl(baseUrl: string, storyId: string): string;
 
+  /** Blank preview URL, for warming a page before any story is selected.
+   *  Prewarming here means the first real story doesn't pay for bundle
+   *  compile and service-worker registration. */
+  previewUrl(baseUrl: string): string;
+
   /**
    * Block until the story has finished rendering.
    *
@@ -61,4 +66,20 @@ export interface Platform {
    * observers or hook the platform's client API. Runs once per page.
    */
   initScript?(): string;
+
+  /**
+   * Read per-story config from the live preview.
+   *
+   * Optional because not every platform hides parameters from its static
+   * index. Storybook does — it only serializes a whitelist — so reading the
+   * index alone silently drops per-story thresholds.
+   */
+  readLiveParams?(page: Page, storyId: string): Promise<StoryParams | undefined>;
+
+  /** Directories whose contents invalidate every story when changed
+   *  (`.storybook`, `.ladle`). Project-relative. */
+  readonly configDirs: readonly string[];
+
+  /** Globs identifying story files, for cache keys and change detection. */
+  readonly storyFileGlobs: readonly string[];
 }

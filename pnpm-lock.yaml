@@ -39,6 +39,21 @@ importers:
         specifier: ^1.48.0
         version: 1.62.0
 
+  packages/cli:
+    dependencies:
+      '@juxtapose/core':
+        specifier: workspace:*
+        version: link:../core
+      '@juxtapose/ladle':
+        specifier: workspace:*
+        version: link:../adapter-ladle
+      '@juxtapose/storybook':
+        specifier: workspace:*
+        version: link:../adapter-storybook
+      playwright:
+        specifier: ^1.48.0
+        version: 1.62.0
+
   packages/core:
     dependencies:
       pixelmatch:

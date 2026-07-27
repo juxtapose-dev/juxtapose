@@ -77,8 +77,11 @@ export async function diffImages(
     };
   }
 
+  // Lossless: the overlay is a sparse mask of flat colour, which lossless
+  // compresses better than lossy anyway, and blurring the marked pixels would
+  // defeat the point of the image.
   const diffImage = await sharp(diff, { raw: { width, height, channels: 4 } })
-    .webp({ quality: 90, effort: 0 })
+    .webp({ lossless: true, effort: 0 })
     .toBuffer();
 
   return {

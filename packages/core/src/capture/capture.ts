@@ -13,7 +13,6 @@ import {
   waitForSelector,
 } from './settle.js';
 
-const WEBP_QUALITY = 90;
 const DEFAULT_CAPTURE_TIMEOUT_MS = 2000;
 
 export interface CaptureDeps {
@@ -86,8 +85,21 @@ export async function captureStory(
   await freezeAnimations(page, params);
 
   const png = await page.screenshot({ type: 'png' });
+
+  // LOSSLESS, deliberately, and it is not a size-vs-quality preference.
+  //
+  // Lossy WebP at q90 perturbs ~7.7% of pixels frame-wide. The hash comparison
+  // survives that (encoding is deterministic, so identical input still yields
+  // identical bytes), but the pixel diff does not: comparing two lossy decodes
+  // scatters compression noise across every row and column, which swallows the
+  // real changed region into a full-viewport bounding box and destroys the
+  // localization the diff exists to provide.
+  //
+  // Measured: 3537 changed pixels from a single recoloured button spread over
+  // all 800 rows and all 1280 columns. With lossless, zero pixels differ from
+  // the source. Costs ~4x the bytes; buys a diff that means something.
   const image = await sharp(png)
-    .webp({ quality: WEBP_QUALITY, effort: deps.webpEffort ?? 0 })
+    .webp({ lossless: true, effort: deps.webpEffort ?? 0 })
     .toBuffer();
 
   return {
