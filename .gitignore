@@ -13,3 +13,6 @@ examples/*/juxtapose.manifest.json
 
 # Playwright MCP scratch output
 .playwright-mcp/
+
+# Agent worktrees
+.claude/worktrees/
