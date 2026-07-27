@@ -4,6 +4,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import {
+  buildComment,
+  postComment,
+  resolveGitHubContext,
   resolveAffected,
   runCapture,
   createAncestryCheck,
@@ -99,12 +102,40 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
 
     await emit(ctx.json, report, runDir);
 
+    if (flags.comment) await comment(report, ctx.json);
+
     // Anything needing human or agent judgement blocks. `pass` and `skip` do not.
     const blocking = report.summary.fail + report.summary.new + report.summary.stale;
     return blocking > 0 ? 1 : 0;
   } finally {
     await browser.close().catch(() => {});
     await server?.close();
+  }
+}
+
+/**
+ * Post the summary to the PR, if we are in one.
+ *
+ * Deliberately never throws and never changes the exit code: reporting is a
+ * side effect. A missing token, a push rather than a pull request, or a
+ * GitHub outage should not turn a passing visual run into a failing build.
+ */
+async function comment(report: RunReport, json: boolean): Promise<void> {
+  const ctx = await resolveGitHubContext();
+  if (!ctx) {
+    if (!json) {
+      process.stderr.write(
+        'jux: --comment had no pull request to post to (needs GITHUB_TOKEN and a pull_request event)\n',
+      );
+    }
+    return;
+  }
+
+  const url = await postComment(ctx, buildComment({ report }));
+  if (!json) {
+    process.stderr.write(
+      url ? `jux: posted ${url}\n` : 'jux: could not post the PR comment\n',
+    );
   }
 }
 

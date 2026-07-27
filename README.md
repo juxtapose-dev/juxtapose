@@ -61,6 +61,22 @@ set it chose and why; `--all` forces a full run.
 All commands accept `--json` for machine-readable output. `jux run` exits
 non-zero when any story fails, is new, or has a stale baseline.
 
+## In CI
+
+`jux run --comment` posts a summary to the pull request, updating the same
+comment on every push rather than adding a new one:
+
+```yaml
+- run: npx storybook build
+- run: npx jux run --comment
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+The job needs `permissions: pull-requests: write`. Outside a pull request —
+locally, or on a push — the flag is a no-op and never changes the exit code:
+a reporting problem should not fail a build that otherwise passed.
+
 ## Configuration
 
 `juxtapose.config.json`, or a `juxtapose` key in package.json:
