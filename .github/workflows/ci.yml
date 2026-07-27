@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `changeset status` below needs history back to the merge base with
+          # main; the default shallow clone does not have it.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -26,6 +30,17 @@ jobs:
       - run: pnpm lint
       - run: pnpm exec prettier --check .
       - run: pnpm test
+
+      # A changeset naming a package that does not exist parses fine and fails
+      # only at release time, on main, after the PR that introduced it is
+      # merged — which is how `@juxtapose/addon-storybook` (a directory name,
+      # not a package name) broke the release. This catches it on the PR.
+      #
+      # `--since origin/main` rather than the default `main`: a PR checkout has
+      # the remote-tracking ref but no local branch of that name, so the
+      # default cannot find where HEAD diverged.
+      - name: Validate changesets
+        run: pnpm exec changeset status --since origin/main
 
   determinism:
     name: determinism

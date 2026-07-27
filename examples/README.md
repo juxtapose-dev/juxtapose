@@ -83,16 +83,16 @@ Narrow.meta = { juxtapose: { viewport: { width: 480, height: 400 } } };
 </Variant>
 ```
 
-Histoire is the one platform whose capturable unit is not a story: a `<Story>`
-is a file of `<Variant>`s, and each variant is one baseline. Its example
-captures 6 of 7 variants — the seventh sets `skip`.
+The React workbenches enumerate 16 stories and capture 14 — the two `skip`
+stories are honoured identically. That was not always true: Storybook drops
+custom parameters from its static index, so `skip` was invisible at enumeration
+time until `readLiveParams` started re-reading them from the live preview. If
+the two ever disagree on counts again, that is the mechanism to suspect.
 
-## Known difference between the two
-
-Storybook captures 16 stories; Ladle captures 14. `skip` is currently honoured
-on Ladle but not on Storybook, because Storybook doesn't expose custom story
-parameters to the enumeration step. Tracked in
-[#12](https://github.com/juxtapose-dev/juxtapose/issues/12).
+Histoire needs no such workaround — it serialises `meta` into `histoire.json`
+verbatim — but it is the one platform whose capturable unit is not a story: a
+`<Story>` is a file of `<Variant>`s, and each variant is one baseline. Its
+example enumerates 7 variants and captures 6; the seventh sets `skip`.
 
 ## Baselines are not committed here
 
@@ -112,7 +112,7 @@ instead.
 sed -i '' "s/#2563eb/#dc2626/" examples/components/src/index.jsx
 
 pnpm --filter example-storybook visual
-# -> 13 pass, 3 fail (the three primary-variant Button stories)
+# -> 9 pass, 5 fail (every Button story carrying the changed colour)
 
 pnpm --filter example-storybook exec jux handoff button--primary
 # -> an agent-ready prompt with exact coordinates and the component path

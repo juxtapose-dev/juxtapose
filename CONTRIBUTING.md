@@ -45,7 +45,8 @@ green run doesn't prove much.
 ## Adding a workbench
 
 Implement the `Platform` interface in `packages/core/src/platform.ts`:
-`enumerate`, `storyUrl`, `settle`, and optionally `switchStory`. The existing
+`detect`, `enumerate`, `showStory`, `previewUrl`, `settle`, `configDirs` and
+`storyFileGlobs`; optionally `switchStory`, `storyUrl` and `readLiveParams`. The existing
 adapters are small — Ladle's is under 200 lines — and both were written against
 this interface without changing it. If something platform-specific is creeping
 into `core`, that usually means the interface needs another method rather than

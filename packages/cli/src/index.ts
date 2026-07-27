@@ -28,19 +28,17 @@ Common options
   --origin <url>                 capture against a running dev server instead
   --platform <name>              storybook | ladle | histoire (default: autodetect)
   --concurrency <n>              parallel pages (default: 8)
+  --run <dir>                    run directory to read (approve, check, handoff)
 
 run
   --since <commit>               only capture stories affected since this commit
   --all                          capture everything, skip affected-analysis
-  --comment                      post a summary as a PR comment (GitHub Actions)
+  --comment                      post a summary as a GitHub PR comment
   --html                         write a self-contained report.html to the run dir
 
 approve
   --story <id>                   approve one story (repeatable)
   --all                          approve everything that failed or is new
-
-handoff
-  --run <dir>                    run directory to read results from
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -68,7 +66,6 @@ async function main(argv: string[]): Promise<number> {
       html: { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },
       run: { type: 'string' },
-      force: { type: 'boolean', default: false },
     },
   });
 

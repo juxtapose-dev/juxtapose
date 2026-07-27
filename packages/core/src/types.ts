@@ -135,8 +135,6 @@ export interface ProjectConfig {
   viewport?: Viewport;
   threshold?: number;
   minDiffPercent?: number;
-  /** Glob patterns of story ids to never capture. */
-  ignore?: string[];
   storage?: StorageConfig;
 }
 
