@@ -48,6 +48,12 @@ function juxtaposePlugin(): VitePlugin {
     // is chosen by Storybook and can shift between sessions.
     baseUrl: 'http://localhost:6006',
     runDir: path.join(projectRoot, '.juxtapose', 'runs', 'dev'),
+    // A previous `storybook build`, if the developer happens to have one. The
+    // dev server has no bundler graph, so this is the only way watch mode can
+    // widen "this component changed" to "and here is what imports it". Stale
+    // or absent is fine — it only ever narrows what we recapture, and the
+    // fallback is the component's own stories.
+    buildDir: path.join(projectRoot, 'storybook-static'),
     branch: git(['rev-parse', '--abbrev-ref', 'HEAD'], projectRoot) ?? 'unknown',
     commitSha: git(['rev-parse', 'HEAD'], projectRoot) ?? 'unknown',
   });

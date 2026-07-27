@@ -106,6 +106,55 @@ export async function resolveAffected(
 }
 
 /**
+ * Which stories a set of source files could affect, without consulting git.
+ *
+ * This is the watch-mode entry point, and it inverts the fail-safe that
+ * `resolveAffected` uses. There, an uncertain answer escalates to capturing
+ * everything, because a missed story ships a regression. Here the trigger is a
+ * developer typing: escalating would recapture the whole suite on every
+ * keystroke-pause, which is not a safety net, it is a hang. An uncertain answer
+ * narrows to the files we know changed, and the CI run remains the backstop
+ * that cannot be fooled.
+ *
+ * The bundler graph is best-effort. Storybook's dev server has no build
+ * manifest, so when `buildDir` is absent or unbuilt we fall back to matching
+ * stories by their own component path — edit `Button.tsx` and every Button
+ * story recaptures. That misses a `Card` that imports `Button`; a build lying
+ * around upgrades the answer for free.
+ */
+export async function resolveAffectedFromPaths(
+  stories: StoryManifest[],
+  changedFiles: string[],
+  opts: { projectRoot: string; buildDir?: string },
+): Promise<StoryManifest[]> {
+  if (changedFiles.length === 0) return [];
+
+  const changed = changedFiles.map((f) =>
+    toPosixRelative(opts.projectRoot, path.resolve(opts.projectRoot, f)),
+  );
+
+  if (opts.buildDir) {
+    const manifest = await loadViteManifest(opts.buildDir);
+    if (manifest) {
+      const affected = walkDependents(buildReverseGraph(manifest), changed);
+      const matched = stories.filter((s) =>
+        affected.has(toPosixRelative(opts.projectRoot, s.componentPath)),
+      );
+      // An empty result means the graph does not know these files, not that
+      // nothing depends on them — fall through rather than reporting none.
+      if (matched.length > 0) return matched;
+    }
+  }
+
+  return stories.filter((s) => {
+    const rel = toPosixRelative(opts.projectRoot, s.componentPath);
+    return changed.some(
+      (c) => rel === c || rel.endsWith('/' + c) || c.endsWith('/' + rel),
+    );
+  });
+}
+
+/**
  * Build `imported → importers` from Vite's manifest.
  *
  * Vite's `imports[]` holds chunk keys, not source paths, so resolving an edge

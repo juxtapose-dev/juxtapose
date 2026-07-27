@@ -21,6 +21,10 @@ export interface StoryParams {
   waitForSelector?: string;
   /** Max ms to wait for render-ready before screenshotting anyway. Default 2000. */
   captureTimeout?: number;
+  /** Exclude from watch-mode recapture while leaving normal runs alone. For
+   *  stories whose play function or delay makes a keystroke-triggered capture
+   *  cost more than it returns. Default true. */
+  liveCapture?: boolean;
 }
 
 export interface Viewport {

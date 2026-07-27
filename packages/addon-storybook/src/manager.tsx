@@ -3,9 +3,10 @@
 import React from 'react';
 import { addons, types, useStorybookApi, useStorybookState } from './storybook.js';
 import { Panel } from './Panel.js';
-import { fetchBundle } from './api.js';
+import { fetchAffected, fetchBundle, flushIndex, startRun } from './api.js';
 import { applyStatuses, decoratedIds, statusUpdate } from './sidebar.js';
 import { registerTestProvider } from './test-provider.js';
+import { CaptureBatch, RenderClassifier } from './watch.js';
 
 export const ADDON_ID = 'juxtapose';
 export const PANEL_ID = `${ADDON_ID}/panel`;
@@ -33,7 +34,67 @@ addons.register(ADDON_ID, (api: unknown) => {
   registerTestProvider(api);
 
   startSidebarDecoration(api);
+  startWatch(api);
 });
+
+/**
+ * Recapture as the developer edits.
+ *
+ * The trigger is Storybook's own render event rather than a file watcher: HMR
+ * rerenders the story, and the story knows which component file it came from.
+ * Watching the filesystem would mean maintaining a second, less accurate idea
+ * of which files matter.
+ *
+ * Everything here fails quietly. Watch mode runs behind the developer's back,
+ * so a broken dev server or a missing route should leave the manual flow
+ * working rather than raise anything.
+ */
+function startWatch(api: unknown): void {
+  const channel = getChannel(api);
+  if (!channel) return;
+
+  const classifier = new RenderClassifier();
+  const batch = new CaptureBatch((storyIds) => {
+    void startRun(storyIds).catch(() => {});
+  });
+
+  const onStoryRendered = (storyId: string) => {
+    if (!classifier.rendered()) return;
+    void fetchAffected(storyId).then((ids) => batch.add(ids));
+  };
+  const onStoryChanged = () => classifier.navigated();
+  const onIndexInvalidated = () => void flushIndex();
+
+  channel.on('storyRendered', onStoryRendered);
+  channel.on('storyChanged', onStoryChanged);
+  channel.on('storyIndexInvalidated', onIndexInvalidated);
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => {
+      batch.cancel();
+      channel.off('storyRendered', onStoryRendered);
+      channel.off('storyChanged', onStoryChanged);
+      channel.off('storyIndexInvalidated', onIndexInvalidated);
+    });
+  }
+}
+
+interface Channel {
+  on(event: string, cb: (...args: never[]) => void): void;
+  off(event: string, cb: (...args: never[]) => void): void;
+}
+
+/** The channel is how the manager hears from the preview. Absent in tests and
+ *  in any host that stubs the addons API. */
+function getChannel(api: unknown): Channel | null {
+  const getter = (api as { getChannel?: () => Channel }).getChannel;
+  if (typeof getter !== 'function') return null;
+  try {
+    return getter.call(api) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Keep the sidebar in sync with the latest run.

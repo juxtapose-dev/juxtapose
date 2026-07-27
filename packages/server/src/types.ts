@@ -42,4 +42,16 @@ export interface ReviewSource {
   run(storyIds?: string[]): Promise<void>;
   cancel(): Promise<void>;
   stories(): Promise<StoryManifest[]>;
+  /**
+   * Which stories to recapture when `storyId` rerenders.
+   *
+   * Takes a story rather than a file list because that is what the workbench
+   * can actually tell us: HMR rerenders a story, and the story knows its own
+   * component path. Watching the filesystem would need a second source of
+   * truth about which files matter.
+   */
+  affected(storyId: string): Promise<string[]>;
+  /** Drop cached story metadata. The workbench signals when its index changed —
+   *  cheaper and more correct than expiring on a timer. */
+  flushIndex(): Promise<void>;
 }
