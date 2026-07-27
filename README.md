@@ -23,8 +23,7 @@ exact regions that moved.
 
 **Baselines are committed.** Approving a change is a diff in the pull request
 that caused it, reviewable next to the code. Branches get the right baselines
-by checking out the branch, and undoing a bad approval is `git revert`. Hosted
-storage (S3/R2) is available for suites too large to carry in git.
+by checking out the branch, and undoing a bad approval is `git revert`.
 
 **Agent-first, not agent-compatible.** Every command emits JSON, and
 `jux handoff` turns a failing story into a prompt an agent can act on — exact
@@ -36,6 +35,13 @@ rather than screenshots it has to squint at.
 ```bash
 pnpm add -D @juxtapose/cli
 npx storybook build          # or: npx ladle build
+npx jux init                 # writes the config, captures, approves
+```
+
+`init` does the steps below in one command; run them yourself if you'd rather
+see each:
+
+```bash
 npx jux run --all            # everything is "new" the first time
 npx jux approve --all        # establish baselines
 git add juxtapose.manifest.json .juxtapose/baselines
@@ -52,6 +58,7 @@ set it chose and why; `--all` forces a full run.
 
 | command                    | what it does                                          |
 | -------------------------- | ----------------------------------------------------- |
+| `jux init`                 | set up config and capture the first baselines         |
 | `jux run`                  | capture affected stories and compare to baselines     |
 | `jux run --all`            | capture everything, skipping change analysis          |
 | `jux approve --all`        | promote the last run's captures to baselines          |
@@ -105,6 +112,15 @@ otherwise passed.
 }
 ```
 
+Also accepted: `buildDir` and `origin` (the CLI flags' defaults), `threshold`
+and `minDiffPercent` as project-wide versions of the per-story options below,
+and `warmSwitch` — off by default, and best left there: it is ~4x faster but
+does not reproduce cold-load pixels exactly, which under a byte-exact hash
+makes a story's verdict depend on where it lands in the queue.
+
+`.juxtaposerc.json` works as well. JSON only — a `.ts` or `.js` config is not
+loaded.
+
 Concurrency defaults to 8. Higher is not automatically better — past your core
 count, contention slows captures down rather than speeding them up.
 
@@ -119,7 +135,8 @@ Per-story options go through the platform's own parameter mechanism
 | `captureAfterPlay`             | screenshot after interactions, not at first render |
 | `waitForSelector`              | wait for async content juxtapose can't detect      |
 | `delay`                        | fixed extra wait; last resort                      |
-| `threshold` / `minDiffPercent` | tune the _reported_ diff, not pass/fail            |
+| `threshold` / `minDiffPercent` | tune the _reported_ diff; the hash still decides   |
+| `captureTimeout`               | max ms to wait for render-ready (default 2000)     |
 | `liveCapture: false`           | exclude from watch-mode recapture (see below)      |
 
 Captures are reproducible by design: animations are frozen, webfonts and images
@@ -127,8 +144,12 @@ are awaited, and rendering is pinned to settings that don't vary by machine.
 
 ### Watch mode
 
-With the Storybook addon installed, editing a component recaptures it while you
-work, so the diff is ready before you go looking for it. Storybook's own hot
+```bash
+pnpm add -D @juxtapose/storybook   # then add it to .storybook/main.js addons
+```
+
+With the addon installed, editing a component recaptures it while you work, so
+the diff is ready before you go looking for it. Storybook's own hot
 reload is the trigger — there is no file watcher to configure — and a burst of
 saves is coalesced into one capture.
 
@@ -145,12 +166,22 @@ capture. `waitForSelector` is the fix.
 
 ## Packages
 
+Two of these are the ones you install:
+
+| package                | what it is                                           |
+| ---------------------- | ---------------------------------------------------- |
+| `@juxtapose/cli`       | the `jux` command — capture, approve, check, handoff |
+| `@juxtapose/storybook` | Storybook addon: review diffs in place, watch mode   |
+
+The rest are pulled in for you, and are only worth knowing about if you are
+building an adapter or a UI of your own:
+
 | package                        | what it is                                                 |
 | ------------------------------ | ---------------------------------------------------------- |
 | `@juxtapose/core`              | capture, diff, baselines, analysis — no platform knowledge |
+| `@juxtapose/server`            | the local review API the addon is a skin over              |
 | `@juxtapose/adapter-storybook` | Storybook adapter                                          |
 | `@juxtapose/adapter-ladle`     | Ladle adapter                                              |
-| `@juxtapose/cli`               | the `jux` command                                          |
 
 ## Status
 
@@ -158,10 +189,10 @@ Early, but usable. The capture, diff and approve loop is verified end to end on
 Storybook (React and Vue) and Ladle, the addon gives you the review UI in
 place, and CI gets PR comments and a self-contained HTML report.
 
-Hosted storage is the main thing not built yet — baselines live in git today,
-which is the right default but does not suit a suite too large to carry there.
-See the [issues](https://github.com/juxtapose-dev/juxtapose/issues) for the
-roadmap.
+Hosted storage is the main gap. `storage.kind` accepts `"s3"`, but the CLI
+throws on it today — git is the only implemented backend, and `"fs"` is that
+same store pointed at a directory you choose. See the
+[issues](https://github.com/juxtapose-dev/juxtapose/issues) for the roadmap.
 
 ## Contributing
 

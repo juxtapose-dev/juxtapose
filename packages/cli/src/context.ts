@@ -21,7 +21,6 @@ export interface CommonFlags {
   all?: boolean;
   story?: string[];
   run?: string;
-  force?: boolean;
   comment?: boolean;
   html?: boolean;
 }

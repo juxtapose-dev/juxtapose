@@ -93,16 +93,23 @@ packages/core/              no platform knowledge — never import an adapter he
   diff/       pixelmatch wrapper + region extraction — COLD PATH
   analysis/   which stories a change could affect
   agent/      handoff prompt construction
+  report/     PR comment, GitHub API, standalone HTML report
+  git/        ancestry checks for stale-baseline detection
   run/        orchestration
 packages/adapter-storybook/ index.json, preview channel
-packages/adapter-ladle/     meta.json, ladleDispatch
+packages/adapter-ladle/     meta.json enumeration + Ladle's ready signal
+packages/server/            review API the addon (and any other UI) is a skin over
+packages/addon-storybook/   panel, sidebar dots, test provider, watch mode
+                            — published as @juxtapose/storybook, not addon-storybook
 packages/cli/               the `jux` command
 examples/                   Storybook + Ladle workbenches sharing one component lib
 ```
 
 ## The platform seam
 
-Four methods: `enumerate`, `storyUrl`, `settle`, and optionally `switchStory`.
+The load-bearing pair is `showStory` and `settle`; `enumerate`, `detect`,
+`previewUrl`, `configDirs` and `storyFileGlobs` round it out. `switchStory`,
+`storyUrl` and `readLiveParams` are optional recoveries.
 Both adapters were written against this interface without changing it, which is
 the evidence it is a real abstraction rather than Storybook's API in disguise.
 
