@@ -7,6 +7,9 @@
     "access": "public"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=20.11"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
