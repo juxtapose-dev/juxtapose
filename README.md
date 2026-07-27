@@ -74,7 +74,12 @@ comment on every push rather than adding a new one:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-The job needs `permissions: pull-requests: write`. Outside a pull request —
+The job needs `permissions: pull-requests: write`.
+
+Add `--html` to also write a self-contained `report.html` into the run
+directory. It inlines every image, so it works opened straight from disk —
+upload it as a CI artifact and a reviewer can see the actual diffs without
+checking anything out. Outside a pull request —
 locally, or on a push — the flag is a no-op and never changes the exit code:
 a reporting problem should not fail a build that otherwise passed.
 

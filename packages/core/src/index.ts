@@ -84,3 +84,5 @@ export {
   postComment,
   type GitHubContext,
 } from './report/github.js';
+
+export { buildHtmlReport, type HtmlReportOptions } from './report/html.js';
