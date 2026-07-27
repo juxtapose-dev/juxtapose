@@ -6,6 +6,8 @@ compares against approved baselines, and tells you exactly what changed.
 One CLI for **Storybook** (any renderer, not just React) and **Ladle**.
 Baselines live in your repo by default — no bucket, no account, no service.
 
+![The Visual panel in Storybook: a changed button shown against its baseline, with the mismatch percentage, four comparison modes, and approve and copy-agent-prompt actions. Story status dots appear in the sidebar.](docs/media/addon-panel.png)
+
 ## Why another one
 
 **Pass/fail is exact.** A story passes if it renders identically to its
