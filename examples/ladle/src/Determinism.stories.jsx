@@ -15,7 +15,7 @@ export const InfiniteSpinner = () => <Spinner />;
 export const AnimatedEntrance = () => <FadeIn text="Faded in deterministically." />;
 
 /** Network quiescence — capture must wait for the fetch, not catch the gap. */
-export const AwaitsNetwork = () => <AsyncContent delayMs={150} />;
+export const AwaitsNetwork = () => <AsyncContent />;
 
 /** Antialiased text, the most sensitive input a pixel differ receives. */
 export const Typography = () => <TextSpecimen />;

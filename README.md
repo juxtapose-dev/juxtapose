@@ -91,8 +91,12 @@ Per-story options go through the platform's own parameter mechanism
 | `threshold` / `minDiffPercent` | tune the _reported_ diff, not pass/fail            |
 
 Captures are reproducible by design: animations are frozen, webfonts and images
-are awaited, and rendering is pinned to settings that don't vary by machine. If
-a story still flakes, `waitForSelector` is usually the answer.
+are awaited, and rendering is pinned to settings that don't vary by machine.
+
+The limit worth knowing is that juxtapose waits on things it can observe —
+network requests, DOM changes, fonts, images. Content that appears on a bare
+timer is invisible to that, so a story built on `setTimeout` can race the
+capture. `waitForSelector` is the fix.
 
 ## Packages
 
