@@ -36,6 +36,8 @@ export interface CaptureOutcome {
   story: StoryManifest;
   snapshot?: Snapshot;
   error?: Error;
+  /** The story asked to be skipped via params the index didn't carry. */
+  skipped?: boolean;
 }
 
 /**
@@ -94,7 +96,9 @@ export async function* capturePool(
 
         try {
           const snapshot = await captureStory(page, story, deps, opts.viewport);
-          push({ story, snapshot });
+          // null means the story declared `skip` in params only visible once
+          // it had rendered. Report it as skipped, not as a failure.
+          push(snapshot ? { story, snapshot } : { story, skipped: true });
         } catch (err) {
           // One bad story must never kill a run of 700. Report it as a failure
           // for this story and keep the worker going.
