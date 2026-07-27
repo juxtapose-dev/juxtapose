@@ -68,6 +68,18 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   });
 
   for await (const outcome of pool) {
+    if (outcome.skipped) {
+      results.push({
+        storyId: outcome.story.storyId,
+        status: 'skip',
+        mismatchPixels: 0,
+        mismatchPercent: 0,
+        changedRegions: [],
+        durationMs: 0,
+      });
+      continue;
+    }
+
     if (outcome.error || !outcome.snapshot) {
       results.push({
         storyId: outcome.story.storyId,

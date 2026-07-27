@@ -55,9 +55,12 @@ export async function captureStory(
   story: StoryManifest,
   deps: CaptureDeps,
   viewport: Viewport,
-): Promise<Snapshot> {
+  // Returns null when the story declares `skip` in its live params — see below.
+): Promise<Snapshot | null> {
   const started = Date.now();
-  const params = story.params;
+  // Copied, not aliased: live params get merged in below, and mutating the
+  // manifest entry would leak one story's config into the next run.
+  const params: StoryParams = { ...story.params };
   const effectiveViewport = params.viewport ?? viewport;
   const timeoutMs = params.captureTimeout ?? DEFAULT_CAPTURE_TIMEOUT_MS;
   const ctx = { story, params, timeoutMs };
@@ -107,6 +110,37 @@ export async function captureStory(
 
   await deps.platform.settle(page, ctx);
 
+  // Now that the story has rendered, ask the platform whether it declares
+  // params the static index didn't carry.
+  //
+  // Storybook is why this exists: it only serializes a whitelist of parameters
+  // into index.json, so `parameters.juxtapose` is essentially never there.
+  // Reading the index alone silently dropped every per-story threshold,
+  // waitForSelector and skip on that platform.
+  //
+  // Live params override manifest params — the live preview is the story's own
+  // declaration, and the index is a lossy projection of it.
+  const live = await deps.platform.readLiveParams?.(page, story.storyId);
+  if (live) {
+    Object.assign(params, live);
+
+    // Viewport is the one param that cannot be applied retroactively — the
+    // story has already laid out. Re-set it and let the platform settle
+    // again, so a story declaring its own viewport is captured at that size
+    // rather than the project default.
+    const liveViewport = live.viewport;
+    if (liveViewport && !sameViewport(liveViewport, effectiveViewport)) {
+      await ensureViewport(page, liveViewport);
+      await deps.platform.settle(page, { ...ctx, params });
+    }
+  }
+
+  // A story can declare `skip` in params the static index never carried, so
+  // this is the first point we can honour it. Signalled rather than returning
+  // a snapshot, because capturing and then discarding would still cost the
+  // screenshot and would report a meaningless hash.
+  if (params.skip === true) return null;
+
   if (params.waitForSelector) {
     await waitForSelector(page, params.waitForSelector, timeoutMs);
   }
@@ -146,11 +180,17 @@ export async function captureStory(
   return {
     storyId: story.storyId,
     image,
-    viewport: effectiveViewport,
+    // The live params may have widened or narrowed this after first render,
+    // so report what we actually captured at — the agent handoff computes
+    // region area as a fraction of it.
+    viewport: params.viewport ?? effectiveViewport,
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
   };
 }
+
+const sameViewport = (a: Viewport, b: Viewport) =>
+  a.width === b.width && a.height === b.height;
 
 /** Setting the viewport is a CDP round-trip; skip it when nothing changed. */
 async function ensureViewport(page: Page, viewport: Viewport): Promise<void> {
