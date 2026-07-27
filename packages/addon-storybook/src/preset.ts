@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createRouter, RunDirSource } from '@juxtapose/server';
 import { GitBaselineStore, type ProjectConfig } from '@juxtapose/core';
-import { StorybookPlatform } from '@juxtapose/storybook';
+import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 
 interface ViteDevServer {
   middlewares: {

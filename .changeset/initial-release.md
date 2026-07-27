@@ -1,7 +1,7 @@
 ---
 '@juxtapose/core': minor
-'@juxtapose/storybook': minor
-'@juxtapose/ladle': minor
+'@juxtapose/adapter-storybook': minor
+'@juxtapose/adapter-ladle': minor
 '@juxtapose/cli': minor
 ---
 

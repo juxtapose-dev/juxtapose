@@ -1,8 +1,11 @@
 {
-  "name": "@juxtapose/storybook",
+  "name": "@juxtapose/adapter-storybook",
   "version": "0.1.0",
   "type": "module",
   "description": "Storybook platform adapter for juxtapose visual testing.",
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

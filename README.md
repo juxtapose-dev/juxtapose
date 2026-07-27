@@ -100,12 +100,12 @@ capture. `waitForSelector` is the fix.
 
 ## Packages
 
-| package                | what it is                                                 |
-| ---------------------- | ---------------------------------------------------------- |
-| `@juxtapose/core`      | capture, diff, baselines, analysis — no platform knowledge |
-| `@juxtapose/storybook` | Storybook adapter                                          |
-| `@juxtapose/ladle`     | Ladle adapter                                              |
-| `@juxtapose/cli`       | the `jux` command                                          |
+| package                        | what it is                                                 |
+| ------------------------------ | ---------------------------------------------------------- |
+| `@juxtapose/core`              | capture, diff, baselines, analysis — no platform knowledge |
+| `@juxtapose/adapter-storybook` | Storybook adapter                                          |
+| `@juxtapose/adapter-ladle`     | Ladle adapter                                              |
+| `@juxtapose/cli`               | the `jux` command                                          |
 
 ## Status
 
