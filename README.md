@@ -142,4 +142,9 @@ written against the same interface with no changes to it.
 Early. Core capture/diff/approve loop is verified end-to-end on both Storybook
 and Ladle; the addon UI, HTML report, GitHub PR comments and the S3 store are
 not built yet. See `ARCHITECTURE.md` for the full design and the reasoning
-behind each decision.
+behind each decision, and the [issues](https://github.com/juxtapose-dev/juxtapose/issues)
+for the roadmap.
+
+## License
+
+MIT © Magic Factory LLC. See [LICENSE](LICENSE).
