@@ -138,6 +138,15 @@ importers:
         specifier: ^5.2.6
         version: 5.2.6
 
+  packages/server:
+    dependencies:
+      '@juxtapose/core':
+        specifier: workspace:*
+        version: link:../core
+      playwright:
+        specifier: ^1.48.0
+        version: 1.62.0
+
 packages:
 
   '@babel/code-frame@7.29.7':

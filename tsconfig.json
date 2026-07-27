@@ -1,9 +1,20 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/adapter-storybook" },
-    { "path": "./packages/adapter-ladle" },
-    { "path": "./packages/cli" }
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/adapter-storybook"
+    },
+    {
+      "path": "./packages/adapter-ladle"
+    },
+    {
+      "path": "./packages/cli"
+    },
+    {
+      "path": "./packages/server"
+    }
   ]
 }

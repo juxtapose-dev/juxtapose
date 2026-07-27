@@ -1,0 +1,30 @@
+{
+  "name": "@juxtapose/server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local review API for juxtapose — the contract every review UI is a skin over.",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@juxtapose/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "playwright": "^1.48.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juxtapose-dev/juxtapose.git",
+    "directory": "packages/server"
+  }
+}
