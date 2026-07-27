@@ -9,7 +9,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { styled, Badge, Button, EmptyTabContent, Loader } from './storybook.js';
-import type { DiffResult } from '@juxtapose/core';
+import type { DiffResult, DiffStatus } from '@juxtapose/core';
 import {
   approveStory,
   cancelRun,
@@ -60,6 +60,12 @@ const Stat = styled.span(({ theme }) => ({
 }));
 
 const ModeGroup = styled.div({ display: 'flex', gap: 2 });
+
+const Note = styled.span(({ theme }) => ({
+  color: theme.textMutedColor,
+  fontSize: 12,
+  fontStyle: 'italic',
+}));
 
 const MODES: { id: ViewMode; label: string; key: string }[] = [
   { id: 'sxs', label: 'Side by side', key: '1' },
@@ -126,6 +132,17 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   );
   const isApproved = storyId !== null && approved.includes(storyId);
 
+  // Only a failing story has two meaningfully different images. `pass` means
+  // they are byte-identical and `new` has no baseline at all, so in both cases
+  // the comparison modes would be comparing something against nothing.
+  const hasComparison = result?.status === 'fail';
+
+  // Approving is only meaningful when there is something to accept: a changed
+  // capture, a first baseline, or a re-anchor after a stale one. For a passing
+  // story it would write back bytes already on disk.
+  const canApprove =
+    result?.status === 'fail' || result?.status === 'new' || result?.status === 'stale';
+
   const run = useCallback(async (ids?: string[]) => {
     setBusy(true);
     try {
@@ -182,7 +199,11 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   useKeyboardShortcuts(active, {
     j: () => jump('next'),
     k: () => jump('prev'),
-    a: () => void approve(),
+    // Gated the same as the button: pressing `a` on a passing story should do
+    // nothing rather than silently rewrite an identical baseline.
+    a: () => {
+      if (canApprove) void approve();
+    },
     d: () => setShowDiff((v) => !v),
     u: () => setUnfocus((v) => !v),
     '1': () => setMode('sxs'),
@@ -261,39 +282,53 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
         ) : (
           <>
             <Toolbar as="div" style={{ borderBottom: 'none', paddingLeft: 0 }}>
-              <ModeGroup>
-                {MODES.map((m) => (
-                  <Button
-                    key={m.id}
-                    size="small"
-                    variant={mode === m.id ? 'solid' : 'ghost'}
-                    onClick={() => setMode(m.id)}
-                    title={`${m.label} (${m.key})`}
-                  >
-                    {m.label}
-                  </Button>
-                ))}
-              </ModeGroup>
-
-              {mode === 'sxs' && result.status === 'fail' && (
+              {/*
+                Comparison controls only exist when there is something to
+                compare. Offering Slider, Onion and Flicker for a passing story
+                means inviting someone to hunt for a difference between two
+                identical images — the controls appear broken rather than
+                inapplicable. A story with no baseline has the same problem
+                from the other direction: there is nothing to compare against.
+              */}
+              {hasComparison ? (
                 <>
-                  <Button
-                    size="small"
-                    variant={showDiff ? 'solid' : 'ghost'}
-                    onClick={() => setShowDiff((v) => !v)}
-                    title="Toggle diff overlay (d)"
-                  >
-                    Diff
-                  </Button>
-                  <Button
-                    size="small"
-                    variant={unfocus ? 'solid' : 'ghost'}
-                    onClick={() => setUnfocus((v) => !v)}
-                    title="Dim unchanged areas (u)"
-                  >
-                    Unfocus
-                  </Button>
+                  <ModeGroup>
+                    {MODES.map((m) => (
+                      <Button
+                        key={m.id}
+                        size="small"
+                        variant={mode === m.id ? 'solid' : 'ghost'}
+                        onClick={() => setMode(m.id)}
+                        title={`${m.label} (${m.key})`}
+                      >
+                        {m.label}
+                      </Button>
+                    ))}
+                  </ModeGroup>
+
+                  {mode === 'sxs' && (
+                    <>
+                      <Button
+                        size="small"
+                        variant={showDiff ? 'solid' : 'ghost'}
+                        onClick={() => setShowDiff((v) => !v)}
+                        title="Toggle diff overlay (d)"
+                      >
+                        Diff
+                      </Button>
+                      <Button
+                        size="small"
+                        variant={unfocus ? 'solid' : 'ghost'}
+                        onClick={() => setUnfocus((v) => !v)}
+                        title="Dim unchanged areas (u)"
+                      >
+                        Unfocus
+                      </Button>
+                    </>
+                  )}
                 </>
+              ) : (
+                <StatusNote status={result.status} />
               )}
 
               <Spacer />
@@ -301,16 +336,25 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               {result.status === 'fail' && (
                 <Muted>{formatPercent(result.mismatchPercent)} changed</Muted>
               )}
-              {isApproved ? (
-                <Badge status="positive">Approved</Badge>
-              ) : (
-                <Button size="small" onClick={() => void approve()} disabled={busy}>
-                  Approve (a)
+              {canApprove &&
+                (isApproved ? (
+                  <Badge status="positive">Approved</Badge>
+                ) : (
+                  <Button size="small" onClick={() => void approve()} disabled={busy}>
+                    Approve (a)
+                  </Button>
+                ))}
+
+              {/*
+                The agent prompt describes what changed and asks for a verdict.
+                With nothing changed there is no verdict to reach, so offering
+                it would hand someone a prompt about a diff that does not exist.
+              */}
+              {hasComparison && (
+                <Button size="small" variant="ghost" onClick={() => void copyHandoff()}>
+                  {copied ? 'Copied' : 'Copy agent prompt'}
                 </Button>
               )}
-              <Button size="small" variant="ghost" onClick={() => void copyHandoff()}>
-                {copied ? 'Copied' : 'Copy agent prompt'}
-              </Button>
             </Toolbar>
 
             {result.error && <Muted role="alert">{result.error}</Muted>}
@@ -389,6 +433,32 @@ function useKeyboardShortcuts(
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [active, handlers]);
 }
+
+/**
+ * What to say when there is nothing to compare.
+ *
+ * Replaces the comparison controls rather than sitting beside them, so the
+ * panel states the situation instead of offering tools that would do nothing.
+ */
+const StatusNote: React.FC<{ status: DiffStatus }> = ({ status }) => {
+  switch (status) {
+    case 'pass':
+      return <Note>Matches the approved baseline.</Note>;
+    case 'new':
+      return <Note>No baseline yet. Approve this capture to set one.</Note>;
+    case 'stale':
+      return (
+        <Note>
+          This baseline was approved on a commit that is not in your history. Re-run, then
+          approve to re-anchor it.
+        </Note>
+      );
+    case 'skip':
+      return <Note>This story opts out of capture.</Note>;
+    default:
+      return null;
+  }
+};
 
 function formatPercent(pct: number): string {
   if (pct >= 0.01) return `${pct.toFixed(2)}%`;
