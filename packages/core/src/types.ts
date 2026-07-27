@@ -68,6 +68,13 @@ export interface DiffResult {
   mismatchPercent: number;
   /** Bounding boxes of changed clusters. Empty unless status is 'fail'. */
   changedRegions: ChangedRegion[];
+  /** The viewport the capture was taken at — what `changedRegions` coordinates
+   *  are relative to. Absent only when the capture never produced a snapshot.
+   *
+   *  Recording it here is what lets a consumer describe a region spatially
+   *  without re-enumerating stories to recover a per-story viewport override,
+   *  which is both slow and wrong when the override exists. */
+  viewport?: Viewport;
   /** Set when the capture or diff threw. status is 'fail' in that case. */
   error?: string;
   durationMs: number;

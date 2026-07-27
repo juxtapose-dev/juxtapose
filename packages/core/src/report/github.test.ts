@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { resolveGitHubContext } from './github.js';
+import { resolveArtifactUrl, resolveGitHubContext } from './github.js';
 
 let dir: string;
 let eventPath: string;
@@ -86,5 +86,30 @@ describe('resolveGitHubContext', () => {
   it('defaults to github.com when no API url is set', async () => {
     const ctx = await resolveGitHubContext({ ...base, GITHUB_EVENT_PATH: eventPath });
     expect(ctx?.apiUrl).toBe('https://api.github.com');
+  });
+});
+
+describe('resolveArtifactUrl', () => {
+  const actions = {
+    GITHUB_SERVER_URL: 'https://github.com',
+    GITHUB_REPOSITORY: 'acme/web',
+    GITHUB_RUN_ID: '12345',
+  };
+
+  it('points at the run page where artifacts are listed', () => {
+    expect(resolveArtifactUrl(true, actions)).toBe(
+      'https://github.com/acme/web/actions/runs/12345',
+    );
+  });
+
+  it('refuses to link when no report was written', () => {
+    // The env vars are set on every Actions run, including ones that upload
+    // nothing. Linking on env alone sends the reader to an empty artifacts
+    // list, which costs them a click and some trust.
+    expect(resolveArtifactUrl(false, actions)).toBeUndefined();
+  });
+
+  it('returns nothing outside Actions', () => {
+    expect(resolveArtifactUrl(true, {})).toBeUndefined();
   });
 });

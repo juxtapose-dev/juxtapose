@@ -43,13 +43,20 @@ export async function handoffCommand(
     return 1;
   }
 
-  // Look up the source path so the prompt can point at real code.
+  // Look up the source path so the prompt can point at real code. The report
+  // records what changed, not where the component lives.
   const stories = await ctx.platform.enumerate({
     projectRoot: ctx.projectRoot,
     buildDir: ctx.buildDir,
     origin: ctx.origin,
   });
   const story = stories.find((s) => s.storyId === storyId);
+
+  // The viewport the capture actually used, which is what changedRegions
+  // coordinates are relative to. Falling back to the project default here was
+  // wrong for any story with a per-story override: the region-area percentages
+  // came out against the wrong denominator.
+  const viewport = result.viewport ?? ctx.config.viewport ?? DEFAULT_VIEWPORT;
 
   const safe = encodeStoryId(storyId);
   const images = path.join(runDir, 'images');
@@ -66,7 +73,7 @@ export async function handoffCommand(
         status: result.status,
         mismatchPercent: result.mismatchPercent,
         mismatchPixels: result.mismatchPixels,
-        viewport: ctx.config.viewport ?? DEFAULT_VIEWPORT,
+        viewport,
         changedRegions: result.changedRegions,
       },
       null,
@@ -81,10 +88,7 @@ export async function handoffCommand(
     mismatchPercent: result.mismatchPercent,
     mismatchPixels: result.mismatchPixels,
     changedRegions: result.changedRegions,
-    // Use the story's own viewport when it overrides the project default,
-    // or the region-area percentages in the prompt are computed against the
-    // wrong denominator.
-    viewport: story?.params.viewport ?? ctx.config.viewport ?? DEFAULT_VIEWPORT,
+    viewport,
     componentPath: story?.componentPath ?? '',
     diffDataPath,
     images: {

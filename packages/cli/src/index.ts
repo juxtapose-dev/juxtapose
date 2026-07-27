@@ -65,6 +65,7 @@ async function main(argv: string[]): Promise<number> {
       since: { type: 'string' },
       all: { type: 'boolean', default: false },
       comment: { type: 'boolean', default: false },
+      html: { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },
       run: { type: 'string' },
       force: { type: 'boolean', default: false },
