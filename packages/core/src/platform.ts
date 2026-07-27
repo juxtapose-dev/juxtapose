@@ -46,9 +46,10 @@ export interface Platform {
   showStory(page: Page, storyId: string, baseUrl: string): Promise<void>;
 
   /** Blank preview URL, for warming a page before any story is selected.
-   *  Prewarming here means the first real story doesn't pay for bundle
-   *  compile and service-worker registration. */
-  previewUrl(baseUrl: string): string;
+   *  Optional: nothing calls it yet. Declared because prewarming is the
+   *  intended use, and requiring it would tax every third-party adapter for a
+   *  capability the core does not exercise. */
+  previewUrl?(baseUrl: string): string;
 
   /**
    * URL that renders one story in isolation, when the platform has one.
@@ -95,6 +96,7 @@ export interface Platform {
    *  (`.storybook`, `.ladle`). Project-relative. */
   readonly configDirs: readonly string[];
 
-  /** Globs identifying story files, for cache keys and change detection. */
-  readonly storyFileGlobs: readonly string[];
+  /** Globs identifying story files. Optional and currently unread — change
+   *  detection goes through the bundler graph and `configDirs` instead. */
+  readonly storyFileGlobs?: readonly string[];
 }

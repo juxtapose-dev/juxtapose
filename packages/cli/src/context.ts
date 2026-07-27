@@ -132,12 +132,21 @@ function createStore(projectRoot: string, config: ProjectConfig): BaselineStore 
 
 async function loadConfig(projectRoot: string): Promise<ProjectConfig> {
   for (const name of ['juxtapose.config.json', '.juxtaposerc.json']) {
+    let raw: string;
     try {
-      return JSON.parse(
-        await readFile(path.join(projectRoot, name), 'utf8'),
-      ) as ProjectConfig;
+      raw = await readFile(path.join(projectRoot, name), 'utf8');
     } catch {
-      // try next
+      continue; // no such file — the ordinary case
+    }
+    // A file that exists but does not parse is a mistake worth stopping for.
+    // Swallowing it silently discards every setting the user wrote and then
+    // reports success against defaults, which is the worst available outcome
+    // for a tool whose whole claim is that the result is trustworthy.
+    try {
+      return JSON.parse(raw) as ProjectConfig;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`${name} is not valid JSON: ${detail}`);
     }
   }
 

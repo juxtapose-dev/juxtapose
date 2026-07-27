@@ -41,6 +41,8 @@ export interface AffectedResult {
   /** Why this set was chosen — surfaced in the report so a full run is never
    *  mysterious. */
   reason:
+    /** The caller named the stories outright, so nothing was analysed. */
+    | 'explicit'
     | 'no-baseline'
     | 'config-changed'
     | 'dependency-changed'

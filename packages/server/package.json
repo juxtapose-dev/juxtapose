@@ -3,6 +3,13 @@
   "version": "0.2.0",
   "type": "module",
   "description": "Local review API for juxtapose — the contract every review UI is a skin over.",
+  "keywords": [
+    "visual-regression",
+    "visual-testing",
+    "screenshot-testing",
+    "testing",
+    "storybook"
+  ],
   "publishConfig": {
     "access": "public"
   },

@@ -45,13 +45,31 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
     return 1;
   }
 
-  const selection = flags.all
-    ? { stories, reason: 'no-baseline' as const }
-    : await resolveAffected(stories, flags.since ?? null, {
-        projectRoot: ctx.projectRoot,
-        configDirs: [...ctx.platform.configDirs],
-        buildDir: ctx.buildDir,
-      });
+  // `--story` names exactly what to capture. This is the flag you reach for
+  // when one story is flaking and you want to run it in isolation, so it wins
+  // over both affected-analysis and `--all`.
+  const requested = new Set(flags.story ?? []);
+  if (requested.size > 0) {
+    const unknown = [...requested].filter((id) => !stories.some((s) => s.storyId === id));
+    if (unknown.length > 0) {
+      process.stderr.write(`jux: no such story: ${unknown.join(', ')}\n`);
+      return 1;
+    }
+  }
+
+  const selection =
+    requested.size > 0
+      ? {
+          stories: stories.filter((s) => requested.has(s.storyId)),
+          reason: 'explicit' as const,
+        }
+      : flags.all
+        ? { stories, reason: 'no-baseline' as const }
+        : await resolveAffected(stories, flags.since ?? null, {
+            projectRoot: ctx.projectRoot,
+            configDirs: [...ctx.platform.configDirs],
+            buildDir: ctx.buildDir,
+          });
 
   log(
     `jux: ${selection.stories.length}/${stories.length} stories to capture (${selection.reason})`,

@@ -3,15 +3,8 @@
 Visual regression testing for component workbenches. Captures every story,
 compares against approved baselines, and tells you exactly what changed.
 
-Works with **Storybook** — any renderer, not just React — and **Ladle**,
-through the same CLI. Baselines live in
-your repo by default — no bucket, no account, no service.
-
-```bash
-npx jux run           # capture and compare
-npx jux approve --all # bless the current rendering
-npx jux check         # exit 0/1, for CI
-```
+One CLI for **Storybook** (any renderer, not just React) and **Ladle**.
+Baselines live in your repo by default — no bucket, no account, no service.
 
 ## Why another one
 

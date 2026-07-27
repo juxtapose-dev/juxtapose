@@ -3,6 +3,13 @@
   "version": "0.2.0",
   "type": "module",
   "description": "Ladle platform adapter for juxtapose visual testing.",
+  "keywords": [
+    "visual-regression",
+    "visual-testing",
+    "screenshot-testing",
+    "testing",
+    "ladle"
+  ],
   "publishConfig": {
     "access": "public"
   },

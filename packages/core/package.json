@@ -3,6 +3,14 @@
   "version": "0.2.0",
   "type": "module",
   "description": "Platform-agnostic capture, diff, baseline and analysis core for juxtapose.",
+  "keywords": [
+    "visual-regression",
+    "visual-testing",
+    "screenshot-testing",
+    "testing",
+    "playwright",
+    "pixelmatch"
+  ],
   "publishConfig": {
     "access": "public"
   },

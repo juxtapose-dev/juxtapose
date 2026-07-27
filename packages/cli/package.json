@@ -3,6 +3,17 @@
   "version": "0.2.0",
   "type": "module",
   "description": "jux — visual regression testing CLI for Storybook, Ladle and friends.",
+  "keywords": [
+    "visual-regression",
+    "visual-testing",
+    "screenshot-testing",
+    "testing",
+    "storybook",
+    "ladle",
+    "cli",
+    "playwright",
+    "ci"
+  ],
   "publishConfig": {
     "access": "public"
   },
