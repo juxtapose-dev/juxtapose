@@ -62,12 +62,6 @@ export interface Platform {
   switchStory?(page: Page, storyId: string, ctx: SettleContext): Promise<boolean>;
 
   /**
-   * Script evaluated on every page before any story loads. Use it to install
-   * observers or hook the platform's client API. Runs once per page.
-   */
-  initScript?(): string;
-
-  /**
    * Read per-story config from the live preview.
    *
    * Optional because not every platform hides parameters from its static
