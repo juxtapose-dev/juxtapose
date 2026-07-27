@@ -21,6 +21,28 @@ export interface StoryParams {
   waitForSelector?: string;
   /** Max ms to wait for render-ready before screenshotting anyway. Default 2000. */
   captureTimeout?: number;
+  /**
+   * CSS selectors to paint over before the shutter fires.
+   *
+   * A last resort, not a first one. Under a byte-exact hash, content that
+   * changes every run — a clock, a random avatar, a generated id — is a
+   * permanently red story, and no threshold can rescue it. The fix that keeps
+   * coverage is to make the input deterministic: stub the date, seed the
+   * random source, fix the fixture. Masking is what you reach for when the
+   * nondeterminism is not yours to control.
+   *
+   * Each match is covered with a solid box, so the masked area is identical
+   * every run and the hash stays meaningful. Everything outside it is still
+   * compared exactly.
+   *
+   * The box is the element's own bounding box, which is the catch: if the
+   * volatile content also changes the element's size, the box changes with it
+   * and a sliver of difference survives at the edge. Measured on a bare
+   * `<span>{new Date().toISOString()}</span>`: still failed at 0.015%, one
+   * 4x18px region where the text ran shorter. Give the masked element a fixed
+   * width or height and it holds.
+   */
+  mask?: string[];
   /** Exclude from watch-mode recapture while leaving normal runs alone. For
    *  stories whose play function or delay makes a keystroke-triggered capture
    *  cost more than it returns. Default true. */

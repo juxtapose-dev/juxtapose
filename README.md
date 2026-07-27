@@ -127,20 +127,53 @@ count, contention slows captures down rather than speeding them up.
 Per-story options go through the platform's own parameter mechanism
 (`parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle):
 
-| option                         | purpose                                            |
-| ------------------------------ | -------------------------------------------------- |
-| `skip`                         | never capture this story                           |
-| `viewport`                     | override the capture size                          |
-| `animations: 'play'`           | let animations run (for stories testing animation) |
-| `captureAfterPlay`             | screenshot after interactions, not at first render |
-| `waitForSelector`              | wait for async content juxtapose can't detect      |
-| `delay`                        | fixed extra wait; last resort                      |
-| `threshold` / `minDiffPercent` | tune the _reported_ diff; the hash still decides   |
-| `captureTimeout`               | max ms to wait for render-ready (default 2000)     |
-| `liveCapture: false`           | exclude from watch-mode recapture (see below)      |
+| option                         | purpose                                             |
+| ------------------------------ | --------------------------------------------------- |
+| `skip`                         | never capture this story                            |
+| `viewport`                     | override the capture size                           |
+| `animations: 'play'`           | let animations run (for stories testing animation)  |
+| `captureAfterPlay`             | screenshot after interactions, not at first render  |
+| `waitForSelector`              | wait for async content juxtapose can't detect       |
+| `delay`                        | fixed extra wait; last resort                       |
+| `threshold` / `minDiffPercent` | tune the _reported_ diff; the hash still decides    |
+| `captureTimeout`               | max ms to wait for render-ready (default 2000)      |
+| `mask`                         | paint over selectors before the shutter (see below) |
+| `liveCapture: false`           | exclude from watch-mode recapture (see below)       |
 
 Captures are reproducible by design: animations are frozen, webfonts and images
 are awaited, and rendering is pinned to settings that don't vary by machine.
+
+### Content that changes every run
+
+A clock, a random avatar, a generated id — under an exact hash these make a
+story permanently red, and no threshold rescues it. **Fix the input first.**
+Stub the date, seed the random source, pin the fixture. That keeps full pixel
+coverage, and it usually makes the story easier to reason about anyway.
+
+```jsx
+// preferred: the story renders the same thing every time
+export const Receipt = {
+  render: () => <Receipt issuedAt={new Date('2026-01-01T00:00:00Z')} />,
+};
+```
+
+When the nondeterminism is not yours to control, `mask` paints over it:
+
+```jsx
+export const Deploy = {
+  render: () => <DeployStatus />,
+  parameters: { juxtapose: { mask: ['[data-testid="finished-at"]'] } },
+};
+```
+
+Each match is covered with a solid box before the screenshot, so that area is
+identical every run while everything around it is still compared exactly.
+
+One catch worth knowing: the box is the element's own bounding box. If the
+volatile content also changes the element's _size_, the box moves with it and a
+sliver of difference survives at the edge — a bare timestamp span still failed
+at 0.015% for us, a 4×18px region where the text ran shorter. Give the masked
+element a fixed width or height and it holds.
 
 ### Watch mode
 
