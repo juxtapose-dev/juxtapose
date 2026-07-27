@@ -159,10 +159,8 @@ export async function captureStory(
   // byte-exact hash reports as a failure.
   await waitForPaint(page);
 
-  // Masked regions are painted with a solid box before the shutter, so the
-  // covered area is byte-identical every run rather than merely similar. A
-  // selector that matches nothing is not an error: a story that conditionally
-  // renders the element should not fail on the branch where it is absent.
+  // A selector matching nothing is not an error — a story that conditionally
+  // renders the element shouldn't fail on the branch where it's absent.
   const png = await page.screenshot({
     type: 'png',
     ...(params.mask?.length
