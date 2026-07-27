@@ -138,25 +138,29 @@ export const FadeIn = ({ text = 'Faded in.' }) => (
  * mount and response. Without that, this story would intermittently capture
  * its loading state.
  */
-export const AsyncContent = ({ delayMs = 150 }) => {
+export const AsyncContent = () => {
   const [state, setState] = useState('loading');
 
   useEffect(() => {
     let alive = true;
-    // A real fetch, not a bare setTimeout — the settle script patches
-    // window.fetch to count pending requests, and this is what verifies it.
-    fetch(`data:text/plain,loaded`)
+    // A real fetch, because that is what juxtapose can actually observe: the
+    // settle script counts in-flight requests, so capture waits for this to
+    // resolve rather than screenshotting the loading state.
+    //
+    // Note there is deliberately no setTimeout here. A bare timer after the
+    // fetch resolves would be invisible to settling — nothing observes it —
+    // and the story would race the quiescence window. That is a real
+    // limitation worth knowing about: if your content appears on a timer
+    // rather than in response to work juxtapose can see, reach for
+    // `waitForSelector`.
+    fetch('data:text/plain,loaded')
       .then((r) => r.text())
-      .then(() =>
-        setTimeout(() => {
-          if (alive) setState('ready');
-        }, delayMs),
-      )
+      .then(() => alive && setState('ready'))
       .catch(() => alive && setState('ready'));
     return () => {
       alive = false;
     };
-  }, [delayMs]);
+  }, []);
 
   return (
     <div

@@ -32,7 +32,7 @@ export const AnimatedEntrance = {
  * waits for the request to settle instead of screenshotting the gap between
  * mount and response.
  */
-export const AwaitsNetwork = { render: () => <AsyncContent delayMs={150} /> };
+export const AwaitsNetwork = { render: () => <AsyncContent /> };
 
 /**
  * Text rendering.
