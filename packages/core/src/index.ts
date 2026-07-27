@@ -80,6 +80,7 @@ export {
 
 export { buildComment, COMMENT_MARKER, type CommentOptions } from './report/comment.js';
 export {
+  resolveArtifactUrl,
   resolveGitHubContext,
   postComment,
   type GitHubContext,

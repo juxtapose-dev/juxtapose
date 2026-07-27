@@ -132,6 +132,10 @@ async function judge(
     mismatchPixels: 0,
     mismatchPercent: 0,
     changedRegions: [],
+    // The effective viewport, including any per-story override. Recording it
+    // with the regions means nobody downstream has to re-enumerate stories to
+    // find out what the coordinates are relative to.
+    viewport: snapshot.viewport,
     durationMs: snapshot.durationMs,
   };
 

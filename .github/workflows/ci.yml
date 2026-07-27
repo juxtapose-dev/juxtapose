@@ -30,11 +30,6 @@ jobs:
   determinism:
     name: determinism
     runs-on: ubuntu-latest
-    # The visual-report step below comments on the PR, which the default
-    # read-only token cannot do.
-    permissions:
-      contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -78,18 +73,62 @@ jobs:
       - name: Determinism (Ladle)
         run: node scripts/check-determinism.mjs examples/ladle 3
 
-      # Dogfooding. This is the only way to exercise the reporter's actual
-      # POST/PATCH against GitHub — every other part of it is unit-tested, but
-      # the network call needs a real PR. Running it here means every PR to
-      # this repo is a live test of the feature.
-      #
+  # Dogfooding. This is the only way to exercise the reporter's actual
+  # POST/PATCH against GitHub — every other part of it is unit-tested, but the
+  # network call needs a real PR. Running it here means every PR to this repo
+  # is a live test of the feature.
+  #
+  # A separate job rather than a step on `determinism`, for two reasons: only
+  # this job needs `pull-requests: write`, and determinism builds three example
+  # workbenches this does not need. Keeping the write token off the job that
+  # runs the most third-party code is the point.
+  visual:
+    name: visual report
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Install Chromium
+        run: pnpm --filter @juxtapose/cli exec playwright install --with-deps chromium
+
+      - name: Build the example workbench
+        run: pnpm --filter example-storybook build
+        env:
+          STORYBOOK_DISABLE_TELEMETRY: '1'
+
       # `|| true` because the examples deliberately ship without committed
-      # baselines (antialiasing differs across machines), so this run always
-      # reports stories as new. That is expected here and must not fail the
-      # build — we care that the comment posts, not what it says.
-      - name: Visual report (dogfood)
-        if: github.event_name == 'pull_request'
+      # baselines — antialiasing differs across machines, so a baseline captured
+      # on a developer's Mac would never match a runner. Every story therefore
+      # reports as new, which is expected here and must not fail the build. We
+      # care that the comment posts, not what verdict it carries.
+      #
+      # --html is what makes the artifact below non-empty, and the comment only
+      # links the artifact when a report was actually written.
+      - name: Capture and comment
         working-directory: examples/storybook
-        run: node ../../packages/cli/dist/index.js run --all --comment || true
+        run: node ../../packages/cli/dist/index.js run --all --comment --html || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # if: always() so a crashed capture still uploads whatever it managed to
+      # write — that partial report is exactly what you want when diagnosing it.
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: juxtapose-report
+          path: examples/storybook/.juxtapose/runs/*/report.html
+          if-no-files-found: ignore
+          retention-days: 14

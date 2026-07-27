@@ -7,6 +7,7 @@ import {
   buildComment,
   buildHtmlReport,
   postComment,
+  resolveArtifactUrl,
   resolveGitHubContext,
   resolveAffected,
   runCapture,
@@ -105,7 +106,8 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
     await emit(ctx.json, report, runDir);
 
     if (flags.html) await writeHtmlReport(report, runDir, ctx.store, ctx.json);
-    if (flags.comment) await comment(report, ctx.json);
+    // The comment links the artifact only when there is one to link.
+    if (flags.comment) await comment(report, ctx.json, Boolean(flags.html));
 
     // Anything needing human or agent judgement blocks. `pass` and `skip` do not.
     const blocking = report.summary.fail + report.summary.new + report.summary.stale;
@@ -167,7 +169,11 @@ async function readIfPresent(file: string): Promise<Buffer | undefined> {
  * side effect. A missing token, a push rather than a pull request, or a
  * GitHub outage should not turn a passing visual run into a failing build.
  */
-async function comment(report: RunReport, json: boolean): Promise<void> {
+async function comment(
+  report: RunReport,
+  json: boolean,
+  hasHtmlReport: boolean,
+): Promise<void> {
   const ctx = await resolveGitHubContext();
   if (!ctx) {
     if (!json) {
@@ -178,7 +184,8 @@ async function comment(report: RunReport, json: boolean): Promise<void> {
     return;
   }
 
-  const url = await postComment(ctx, buildComment({ report }));
+  const artifactUrl = resolveArtifactUrl(hasHtmlReport);
+  const url = await postComment(ctx, buildComment({ report, artifactUrl }));
   if (!json) {
     process.stderr.write(
       url ? `jux: posted ${url}\n` : 'jux: could not post the PR comment\n',

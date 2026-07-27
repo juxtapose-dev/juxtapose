@@ -46,6 +46,29 @@ export async function resolveGitHubContext(
 }
 
 /**
+ * The Actions run page, where uploaded artifacts are listed.
+ *
+ * Deliberately not derived from env vars alone. `GITHUB_RUN_ID` is set on every
+ * Actions run including ones that upload nothing, so keying off it would
+ * produce a link to an empty artifacts list — a promise to a dead end, which
+ * costs the reader a click and some trust. The caller passes `hasArtifact` only
+ * when it actually wrote a report, so no report means no link.
+ *
+ * We cannot link the artifact file itself: that URL is auth-gated and expires.
+ */
+export function resolveArtifactUrl(
+  hasArtifact: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (!hasArtifact) return undefined;
+  const server = env.GITHUB_SERVER_URL;
+  const repository = env.GITHUB_REPOSITORY;
+  const runId = env.GITHUB_RUN_ID;
+  if (!server || !repository || !runId) return undefined;
+  return `${server}/${repository}/actions/runs/${runId}`;
+}
+
+/**
  * Find the PR number.
  *
  * `GITHUB_EVENT_PATH` points at the full webhook payload, which carries it for
