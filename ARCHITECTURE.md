@@ -22,7 +22,7 @@ packages/
   adapter-ladle/      @juxtapose/adapter-ladle       meta.json enumeration + Ladle's ready signal
   cli/                @juxtapose/cli         `jux` — init, run, approve, check, handoff
   server/             @juxtapose/server      local review API; the addon is a skin over it
-  addon-storybook/    @juxtapose/storybook   panel, test provider, sidebar decoration, watch mode
+  storybook/          @juxtapose/storybook   panel, test provider, sidebar decoration, watch mode
 ```
 
 `core` never imports an adapter. Adapters depend on `core` for types only. The
