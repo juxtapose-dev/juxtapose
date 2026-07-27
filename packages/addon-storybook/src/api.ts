@@ -52,6 +52,33 @@ export async function startRun(storyIds?: string[]): Promise<void> {
   });
 }
 
+/**
+ * Which stories to recapture when this one rerenders.
+ *
+ * Falls back to the story itself on any failure. Watch mode is a convenience
+ * running behind the developer's back — it should quietly do less rather than
+ * surface an error for something nobody asked for.
+ */
+export async function fetchAffected(storyId: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${API}/affected?storyId=${encodeURIComponent(storyId)}`);
+    if (!res.ok) return [storyId];
+    const body = (await res.json()) as { storyIds?: string[] };
+    return body.storyIds?.length ? body.storyIds : [storyId];
+  } catch {
+    return [storyId];
+  }
+}
+
+/** Tell the server its cached story index is stale. */
+export async function flushIndex(): Promise<void> {
+  try {
+    await fetch(`${API}/flush-index`, { method: 'POST' });
+  } catch {
+    // Best effort: a stale index self-corrects on the next real run.
+  }
+}
+
 export async function cancelRun(): Promise<void> {
   await fetch(`${API}/cancel`, { method: 'POST' });
 }

@@ -61,6 +61,7 @@ export { computeChangedRegions } from './diff/regions.js';
 
 export {
   resolveAffected,
+  resolveAffectedFromPaths,
   type AffectedOptions,
   type AffectedResult,
 } from './analysis/affected.js';

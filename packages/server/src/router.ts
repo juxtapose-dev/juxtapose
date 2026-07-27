@@ -28,11 +28,11 @@ export function createRouter(source: ReviewSource): Handler {
     const url = req.url ?? '/';
     if (!url.startsWith(API_PREFIX)) return false;
 
-    const path = url.slice(API_PREFIX.length).split('?')[0];
+    const [path, query = ''] = splitOnce(url.slice(API_PREFIX.length), '?');
     const method = req.method ?? 'GET';
 
     try {
-      await route(source, method, path, req, res);
+      await route(source, method, path, query, req, res);
     } catch (err) {
       // A failure here is a bug in the tool, not in the user's stories, so
       // surface it rather than silently returning an empty report.
@@ -46,6 +46,7 @@ async function route(
   source: ReviewSource,
   method: string,
   path: string,
+  query: string,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
@@ -112,7 +113,27 @@ async function route(
     return json(res, 200, { ok: true });
   }
 
+  // GET rather than POST: it is a pure question, and the answer is cacheable
+  // per story — which matters because it is asked on every rerender.
+  if (method === 'GET' && path === '/affected') {
+    const storyId = new URLSearchParams(query).get('storyId');
+    if (!storyId) return json(res, 400, { error: 'storyId required' });
+    return json(res, 200, { storyIds: await source.affected(storyId) });
+  }
+
+  if (method === 'POST' && path === '/flush-index') {
+    await source.flushIndex();
+    return json(res, 200, { ok: true });
+  }
+
   json(res, 404, { error: `no route for ${method} ${path}` });
+}
+
+/** `split` with a limit keeps the tail; `String.split('?')[1]` drops anything
+ *  after a second '?', which a story id could legitimately contain. */
+function splitOnce(value: string, sep: string): [string, string?] {
+  const at = value.indexOf(sep);
+  return at === -1 ? [value] : [value.slice(0, at), value.slice(at + 1)];
 }
 
 function json(res: ServerResponse, status: number, body: unknown): void {

@@ -11,6 +11,7 @@ import {
   alwaysAncestor,
   deterministicLaunchOptions,
   encodeStoryId,
+  resolveAffectedFromPaths,
   runCapture,
   DEFAULT_VIEWPORT,
   type BaselineStore,
@@ -32,11 +33,35 @@ export interface SourceOptions {
   runDir: string;
   branch: string;
   commitSha: string;
+  /** A previous static build, if one happens to exist. Only used to widen
+   *  watch-mode recapture from "this component" to "everything importing it" —
+   *  the dev server has no bundler graph of its own. Absent is normal. */
+  buildDir?: string;
+}
+
+/**
+ * Which of the matched stories to actually recapture.
+ *
+ * Separate from the fetching around it so the rule is testable without a
+ * browser or a store. The trigger is always included: the developer is looking
+ * at it, and it may not appear in the graph walk at all when the manifest never
+ * recorded its file.
+ */
+export function watchTargets(
+  triggerId: string,
+  matched: readonly StoryManifest[],
+): string[] {
+  const ids = new Set([triggerId]);
+  for (const s of matched) {
+    if (s.params.liveCapture !== false) ids.add(s.storyId);
+  }
+  return [...ids];
 }
 
 export class RunDirSource implements ReviewSource {
   private report: RunReport | null = null;
   private storyCache: StoryManifest[] | null = null;
+  private readonly affectedCache = new Map<string, string[]>();
   private browser: Browser | null = null;
 
   private running = false;
@@ -101,6 +126,54 @@ export class RunDirSource implements ReviewSource {
   /** Drop the cached story index — the workbench told us it changed. */
   flushStories(): void {
     this.storyCache = null;
+    // Component paths may have moved, so the answers keyed off them are stale
+    // too. Cheap to rebuild; wrong to keep.
+    this.affectedCache.clear();
+  }
+
+  async flushIndex(): Promise<void> {
+    this.flushStories();
+  }
+
+  /**
+   * Which stories to recapture when `storyId` rerenders.
+   *
+   * A rerender means the story's own module graph changed, so the unit of
+   * change is its component path — every story sharing that path is suspect,
+   * not just the one on screen. With a build available the import graph widens
+   * this to dependents; without one it stays at the file, which is the honest
+   * limit of what a dev server can tell us.
+   *
+   * Memoised because this is asked on every rerender and the answer only moves
+   * when the index does.
+   */
+  async affected(storyId: string): Promise<string[]> {
+    const cached = this.affectedCache.get(storyId);
+    if (cached) return cached;
+
+    const stories = await this.stories();
+    const triggered = stories.find((s) => s.storyId === storyId);
+    if (!triggered?.componentPath) return [storyId];
+
+    const matched = await resolveAffectedFromPaths(stories, [triggered.componentPath], {
+      projectRoot: this.opts.projectRoot,
+      buildDir: this.opts.buildDir,
+    });
+
+    // Siblings can opt out of live recapture: a long play function or a
+    // deliberate delay makes a keystroke-triggered capture cost more than it
+    // returns. The story on screen is always captured — the developer is
+    // looking at it, and it may not appear in the graph walk at all if the
+    // manifest never recorded its file.
+    //
+    // Scheduling happens before any page exists, so this reads the enumerated
+    // params. On Storybook those come from the static index, which does not
+    // serialize `parameters.juxtapose` — so the opt-out is honoured on Ladle
+    // today and on Storybook once #12 lands. It never over-captures: an
+    // unreadable param leaves the story in, which is the status quo.
+    const result = watchTargets(storyId, matched);
+    this.affectedCache.set(storyId, result);
+    return result;
   }
 
   async image(kind: ImageKind, storyId: string): Promise<Buffer | null> {

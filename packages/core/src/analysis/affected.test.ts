@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { resolveAffected } from './affected.js';
+import { resolveAffected, resolveAffectedFromPaths } from './affected.js';
 import type { StoryManifest } from '../types.js';
 
 let root: string;
@@ -138,5 +138,52 @@ describe('resolveAffected', () => {
       changedFiles: ['src/fixtures/package.json'],
     });
     expect(r.reason).not.toBe('dependency-changed');
+  });
+});
+
+describe('resolveAffectedFromPaths', () => {
+  it('walks the import graph when a build is available', async () => {
+    // shared.ts reaches Button but not Card. This is the answer componentPath
+    // matching cannot produce, and it is why we still try the manifest in dev.
+    const r = await resolveAffectedFromPaths(stories, ['src/shared.ts'], {
+      projectRoot: root,
+      buildDir,
+    });
+    expect(r.map((s) => s.storyId)).toEqual(['button--primary']);
+  });
+
+  it('falls back to the story’s own component path with no build', async () => {
+    // Storybook's dev server has no build manifest, which is the normal watch
+    // case. Editing a story file still recaptures that story.
+    const r = await resolveAffectedFromPaths(stories, ['src/Button.stories.tsx'], {
+      projectRoot: root,
+    });
+    expect(r.map((s) => s.storyId)).toEqual(['button--primary']);
+  });
+
+  it('narrows rather than escalating when it cannot tell', async () => {
+    // The opposite of resolveAffected's fail-safe, on purpose: this runs on
+    // every keystroke-pause, so escalating to the whole suite would be a hang
+    // rather than a safety net. CI stays the backstop.
+    const r = await resolveAffectedFromPaths(stories, ['src/untracked-util.ts'], {
+      projectRoot: root,
+      buildDir,
+    });
+    expect(r).toEqual([]);
+  });
+
+  it('captures nothing when nothing changed', async () => {
+    expect(
+      await resolveAffectedFromPaths(stories, [], { projectRoot: root, buildDir }),
+    ).toEqual([]);
+  });
+
+  it('accepts absolute paths, which is what HMR reports', async () => {
+    const r = await resolveAffectedFromPaths(
+      stories,
+      [path.join(root, 'src/Button.stories.tsx')],
+      { projectRoot: root },
+    );
+    expect(r.map((s) => s.storyId)).toEqual(['button--primary']);
   });
 });

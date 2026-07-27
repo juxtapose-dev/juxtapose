@@ -40,6 +40,16 @@ class FakeSource implements ReviewSource {
   async cancel(): Promise<void> {
     this.cancelled++;
   }
+  affectedFor: string[] = ['a--b', 'a--c'];
+  affectedCalls: string[] = [];
+  flushes = 0;
+  async affected(storyId: string): Promise<string[]> {
+    this.affectedCalls.push(storyId);
+    return this.affectedFor;
+  }
+  async flushIndex(): Promise<void> {
+    this.flushes++;
+  }
 }
 
 let source: FakeSource;
@@ -153,6 +163,29 @@ describe('review API', () => {
 
   it('404s an unknown route under the prefix', async () => {
     expect((await fetch(api('/nope'))).status).toBe(404);
+  });
+
+  it('answers which stories a rerender should recapture', async () => {
+    const res = await fetch(api('/affected?storyId=a--b'));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ storyIds: ['a--b', 'a--c'] });
+    expect(source.affectedCalls).toEqual(['a--b']);
+  });
+
+  it('rejects an affected query with no story', async () => {
+    expect((await fetch(api('/affected'))).status).toBe(400);
+  });
+
+  it('preserves a story id containing a query character', async () => {
+    // Ids come from the platform. Splitting the URL on every '?' would
+    // truncate one, and the recapture would silently target the wrong story.
+    await fetch(api(`/affected?storyId=${encodeURIComponent('a--b?c')}`));
+    expect(source.affectedCalls).toEqual(['a--b?c']);
+  });
+
+  it('flushes the story index when the workbench says it changed', async () => {
+    expect((await fetch(api('/flush-index'), { method: 'POST' })).status).toBe(200);
+    expect(source.flushes).toBe(1);
   });
 
   it('does not claim requests outside its prefix', async () => {

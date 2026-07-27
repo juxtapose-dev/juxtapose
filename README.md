@@ -120,9 +120,23 @@ Per-story options go through the platform's own parameter mechanism
 | `waitForSelector`              | wait for async content juxtapose can't detect      |
 | `delay`                        | fixed extra wait; last resort                      |
 | `threshold` / `minDiffPercent` | tune the _reported_ diff, not pass/fail            |
+| `liveCapture: false`           | exclude from watch-mode recapture (see below)      |
 
 Captures are reproducible by design: animations are frozen, webfonts and images
 are awaited, and rendering is pinned to settings that don't vary by machine.
+
+### Watch mode
+
+With the Storybook addon installed, editing a component recaptures it while you
+work, so the diff is ready before you go looking for it. Storybook's own hot
+reload is the trigger — there is no file watcher to configure — and a burst of
+saves is coalesced into one capture.
+
+Scope is every story sharing the component you edited. If a `storybook build`
+happens to be lying around, that widens to everything importing it, since the
+dev server has no bundler graph of its own to consult. Set
+`liveCapture: false` on a story whose play function or delay makes constant
+recapture cost more than it returns; it still captures on a normal run.
 
 The limit worth knowing is that juxtapose waits on things it can observe —
 network requests, DOM changes, fonts, images. Content that appears on a bare
