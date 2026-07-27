@@ -91,26 +91,35 @@ rather than one pointing at an empty artifacts list.
 ### Other CI providers
 
 The comment is posted through the GitHub API, not through Actions, so anything
-that can reach GitHub can post it. Supply what Actions would have injected:
+that can reach GitHub can post it. Supply what Actions would have injected —
+these have to be computed in the shell, not set as static `environment:` values,
+because the PR number and the build URL are only known at run time:
 
 ```yaml
 # CircleCI
-- run:
-    command: npx jux run --comment --html
-    environment:
-      GITHUB_TOKEN: $GITHUB_PAT # a token you create; only Actions grants one free
-      GITHUB_REPOSITORY: acme/web
-      GITHUB_REF: refs/pull/${CIRCLE_PR_NUMBER}/merge
-      JUXTAPOSE_REPORT_URL: https://output.circle-artifacts.com/.../report.html
 - store_artifacts:
     path: .juxtapose/runs
+- run:
+    name: Visual report
+    command: |
+      # CIRCLE_PR_NUMBER is documented "Only available on forked PRs", so a
+      # same-repo branch PR needs the number parsed off CIRCLE_PULL_REQUEST.
+      PR="${CIRCLE_PR_NUMBER:-${CIRCLE_PULL_REQUEST##*/}}"
+      [ -n "$PR" ] || exit 0   # not a PR build; nothing to comment on
+
+      export GITHUB_TOKEN="$GITHUB_PAT"   # yours; only Actions grants one free
+      export GITHUB_REPOSITORY="$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+      export GITHUB_REF="refs/pull/$PR/merge"
+      export JUXTAPOSE_REPORT_URL="$CIRCLE_BUILD_URL/artifacts"
+      npx jux run --comment --html
 ```
 
 `JUXTAPOSE_REPORT_URL` overrides the report link and is the only piece that
-cannot be derived. Most providers host artifacts themselves at a stable URL, so
-this is usually an improvement on Actions: point it straight at `report.html`
-and the comment says "View the diffs" — one click, no zip. We can only guess the
-URL on Actions, where the artifact's own address is auth-gated and expires.
+cannot be derived. Point it at whatever page or file your provider will actually
+serve. If that is the report itself, the comment says "View the diffs" — one
+click, no download; otherwise it names the destination honestly. Note CircleCI
+gates artifacts on private projects behind an account token, so the build's
+artifacts tab is the dependable target rather than a raw artifact URL.
 
 Outside a pull request — locally, or on a push — `--comment` is a no-op and
 never changes the exit code: a reporting problem should not fail a build that
