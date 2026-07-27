@@ -1,0 +1,29 @@
+{
+  "name": "@juxtapose/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Platform-agnostic capture, diff, baseline and analysis core for juxtapose.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "pixelmatch": "^6.0.0",
+    "sharp": "^0.33.5"
+  },
+  "peerDependencies": {
+    "playwright": "^1.48.0"
+  },
+  "peerDependenciesMeta": {
+    "playwright": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/pixelmatch": "^5.2.6"
+  }
+}
