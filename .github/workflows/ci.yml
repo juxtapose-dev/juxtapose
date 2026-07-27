@@ -27,6 +27,13 @@ jobs:
       - run: pnpm exec prettier --check .
       - run: pnpm test
 
+      # A changeset naming a package that does not exist parses fine and fails
+      # only at release time, on main, after the PR that introduced it is
+      # merged — which is how `@juxtapose/addon-storybook` (a directory name,
+      # not a package name) broke the release. This catches it on the PR.
+      - name: Validate changesets
+        run: pnpm exec changeset status
+
   determinism:
     name: determinism
     runs-on: ubuntu-latest

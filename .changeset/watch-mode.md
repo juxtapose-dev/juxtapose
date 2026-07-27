@@ -1,7 +1,7 @@
 ---
 '@juxtapose/core': minor
 '@juxtapose/server': minor
-'@juxtapose/addon-storybook': minor
+'@juxtapose/storybook': minor
 ---
 
 Watch mode: recapture stories as you edit them.
