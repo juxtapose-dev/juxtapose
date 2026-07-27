@@ -232,6 +232,36 @@ describe('buildComment', () => {
     expect(body).toContain('and 170 more');
   });
 
+  it('does not claim the omitted rows were the smallest when they were not', () => {
+    // Fails sort by magnitude, but new/stale sort after them by storyId. A tail
+    // of new stories was cut alphabetically and has no magnitude at all, so
+    // "smallest changes omitted" would misdescribe what the reader is missing.
+    const mixed = report([
+      ...Array.from({ length: 20 }, (_, i) => result(`f${i}`, 'fail', i + 1)),
+      ...Array.from({ length: 15 }, (_, i) => result(`n${i}`, 'new')),
+    ]);
+    const body = buildComment({ report: mixed });
+    expect(body).toContain('and 5 more');
+    expect(body).not.toContain('smallest changes omitted');
+  });
+
+  it('keeps the smallest-omitted note when the tail really is all changes', () => {
+    const fails = report(
+      Array.from({ length: 40 }, (_, i) => result(`s${i}`, 'fail', i + 1)),
+    );
+    expect(buildComment({ report: fails })).toContain('smallest changes omitted');
+  });
+
+  it('drops the trailing note rather than wrapping on a long story id', () => {
+    // Storybook ids routinely run past the alignment column; padding past it
+    // wraps the line inside GitHub's fixed-width block, which is worse than
+    // having no annotation at all.
+    const long = 'design-system-forms-text-field--with-a-long-validation-error';
+    const body = buildComment({ report: report([result(long, 'fail', 5)]) });
+    expect(body).toContain(`jux handoff ${long}\n`);
+    expect(body).not.toContain(`${long} #`);
+  });
+
   it('tells the reader to capture before approving', () => {
     // `jux approve` reads the LAST LOCAL RUN. The run being reported happened
     // on a CI runner, so approve-without-run either fails outright or silently

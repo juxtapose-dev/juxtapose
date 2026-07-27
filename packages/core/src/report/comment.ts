@@ -44,6 +44,10 @@ function blocking(report: RunReport): DiffResult[] {
   );
 }
 
+/** A story whose pixels differ. An errored capture is marked 'fail' too, but it
+ *  is not a visual decision — nothing about it can be reviewed or approved. */
+const changed = (r: DiffResult) => r.status === 'fail' && !r.error;
+
 export function buildComment({ report, artifactUrl }: CommentOptions): string {
   const needsReview = blocking(report);
   const lines: string[] = [COMMENT_MARKER, ''];
@@ -56,10 +60,17 @@ export function buildComment({ report, artifactUrl }: CommentOptions): string {
 
   const rows = triageOrder(needsReview);
 
-  lines.push(`### ${heading(rows, report)}`, '');
+  lines.push(`### ${heading(rows)}`, '');
 
-  const lead = leadIn(rows);
-  if (lead) lines.push(lead, '');
+  // A first run has nothing to compare against, and the table alone does not
+  // say so — every other shape is self-explanatory from the heading.
+  if (rows.every((r) => r.status === 'new')) {
+    lines.push(
+      'Nothing to compare against: these stories have never been approved. ' +
+        'Check the captures look right, then approve to establish them as baselines.',
+      '',
+    );
+  }
 
   lines.push(...table(rows));
   lines.push('');
@@ -115,10 +126,9 @@ function triageOrder(results: DiffResult[]): DiffResult[] {
  * antialiasing hairs and three collapsed layouts. The count alone cannot be
  * acted on; the largest mismatch can.
  */
-function heading(rows: DiffResult[], report: RunReport): string {
-  const s = report.summary;
+function heading(rows: DiffResult[]): string {
   const errors = rows.filter((r) => r.error).length;
-  const fails = rows.filter((r) => r.status === 'fail' && !r.error);
+  const fails = rows.filter(changed);
 
   if (errors > 0) {
     const rest = rows.length - errors;
@@ -127,14 +137,18 @@ function heading(rows: DiffResult[], report: RunReport): string {
     return `${count(errors, 'story', 'stories')} failed to capture${tail}`;
   }
 
+  // Derived from `rows`, not `report.summary`: summary.fail counts errored
+  // stories too (run.ts marks them 'fail'), so a summary-based check here would
+  // silently depend on the errors branch above catching them first.
+  //
   // A first run is 100% new by construction. Calling that a failure teaches
   // people the tool cries wolf on day one.
-  if (s.fail === 0 && s.stale === 0 && s.new > 0) {
-    return `${count(s.new, 'new story', 'new stories')} — no baselines yet`;
+  if (rows.every((r) => r.status === 'new')) {
+    return `${count(rows.length, 'new story', 'new stories')} — no baselines yet`;
   }
 
-  if (s.fail === 0 && s.new === 0 && s.stale > 0) {
-    return `${count(s.stale, 'stale baseline', 'stale baselines')} — pixels identical, re-approve to re-anchor`;
+  if (rows.every((r) => r.status === 'stale')) {
+    return `${count(rows.length, 'stale baseline', 'stale baselines')} — pixels identical, re-approve to re-anchor`;
   }
 
   if (fails.length === 0) {
@@ -142,6 +156,9 @@ function heading(rows: DiffResult[], report: RunReport): string {
   }
 
   const largest = Math.max(...fails.map((r) => r.mismatchPercent));
+  // Below 0.1% the individual numbers are noise and a wall of them reads as
+  // alarming; saying so once is more useful than quoting the largest hair.
+  // `formatPercent` never renders "0.00%", which would read as a tool bug.
   const magnitude =
     largest < 0.1 ? 'all under 0.1%' : `largest ${formatPercent(largest)}`;
 
@@ -152,20 +169,9 @@ function heading(rows: DiffResult[], report: RunReport): string {
 
   const noun = count(fails.length, 'visual change', 'visual changes');
   const verb = fails.length === 1 ? 'needs' : 'need';
-  return fails.length === 1
-    ? `${noun} ${verb} review — ${formatPercent(largest)}`
-    : `${noun} ${verb} review — ${magnitude}`;
-}
-
-/** One sentence, only where the heading cannot carry the whole story. */
-function leadIn(rows: DiffResult[]): string | null {
-  if (rows.every((r) => r.status === 'new')) {
-    return (
-      'Nothing to compare against: these stories have never been approved. ' +
-      'Check the captures look right, then approve to establish them as baselines.'
-    );
-  }
-  return null;
+  const detail =
+    fails.length === 1 && largest >= 0.1 ? formatPercent(largest) : magnitude;
+  return `${noun} ${verb} review — ${detail}`;
 }
 
 /**
@@ -195,17 +201,21 @@ function table(rows: DiffResult[]): string[] {
   for (const r of rows.slice(0, MAX_ROWS)) {
     const cells = [
       `\`${cell(r.storyId)}\``,
-      showStatus ? label(r.status) : null,
+      showStatus ? (r.status === 'fail' ? 'changed' : r.status) : null,
       showDetail ? detail(r) : null,
     ].filter((c): c is string => c !== null);
     out.push(`| ${cells.join(' | ')} |`);
   }
 
   if (rows.length > MAX_ROWS) {
-    const more = rows.length - MAX_ROWS;
+    const omitted = rows.slice(MAX_ROWS);
+    // "smallest changes" is only true when the tail is all fails — they sort by
+    // magnitude. `new` and `stale` sort after them by storyId, so a mixed tail
+    // is cut alphabetically and has no magnitude to be smallest of.
+    const why = omitted.every(changed) ? ', smallest changes omitted' : '';
     // A plain line, not a table row: a row would need its cell count to track
     // the columns above, and renders as trailing empty cells.
-    out.push('', `_…and ${more} more, smallest changes omitted._`);
+    out.push('', `_…and ${omitted.length} more${why}._`);
   }
 
   return out;
@@ -221,18 +231,18 @@ function table(rows: DiffResult[]): string[] {
  * with approve-without-run.
  */
 function commands(rows: DiffResult[]): string[] {
-  const out = ['jux run'.padEnd(32) + ' # approval reads a local run, so capture first'];
+  const out = [annotate('jux run', 'approval reads a local run, so capture first')];
 
   // Only worth investigating a change big enough to be something. Below 0.1%
   // is antialiasing territory (see magnitudeHint in agent/handoff.ts), and
   // pointing the "investigate this" tool at noise wastes the reader's time.
-  const worthInvestigating = rows.find(
-    (r) => r.status === 'fail' && !r.error && r.mismatchPercent >= 0.1,
-  );
+  const worthInvestigating = rows.find((r) => changed(r) && r.mismatchPercent >= 0.1);
   if (worthInvestigating) {
     out.push(
-      `jux handoff ${worthInvestigating.storyId}`.padEnd(32) +
-        ' # unsure? agent-ready prompt: what moved, where',
+      annotate(
+        `jux handoff ${worthInvestigating.storyId}`,
+        'unsure? agent-ready prompt: what moved, where',
+      ),
     );
   }
 
@@ -240,10 +250,29 @@ function commands(rows: DiffResult[]): string[] {
   // broken baseline into the manifest, which is the one outcome worse than a
   // red build.
   const approvable = rows.find((r) => !r.error);
-  const example = approvable ? ` # or --story ${approvable.storyId}` : '';
-  out.push('jux approve --all'.padEnd(32) + example);
+  out.push(
+    approvable
+      ? annotate('jux approve --all', `or --story ${approvable.storyId}`)
+      : 'jux approve --all',
+  );
   return out;
 }
+
+/**
+ * Align a trailing `#` comment, or drop it.
+ *
+ * Story ids are long — the examples already hit 31 characters and a real design
+ * system goes well past that. Padding past the column produces a line that
+ * wraps inside GitHub's fixed-width code block, which is worse than having no
+ * annotation at all.
+ */
+function annotate(command: string, note: string): string {
+  return command.length > COMMENT_COLUMN
+    ? command
+    : `${command.padEnd(COMMENT_COLUMN)} # ${note}`;
+}
+
+const COMMENT_COLUMN = 32;
 
 /**
  * Reference material, collapsed.
@@ -309,19 +338,6 @@ function passingBody(report: RunReport): string {
     ? `${count(s.pass, 'captured story matches', 'captured stories match')} their baselines.`
     : `${count(s.pass, 'story matches', 'stories match')} their baselines.`;
   return s.skip > 0 ? `${head} ${s.skip} skipped.` : head;
-}
-
-function label(status: string): string {
-  switch (status) {
-    case 'fail':
-      return 'changed';
-    case 'new':
-      return 'new';
-    case 'stale':
-      return 'stale';
-    default:
-      return status;
-  }
 }
 
 /**
