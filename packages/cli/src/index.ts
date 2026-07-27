@@ -5,6 +5,7 @@
 // is meant to be closable by an agent as well as a human.
 
 import { parseArgs } from 'node:util';
+import { initCommand } from './commands/init.js';
 import { runCommand } from './commands/run.js';
 import { approveCommand } from './commands/approve.js';
 import { checkCommand } from './commands/check.js';
@@ -14,6 +15,7 @@ const USAGE = `
 jux — visual regression testing for component workbenches
 
 Usage
+  jux init                       set up juxtapose and capture first baselines
   jux run [options]              capture affected stories and compare to baselines
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
@@ -67,6 +69,8 @@ async function main(argv: string[]): Promise<number> {
   });
 
   switch (command) {
+    case 'init':
+      return initCommand(values as never);
     case 'run':
       return runCommand(values as never);
     case 'approve':
