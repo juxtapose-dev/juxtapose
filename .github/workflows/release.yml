@@ -34,13 +34,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-      # Opens (or updates) a "Version Packages" PR when changesets are pending;
-      # publishes to npm when that PR is merged. Nothing is published without a
-      # changeset, so a merge to main is not automatically a release.
+      # Opens (or updates) a "Version Packages" PR when changesets are pending,
+      # and publishes when that PR is merged — but only once publishing has
+      # been deliberately switched on.
+      #
+      # The gate is a repository variable, PUBLISH_ENABLED, which does not
+      # exist by default. Until it is set to 'true', this job versions and
+      # opens the PR but never runs `changeset publish`. That matters because
+      # the first publish of a package name is irreversible: a name can be
+      # deprecated, never reclaimed. An accidental merge should not be able to
+      # spend those names.
+      #
+      # To start publishing:
+      #   gh variable set PUBLISH_ENABLED --body true --repo <owner>/<repo>
       - uses: changesets/action@v1
         with:
           version: pnpm version-packages
-          publish: pnpm release
+          publish: ${{ vars.PUBLISH_ENABLED == 'true' && 'pnpm release' || '' }}
           commit: 'chore: version packages'
           title: 'chore: version packages'
         env:
