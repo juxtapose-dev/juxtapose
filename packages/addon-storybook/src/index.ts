@@ -23,3 +23,13 @@ export {
   type SbStatusValue,
   type StatusUpdate,
 } from './sidebar.js';
+
+export { registerTestProvider } from './test-provider.js';
+export {
+  getTestProviderStore,
+  stateAfterRun,
+  TEST_PROVIDER_ID,
+  TEST_PROVIDER_STATE,
+  type ProviderStore,
+  type TestProviderStateValue,
+} from './test-provider-state.js';

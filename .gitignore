@@ -16,3 +16,7 @@ examples/*/juxtapose.manifest.json
 
 # Agent worktrees
 .claude/worktrees/
+
+# Stray screenshot artifacts from browser-driven verification
+*.png
+!examples/**/*.png
