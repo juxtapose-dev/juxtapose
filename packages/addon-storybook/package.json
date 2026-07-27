@@ -1,0 +1,42 @@
+{
+  "name": "@juxtapose/storybook-addon",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Storybook addon for juxtapose \u2014 review visual diffs next to the story that produced them.",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./manager": "./manager.js",
+    "./preset": "./preset.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "manager.js",
+    "preset.js"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@juxtapose/core": "workspace:*",
+    "@juxtapose/server": "workspace:*",
+    "@juxtapose/storybook": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^18 || ^19",
+    "storybook": "^8 || ^9 || ^10"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "react": "^18.3.1",
+    "storybook": "^8.4.7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juxtapose-dev/juxtapose.git",
+    "directory": "packages/addon-storybook"
+  }
+}

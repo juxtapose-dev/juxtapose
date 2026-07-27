@@ -33,10 +33,29 @@ interface StorybookIndex {
  *  warm path and falling back to a navigation. */
 const PREVIEW_READY_TIMEOUT_MS = 5000;
 
-/** Render phases that mean "still working". Anything else counts as ready. */
-const PENDING_PHASES = ['preparing', 'loading', 'rendering'];
-/** Phases that mean the play function has finished. */
-const PLAYED_PHASES = ['played', 'completing', 'completed'];
+/**
+ * Phases where the story is settled enough to screenshot.
+ *
+ * An allowlist, not a denylist. Storybook's RenderPhase union is
+ * `preparing | loading | beforeEach | rendering | playing | played |
+ * afterEach | completed | finished | aborted | errored` — listing only the
+ * few we consider "still working" means any phase added later, or any
+ * transient one we forgot (`beforeEach` and `afterEach` both qualify),
+ * silently reads as ready and we screenshot mid-flight.
+ *
+ * `errored` and `aborted` are included deliberately: a story that failed to
+ * render should produce a capture showing that, which is a reviewable diff,
+ * rather than hanging until the timeout.
+ */
+const READY_PHASES = ['played', 'completed', 'finished', 'errored', 'aborted'];
+
+/**
+ * Phases meaning the play function has finished.
+ *
+ * Used when a story opts into `captureAfterPlay`. Narrower than READY_PHASES
+ * because the point is to wait for interactions to complete.
+ */
+const PLAYED_PHASES = ['played', 'completed', 'finished'];
 
 export class StorybookPlatform implements Platform {
   readonly name = 'storybook';
@@ -76,6 +95,10 @@ export class StorybookPlatform implements Platform {
         title: e.title,
         name: e.name,
         componentPath: path.resolve(base, e.importPath),
+        // Storybook does not serialize arbitrary parameters into index.json,
+        // so this is almost always empty in practice — readLiveParams is what
+        // actually resolves per-story config. Kept because a custom indexer
+        // may include them, and an empty object is the correct fallback.
         params: e.parameters?.juxtapose ?? {},
       }))
       .sort((a, b) => a.storyId.localeCompare(b.storyId));
@@ -106,7 +129,7 @@ export class StorybookPlatform implements Platform {
   async switchStory(page: Page, storyId: string, ctx: SettleContext): Promise<boolean> {
     const outcome = await page
       .evaluate(
-        ({ id, timeoutMs, pending, played, afterPlay }) =>
+        ({ id, timeoutMs, ready, played, afterPlay }) =>
           new Promise<string>((resolve) => {
             const w = window as unknown as {
               __STORYBOOK_PREVIEW__?: {
@@ -122,16 +145,16 @@ export class StorybookPlatform implements Platform {
             const channel = preview?.channel;
             if (!channel) return resolve('unsupported');
 
-            const ready = (phase: string | undefined): boolean =>
+            const isReady = (phase: string | undefined): boolean =>
               afterPlay
                 ? !!phase && played.includes(phase)
-                : !!phase && !pending.includes(phase);
+                : !!phase && ready.includes(phase);
 
             // Check the phase we may already be in before subscribing —
             // otherwise a story that renders faster than this evaluate
             // deadlocks waiting for an event that already fired.
             const current = preview?.storyRenders?.find((r) => r.id === id);
-            if (current && ready(current.phase)) return resolve('switched');
+            if (current && isReady(current.phase)) return resolve('switched');
 
             let settled = false;
             const finish = (result: string) => {
@@ -150,7 +173,7 @@ export class StorybookPlatform implements Platform {
               }
               if (payload?.storyId && payload.storyId !== id) return;
               if (payload?.newPhase !== undefined) {
-                if (ready(payload.newPhase)) finish('switched');
+                if (isReady(payload.newPhase)) finish('switched');
                 return;
               }
               finish('switched');
@@ -172,7 +195,7 @@ export class StorybookPlatform implements Platform {
         {
           id: storyId,
           timeoutMs: ctx.timeoutMs,
-          pending: PENDING_PHASES,
+          ready: READY_PHASES,
           played: PLAYED_PHASES,
           afterPlay: ctx.params.captureAfterPlay === true,
         },
@@ -214,7 +237,13 @@ export class StorybookPlatform implements Platform {
 
   /** Directories whose changes invalidate every story. */
   readonly configDirs = ['.storybook'];
-  readonly storyFileGlobs = ['**/*.stories.@(ts|tsx|js|jsx|mjs)'];
+  // .svelte is included for addon-svelte-csf, which is how most Svelte
+  // projects author stories; omitting it would silently under-detect changes
+  // for that ecosystem.
+  readonly storyFileGlobs = [
+    '**/*.stories.@(ts|tsx|js|jsx|mjs|svelte)',
+    '**/*.story.@(ts|tsx|js|jsx|mjs|svelte)',
+  ];
 }
 
 /** Wait for the preview runtime's channel to exist. */
@@ -239,7 +268,7 @@ async function waitForRenderPhase(page: Page, ctx: SettleContext): Promise<void>
   const afterPlay = ctx.params.captureAfterPlay === true;
   await page
     .waitForFunction(
-      ({ id, pending, played, wantPlayed }) => {
+      ({ id, ready, played, wantPlayed }) => {
         const w = window as unknown as {
           __STORYBOOK_PREVIEW__?: { storyRenders?: { id: string; phase?: string }[] };
         };
@@ -247,11 +276,11 @@ async function waitForRenderPhase(page: Page, ctx: SettleContext): Promise<void>
         if (!render) return false;
         const phase = render.phase;
         if (!phase) return false;
-        return wantPlayed ? played.includes(phase) : !pending.includes(phase);
+        return wantPlayed ? played.includes(phase) : ready.includes(phase);
       },
       {
         id: ctx.story.storyId,
-        pending: PENDING_PHASES,
+        ready: READY_PHASES,
         played: PLAYED_PHASES,
         wantPlayed: afterPlay,
       },

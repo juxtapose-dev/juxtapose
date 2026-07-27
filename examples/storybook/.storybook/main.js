@@ -1,6 +1,7 @@
 export default {
   stories: ['../stories/**/*.stories.jsx'],
   framework: { name: '@storybook/react-vite', options: {} },
+  addons: ['@juxtapose/storybook-addon'],
 
   viteFinal: (config) => ({
     ...config,
