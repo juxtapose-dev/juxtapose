@@ -36,11 +36,17 @@ export {
   armSettle,
   drain,
   waitForSelector,
+  waitForPaint,
   FREEZE_ANIMATIONS_CSS,
   DOM_IDLE_MS,
   DOM_IDLE_TIMEOUT_MS,
 } from './capture/settle.js';
 export { captureStory, requiresColdPage, type CaptureDeps } from './capture/capture.js';
+export {
+  deterministicLaunchOptions,
+  DETERMINISTIC_CHROMIUM_ARGS,
+  type LaunchOptions,
+} from './capture/launch.js';
 export {
   capturePool,
   LivePool,

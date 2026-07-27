@@ -61,6 +61,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     platform: opts.platform,
     baseUrl: opts.baseUrl,
     concurrency: opts.config?.concurrency,
+    warmSwitch: opts.config?.warmSwitch,
     viewport,
     onProgress: opts.onProgress,
     signal: opts.signal,

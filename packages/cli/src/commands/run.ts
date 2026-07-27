@@ -8,6 +8,7 @@ import {
   runCapture,
   createAncestryCheck,
   alwaysAncestor,
+  deterministicLaunchOptions,
   encodeStoryId,
   type RunArtifact,
   type RunReport,
@@ -58,7 +59,7 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
 
   const server = ctx.origin ? null : await serveStatic(ctx.buildDir!);
   const baseUrl = ctx.origin ?? server!.url;
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(deterministicLaunchOptions());
 
   const runId = `${Date.now().toString(36)}`;
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);

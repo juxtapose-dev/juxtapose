@@ -116,6 +116,11 @@ export interface ProjectConfig {
   /** Parallel pages. Default 8. More is not better — CPU saturation
    *  causes render timeouts. Scale to core count. */
   concurrency?: number;
+  /** Reuse warm pages and switch stories in place instead of navigating.
+   *  Much faster, but warm and cold captures do not currently produce
+   *  identical pixels, which makes results depend on queue order under a
+   *  byte-exact hash. Opt in only if you have measured it on your suite. */
+  warmSwitch?: boolean;
   viewport?: Viewport;
   threshold?: number;
   minDiffPercent?: number;

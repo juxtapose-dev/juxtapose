@@ -1,0 +1,22 @@
+{
+  "name": "example-ladle",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ladle example workbench for juxtapose.",
+  "scripts": {
+    "ladle": "ladle serve",
+    "build": "ladle build",
+    "jux": "jux",
+    "visual": "ladle build && jux run --all --build-dir build"
+  },
+  "dependencies": {
+    "example-components": "workspace:*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@juxtapose/cli": "workspace:*",
+    "@ladle/react": "^5.0.3"
+  }
+}

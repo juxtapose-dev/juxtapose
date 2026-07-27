@@ -1,0 +1,14 @@
+{
+  "name": "example-components",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared demo components for the juxtapose example workbenches.",
+  "main": "./src/index.jsx",
+  "exports": {
+    ".": "./src/index.jsx"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}

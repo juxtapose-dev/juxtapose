@@ -27,6 +27,9 @@ export interface PoolOptions {
   onProgress?: (done: number, total: number, storyId: string) => void;
   /** Cooperative cancellation, checked at story boundaries. */
   signal?: AbortSignal;
+  /** Reuse warm pages and switch stories in place. Faster, but does not
+   *  currently reproduce cold-load pixels exactly — see CaptureDeps. */
+  warmSwitch?: boolean;
 }
 
 export interface CaptureOutcome {
@@ -76,7 +79,11 @@ export async function* capturePool(
       deviceScaleFactor: 1,
     });
     const page = await context.newPage();
-    const deps: CaptureDeps = { platform: opts.platform, baseUrl: opts.baseUrl };
+    const deps: CaptureDeps = {
+      platform: opts.platform,
+      baseUrl: opts.baseUrl,
+      warmSwitch: opts.warmSwitch,
+    };
 
     try {
       for (;;) {
