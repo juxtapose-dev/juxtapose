@@ -21,6 +21,24 @@ importers:
         specifier: ^2.1.4
         version: 2.1.9(@types/node@22.20.1)
 
+  packages/adapter-ladle:
+    dependencies:
+      '@juxtapose/core':
+        specifier: workspace:*
+        version: link:../core
+      playwright:
+        specifier: ^1.48.0
+        version: 1.62.0
+
+  packages/adapter-storybook:
+    dependencies:
+      '@juxtapose/core':
+        specifier: workspace:*
+        version: link:../core
+      playwright:
+        specifier: ^1.48.0
+        version: 1.62.0
+
   packages/core:
     dependencies:
       pixelmatch:

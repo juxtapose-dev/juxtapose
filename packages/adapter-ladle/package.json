@@ -1,0 +1,22 @@
+{
+  "name": "@juxtapose/ladle",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Ladle platform adapter for juxtapose visual testing.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@juxtapose/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "playwright": "^1.48.0"
+  }
+}
