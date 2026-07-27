@@ -82,6 +82,21 @@ const Handle = styled.div(({ theme }) => ({
 
 const UNFOCUS = 'saturate(0.15) brightness(0.6)';
 
+/**
+ * Controls sit above their image, never below.
+ *
+ * A capture is often taller than the panel, so anything rendered after it is
+ * off-screen — which meant the slider you need to drive Onion and Flicker was
+ * the one thing you could not reach without scrolling past the image.
+ */
+const Controls = styled.label({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  marginBottom: 8,
+  fontSize: 12,
+});
+
 export const Compare: React.FC<CompareProps> = ({
   baselineUrl,
   currentUrl,
@@ -191,20 +206,24 @@ const Onion: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
   const [mix, setMix] = useState(0.5);
   return (
     <div>
+      <Controls>
+        <span style={{ whiteSpace: 'nowrap' }}>Baseline</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={mix}
+          aria-label="Blend between baseline and current"
+          onChange={(e) => setMix(Number(e.target.value))}
+          style={{ flex: 1 }}
+        />
+        <span style={{ whiteSpace: 'nowrap' }}>Current</span>
+      </Controls>
       <Frame>
         <Img src={baselineUrl} alt="baseline" />
         <Layer src={currentUrl} alt="current" opacity={mix} />
       </Frame>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.01}
-        value={mix}
-        aria-label="Blend between baseline and current"
-        onChange={(e) => setMix(Number(e.target.value))}
-        style={{ width: '100%', marginTop: 10 }}
-      />
     </div>
   );
 };
@@ -224,20 +243,8 @@ const Flicker: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
 
   return (
     <div>
-      <Frame>
-        <Img src={baselineUrl} alt="baseline" />
-        <Layer src={currentUrl} alt="current" opacity={showCurrent ? 1 : 0} />
-      </Frame>
-      <label
-        style={{
-          display: 'flex',
-          gap: 8,
-          alignItems: 'center',
-          marginTop: 10,
-          fontSize: 12,
-        }}
-      >
-        {hz} Hz
+      <Controls>
+        <span style={{ whiteSpace: 'nowrap' }}>{hz} Hz</span>
         <input
           type="range"
           min={1}
@@ -248,7 +255,11 @@ const Flicker: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
           onChange={(e) => setHz(Number(e.target.value))}
           style={{ flex: 1 }}
         />
-      </label>
+      </Controls>
+      <Frame>
+        <Img src={baselineUrl} alt="baseline" />
+        <Layer src={currentUrl} alt="current" opacity={showCurrent ? 1 : 0} />
+      </Frame>
     </div>
   );
 };
