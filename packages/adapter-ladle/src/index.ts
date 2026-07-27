@@ -7,6 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from 'playwright';
+import { navigateToStory } from '@juxtapose/core';
 import type {
   Platform,
   EnumerateTarget,
@@ -77,6 +78,11 @@ export class LadlePlatform implements Platform {
     // No iframe route; `mode=preview` is what strips the sidebar and addon
     // chrome, leaving only the story.
     return `${stripSlash(baseUrl)}/?story=${encodeURIComponent(storyId)}&mode=preview`;
+  }
+
+  /** URL-addressable, so showing a story is just a navigation. */
+  async showStory(page: Page, storyId: string, baseUrl: string): Promise<void> {
+    await navigateToStory((b, s) => this.storyUrl(b, s))(page, storyId, baseUrl);
   }
 
   previewUrl(baseUrl: string): string {

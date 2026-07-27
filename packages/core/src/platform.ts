@@ -30,13 +30,34 @@ export interface Platform {
   /** Discover every capturable story. */
   enumerate(target: EnumerateTarget): Promise<StoryManifest[]>;
 
-  /** URL that renders one story in isolation, no workbench chrome. */
-  storyUrl(baseUrl: string, storyId: string): string;
+  /**
+   * Put this story on screen, from whatever state the page is in.
+   *
+   * The one operation every platform must provide, and deliberately phrased as
+   * an action rather than a URL. Most workbenches address a story by URL and
+   * implement this as a navigation — `showStory` in `url-platform.ts` builds
+   * exactly that. But Playwright's component-testing galleries have no
+   * per-story URL at all: every story lives at the same base URL and is
+   * rendered by calling `window.mount(storyId)`. Requiring a URL would have
+   * excluded them.
+   *
+   * Implementations must leave the page ready for `settle()` to run.
+   */
+  showStory(page: Page, storyId: string, baseUrl: string): Promise<void>;
 
   /** Blank preview URL, for warming a page before any story is selected.
    *  Prewarming here means the first real story doesn't pay for bundle
    *  compile and service-worker registration. */
   previewUrl(baseUrl: string): string;
+
+  /**
+   * URL that renders one story in isolation, when the platform has one.
+   *
+   * Optional because gallery-based platforms genuinely don't. Only used for
+   * reporting — linking a reviewer to a story — never for capture, which goes
+   * through `showStory`.
+   */
+  storyUrl?(baseUrl: string, storyId: string): string;
 
   /**
    * Block until the story has finished rendering.
