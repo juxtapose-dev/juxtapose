@@ -5,6 +5,7 @@ import { addons, types, useStorybookApi, useStorybookState } from './storybook.j
 import { Panel } from './Panel.js';
 import { fetchBundle } from './api.js';
 import { applyStatuses, decoratedIds, statusUpdate } from './sidebar.js';
+import { registerTestProvider } from './test-provider.js';
 
 export const ADDON_ID = 'juxtapose';
 export const PANEL_ID = `${ADDON_ID}/panel`;
@@ -26,6 +27,10 @@ addons.register(ADDON_ID, (api: unknown) => {
     match: ({ viewMode }: { viewMode?: string }) => viewMode === 'story',
     render: ({ active }: { active?: boolean }) => <PanelHost active={active === true} />,
   });
+
+  // Storybook 10 only; a silent no-op on 8 and 9, where there is no test
+  // panel to appear in.
+  registerTestProvider(api);
 
   startSidebarDecoration(api);
 });
