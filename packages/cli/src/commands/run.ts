@@ -185,13 +185,14 @@ async function comment(
   }
 
   const artifactUrl = resolveArtifactUrl(hasHtmlReport);
-  // Say why the comment carries no report link. Silence here is ambiguous: it
-  // could mean "no report was written" or "this is not Actions", and the two
-  // want opposite fixes.
+  // Say why the comment carries no report link, since the two causes want
+  // opposite fixes. Name the missing variables rather than guessing at a
+  // reason: we only get here once a GitHub context resolved, so "not in
+  // Actions" is the one explanation already mostly ruled out.
   if (!artifactUrl && !json) {
     process.stderr.write(
       hasHtmlReport
-        ? 'jux: no report link in the comment (not running in GitHub Actions)\n'
+        ? 'jux: no report link in the comment (needs GITHUB_SERVER_URL and GITHUB_RUN_ID)\n'
         : 'jux: no report link in the comment (pass --html to write one)\n',
     );
   }
