@@ -31,15 +31,15 @@ The `Determinism` stories are different: each one targets a specific step of
 the capture pipeline, so when the suite flakes, the story that flakes tells you
 what broke.
 
-| story               | what it proves                                                               |
-| ------------------- | ---------------------------------------------------------------------------- |
-| `InfiniteSpinner`   | animation freezing — a spinner would otherwise land on a random frame        |
-| `AnimatedEntrance`  | the same freeze path via a keyframe animation on mount                       |
-| `AwaitsNetwork`     | network quiescence — capture waits for a real `fetch`, not the loading state |
-| `Typography`        | antialiased text, the most sensitive input a pixel differ receives           |
-| `NarrowViewport`    | per-story viewport overrides                                                 |
-| `NeverCaptured`     | `skip`                                                                       |
-| `AnimationsRunning` | opting _out_ of the freeze, and what it costs                                |
+| story               | what it proves                                          |
+| ------------------- | ------------------------------------------------------- |
+| `InfiniteSpinner`   | animations are frozen                                   |
+| `AnimatedEntrance`  | the same, for a one-shot entrance animation             |
+| `AwaitsNetwork`     | capture waits for async content, not the loading state  |
+| `Typography`        | text rendering, the most diff-sensitive thing on a page |
+| `NarrowViewport`    | per-story viewport overrides                            |
+| `NeverCaptured`     | `skip`                                                  |
+| `AnimationsRunning` | opting _out_ of the freeze, and what it costs           |
 
 `AnimationsRunning` is marked `skip` deliberately. With animations live the
 spinner is at an arbitrary rotation when the shutter fires, so under a
@@ -65,14 +65,10 @@ Narrow.meta = { juxtapose: { viewport: { width: 480, height: 400 } } };
 
 ## Known difference between the two
 
-Storybook captures 16 stories; Ladle captures 14.
-
-Storybook only serializes a whitelist of parameters into `index.json`, so
-`parameters.juxtapose` — including `skip` — is not visible to enumeration.
-Ladle extracts `meta` statically and it is complete. This is tracked in
-[#12](https://github.com/juxtapose-dev/juxtapose/issues/12); the fix is to read
-parameters from the live preview, which the Storybook adapter already supports
-but the capture path does not yet use.
+Storybook captures 16 stories; Ladle captures 14. `skip` is currently honoured
+on Ladle but not on Storybook, because Storybook doesn't expose custom story
+parameters to the enumeration step. Tracked in
+[#12](https://github.com/juxtapose-dev/juxtapose/issues/12).
 
 ## Baselines are not committed here
 
