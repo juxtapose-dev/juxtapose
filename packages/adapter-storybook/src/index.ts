@@ -7,6 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from 'playwright';
+import { navigateToStory } from '@juxtapose/core';
 import type {
   Platform,
   EnumerateTarget,
@@ -102,6 +103,11 @@ export class StorybookPlatform implements Platform {
 
   storyUrl(baseUrl: string, storyId: string): string {
     return `${stripSlash(baseUrl)}/iframe.html?id=${encodeURIComponent(storyId)}&viewMode=story`;
+  }
+
+  /** URL-addressable, so showing a story is just a navigation. */
+  async showStory(page: Page, storyId: string, baseUrl: string): Promise<void> {
+    await navigateToStory((b, s) => this.storyUrl(b, s))(page, storyId, baseUrl);
   }
 
   /** Blank preview URL, for warming a page before any story is selected. */

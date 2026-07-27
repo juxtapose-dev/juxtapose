@@ -81,9 +81,9 @@ export async function captureStory(
       : false;
 
   if (!switched) {
-    await page.goto(deps.platform.storyUrl(deps.baseUrl, story.storyId), {
-      waitUntil: 'load',
-    });
+    // Delegated rather than built here: not every platform addresses a story
+    // by URL. Playwright galleries render via window.mount() on a fixed page.
+    await deps.platform.showStory(page, story.storyId, deps.baseUrl);
     // A navigation discards injected style tags, so the freeze must be
     // re-applied for the next story that wants it.
     styleInjected.delete(page);

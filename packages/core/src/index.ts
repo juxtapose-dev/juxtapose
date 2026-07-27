@@ -16,6 +16,7 @@ export type {
 } from './types.js';
 
 export type { Platform, EnumerateTarget, SettleContext } from './platform.js';
+export { navigateToStory } from './url-platform.js';
 
 export {
   hashImage,
