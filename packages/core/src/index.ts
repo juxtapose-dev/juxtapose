@@ -15,11 +15,7 @@ export type {
   BaselineStore,
 } from './types.js';
 
-export type {
-  Platform,
-  EnumerateTarget,
-  SettleContext,
-} from './platform.js';
+export type { Platform, EnumerateTarget, SettleContext } from './platform.js';
 
 export {
   hashImage,
@@ -76,4 +72,8 @@ export {
   type RunArtifact,
 } from './run/run.js';
 
-export { buildHandoffPrompt, describeRegion, type HandoffPayload } from './agent/handoff.js';
+export {
+  buildHandoffPrompt,
+  describeRegion,
+  type HandoffPayload,
+} from './agent/handoff.js';

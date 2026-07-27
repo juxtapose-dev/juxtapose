@@ -35,8 +35,21 @@ const MIME: Record<string, string> = {
 
 /** Hashed-filename assets never change under the same name. */
 const IMMUTABLE = new Set([
-  '.js', '.mjs', '.css', '.woff', '.woff2', '.ttf', '.otf',
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.svg', '.ico',
+  '.js',
+  '.mjs',
+  '.css',
+  '.woff',
+  '.woff2',
+  '.ttf',
+  '.otf',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.avif',
+  '.svg',
+  '.ico',
 ]);
 
 export interface StaticServer {

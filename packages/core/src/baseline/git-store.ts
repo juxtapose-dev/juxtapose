@@ -17,11 +17,7 @@
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type {
-  ApprovalMeta,
-  BaselineManifest,
-  BaselineStore,
-} from '../types.js';
+import type { ApprovalMeta, BaselineManifest, BaselineStore } from '../types.js';
 import { hashImage } from './status.js';
 
 const MANIFEST_NAME = 'juxtapose.manifest.json';
@@ -112,7 +108,8 @@ export function encodeStoryId(storyId: string): string {
   // filenames that read as relative paths — a trap for anything downstream
   // that joins, splits, or normalizes them. Encoding every dot makes the
   // result inert by construction rather than by argument.
-  return storyId.replace(/[^a-zA-Z0-9_-]/g, (c) =>
-    '%' + c.charCodeAt(0).toString(16).padStart(2, '0'),
+  return storyId.replace(
+    /[^a-zA-Z0-9_-]/g,
+    (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0'),
   );
 }

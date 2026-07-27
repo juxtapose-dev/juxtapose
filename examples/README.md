@@ -31,15 +31,15 @@ The `Determinism` stories are different: each one targets a specific step of
 the capture pipeline, so when the suite flakes, the story that flakes tells you
 what broke.
 
-| story | what it proves |
-|---|---|
-| `InfiniteSpinner` | animation freezing — a spinner would otherwise land on a random frame |
-| `AnimatedEntrance` | the same freeze path via a keyframe animation on mount |
-| `AwaitsNetwork` | network quiescence — capture waits for a real `fetch`, not the loading state |
-| `Typography` | antialiased text, the most sensitive input a pixel differ receives |
-| `NarrowViewport` | per-story viewport overrides |
-| `NeverCaptured` | `skip` |
-| `AnimationsRunning` | opting *out* of the freeze, and what it costs |
+| story               | what it proves                                                               |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `InfiniteSpinner`   | animation freezing — a spinner would otherwise land on a random frame        |
+| `AnimatedEntrance`  | the same freeze path via a keyframe animation on mount                       |
+| `AwaitsNetwork`     | network quiescence — capture waits for a real `fetch`, not the loading state |
+| `Typography`        | antialiased text, the most sensitive input a pixel differ receives           |
+| `NarrowViewport`    | per-story viewport overrides                                                 |
+| `NeverCaptured`     | `skip`                                                                       |
+| `AnimationsRunning` | opting _out_ of the freeze, and what it costs                                |
 
 `AnimationsRunning` is marked `skip` deliberately. With animations live the
 spinner is at an arbitrary rotation when the shutter fires, so under a
@@ -76,7 +76,7 @@ but the capture path does not yet use.
 
 ## Baselines are not committed here
 
-Normally you *would* commit `juxtapose.manifest.json` and
+Normally you _would_ commit `juxtapose.manifest.json` and
 `.juxtapose/baselines/` — that is the whole point of the git store.
 
 These examples are the exception. Antialiased rendering differs across

@@ -20,7 +20,9 @@ export default { title: 'Determinism' };
 export const InfiniteSpinner = { render: () => <Spinner /> };
 
 /** Same freeze path, via a keyframe animation that runs once on mount. */
-export const AnimatedEntrance = { render: () => <FadeIn text="Faded in deterministically." /> };
+export const AnimatedEntrance = {
+  render: () => <FadeIn text="Faded in deterministically." />,
+};
 
 /**
  * Network quiescence.

@@ -206,7 +206,8 @@ export class StorybookPlatform implements Platform {
           };
         };
         const render = w.__STORYBOOK_PREVIEW__?.storyRenders?.find((r) => r.id === id);
-        return (render?.story?.parameters?.juxtapose ?? undefined) as StoryParams | undefined;
+        return (render?.story?.parameters?.juxtapose ?? undefined) as
+          StoryParams | undefined;
       }, storyId)
       .catch(() => undefined);
   }
@@ -217,7 +218,10 @@ export class StorybookPlatform implements Platform {
 }
 
 /** Wait for the preview runtime's channel to exist. */
-export async function waitForPreview(page: Page, timeoutMs = PREVIEW_READY_TIMEOUT_MS): Promise<boolean> {
+export async function waitForPreview(
+  page: Page,
+  timeoutMs = PREVIEW_READY_TIMEOUT_MS,
+): Promise<boolean> {
   return page
     .waitForFunction(
       () => {

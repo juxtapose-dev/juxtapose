@@ -83,7 +83,9 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
       onArtifact: (a) => writeArtifact(runDir, a),
       onProgress: (done, total, storyId) => {
         if (!ctx.json) {
-          process.stderr.write(`\r  ${done}/${total}  ${storyId.slice(0, 48).padEnd(48)}`);
+          process.stderr.write(
+            `\r  ${done}/${total}  ${storyId.slice(0, 48).padEnd(48)}`,
+          );
         }
       },
     });
@@ -127,9 +129,13 @@ async function emit(json: boolean, report: RunReport, runDir: string): Promise<v
     s.stale ? `${s.stale} stale` : null,
   ].filter(Boolean);
 
-  process.stdout.write(`\n${parts.join('  ·  ')}   (${(report.durationMs / 1000).toFixed(1)}s)\n`);
+  process.stdout.write(
+    `\n${parts.join('  ·  ')}   (${(report.durationMs / 1000).toFixed(1)}s)\n`,
+  );
 
-  const needsReview = report.results.filter((r) => r.status !== 'pass' && r.status !== 'skip');
+  const needsReview = report.results.filter(
+    (r) => r.status !== 'pass' && r.status !== 'skip',
+  );
   if (needsReview.length > 0) {
     process.stdout.write('\n');
     for (const r of needsReview.slice(0, 20)) {
