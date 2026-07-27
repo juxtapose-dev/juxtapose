@@ -3,7 +3,8 @@
 Visual regression testing for component workbenches. Captures every story,
 compares against approved baselines, and tells you exactly what changed.
 
-Works with **Storybook** — any renderer, not just React — and **Ladle**,
+Works with **Storybook** — any renderer, not just React — plus **Ladle** and
+**Histoire**,
 through the same CLI. Baselines live in
 your repo by default — no bucket, no account, no service.
 
@@ -35,7 +36,7 @@ rather than screenshots it has to squint at.
 
 ```bash
 pnpm add -D @juxtapose/cli
-npx storybook build          # or: npx ladle build
+npx storybook build          # or: npx ladle build / npx histoire build
 npx jux run --all            # everything is "new" the first time
 npx jux approve --all        # establish baselines
 git add juxtapose.manifest.json .juxtapose/baselines
@@ -109,7 +110,8 @@ Concurrency defaults to 8. Higher is not automatically better — past your core
 count, contention slows captures down rather than speeding them up.
 
 Per-story options go through the platform's own parameter mechanism
-(`parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle):
+(`parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle and Histoire —
+in Histoire on either a `<Story>` or an individual `<Variant>`):
 
 | option                         | purpose                                            |
 | ------------------------------ | -------------------------------------------------- |
@@ -150,6 +152,7 @@ capture. `waitForSelector` is the fix.
 | `@juxtapose/core`              | capture, diff, baselines, analysis — no platform knowledge |
 | `@juxtapose/adapter-storybook` | Storybook adapter                                          |
 | `@juxtapose/adapter-ladle`     | Ladle adapter                                              |
+| `@juxtapose/adapter-histoire`  | Histoire adapter                                           |
 | `@juxtapose/cli`               | the `jux` command                                          |
 
 ## Status

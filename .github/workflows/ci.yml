@@ -49,6 +49,7 @@ jobs:
           pnpm --filter example-storybook build
           pnpm --filter example-storybook-vue build
           pnpm --filter example-ladle build
+          pnpm --filter example-histoire build
         env:
           STORYBOOK_DISABLE_TELEMETRY: '1'
 
@@ -72,6 +73,12 @@ jobs:
 
       - name: Determinism (Ladle)
         run: node scripts/check-determinism.mjs examples/ladle 3
+
+      # Histoire captures a variant per baseline rather than a story, and gates
+      # on a postMessage rather than a DOM attribute. Both are places a race
+      # could hide, so it gets the same repeated-run treatment.
+      - name: Determinism (Histoire)
+        run: node scripts/check-determinism.mjs examples/histoire 3
 
   # Dogfooding. This is the only way to exercise the reporter's actual
   # POST/PATCH against GitHub — every other part of it is unit-tested, but the

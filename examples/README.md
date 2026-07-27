@@ -1,13 +1,17 @@
 # Examples
 
-Two workbenches — Storybook and Ladle — rendering the **same components** from
-`examples/components`. That is the point: the adapters should produce
-equivalent results from identical source.
+Workbenches — Storybook, Ladle and Histoire — rendering the **same components**.
+That is the point: the adapters should produce equivalent results from
+identical source.
+
+The React examples share `examples/components`; the Vue ones (`storybook-vue`,
+`histoire`) declare the same Button inline, since Histoire has no React plugin.
 
 ```bash
 pnpm install
 pnpm --filter example-storybook visual   # build + capture
 pnpm --filter example-ladle visual
+pnpm --filter example-histoire visual
 ```
 
 Both start with everything `new` (no baselines are committed — see below).
@@ -21,6 +25,7 @@ examples/
   storybook/       Storybook 8 + @storybook/react-vite
   storybook-vue/   Storybook 8 + @storybook/vue3-vite
   ladle/           Ladle 5
+  histoire/        Histoire 1.0 + @histoire/plugin-vue
 ```
 
 `storybook-vue` exists to keep "works with Storybook" honest. Storybook's
@@ -70,6 +75,17 @@ export const Narrow = {
 export const Narrow = () => <TextSpecimen />;
 Narrow.meta = { juxtapose: { viewport: { width: 480, height: 400 } } };
 ```
+
+```vue
+<!-- Histoire: meta, on a Story or a single Variant -->
+<Variant title="Narrow" :meta="{ juxtapose: { viewport: { width: 480, height: 400 } } }">
+  <TextSpecimen />
+</Variant>
+```
+
+Histoire is the one platform whose capturable unit is not a story: a `<Story>`
+is a file of `<Variant>`s, and each variant is one baseline. Its example
+captures 6 of 7 variants — the seventh sets `skip`.
 
 ## Known difference between the two
 

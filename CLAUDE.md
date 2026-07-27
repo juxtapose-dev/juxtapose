@@ -96,8 +96,9 @@ packages/core/              no platform knowledge — never import an adapter he
   run/        orchestration
 packages/adapter-storybook/ index.json, preview channel
 packages/adapter-ladle/     meta.json, ladleDispatch
+packages/adapter-histoire/  histoire.json, __sandbox.html + ready postMessage
 packages/cli/               the `jux` command
-examples/                   Storybook + Ladle workbenches sharing one component lib
+examples/                   Storybook + Ladle + Histoire workbenches
 ```
 
 ## The platform seam

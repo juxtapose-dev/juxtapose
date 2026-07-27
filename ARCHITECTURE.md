@@ -20,6 +20,7 @@ packages/
   core/               @juxtapose/core        capture, diff, storage, analysis — no platform knowledge
   adapter-storybook/  @juxtapose/adapter-storybook   index.json enumeration + preview channel driver
   adapter-ladle/      @juxtapose/adapter-ladle       meta.json enumeration + Ladle's ready signal
+  adapter-histoire/   @juxtapose/adapter-histoire    histoire.json enumeration + sandbox ready message
   cli/                @juxtapose/cli         `jux` — run, serve, approve, check
   addon-storybook/    @juxtapose/storybook   panel, test provider, sidebar decoration
 ```
@@ -34,7 +35,8 @@ That is the entire interface:
 
 ```ts
 interface Platform {
-  /** Discover stories. Storybook: index.json. Ladle: meta.json. */
+  /** Discover stories. Storybook: index.json. Ladle: meta.json.
+   *  Histoire: histoire.json. */
   enumerate(target: Target): Promise<StoryManifest[]>;
 
   /** URL for a single story in isolation. */
@@ -116,7 +118,7 @@ Two lessons encoded as defaults:
 Don't capture 738 stories when 3 changed. Given a git ref:
 
 1. `git diff --name-only <since>..HEAD`.
-2. If any of `.storybook/**`, `.ladle/**`, `package.json`, or a lockfile
+2. If any of `.storybook/**`, `.ladle/**`, `.histoire/**`, `package.json`, or a lockfile
    changed → full run. Config and dependency changes can affect anything.
 3. Load the **Vite build manifest** and build a reverse import graph
    (`file → files that import it`).

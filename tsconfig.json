@@ -11,6 +11,9 @@
       "path": "./packages/adapter-ladle"
     },
     {
+      "path": "./packages/adapter-histoire"
+    },
+    {
       "path": "./packages/cli"
     },
     {

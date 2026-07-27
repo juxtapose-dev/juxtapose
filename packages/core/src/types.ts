@@ -119,7 +119,7 @@ export interface BaselineManifest {
 /** Project config, from juxtapose.config.{ts,js,json} or package.json#juxtapose. */
 export interface ProjectConfig {
   /** Which workbench. Autodetected when omitted. */
-  platform?: 'storybook' | 'ladle';
+  platform?: 'storybook' | 'ladle' | 'histoire';
   /** Where the built static workbench lives. */
   buildDir?: string;
   /** Capture against an already-running dev server instead of building. */

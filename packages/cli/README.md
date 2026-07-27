@@ -3,12 +3,12 @@
 Visual regression testing for component workbenches. Captures every story,
 compares against approved baselines, and tells you exactly what changed.
 
-Works with **Storybook** and **Ladle**. Baselines live in your repo by default —
+Works with **Storybook**, **Ladle** and **Histoire**. Baselines live in your repo by default —
 no bucket, no account, no service.
 
 ```bash
 pnpm add -D @juxtapose/cli
-npx storybook build          # or: npx ladle build
+npx storybook build          # or: npx ladle build / npx histoire build
 npx jux run --all            # everything is "new" the first time
 npx jux approve --all        # establish baselines
 git add juxtapose.manifest.json .juxtapose/baselines

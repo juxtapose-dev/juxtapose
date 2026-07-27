@@ -1,0 +1,38 @@
+{
+  "name": "@juxtapose/adapter-histoire",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Histoire platform adapter for juxtapose visual testing.",
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@juxtapose/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "playwright": "^1.48.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juxtapose-dev/juxtapose.git",
+    "directory": "packages/adapter-histoire"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  }
+}

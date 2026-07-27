@@ -1,0 +1,23 @@
+{
+  "name": "example-histoire",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Histoire example workbench for juxtapose.",
+  "scripts": {
+    "histoire": "histoire dev --port 6008",
+    "build": "histoire build",
+    "jux": "jux",
+    "visual": "histoire build && jux run --all"
+  },
+  "dependencies": {
+    "vue": "^3.5.26"
+  },
+  "devDependencies": {
+    "@histoire/plugin-vue": "1.0.0-beta.1",
+    "@juxtapose/cli": "workspace:*",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "histoire": "1.0.0-beta.1",
+    "vite": "^7.3.0"
+  }
+}

@@ -7,5 +7,11 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["example-components", "example-storybook", "example-ladle"]
+  "ignore": [
+    "example-components",
+    "example-storybook",
+    "example-storybook-vue",
+    "example-ladle",
+    "example-histoire"
+  ]
 }

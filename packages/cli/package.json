@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@juxtapose/core": "workspace:*",
+    "@juxtapose/adapter-histoire": "workspace:*",
     "@juxtapose/adapter-ladle": "workspace:*",
     "@juxtapose/adapter-storybook": "workspace:*",
     "playwright": "^1.48.0"

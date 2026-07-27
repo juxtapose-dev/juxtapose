@@ -9,6 +9,7 @@ import type { BaselineStore, Platform, ProjectConfig } from '@juxtapose/core';
 import { GitBaselineStore } from '@juxtapose/core';
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 import { LadlePlatform } from '@juxtapose/adapter-ladle';
+import { HistoirePlatform } from '@juxtapose/adapter-histoire';
 
 export interface CommonFlags {
   json?: boolean;
@@ -39,6 +40,9 @@ export interface Context {
 /** Candidate build outputs, in the order we'd expect to find them. */
 const BUILD_DIR_CANDIDATES = [
   'storybook-static',
+  // Ahead of the generic 'build': Histoire's output is platform-specific and
+  // unambiguous, whereas 'build' is a directory any bundler might own.
+  '.histoire/dist',
   'build',
   '.ladle/build',
   'dist/storybook',
@@ -95,7 +99,11 @@ async function resolvePlatform(
   name: string | undefined,
   target: { projectRoot: string; buildDir?: string; origin?: string },
 ): Promise<Platform> {
-  const platforms: Platform[] = [new StorybookPlatform(), new LadlePlatform()];
+  const platforms: Platform[] = [
+    new StorybookPlatform(),
+    new LadlePlatform(),
+    new HistoirePlatform(),
+  ];
 
   if (name) {
     const found = platforms.find((p) => p.name === name);
@@ -113,7 +121,7 @@ async function resolvePlatform(
 
   throw new Error(
     `could not detect a workbench at ${target.origin ?? target.buildDir ?? target.projectRoot}.\n` +
-      `Build Storybook or Ladle first, pass --build-dir, or point --origin at a dev server.`,
+      `Build Storybook, Ladle or Histoire first, pass --build-dir, or point --origin at a dev server.`,
   );
 }
 
