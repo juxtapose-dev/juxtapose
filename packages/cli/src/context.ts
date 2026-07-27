@@ -23,6 +23,7 @@ export interface CommonFlags {
   run?: string;
   force?: boolean;
   comment?: boolean;
+  html?: boolean;
 }
 
 export interface Context {

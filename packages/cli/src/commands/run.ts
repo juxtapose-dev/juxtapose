@@ -1,10 +1,11 @@
 // `jux run` — capture, compare, report.
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import {
   buildComment,
+  buildHtmlReport,
   postComment,
   resolveGitHubContext,
   resolveAffected,
@@ -13,6 +14,7 @@ import {
   alwaysAncestor,
   deterministicLaunchOptions,
   encodeStoryId,
+  type BaselineStore,
   type RunArtifact,
   type RunReport,
 } from '@juxtapose/core';
@@ -102,6 +104,7 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
 
     await emit(ctx.json, report, runDir);
 
+    if (flags.html) await writeHtmlReport(report, runDir, ctx.store, ctx.json);
     if (flags.comment) await comment(report, ctx.json);
 
     // Anything needing human or agent judgement blocks. `pass` and `skip` do not.
@@ -110,6 +113,50 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
   } finally {
     await browser.close().catch(() => {});
     await server?.close();
+  }
+}
+
+/**
+ * Write the self-contained report.
+ *
+ * Reads the images back off disk rather than holding every capture in memory:
+ * a 700-story suite would otherwise need all of them resident at once just to
+ * render a report about the handful that failed.
+ */
+async function writeHtmlReport(
+  report: RunReport,
+  runDir: string,
+  store: BaselineStore,
+  json: boolean,
+): Promise<void> {
+  const images = new Map<
+    string,
+    { baseline?: Buffer; current?: Buffer; diff?: Buffer }
+  >();
+
+  const dir = path.join(runDir, 'images');
+  for (const result of report.results) {
+    if (result.status === 'pass' || result.status === 'skip') continue;
+    const safe = encodeStoryId(result.storyId);
+    images.set(result.storyId, {
+      // Baselines live in the store, not the run directory — the run only
+      // writes what it captured.
+      baseline: (await store.get(result.storyId)) ?? undefined,
+      current: await readIfPresent(path.join(dir, `${safe}-current.webp`)),
+      diff: await readIfPresent(path.join(dir, `${safe}-diff.webp`)),
+    });
+  }
+
+  const out = path.join(runDir, 'report.html');
+  await writeFile(out, buildHtmlReport({ report, images }));
+  if (!json) process.stderr.write(`jux: wrote ${out}\n`);
+}
+
+async function readIfPresent(file: string): Promise<Buffer | undefined> {
+  try {
+    return await readFile(file);
+  } catch {
+    return undefined;
   }
 }
 
