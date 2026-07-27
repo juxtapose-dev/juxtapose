@@ -3,13 +3,16 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Platform-agnostic capture, diff, baseline and analysis core for juxtapose.",
+  "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
     "./package.json": "./package.json"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
@@ -21,9 +24,16 @@
     "playwright": "^1.48.0"
   },
   "peerDependenciesMeta": {
-    "playwright": { "optional": true }
+    "playwright": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/pixelmatch": "^5.2.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juxtapose-dev/juxtapose.git",
+    "directory": "packages/core"
   }
 }
