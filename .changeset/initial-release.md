@@ -3,6 +3,8 @@
 '@juxtapose/adapter-storybook': minor
 '@juxtapose/adapter-ladle': minor
 '@juxtapose/cli': minor
+'@juxtapose/server': minor
+'@juxtapose/storybook': minor
 ---
 
 Initial release.

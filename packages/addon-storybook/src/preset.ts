@@ -6,7 +6,6 @@
 
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createRouter, RunDirSource } from '@juxtapose/server';
 import { GitBaselineStore, type ProjectConfig } from '@juxtapose/core';
@@ -27,17 +26,6 @@ interface VitePlugin {
 interface ViteConfig {
   plugins?: unknown[];
   [key: string]: unknown;
-}
-
-/**
- * Tell Storybook where the manager-side code lives.
- *
- * Storybook does not find `<addon>/manager` by convention — the preset has to
- * name it. Without this the Node half loads happily (so the API answers) while
- * the panel silently never registers, which is a confusing way to fail.
- */
-export function managerEntries(entries: string[] = []): string[] {
-  return [...entries, fileURLToPath(new URL('../manager.js', import.meta.url))];
 }
 
 export function viteFinal(config: ViteConfig): ViteConfig {
