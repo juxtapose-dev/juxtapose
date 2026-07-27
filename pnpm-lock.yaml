@@ -101,6 +101,9 @@ importers:
       '@juxtapose/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@juxtapose/storybook':
+        specifier: workspace:*
+        version: link:../../packages/addon-storybook
       '@storybook/vue3':
         specifier: ^8.4.7
         version: 8.6.18(storybook@8.6.18(prettier@3.9.6))(vue@3.5.40(typescript@5.9.3))
