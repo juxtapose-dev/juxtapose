@@ -30,6 +30,11 @@ jobs:
   determinism:
     name: determinism
     runs-on: ubuntu-latest
+    # The visual-report step below comments on the PR, which the default
+    # read-only token cannot do.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -72,3 +77,19 @@ jobs:
 
       - name: Determinism (Ladle)
         run: node scripts/check-determinism.mjs examples/ladle 3
+
+      # Dogfooding. This is the only way to exercise the reporter's actual
+      # POST/PATCH against GitHub — every other part of it is unit-tested, but
+      # the network call needs a real PR. Running it here means every PR to
+      # this repo is a live test of the feature.
+      #
+      # `|| true` because the examples deliberately ship without committed
+      # baselines (antialiasing differs across machines), so this run always
+      # reports stories as new. That is expected here and must not fail the
+      # build — we care that the comment posts, not what it says.
+      - name: Visual report (dogfood)
+        if: github.event_name == 'pull_request'
+        working-directory: examples/storybook
+        run: node ../../packages/cli/dist/index.js run --all --comment || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
