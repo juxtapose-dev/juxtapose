@@ -10,3 +10,6 @@ examples/*/storybook-static/
 examples/*/build/
 examples/*/.juxtapose/
 examples/*/juxtapose.manifest.json
+
+# Playwright MCP scratch output
+.playwright-mcp/
