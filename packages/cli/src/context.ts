@@ -22,6 +22,7 @@ export interface CommonFlags {
   story?: string[];
   run?: string;
   force?: boolean;
+  comment?: boolean;
 }
 
 export interface Context {

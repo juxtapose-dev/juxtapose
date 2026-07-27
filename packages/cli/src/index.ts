@@ -30,6 +30,7 @@ Common options
 run
   --since <commit>               only capture stories affected since this commit
   --all                          capture everything, skip affected-analysis
+  --comment                      post a summary as a PR comment (GitHub Actions)
 
 approve
   --story <id>                   approve one story (repeatable)
@@ -60,6 +61,7 @@ async function main(argv: string[]): Promise<number> {
       concurrency: { type: 'string' },
       since: { type: 'string' },
       all: { type: 'boolean', default: false },
+      comment: { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },
       run: { type: 'string' },
       force: { type: 'boolean', default: false },

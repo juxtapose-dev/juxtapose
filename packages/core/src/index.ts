@@ -77,3 +77,10 @@ export {
   describeRegion,
   type HandoffPayload,
 } from './agent/handoff.js';
+
+export { buildComment, COMMENT_MARKER, type CommentOptions } from './report/comment.js';
+export {
+  resolveGitHubContext,
+  postComment,
+  type GitHubContext,
+} from './report/github.js';
