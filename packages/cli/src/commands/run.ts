@@ -185,6 +185,17 @@ async function comment(
   }
 
   const artifactUrl = resolveArtifactUrl(hasHtmlReport);
+  // Say why the comment carries no report link. Silence here is ambiguous: it
+  // could mean "no report was written" or "this is not Actions", and the two
+  // want opposite fixes.
+  if (!artifactUrl && !json) {
+    process.stderr.write(
+      hasHtmlReport
+        ? 'jux: no report link in the comment (not running in GitHub Actions)\n'
+        : 'jux: no report link in the comment (pass --html to write one)\n',
+    );
+  }
+
   const url = await postComment(ctx, buildComment({ report, artifactUrl }));
   if (!json) {
     process.stderr.write(
