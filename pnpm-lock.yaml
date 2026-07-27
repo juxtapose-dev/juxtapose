@@ -76,7 +76,7 @@ importers:
       '@juxtapose/cli':
         specifier: workspace:*
         version: link:../../packages/cli
-      '@juxtapose/storybook-addon':
+      '@juxtapose/storybook':
         specifier: workspace:*
         version: link:../../packages/addon-storybook
       '@storybook/react':

@@ -21,7 +21,7 @@ packages/
   adapter-storybook/  @juxtapose/adapter-storybook   index.json enumeration + preview channel driver
   adapter-ladle/      @juxtapose/adapter-ladle       meta.json enumeration + Ladle's ready signal
   cli/                @juxtapose/cli         `jux` — run, serve, approve, check
-  addon-storybook/    @juxtapose/storybook-addon   panel, test provider, sidebar decoration
+  addon-storybook/    @juxtapose/storybook   panel, test provider, sidebar decoration
   report/             @juxtapose/report      static HTML report + local review UI
 ```
 
