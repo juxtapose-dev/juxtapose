@@ -1,0 +1,66 @@
+export type {
+  StoryParams,
+  Viewport,
+  StoryManifest,
+  Snapshot,
+  ChangedRegion,
+  DiffStatus,
+  DiffResult,
+  RunReport,
+  ApprovalMeta,
+  BaselineEntry,
+  BaselineManifest,
+  ProjectConfig,
+  StorageConfig,
+  BaselineStore,
+} from './types.js';
+
+export type {
+  Platform,
+  EnumerateTarget,
+  SettleContext,
+} from './platform.js';
+
+export {
+  hashImage,
+  resolveStatus,
+  toDiffStatus,
+  type BaselineStatus,
+  type AncestryCheck,
+} from './baseline/status.js';
+export { GitBaselineStore, encodeStoryId } from './baseline/git-store.js';
+
+export { createAncestryCheck, alwaysAncestor } from './git/ancestry.js';
+
+export {
+  armSettle,
+  drain,
+  waitForSelector,
+  FREEZE_ANIMATIONS_CSS,
+  DOM_IDLE_MS,
+  DOM_IDLE_TIMEOUT_MS,
+} from './capture/settle.js';
+export { captureStory, requiresColdPage, type CaptureDeps } from './capture/capture.js';
+export {
+  capturePool,
+  LivePool,
+  DEFAULT_CONCURRENCY,
+  type PoolOptions,
+  type CaptureOutcome,
+} from './capture/pool.js';
+
+export {
+  diffImages,
+  resolveThreshold,
+  resolveMinDiffPercent,
+  type DiffOutput,
+} from './diff/diff.js';
+export { computeChangedRegions } from './diff/regions.js';
+
+export {
+  resolveAffected,
+  type AffectedOptions,
+  type AffectedResult,
+} from './analysis/affected.js';
+
+export { buildHandoffPrompt, type HandoffPayload } from './agent/handoff.js';

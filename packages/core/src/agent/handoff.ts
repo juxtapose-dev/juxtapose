@@ -1,0 +1,192 @@
+// Turn a failing story into a prompt an agent can act on.
+//
+// The central bet, inherited from the original tool and worth restating:
+// send STRUCTURED DATA, not screenshots. `mismatchPercent: 3.72` and a box at
+// (412, 88) are exact; an LLM's spatial reasoning over a PNG is probabilistic
+// and costs 10-50x the tokens. Images are listed last, as a fallback.
+//
+// Pure function. No I/O, no clipboard — string in, string out, so it is
+// trivially testable and callable from both the CLI and a server.
+
+import type { ChangedRegion, DiffStatus, Viewport } from '../types.js';
+
+export interface HandoffPayload {
+  storyId: string;
+  storyTitle: string;
+  status: DiffStatus;
+  mismatchPercent: number;
+  mismatchPixels: number;
+  changedRegions: ChangedRegion[];
+  viewport: Viewport;
+  /** Absolute path to the story's source file, when known. */
+  componentPath: string;
+  /** Absolute path to the machine-readable sidecar for this diff. */
+  diffDataPath?: string;
+  images: {
+    baseline?: string;
+    current?: string;
+    diff?: string;
+  };
+  /** So a session running in the wrong repo can detect the mismatch. */
+  projectRoot: string;
+}
+
+export function buildHandoffPrompt(p: HandoffPayload): string {
+  const lines: string[] = [];
+
+  lines.push(`# Visual change: ${p.storyTitle}`);
+  lines.push('');
+  lines.push(`Story \`${p.storyId}\` is **${p.status}**.`);
+  lines.push('');
+
+  if (p.status === 'new') {
+    lines.push(
+      'This story has no baseline yet — nothing to compare against. Decide whether',
+      'the rendered output is correct, then either approve it to establish the',
+      'baseline or fix the component first.',
+      '',
+      ...actions(p, { approveVerb: 'establish this as the baseline' }),
+    );
+    return lines.join('\n');
+  }
+
+  if (p.status === 'stale') {
+    lines.push(
+      'The baseline for this story was approved on a commit that is not an ancestor',
+      'of HEAD — most likely a branch that never merged. The pixels may well match;',
+      'the provenance is what is in question.',
+      '',
+      'Re-run the capture first. If it then passes, re-approve to re-anchor the',
+      'baseline to the current history.',
+      '',
+      ...actions(p, { approveVerb: 're-anchor the baseline' }),
+    );
+    return lines.join('\n');
+  }
+
+  if (p.diffDataPath) {
+    lines.push(
+      `Read \`${p.diffDataPath}\` for the full machine-readable diff.`,
+      '',
+    );
+  }
+
+  lines.push('## What changed');
+  lines.push('');
+  lines.push('```json');
+  lines.push(
+    JSON.stringify(
+      {
+        storyId: p.storyId,
+        mismatchPercent: round(p.mismatchPercent),
+        mismatchPixels: p.mismatchPixels,
+        viewport: p.viewport,
+        regionCount: p.changedRegions.length,
+      },
+      null,
+      2,
+    ),
+  );
+  lines.push('```');
+  lines.push('');
+
+  if (p.changedRegions.length > 0) {
+    lines.push('## Where it changed');
+    lines.push('');
+    for (const r of p.changedRegions.slice(0, MAX_REGIONS)) {
+      lines.push(`- ${describeRegion(r, p.viewport)}`);
+    }
+    if (p.changedRegions.length > MAX_REGIONS) {
+      lines.push(
+        `- …and ${p.changedRegions.length - MAX_REGIONS} more (see the diff data file)`,
+      );
+    }
+    lines.push('');
+  }
+
+  lines.push('## Assessment');
+  lines.push('');
+  lines.push(magnitudeHint(p.mismatchPercent));
+  lines.push('');
+
+  lines.push(...actions(p, { approveVerb: 'accept the new rendering' }));
+
+  if (p.images.baseline || p.images.current || p.images.diff) {
+    lines.push('');
+    lines.push('## Images (inspect only if the data above is insufficient)');
+    lines.push('');
+    if (p.images.baseline) lines.push(`- baseline: \`${p.images.baseline}\``);
+    if (p.images.current) lines.push(`- current: \`${p.images.current}\``);
+    if (p.images.diff) lines.push(`- diff overlay: \`${p.images.diff}\``);
+  }
+
+  lines.push('');
+  lines.push('---');
+  lines.push(`Generated for \`${p.projectRoot}\`. If your session is rooted elsewhere, stop — this prompt is for a different repository.`);
+
+  return lines.join('\n');
+}
+
+const MAX_REGIONS = 12;
+
+function actions(p: HandoffPayload, opts: { approveVerb: string }): string[] {
+  const out = ['## What to do', ''];
+
+  if (p.componentPath) {
+    out.push(
+      `1. Inspect the component: \`${p.componentPath}\``,
+      `2. Check recent history: \`git log -p -- ${p.componentPath}\``,
+      '3. Decide: intentional change, or regression?',
+    );
+  } else {
+    out.push(
+      '1. Locate the component behind this story.',
+      '2. Check its recent history for an explanation.',
+      '3. Decide: intentional change, or regression?',
+    );
+  }
+
+  out.push(
+    '',
+    `- **Intentional** → \`jux approve --story ${p.storyId}\` to ${opts.approveVerb}.`,
+    '- **Regression** → propose a fix. Do not apply it without confirmation.',
+  );
+  return out;
+}
+
+/**
+ * Describe a region in language a model reasons about well.
+ *
+ * Raw coordinates are precise but hard to reason over; "top-left, 2.3% of the
+ * viewport" carries the spatial meaning that actually drives the judgement.
+ * Both are given.
+ */
+export function describeRegion(r: ChangedRegion, viewport: Viewport): string {
+  const areaPct = ((r.width * r.height) / (viewport.width * viewport.height)) * 100;
+  const cx = r.x + r.width / 2;
+  const cy = r.y + r.height / 2;
+  const vertical = cy < viewport.height / 3 ? 'top' : cy > (viewport.height * 2) / 3 ? 'bottom' : 'middle';
+  const horizontal = cx < viewport.width / 3 ? 'left' : cx > (viewport.width * 2) / 3 ? 'right' : 'center';
+  return `(${r.x}, ${r.y}) ${r.width}×${r.height}px — ${vertical}-${horizontal}, ${round(areaPct)}% of viewport`;
+}
+
+/**
+ * Calibrate the agent's suspicion to the size of the change.
+ *
+ * Without this, agents treat a 0.02% antialiasing shift and a 40% layout
+ * collapse as equally alarming.
+ */
+function magnitudeHint(pct: number): string {
+  if (pct < 0.1) {
+    return 'Under 0.1% — consistent with sub-pixel antialiasing noise. Usually safe to approve, but confirm the changed regions are not on meaningful content.';
+  }
+  if (pct < 1) {
+    return 'Under 1% — a small, localized change. Check whether the component or its tokens were recently touched.';
+  }
+  if (pct < 10) {
+    return 'Between 1% and 10% — a substantive visual change. Investigate before approving.';
+  }
+  return 'Over 10% — a large change, possibly a layout break or a failed render. Investigate carefully; do not approve without understanding the cause.';
+}
+
+const round = (n: number) => Math.round(n * 100) / 100;
