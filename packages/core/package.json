@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Platform-agnostic capture, diff, baseline and analysis core for juxtapose.",
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

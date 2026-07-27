@@ -7,8 +7,8 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import type { BaselineStore, Platform, ProjectConfig } from '@juxtapose/core';
 import { GitBaselineStore } from '@juxtapose/core';
-import { StorybookPlatform } from '@juxtapose/storybook';
-import { LadlePlatform } from '@juxtapose/ladle';
+import { StorybookPlatform } from '@juxtapose/adapter-storybook';
+import { LadlePlatform } from '@juxtapose/adapter-ladle';
 
 export interface CommonFlags {
   json?: boolean;

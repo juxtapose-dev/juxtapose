@@ -112,15 +112,15 @@ importers:
 
   packages/addon-storybook:
     dependencies:
+      '@juxtapose/adapter-storybook':
+        specifier: workspace:*
+        version: link:../adapter-storybook
       '@juxtapose/core':
         specifier: workspace:*
         version: link:../core
       '@juxtapose/server':
         specifier: workspace:*
         version: link:../server
-      '@juxtapose/storybook':
-        specifier: workspace:*
-        version: link:../adapter-storybook
     devDependencies:
       '@types/react':
         specifier: ^18.3.12
@@ -134,15 +134,15 @@ importers:
 
   packages/cli:
     dependencies:
+      '@juxtapose/adapter-ladle':
+        specifier: workspace:*
+        version: link:../adapter-ladle
+      '@juxtapose/adapter-storybook':
+        specifier: workspace:*
+        version: link:../adapter-storybook
       '@juxtapose/core':
         specifier: workspace:*
         version: link:../core
-      '@juxtapose/ladle':
-        specifier: workspace:*
-        version: link:../adapter-ladle
-      '@juxtapose/storybook':
-        specifier: workspace:*
-        version: link:../adapter-storybook
       playwright:
         specifier: ^1.48.0
         version: 1.62.0

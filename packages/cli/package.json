@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "jux \u2014 visual regression testing CLI for Storybook, Ladle and friends.",
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "bin": {
     "jux": "./dist/index.js"
@@ -17,8 +20,8 @@
   },
   "dependencies": {
     "@juxtapose/core": "workspace:*",
-    "@juxtapose/ladle": "workspace:*",
-    "@juxtapose/storybook": "workspace:*",
+    "@juxtapose/adapter-ladle": "workspace:*",
+    "@juxtapose/adapter-storybook": "workspace:*",
     "playwright": "^1.48.0"
   },
   "repository": {

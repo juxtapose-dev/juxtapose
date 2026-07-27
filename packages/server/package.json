@@ -2,7 +2,10 @@
   "name": "@juxtapose/server",
   "version": "0.1.0",
   "type": "module",
-  "description": "Local review API for juxtapose — the contract every review UI is a skin over.",
+  "description": "Local review API for juxtapose \u2014 the contract every review UI is a skin over.",
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

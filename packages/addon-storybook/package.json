@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Storybook addon for juxtapose \u2014 review visual diffs next to the story that produced them.",
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,7 +26,7 @@
   "dependencies": {
     "@juxtapose/core": "workspace:*",
     "@juxtapose/server": "workspace:*",
-    "@juxtapose/storybook": "workspace:*"
+    "@juxtapose/adapter-storybook": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18 || ^19",
