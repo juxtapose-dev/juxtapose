@@ -13,3 +13,13 @@ export {
   type Bundle,
   type Progress,
 } from './api.js';
+
+export {
+  toSidebarStatus,
+  statusUpdate,
+  decoratedIds,
+  applyStatuses,
+  type SbStatus,
+  type SbStatusValue,
+  type StatusUpdate,
+} from './sidebar.js';
