@@ -109,10 +109,11 @@ capture. `waitForSelector` is the fix.
 
 ## Status
 
-Early. The capture, diff and approve loop is verified end to end on both
-Storybook and Ladle. The Storybook addon panel, HTML report, GitHub PR comments
-and hosted storage are not built yet — see the
-[issues](https://github.com/juxtapose-dev/juxtapose/issues) for the roadmap.
+Early, but usable. The capture, diff and approve loop is verified end to end on
+both Storybook and Ladle, and the Storybook addon gives you the review UI
+in-place. The HTML report, GitHub PR comments and hosted storage are not built
+yet — see the [issues](https://github.com/juxtapose-dev/juxtapose/issues) for
+the roadmap.
 
 ## Contributing
 

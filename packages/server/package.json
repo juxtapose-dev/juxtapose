@@ -20,9 +20,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@juxtapose/core": "workspace:*"
-  },
-  "peerDependencies": {
+    "@juxtapose/core": "workspace:*",
     "playwright": "^1.48.0"
   },
   "repository": {
