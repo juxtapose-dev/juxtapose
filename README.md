@@ -155,10 +155,13 @@ capture. `waitForSelector` is the fix.
 ## Status
 
 Early, but usable. The capture, diff and approve loop is verified end to end on
-both Storybook and Ladle, and the Storybook addon gives you the review UI
-in-place. The HTML report, GitHub PR comments and hosted storage are not built
-yet — see the [issues](https://github.com/juxtapose-dev/juxtapose/issues) for
-the roadmap.
+Storybook (React and Vue) and Ladle, the addon gives you the review UI in
+place, and CI gets PR comments and a self-contained HTML report.
+
+Hosted storage is the main thing not built yet — baselines live in git today,
+which is the right default but does not suit a suite too large to carry there.
+See the [issues](https://github.com/juxtapose-dev/juxtapose/issues) for the
+roadmap.
 
 ## Contributing
 
