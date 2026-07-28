@@ -1,5 +1,38 @@
 # @juxtapose/server
 
+## 0.4.0
+
+### Minor Changes
+
+- f40f5cf: Record what captured each baseline
+
+  Baselines now carry a `CaptureEnv` — browser version, OS/arch, and the libvips
+  that encoded the WebP. Under a byte-exact hash a toolchain bump and a real
+  regression look identical, so an all-red suite could not be explained. This is
+  the fact that explains it.
+
+  The encoder is a separate field because it moves bytes far more readily than the
+  browser does. Measured on the examples: a libvips bump changed all 17 baseline
+  hashes with zero changed pixels, while Chromium 149 to 151 left 16 of 18 stories
+  byte-identical.
+
+  Existing baselines have no fingerprint and are left alone; an unknown
+  environment is treated as unknown rather than as current, so nothing is
+  silently assumed to match. Approvals made from the CLI, from `init`, and from
+  the addon panel all record it.
+
+### Patch Changes
+
+- 474a0db: Add npm keywords and a homepage link to each package
+
+  Nothing installed changes; this is what the registry listing shows and how the
+  packages are found in search.
+
+- Updated dependencies [474a0db]
+- Updated dependencies [04615a6]
+- Updated dependencies [f40f5cf]
+  - @juxtapose/core@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

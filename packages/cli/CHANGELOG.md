@@ -1,5 +1,78 @@
 # @juxtapose/cli
 
+## 0.4.0
+
+### Minor Changes
+
+- 04615a6: Report per-phase timings on `jux run`
+
+  A run reported one total, which is enough to know it was slow and not enough to
+  know why:
+
+  ```
+  15 pass   (1.0s)
+    enumerate 5ms | launch 137ms | baselines 1ms | capture 1.0s
+  ```
+
+  `diff(N)` reports how many diffs actually ran. Under a byte-exact hash that is
+  the figure that explains a slow run, since diffing is a cold path only reached
+  by stories that already failed:
+
+  ```
+  10 pass  ·  5 fail   (0.9s)
+    enumerate 5ms | launch 76ms | diff(5) 110ms | capture 828ms
+  ```
+
+  Capture is measured across the whole streamed loop rather than summed per
+  story, because the pool runs several pages at once and summing would report
+  multiples of the wall-clock actually spent.
+
+- f40f5cf: Record what captured each baseline
+
+  Baselines now carry a `CaptureEnv` — browser version, OS/arch, and the libvips
+  that encoded the WebP. Under a byte-exact hash a toolchain bump and a real
+  regression look identical, so an all-red suite could not be explained. This is
+  the fact that explains it.
+
+  The encoder is a separate field because it moves bytes far more readily than the
+  browser does. Measured on the examples: a libvips bump changed all 17 baseline
+  hashes with zero changed pixels, while Chromium 149 to 151 left 16 of 18 stories
+  byte-identical.
+
+  Existing baselines have no fingerprint and are left alone; an unknown
+  environment is treated as unknown rather than as current, so nothing is
+  silently assumed to match. Approvals made from the CLI, from `init`, and from
+  the addon panel all record it.
+
+### Patch Changes
+
+- 857c104: Fix `jux check` clearing every visual regression
+
+  `check` decided a story was approved if the manifest merely had an entry for it.
+  `resolveStatus` only reports `changed` when an entry already exists, so every
+  real regression had one and every real regression was cleared. `jux check`
+  exited 0 on a suite `jux run` had just failed, which is worse than no gate
+  because CI looks green.
+
+  It now confirms the approval against the bytes, comparing the run's captured
+  image to the manifest hash the way the addon already does. A capture that cannot
+  be read blocks rather than clears.
+
+  Verified end to end against `examples/storybook`: a colour change failing 5
+  stories now exits 1 and names them, and `jux approve --all` returns it to 0.
+
+- 474a0db: Add npm keywords and a homepage link to each package
+
+  Nothing installed changes; this is what the registry listing shows and how the
+  packages are found in search.
+
+- Updated dependencies [474a0db]
+- Updated dependencies [04615a6]
+- Updated dependencies [f40f5cf]
+  - @juxtapose/core@0.4.0
+  - @juxtapose/adapter-storybook@0.2.2
+  - @juxtapose/adapter-ladle@0.2.2
+
 ## 0.3.0
 
 ### Minor Changes
