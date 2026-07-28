@@ -16,6 +16,9 @@ import {
   deterministicLaunchOptions,
   encodeStoryId,
   formatPercent,
+  formatPhases,
+  phases,
+  type Phases,
   type BaselineStore,
   type RunArtifact,
   type RunReport,
@@ -35,11 +38,15 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
     if (!ctx.json) process.stderr.write(msg + '\n');
   };
 
-  const stories = await ctx.platform.enumerate({
-    projectRoot: ctx.projectRoot,
-    buildDir: ctx.buildDir,
-    origin: ctx.origin,
-  });
+  const p = phases();
+
+  const stories = await p.time('enumerate', () =>
+    ctx.platform.enumerate({
+      projectRoot: ctx.projectRoot,
+      buildDir: ctx.buildDir,
+      origin: ctx.origin,
+    }),
+  );
 
   if (stories.length === 0) {
     process.stderr.write('jux: no stories found\n');
@@ -48,11 +55,13 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
 
   const selection = flags.all
     ? { stories, reason: 'no-baseline' as const }
-    : await resolveAffected(stories, flags.since ?? null, {
-        projectRoot: ctx.projectRoot,
-        configDirs: [...ctx.platform.configDirs],
-        buildDir: ctx.buildDir,
-      });
+    : await p.time('affected', () =>
+        resolveAffected(stories, flags.since ?? null, {
+          projectRoot: ctx.projectRoot,
+          configDirs: [...ctx.platform.configDirs],
+          buildDir: ctx.buildDir,
+        }),
+      );
 
   log(
     `jux: ${selection.stories.length}/${stories.length} stories to capture (${selection.reason})`,
@@ -60,13 +69,15 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
 
   if (selection.stories.length === 0) {
     const empty = emptyReport(ctx.projectRoot, stories.length);
-    await emit(ctx.json, empty, ctx.projectRoot);
+    await emit(ctx.json, empty, ctx.projectRoot, p);
     return 0;
   }
 
   const server = ctx.origin ? null : await serveStatic(ctx.buildDir!);
   const baseUrl = ctx.origin ?? server!.url;
-  const browser = await chromium.launch(deterministicLaunchOptions());
+  const browser = await p.time('launch', () =>
+    chromium.launch(deterministicLaunchOptions()),
+  );
 
   const runId = `${Date.now().toString(36)}`;
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);
@@ -84,6 +95,7 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
       ancestry: isGitRepo(ctx.projectRoot)
         ? createAncestryCheck(ctx.projectRoot)
         : alwaysAncestor,
+      phases: p,
       runId,
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
@@ -104,7 +116,7 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
       JSON.stringify(report, null, 2) + '\n',
     );
 
-    await emit(ctx.json, report, runDir);
+    await emit(ctx.json, report, runDir, p);
 
     if (flags.html) await writeHtmlReport(report, runDir, ctx.store, ctx.json);
     // The comment links the artifact only when there is one to link.
@@ -213,7 +225,12 @@ async function writeArtifact(runDir: string, a: RunArtifact): Promise<void> {
   if (a.diff) await writeFile(path.join(images, `${safe}-diff.webp`), a.diff);
 }
 
-async function emit(json: boolean, report: RunReport, runDir: string): Promise<void> {
+async function emit(
+  json: boolean,
+  report: RunReport,
+  runDir: string,
+  p: Phases,
+): Promise<void> {
   if (json) {
     process.stdout.write(JSON.stringify(report) + '\n');
     return;
@@ -230,6 +247,9 @@ async function emit(json: boolean, report: RunReport, runDir: string): Promise<v
   process.stdout.write(
     `\n${parts.join('  ·  ')}   (${(report.durationMs / 1000).toFixed(1)}s)\n`,
   );
+
+  const timings = formatPhases(p);
+  if (timings) process.stdout.write(`  ${timings}\n`);
 
   const needsReview = report.results.filter(
     (r) => r.status !== 'pass' && r.status !== 'skip',
