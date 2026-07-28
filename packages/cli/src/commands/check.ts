@@ -11,10 +11,15 @@ import { latestRunDir } from '../run-dir.js';
 
 /** Hash of what the run captured, or undefined if the image is gone. Undefined
  *  blocks: an approval that can't be confirmed is not an approval. */
-async function capturedHash(runDir: string, storyId: string): Promise<string | undefined> {
+async function capturedHash(
+  runDir: string,
+  storyId: string,
+): Promise<string | undefined> {
   try {
     return hashImage(
-      await readFile(path.join(runDir, 'images', `${encodeStoryId(storyId)}-current.webp`)),
+      await readFile(
+        path.join(runDir, 'images', `${encodeStoryId(storyId)}-current.webp`),
+      ),
     );
   } catch {
     return undefined;
