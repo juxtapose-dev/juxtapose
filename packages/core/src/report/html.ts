@@ -10,6 +10,7 @@
 // pull request who has checked nothing out.
 
 import type { RunReport, DiffResult } from '../types.js';
+import { formatPercent } from './format.js';
 
 export interface HtmlReportOptions {
   report: RunReport;
@@ -137,11 +138,6 @@ function statusLabel(status: string): string {
     default:
       return status;
   }
-}
-
-function formatPercent(pct: number): string {
-  if (pct >= 0.01) return `${pct.toFixed(2)}%`;
-  return pct > 0 ? '<0.01%' : '0%';
 }
 
 /** Escape anything interpolated into markup. Story ids come from the platform

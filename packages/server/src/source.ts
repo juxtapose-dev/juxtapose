@@ -2,7 +2,6 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { chromium, type Browser } from 'playwright';
 import {
@@ -11,6 +10,7 @@ import {
   alwaysAncestor,
   deterministicLaunchOptions,
   encodeStoryId,
+  hashImage,
   resolveAffectedFromPaths,
   runCapture,
   DEFAULT_VIEWPORT,
@@ -99,7 +99,7 @@ export class RunDirSource implements ReviewSource {
       const entry = manifest.baselines[result.storyId];
       if (!entry) continue;
       const current = await this.readImage('current', result.storyId);
-      if (current && hash(current) === entry.hash) approved.push(result.storyId);
+      if (current && hashImage(current) === entry.hash) approved.push(result.storyId);
     }
 
     return { report, approved, running: this.running };
@@ -345,6 +345,3 @@ function mergeReports(previous: RunReport | null, fresh: RunReport): RunReport {
 }
 
 /** The same hash the manifest stores, so a match means "already approved". */
-function hash(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}

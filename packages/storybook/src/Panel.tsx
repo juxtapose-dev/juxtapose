@@ -9,6 +9,9 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { styled, Badge, Button, EmptyTabContent, Loader } from './storybook.js';
+// Deep import on purpose: '@juxtapose/core' reaches sharp and playwright
+// through the capture modules, and this file is bundled for the browser.
+import { formatPercent } from '@juxtapose/core/format';
 import type { DiffResult, DiffStatus } from '@juxtapose/core';
 import {
   approveStory,
@@ -459,8 +462,3 @@ const StatusNote: React.FC<{ status: DiffStatus }> = ({ status }) => {
       return null;
   }
 };
-
-function formatPercent(pct: number): string {
-  if (pct >= 0.01) return `${pct.toFixed(2)}%`;
-  return pct > 0 ? '<0.01%' : '0%';
-}
