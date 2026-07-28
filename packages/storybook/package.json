@@ -3,6 +3,15 @@
   "version": "0.3.0",
   "type": "module",
   "description": "Storybook addon for juxtapose — review visual diffs next to the story that produced them.",
+  "keywords": [
+    "storybook",
+    "storybook-addon",
+    "visual-regression",
+    "screenshot-testing",
+    "visual-testing",
+    "storybook-addons"
+  ],
+  "homepage": "https://github.com/juxtapose-dev/juxtapose#readme",
   "publishConfig": {
     "access": "public"
   },
