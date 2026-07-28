@@ -83,6 +83,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   const [mode, setMode] = useState<ViewMode>('sxs');
   const [showDiff, setShowDiff] = useState(true);
   const [unfocus, setUnfocus] = useState(false);
+  const [loupe, setLoupe] = useState(false);
   const [version, setVersion] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -209,6 +210,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     },
     d: () => setShowDiff((v) => !v),
     u: () => setUnfocus((v) => !v),
+    z: () => setLoupe((v) => !v),
     '1': () => setMode('sxs'),
     '2': () => setMode('slider'),
     '3': () => setMode('onion'),
@@ -329,6 +331,15 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                       </Button>
                     </>
                   )}
+
+                  <Button
+                    size="small"
+                    variant={loupe ? 'solid' : 'ghost'}
+                    onClick={() => setLoupe((v) => !v)}
+                    title="Magnify pixels under the cursor (z)"
+                  >
+                    Loupe
+                  </Button>
                 </>
               ) : (
                 <StatusNote status={result.status} />
@@ -377,6 +388,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               mode={mode}
               showDiff={showDiff}
               unfocus={unfocus}
+              loupe={loupe}
             />
 
             {pending.length > 0 && (
