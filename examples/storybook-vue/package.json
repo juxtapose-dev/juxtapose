@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Vue Storybook example \u2014 proves the adapter is renderer-agnostic.",
+  "description": "Vue Storybook example — proves the adapter is renderer-agnostic.",
   "scripts": {
     "storybook": "storybook dev -p 6007",
     "build": "storybook build -o storybook-static",
