@@ -24,6 +24,9 @@ jobs:
           # release.
           fetch-depth: 0
 
+      # Version comes from `packageManager` in package.json. Keep it on 10.x:
+      # OIDC publishing works there, and pnpm 11 currently fails it with a 404
+      # on auth (pnpm/pnpm#11513).
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -55,5 +58,15 @@ jobs:
           title: 'chore: version packages'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # No NODE_AUTH_TOKEN. Publishing authenticates through npm Trusted
+          # Publishing: pnpm exchanges the `id-token: write` OIDC token above
+          # for a short-lived, single-purpose npm credential. Nothing long-lived
+          # is stored, so there is no secret to leak or rotate.
+          #
+          # This also sidesteps the failure that blocked the first attempt: an
+          # account with 2FA rejects a stored token from CI (`EOTP`), because
+          # CI cannot produce a one-time password. OIDC needs no OTP.
+          #
+          # Requires each package to have a trusted publisher configured on
+          # npmjs.com pointing at this repository and this workflow file.
           NPM_CONFIG_PROVENANCE: 'true'
