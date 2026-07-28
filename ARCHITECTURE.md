@@ -246,6 +246,6 @@ task an agent can close, given the right context:
 ## Non-goals for v1
 
 Multi-browser, multi-viewport matrix, full-page scroll capture, interaction
-state matrices, perceptual/SSIM diffing, hosted review UI. Each multiplies
-capture cost by the size of its matrix, and none of them change what exact
-comparison against a committed baseline is worth.
+state matrices, perceptual/SSIM diffing. Each multiplies capture cost by the
+size of its matrix, and none of them change what exact comparison against a
+committed baseline is worth.
