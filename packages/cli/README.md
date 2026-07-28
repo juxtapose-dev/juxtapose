@@ -3,7 +3,7 @@
 Visual regression testing for component workbenches. Captures every story,
 compares against approved baselines, and tells you exactly what changed.
 
-Works with **Storybook** and **Ladle**. Baselines live in your repo by default —
+Works with **Storybook** and **Ladle**. Baselines live in your repo by default,
 no bucket, no account, no service.
 
 ```bash
@@ -17,12 +17,12 @@ git add juxtapose.manifest.json .juxtapose/baselines
 From then on, `jux run` captures only the stories your changes could have
 affected.
 
-| command             | what it does                                          |
-| ------------------- | ----------------------------------------------------- |
-| `jux run`           | capture affected stories and compare to baselines     |
-| `jux approve --all` | promote the last run's captures to baselines          |
-| `jux check`         | exit non-zero if anything still needs review — for CI |
-| `jux handoff <id>`  | print an agent-ready prompt for one failing story     |
+| command             | what it does                                      |
+| ------------------- | ------------------------------------------------- |
+| `jux run`           | capture affected stories and compare to baselines |
+| `jux approve --all` | promote the last run's captures to baselines      |
+| `jux check`         | exit non-zero if anything needs review, for CI    |
+| `jux handoff <id>`  | print an agent-ready prompt for one failing story |
 
 All commands accept `--json`.
 

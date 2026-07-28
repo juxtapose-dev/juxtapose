@@ -1,6 +1,6 @@
 # Examples
 
-Two workbenches — Storybook and Ladle — rendering the **same components** from
+Two workbenches, Storybook and Ladle, rendering the **same components** from
 `examples/components`. That is the point: the adapters should produce
 equivalent results from identical source.
 
@@ -10,7 +10,7 @@ pnpm --filter example-storybook visual   # build + capture
 pnpm --filter example-ladle visual
 ```
 
-Both start with everything `new` (no baselines are committed — see below).
+Both start with everything `new` (no baselines are committed, see below).
 `jux approve --all` establishes them, then subsequent runs should be all-pass.
 
 ## Layout
@@ -32,7 +32,7 @@ React.
 
 ## What the stories cover
 
-`Button` and `Card` are ordinary components — variants, sizes, text wrapping.
+`Button` and `Card` are ordinary components: variants, sizes, text wrapping.
 They exist to look like a real project.
 
 The `Determinism` stories are different: each one targets a specific step of
@@ -51,12 +51,12 @@ what broke.
 
 `AnimationsRunning` is marked `skip` deliberately. With animations live the
 spinner is at an arbitrary rotation when the shutter fires, so under a
-byte-exact hash the story is inherently unstable — that is the honest tradeoff
+byte-exact hash the story is inherently unstable. That is the honest tradeoff
 of `animations: 'play'`. Remove the `skip` to watch it flap.
 
 ## Per-story config differs by platform
 
-Same options, different declaration site — this is the clearest illustration of
+Same options, different declaration site. This is the clearest illustration of
 what the platform adapters actually abstract.
 
 ```jsx
@@ -71,7 +71,7 @@ export const Narrow = () => <TextSpecimen />;
 Narrow.meta = { juxtapose: { viewport: { width: 480, height: 400 } } };
 ```
 
-Both workbenches enumerate 16 stories and capture 14 — the two `skip` stories
+Both workbenches enumerate 16 stories and capture 14. The two `skip` stories
 are honoured identically. That was not always true: Storybook drops custom
 parameters from its static index, so `skip` was invisible at enumeration time
 until `readLiveParams` started re-reading them from the live preview. If the
@@ -80,7 +80,7 @@ two ever disagree on counts again, that is the mechanism to suspect.
 ## Baselines are not committed here
 
 Normally you _would_ commit `juxtapose.manifest.json` and
-`.juxtapose/baselines/` — that is the whole point of the git store.
+`.juxtapose/baselines/`, which is the whole point of the git store.
 
 These examples are the exception. Antialiased rendering differs across
 platforms and Chromium versions, so a baseline captured on one machine will not

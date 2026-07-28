@@ -1,6 +1,6 @@
 # @juxtapose/server
 
-Local review API for juxtapose — the contract every review UI is a skin over.
+Local review API for juxtapose. The contract every review UI is a skin over.
 
 Part of [juxtapose](https://github.com/juxtapose-dev/juxtapose), visual
 regression testing for component workbenches.

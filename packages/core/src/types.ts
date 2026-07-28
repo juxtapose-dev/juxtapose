@@ -113,8 +113,8 @@ export interface BaselineEntry extends ApprovalMeta {
   hash: string;
 }
 
-/** Committed to the repo. The source of truth for what "approved" means,
- *  regardless of which store holds the actual bytes. */
+/** Committed to the repo. Hashes rather than images, so a green run compares
+ *  two strings instead of fetching and decoding a baseline. */
 export interface BaselineManifest {
   version: 1;
   baselines: Record<string, BaselineEntry>;

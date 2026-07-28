@@ -1,6 +1,6 @@
 # @juxtapose/storybook
 
-Storybook addon for [juxtapose](https://github.com/juxtapose-dev/juxtapose) —
+Storybook addon for [juxtapose](https://github.com/juxtapose-dev/juxtapose).
 review visual diffs next to the story that produced them.
 
 ```bash

@@ -17,10 +17,10 @@ unchanged; the shape is different in three ways:
 
 ```
 packages/
-  core/               @juxtapose/core        capture, diff, storage, analysis — no platform knowledge
+  core/               @juxtapose/core        capture, diff, storage, analysis (no platform knowledge)
   adapter-storybook/  @juxtapose/adapter-storybook   index.json enumeration + preview channel driver
   adapter-ladle/      @juxtapose/adapter-ladle       meta.json enumeration + Ladle's ready signal
-  cli/                @juxtapose/cli         `jux` — init, run, approve, check, handoff
+  cli/                @juxtapose/cli         `jux`: init, run, approve, check, handoff
   server/             @juxtapose/server      local review API; the addon is a skin over it
   storybook/          @juxtapose/storybook   panel, test provider, sidebar decoration, watch mode
 ```
@@ -30,8 +30,8 @@ CLI resolves an adapter at runtime from config or autodetection.
 
 ## The platform adapter seam
 
-Everything Storybook-specific reduces to a handful of operations. Two of them —
-showing a story and waiting for it to render — are the whole of it; the rest is
+Everything Storybook-specific reduces to a handful of operations. Two of them,
+showing a story and waiting for it to render, are the whole of it. The rest is
 metadata the core needs to do its own work.
 
 ```ts
@@ -61,7 +61,7 @@ interface Platform {
 ```
 
 The optional three are all recoveries rather than requirements. `switchStory`
-is an optimization — a platform without it still works, just slower, because
+is an optimization. A platform without it still works, just slower, because
 the pool falls back to `goto`. `readLiveParams` exists because Storybook
 serializes only a whitelist of parameters into `index.json`, so `skip` and
 per-story viewports are invisible until you ask the running preview. Ladle
@@ -72,44 +72,45 @@ needs neither: its `meta` is statically extracted and complete.
 Carried over almost unchanged from the original, which got this right. The
 platform-specific leakage was confined to `StoryManifest`.
 
-- **`StoryManifest`** — `{ storyId, title, name, componentPath, params }`.
+- **`StoryManifest`**: `{ storyId, title, name, componentPath, params }`.
   `componentPath` is the absolute path to the source file; it is what makes
   affected-story analysis possible. Adapters populate it.
-- **`Snapshot`** — captured image + viewport + timestamp. Stored as WebP.
-- **`DiffResult`** — `pass | fail | new | stale | skip`, mismatch pixels and
+- **`Snapshot`**: captured image + viewport + timestamp. Stored as WebP.
+- **`DiffResult`**: `pass | fail | new | stale | skip`, mismatch pixels and
   percent, plus `changedRegions` (bounding boxes of changed clusters, merged
   with an 8px gap tolerance so one logical change is one box, not 400).
-- **`RunReport`** — the run envelope. This is the JSON agents consume.
-- **`BaselineManifest`** — `storyId → { hash, commit, approvedAt, approvedBy }`.
-  Committed to the repo. This is the source of truth for what "approved" means.
+- **`RunReport`**: the run envelope. This is the JSON agents consume.
+- **`BaselineManifest`**: `storyId → { hash, commit, approvedAt, approvedBy }`.
+  Committed to the repo. Hashes, not images, so comparing is a string equality
+  check, which is what makes a green run nearly free.
 
 ## Capture: the settle pipeline
 
 This is where visual testing lives or dies. A flaky settle produces false diffs,
 and false diffs train people to ignore the tool. The pipeline, in order:
 
-1. **Viewport** — set only if changed from the last story on this page (skips a
+1. **Viewport**: set only if changed from the last story on this page (skips a
    CDP round-trip).
-2. **Arm the observer** — a `MutationObserver` installed via `page.evaluate`
+2. **Arm the observer**: a `MutationObserver` installed via `page.evaluate`
    _before_ the render is triggered, so it is already watching when the story
    mounts. It resolves after 150ms of no mutations, capped at 500ms.
-3. **Navigate or switch** — cold `goto`/`showStory`, or warm channel switch.
-4. **Freeze animations** — inject CSS zeroing transitions/animations so
+3. **Navigate or switch**: cold `goto`/`showStory`, or warm channel switch.
+4. **Freeze animations**: inject CSS zeroing transitions/animations so
    spinners and shimmer don't randomize the frame. Opt out per story with
    `animations: 'play'`. **This runs before the render signal, not after**:
    injected styles survive a warm story switch but not a navigation, so
    freezing afterwards makes warm and cold captures of the same story disagree.
    Moving it is a behaviour change, not a refactor.
-5. **Render-ready** — platform-specific. Storybook fires render-phase events;
+5. **Render-ready**: platform-specific. Storybook fires render-phase events;
    resolve at `playing` to capture pre-interaction state, or at `played` when
    the story opts into `captureAfterPlay`.
-6. **Live params** — re-read `parameters.juxtapose` from the running preview,
+6. **Live params**: re-read `parameters.juxtapose` from the running preview,
    because Storybook drops custom parameters from its static index. Honours a
    late `skip`, and re-settles if the story declares its own viewport.
-7. **Quiescence** — `waitForSelector` if declared, then network drain and image
+7. **Quiescence**: `waitForSelector` if declared, then network drain and image
    decode in a _single_ `page.evaluate` rather than three, then an optional
    fixed `delay`.
-8. **Paint barrier** — two nested rAFs plus an idle callback. A quiet DOM is
+8. **Paint barrier**: two nested rAFs plus an idle callback. A quiet DOM is
    not a painted frame; without this, captures intermittently catch an
    intermediate one.
 9. **Screenshot** → PNG → lossless WebP.
@@ -173,22 +174,22 @@ interface BaselineStore {
 }
 ```
 
-- **`git` (default)** — baselines committed under `.juxtapose/baselines/` as
+- **`git` (default)**: baselines committed under `.juxtapose/baselines/` as
   WebP. Zero infra, baselines version with the code, review happens in the PR
   diff, and branches get correct baselines by construction. Costs repo size,
   though lossless WebP of a flat UI render is usually smaller than the PNG.
-- **`fs`** — the same store pointed at a directory you choose, rather than a
+- **`fs`**: the same store pointed at a directory you choose, rather than a
   separate implementation.
-- **`s3`** — declared in `StorageConfig` but **not implemented**: the CLI
+- **`s3`**: declared in `StorageConfig` but **not implemented**: the CLI
   throws if you select it. Intended for suites too large to carry in git.
 
 The `BaselineManifest` is committed in every case. Even with the S3 store, the
-manifest in git is what defines "approved" — the bucket only holds the bytes.
+manifest in git is what defines "approved"; the bucket only holds the bytes.
 
 ## Pass/fail is a hash, not a threshold
 
 **A story passes if `sha256(webp) === manifest[storyId].hash`.** Byte-exact.
-The pixel diff does not decide anything — it runs _only after_ a hash mismatch,
+The pixel diff does not decide anything. It runs _only after_ a hash mismatch,
 purely to produce artifacts a reviewer (or agent) can act on: mismatch percent,
 changed regions, diff overlay.
 
@@ -212,7 +213,7 @@ Status resolution, in order:
 
 `stale` matters: a baseline approved on a branch that never merged is not a
 valid baseline for HEAD. Detecting it needs a `git merge-base --is-ancestor`
-call, which forks a process at ~40ms — so it is memoized across the run. At 738
+call, which forks a process at ~40ms, so it is memoized across the run. At 738
 stories that is the difference between ~30s and ~50ms.
 
 ## Diff (the cold path)
@@ -224,7 +225,7 @@ extraction → WebP encode. Thresholds resolve per story: story params override
 project config override the default of 0.1. `minDiffPercent` suppresses
 sub-pixel AA noise in the _reported_ percentage.
 
-Note these thresholds tune what gets _reported_, not what passes — the hash
+Note these thresholds tune what gets _reported_, not what passes. The hash
 already decided that. They exist so a reviewer can tell "one word changed" from
 "the whole layout moved".
 

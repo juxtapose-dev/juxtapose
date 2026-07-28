@@ -36,7 +36,7 @@ pnpm --filter example-ladle visual
 ```
 
 If your change touches capture, also run `pnpm check:determinism`. Captures
-must be byte-identical across repeated runs of unchanged stories — that is what
+must be byte-identical across repeated runs of unchanged stories. That is what
 makes exact comparison possible, and the failure mode is a race, so a single
 green run doesn't prove much.
 
@@ -47,14 +47,14 @@ green run doesn't prove much.
 Implement the `Platform` interface in `packages/core/src/platform.ts`:
 `detect`, `enumerate`, `showStory`, `previewUrl`, `settle`, `configDirs` and
 `storyFileGlobs`; optionally `switchStory`, `storyUrl` and `readLiveParams`. The existing
-adapters are small — Ladle's is under 200 lines — and both were written against
+adapters are small (Ladle's is under 200 lines) and both were written against
 this interface without changing it. If something platform-specific is creeping
 into `core`, that usually means the interface needs another method rather than
 core needing a special case.
 
 ## Conventions
 
-Comments should explain _why_, not what — the code already says what it does.
+Comments should explain _why_, not what. The code already says what it does.
 When you fix something subtle, record the measurement or failure that justified
 the fix, since that's the part nobody can re-derive by reading the code.
 
@@ -63,7 +63,7 @@ function; the smallest thing that fails if the logic breaks.
 
 Prefer tests that exercise the real library over hand-rolled fixtures. A
 fixture can encode the same wrong assumption as the code and pass while
-production is broken — that has happened here.
+production is broken. That has happened here.
 
 ## Pull requests
 
