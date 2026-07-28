@@ -48,6 +48,9 @@ export {
   type RunOptions,
   type RunArtifact,
 } from './run/run.js';
+
+// Per-phase timings, so a slow run can say which phase was slow.
+export { phases, formatPhases, type Phases } from './run/phases.js';
 export { deterministicLaunchOptions, type LaunchOptions } from './capture/launch.js';
 export {
   resolveAffected,
