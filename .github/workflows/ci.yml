@@ -39,7 +39,11 @@ jobs:
       # `--since origin/main` rather than the default `main`: a PR checkout has
       # the remote-tracking ref but no local branch of that name, so the
       # default cannot find where HEAD diverged.
+      # Skipped on the release branch: "version packages" consumes every
+      # changeset and bumps versions, so it necessarily changes packages with
+      # no changesets left. The check can never pass there.
       - name: Validate changesets
+        if: github.head_ref != 'changeset-release/main'
         run: pnpm exec changeset status --since origin/main
 
   determinism:
