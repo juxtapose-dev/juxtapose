@@ -40,6 +40,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/juxtapose-dev/juxtapose.git",
-    "directory": "packages/addon-storybook"
+    "directory": "packages/storybook"
   }
 }

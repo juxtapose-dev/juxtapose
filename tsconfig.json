@@ -17,7 +17,7 @@
       "path": "./packages/server"
     },
     {
-      "path": "./packages/addon-storybook"
+      "path": "./packages/storybook"
     }
   ]
 }

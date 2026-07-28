@@ -78,7 +78,7 @@ importers:
         version: link:../../packages/cli
       '@juxtapose/storybook':
         specifier: workspace:*
-        version: link:../../packages/addon-storybook
+        version: link:../../packages/storybook
       '@storybook/react':
         specifier: ^8.4.7
         version: 8.6.18(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(storybook@8.6.18(prettier@3.9.6))(typescript@5.9.3)
@@ -103,7 +103,7 @@ importers:
         version: link:../../packages/cli
       '@juxtapose/storybook':
         specifier: workspace:*
-        version: link:../../packages/addon-storybook
+        version: link:../../packages/storybook
       '@storybook/vue3':
         specifier: ^8.4.7
         version: 8.6.18(storybook@8.6.18(prettier@3.9.6))(vue@3.5.40(typescript@5.9.3))
@@ -134,28 +134,6 @@ importers:
       playwright:
         specifier: ^1.48.0
         version: 1.62.0
-
-  packages/addon-storybook:
-    dependencies:
-      '@juxtapose/adapter-storybook':
-        specifier: workspace:*
-        version: link:../adapter-storybook
-      '@juxtapose/core':
-        specifier: workspace:*
-        version: link:../core
-      '@juxtapose/server':
-        specifier: workspace:*
-        version: link:../server
-    devDependencies:
-      '@types/react':
-        specifier: ^18.3.12
-        version: 18.3.31
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-      storybook:
-        specifier: ^8.4.7
-        version: 8.6.18(prettier@3.9.6)
 
   packages/cli:
     dependencies:
@@ -196,6 +174,28 @@ importers:
       playwright:
         specifier: ^1.48.0
         version: 1.62.0
+
+  packages/storybook:
+    dependencies:
+      '@juxtapose/adapter-storybook':
+        specifier: workspace:*
+        version: link:../adapter-storybook
+      '@juxtapose/core':
+        specifier: workspace:*
+        version: link:../core
+      '@juxtapose/server':
+        specifier: workspace:*
+        version: link:../server
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      storybook:
+        specifier: ^8.4.7
+        version: 8.6.18(prettier@3.9.6)
 
 packages:
 
