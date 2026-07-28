@@ -7,5 +7,6 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["example-components", "example-storybook", "example-ladle"]
+  "ignore": ["example-components", "example-storybook", "example-ladle"],
+  "changedFilePatterns": ["src/**", "!src/**/*.test.ts", "package.json"]
 }
