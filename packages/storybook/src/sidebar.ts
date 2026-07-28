@@ -9,7 +9,9 @@
 // Storybook's status API is `experimental_*` and has moved between versions —
 // is isolated in `applyStatuses` at the bottom.
 
-import { formatPercent } from '@juxtapose/core';
+// Deep import on purpose: '@juxtapose/core' reaches sharp and playwright
+// through the capture modules, and this file is bundled for the browser.
+import { formatPercent } from '@juxtapose/core/format';
 import type { RunReport, DiffStatus } from '@juxtapose/core';
 
 /** Storybook's status vocabulary. Ours has to map onto these five. */
