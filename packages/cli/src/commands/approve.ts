@@ -45,6 +45,8 @@ export async function approveCommand(flags: CommonFlags): Promise<number> {
   const commit = gitSha(ctx.projectRoot);
   const approvedBy = process.env.JUXTAPOSE_USER ?? process.env.USER ?? 'unknown';
   const approvedAt = new Date().toISOString();
+  // From the run, not from here: approving never launches a browser.
+  const env = report.env;
   const approved: string[] = [];
   const failed: { storyId: string; reason: string }[] = [];
 
@@ -56,7 +58,7 @@ export async function approveCommand(flags: CommonFlags): Promise<number> {
     );
     try {
       const image = await readFile(imagePath);
-      await ctx.store.put(result.storyId, image, { commit, approvedBy, approvedAt });
+      await ctx.store.put(result.storyId, image, { commit, approvedBy, approvedAt, env });
       approved.push(result.storyId);
     } catch {
       failed.push({ storyId: result.storyId, reason: 'capture image missing from run' });

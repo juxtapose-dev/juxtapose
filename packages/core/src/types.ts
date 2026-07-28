@@ -92,6 +92,9 @@ export interface RunReport {
   runId: string;
   branch: string;
   commitSha: string;
+  /** What captured these pixels. Optional so a report written by an older
+   *  version still parses. */
+  env?: CaptureEnv;
   /** How many stories we captured vs how many exist. */
   capturedCount: number;
   totalCount: number;
@@ -101,10 +104,28 @@ export interface RunReport {
   startedAt: string;
 }
 
+/** What rendered the pixels. Baselines from different environments are not
+ *  comparable byte-for-byte, so recording this is what lets an all-red suite
+ *  after a toolchain bump be reported as a bump rather than as N regressions. */
+export interface CaptureEnv {
+  /** Playwright's `browser.version()`, e.g. "151.0.7922.34". */
+  browser: string;
+  /** `${platform}-${arch}`, e.g. "darwin-arm64". */
+  os: string;
+  /** libvips, which encodes the WebP. Measured to move bytes far more readily
+   *  than the browser does: a libvips bump changed all 17 example baseline
+   *  hashes with zero changed pixels, while Chromium 149 -> 151 left 16 of 18
+   *  byte-identical. */
+  encoder: string;
+}
+
 export interface ApprovalMeta {
   commit: string;
   approvedBy: string;
   approvedAt: string;
+  /** Absent on entries approved before this was recorded. Absent must not read
+   *  as "matches": an unknown origin is unknown, not current. */
+  env?: CaptureEnv;
 }
 
 export interface BaselineEntry extends ApprovalMeta {
