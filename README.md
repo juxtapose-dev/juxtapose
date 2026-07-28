@@ -13,7 +13,28 @@ npx jux approve --all # bless the current rendering
 npx jux check         # exit 0/1, for CI
 ```
 
-## Why another one
+## Hosted review
+
+<!-- [YOUR COPY] one or two sentences on what hosted review is for and who it
+     is for. Everything below this line is factual and can stay as written. -->
+
+```bash
+npx jux run --comment
+# then review at https://<your-org>.juxtapose.dev
+```
+
+Two things worth knowing up front:
+
+**Your baselines don't move.** They stay committed in your repo. The service
+renders the review surface; git still defines what "approved" means, exactly as
+it does locally. Approving in the browser produces the same manifest diff you
+would get from `jux approve`.
+
+**It's optional.** The CLI and the Storybook addon work with no account at all.
+Hosted review is the same API the addon already talks to — one review surface,
+two places to open it.
+
+## What's different
 
 **Pass/fail is exact.** A story passes if it renders identically to its
 approved baseline. There is no "5% is probably fine" threshold to argue about,
@@ -25,10 +46,9 @@ exact regions that moved.
 that caused it, reviewable next to the code. Branches get the right baselines
 by checking out the branch, and undoing a bad approval is `git revert`.
 
-**Agent-first, not agent-compatible.** Every command emits JSON, and
-`jux handoff` turns a failing story into a prompt an agent can act on — exact
-mismatch figures, changed-region coordinates and the component's source path,
-rather than screenshots it has to squint at.
+**Every command emits JSON**, and `jux handoff` turns a failing story into a
+prompt an agent can act on — exact mismatch figures, changed-region coordinates
+and the component's source path, rather than an image it has to squint at.
 
 ## Getting started
 
@@ -140,7 +160,7 @@ Per-story options go through the platform's own parameter mechanism
 | `mask`                         | paint over selectors before the shutter (see below) |
 | `liveCapture: false`           | exclude from watch-mode recapture (see below)       |
 
-Captures are reproducible by design: animations are frozen, webfonts and images
+Captures are reproducible: animations are frozen, webfonts and images
 are awaited, and rendering is pinned to settings that don't vary by machine.
 
 ### Content that changes every run
@@ -165,7 +185,7 @@ element's _size_ the box changes with it and a sliver leaks at the edge. A bare
 timestamp span still failed at 0.015% that way. Give the masked element a fixed
 width.
 
-### Watch mode
+## Watch mode
 
 ```bash
 pnpm add -D @juxtapose/storybook   # then add it to .storybook/main.js addons
@@ -182,7 +202,7 @@ dev server has no bundler graph of its own to consult. Set
 `liveCapture: false` on a story whose play function or delay makes constant
 recapture cost more than it returns; it still captures on a normal run.
 
-The limit worth knowing is that juxtapose waits on things it can observe —
+juxtapose waits on things it can observe —
 network requests, DOM changes, fonts, images. Content that appears on a bare
 timer is invisible to that, so a story built on `setTimeout` can race the
 capture. `waitForSelector` is the fix.
@@ -220,10 +240,11 @@ Early, but usable. The capture, diff and approve loop is verified end to end on
 Storybook (React and Vue) and Ladle, the addon gives you the review UI in
 place, and CI gets PR comments and a self-contained HTML report.
 
-Hosted storage is the main gap. `storage.kind` accepts `"s3"`, but the CLI
-throws on it today — git is the only implemented backend, and `"fs"` is that
-same store pointed at a directory you choose. See the
-[issues](https://github.com/juxtapose-dev/juxtapose/issues) for the roadmap.
+Hosted baseline storage is the main gap. `storage.kind` accepts `"s3"`, but the
+CLI throws on it today — git is the only implemented backend, and `"fs"` is that
+same store pointed at a directory you choose. That is about where the image
+bytes live, not about review: hosted review works with baselines in git. See
+the [issues](https://github.com/juxtapose-dev/juxtapose/issues) for the roadmap.
 
 ## Contributing
 

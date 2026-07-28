@@ -25,7 +25,7 @@ examples/
 
 `storybook-vue` exists to keep "works with Storybook" honest. Storybook's
 indexing is core rather than per-renderer, so the adapter should be
-renderer-agnostic — but that is a claim worth proving rather than asserting.
+renderer-agnostic.
 It runs in CI alongside the others, and captures 9 stories byte-identically
 with `skip` and per-story viewport overrides behaving exactly as they do on
 React.
