@@ -21,6 +21,10 @@ export interface StoryParams {
   waitForSelector?: string;
   /** Max ms to wait for render-ready before screenshotting anyway. Default 2000. */
   captureTimeout?: number;
+  /** Selectors to cover with a solid box before the screenshot. For a clock or
+   *  a random avatar; prefer stubbing the input. Masks the element's bounding
+   *  box, so give it a fixed size or the box resizes with the content. */
+  mask?: string[];
   /** Exclude from watch-mode recapture while leaving normal runs alone. For
    *  stories whose play function or delay makes a keystroke-triggered capture
    *  cost more than it returns. Default true. */
