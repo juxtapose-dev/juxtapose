@@ -9,6 +9,7 @@
 // Storybook's status API is `experimental_*` and has moved between versions —
 // is isolated in `applyStatuses` at the bottom.
 
+import { formatPercent } from '@juxtapose/core';
 import type { RunReport, DiffStatus } from '@juxtapose/core';
 
 /** Storybook's status vocabulary. Ours has to map onto these five. */
@@ -146,9 +147,4 @@ export async function applyStatuses(
     console.warn('[juxtapose] could not update sidebar statuses:', err);
     return false;
   }
-}
-
-function formatPercent(pct: number): string {
-  if (pct >= 0.01) return `${pct.toFixed(2)}%`;
-  return pct > 0 ? '<0.01%' : '0%';
 }

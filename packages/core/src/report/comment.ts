@@ -15,6 +15,7 @@
 //    camo. So the text has to carry everything and link out for pixels.
 
 import type { DiffResult, RunReport, Viewport } from '../types.js';
+import { formatPercent } from './format.js';
 
 /**
  * Invisible marker identifying our own comment.
@@ -401,12 +402,6 @@ function footer(report: RunReport, artifactUrl?: string): string {
   return artifactUrl
     ? `${meta}\n\n<sub>[CI run — report.html is in the artifacts](${artifactUrl})</sub>`
     : meta;
-}
-
-/** Never show "0.00%" next to the word "changed" — it reads as a tool bug. */
-function formatPercent(pct: number): string {
-  if (pct >= 0.01) return `${pct.toFixed(2)}%`;
-  return pct > 0 ? '<0.01%' : '0%';
 }
 
 /**

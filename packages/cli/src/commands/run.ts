@@ -15,6 +15,7 @@ import {
   alwaysAncestor,
   deterministicLaunchOptions,
   encodeStoryId,
+  formatPercent,
   type BaselineStore,
   type RunArtifact,
   type RunReport,
@@ -259,11 +260,6 @@ async function emit(json: boolean, report: RunReport, runDir: string): Promise<v
  * to two decimals prints "0.00%" next to the word "fail", which reads as a
  * tool bug and teaches people to distrust the output.
  */
-function formatPercent(pct: number): string {
-  if (pct >= 0.01) return `${pct.toFixed(2)}%`;
-  if (pct > 0) return '<0.01%';
-  return '0%';
-}
 
 function emptyReport(projectRoot: string, totalCount: number): RunReport {
   return {
