@@ -217,6 +217,9 @@ export class RunDirSource implements ReviewSource {
         commit: this.opts.commitSha,
         approvedBy: process.env.JUXTAPOSE_USER ?? process.env.USER ?? 'unknown',
         approvedAt: new Date().toISOString(),
+        // The run that produced this capture, not the addon process. Approving
+        // through the panel must record the same fingerprint the CLI would.
+        env: this.report?.env,
       });
     });
     // Keep the chain alive even if this link rejects, or one failed approval

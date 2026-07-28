@@ -6,6 +6,7 @@
 // failed. On a green run this function never decodes a single image.
 
 import type { Browser } from 'playwright';
+import { captureEnv } from '../capture/env.js';
 import type { Platform } from '../platform.js';
 import type {
   BaselineStore,
@@ -102,6 +103,10 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     runId: opts.runId,
     branch: opts.branch,
     commitSha: opts.commitSha,
+    // Carried on the report because `approve` has no browser of its own — it
+    // reads captured images off disk, so this is the only path by which the
+    // fingerprint reaches a baseline entry.
+    env: captureEnv(opts.browser),
     capturedCount: opts.stories.length,
     totalCount: opts.totalCount,
     results: results.sort((a, b) => a.storyId.localeCompare(b.storyId)),

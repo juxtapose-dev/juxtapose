@@ -123,7 +123,12 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       if (result.status === 'fail') continue;
       const image = await readCapture(runDir, result.storyId);
       if (!image) continue;
-      await ctx.store.put(result.storyId, image, { commit, approvedBy, approvedAt });
+      await ctx.store.put(result.storyId, image, {
+        commit,
+        approvedBy,
+        approvedAt,
+        env: report.env,
+      });
       approved++;
     }
 
