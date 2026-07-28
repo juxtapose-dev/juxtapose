@@ -187,15 +187,13 @@ manifest in git is what defines "approved" — the bucket only holds the bytes.
 
 ## Pass/fail is a hash, not a threshold
 
-The most important design decision in the tool, and the least obvious:
-
 **A story passes if `sha256(webp) === manifest[storyId].hash`.** Byte-exact.
 The pixel diff does not decide anything — it runs _only after_ a hash mismatch,
 purely to produce artifacts a reviewer (or agent) can act on: mismatch percent,
 changed regions, diff overlay.
 
-The consequence is severe and worth stating plainly: **any nondeterminism in
-capture is a hard failure.** There is no threshold to hide behind. That is why
+**Any nondeterminism in capture is a hard failure.** There is no threshold to
+hide behind. That is why
 the settle pipeline above is so elaborate, and why animation freezing and font
 waiting are on by default rather than opt-in. Every flake is a failed build.
 
@@ -230,44 +228,6 @@ Note these thresholds tune what gets _reported_, not what passes — the hash
 already decided that. They exist so a reviewer can tell "one word changed" from
 "the whole layout moved".
 
-## On Rust
-
-Browser capture is ~85-90% of a run's wall clock and is irreducible in any
-language — Chromium renders at the speed it renders. **A Rust rewrite of the
-pipeline does not move the headline number.** Anyone promising otherwise is
-selling something.
-
-But there are three places native code genuinely pays, and none of them are
-"rewrite the tool":
-
-1. **The diff path, on a heavily-failing run.** pixelmatch with
-   `includeAA: false` runs an 8-neighbour antialiasing scan per differing
-   pixel, single-threaded JS over ~1M pixels. It is also embarrassingly
-   parallel — across stories _and_ across rows — where JS gets one event loop
-   and `Promise.all` over CPU-bound work is concurrency theatre. SIMD + rayon
-   is plausibly 10-30x here. Mitigated by the hash-first design: on a green run
-   this cost is zero.
-
-2. **The dependency scanner.** `madge` parses every source file with a JS AST
-   parser on every run, uncached, and it sits on the critical path _before_ any
-   capture starts. On a large monorepo that is seconds to tens of seconds of
-   dead time. An `oxc`-based import scanner with an mtime-keyed incremental
-   cache is the easiest large win available — and it helps every run, passing
-   or failing.
-
-3. **Format round-trips.** Today a story costs: PNG encode inside Chromium →
-   PNG decode in sharp → WebP encode. A failing story adds two more decodes and
-   several more encodes for diff and heatmap. `sharp` is already native libvips,
-   so the library is not the problem — the redundant conversions are, and those
-   are architectural, fixable in TypeScript by asking CDP for raw bitmap data
-   and encoding once.
-
-So: **TypeScript first, with the CPU-bound work behind a narrow boundary.**
-`diff()`, `hash()` and region extraction are pure functions over buffers with no
-platform coupling; a napi-rs implementation drops in behind that boundary
-without touching callers. Fix the round-trips first — that is a free win in TS.
-Reach for Rust on (1) and (2) when a benchmark says so, not before.
-
 ## Agent loop
 
 The original's best idea, kept and made central. Failing visual diffs are a
@@ -286,5 +246,6 @@ task an agent can close, given the right context:
 ## Non-goals for v1
 
 Multi-browser, multi-viewport matrix, full-page scroll capture, interaction
-state matrices, perceptual/SSIM diffing, hosted review UI. All were deferred
-upstream for good reasons and none are load-bearing for the core value.
+state matrices, perceptual/SSIM diffing, hosted review UI. Each multiplies
+capture cost by the size of its matrix, and none of them change what exact
+comparison against a committed baseline is worth.
