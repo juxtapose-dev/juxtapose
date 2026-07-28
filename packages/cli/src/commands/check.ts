@@ -5,9 +5,26 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { RunReport } from '@juxtapose/core';
+import { encodeStoryId, hashImage, type RunReport } from '@juxtapose/core';
 import { resolveContext, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
+
+/** Hash of what the run captured, or undefined if the image is gone. Undefined
+ *  blocks: an approval that can't be confirmed is not an approval. */
+async function capturedHash(
+  runDir: string,
+  storyId: string,
+): Promise<string | undefined> {
+  try {
+    return hashImage(
+      await readFile(
+        path.join(runDir, 'images', `${encodeStoryId(storyId)}-current.webp`),
+      ),
+    );
+  } catch {
+    return undefined;
+  }
+}
 
 export async function checkCommand(flags: CommonFlags): Promise<number> {
   const ctx = await resolveContext(flags);
@@ -27,12 +44,21 @@ export async function checkCommand(flags: CommonFlags): Promise<number> {
 
   const manifest = await ctx.store.readManifest();
 
-  // A story blocks unless the run passed it, or an approval has landed since
-  // the run — which is exactly the case `check` exists to detect.
-  const blocking = report.results.filter((r) => {
-    if (r.status === 'pass' || r.status === 'skip') return false;
-    return !manifest.baselines[r.storyId];
-  });
+  // A story blocks unless the run passed it, or an approval has landed since the
+  // run — which is exactly the case `check` exists to detect.
+  //
+  // Testing that a manifest entry merely *exists* does not detect that:
+  // `resolveStatus` only reports 'changed' when an entry is already there, so
+  // every real regression has one and an existence check clears all of them.
+  // The approval has to be confirmed against the bytes, the same way the addon
+  // does it (`server/src/source.ts`).
+  const blocking: typeof report.results = [];
+  for (const r of report.results) {
+    if (r.status === 'pass' || r.status === 'skip') continue;
+    const entry = manifest.baselines[r.storyId];
+    if (entry && (await capturedHash(runDir, r.storyId)) === entry.hash) continue;
+    blocking.push(r);
+  }
 
   if (ctx.json) {
     process.stdout.write(
