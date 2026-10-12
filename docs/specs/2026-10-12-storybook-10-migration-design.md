@@ -9,20 +9,30 @@ launch-ready as open source, and solid enough to be the intake for
 juxtapose-service — proven on a synthetic conformance suite and on real,
 large design systems.
 
-Five sub-projects, in dependency order. Each gets its own spec → plan →
-implementation cycle; only sub-project 1 is specified here.
+**Re-sequenced 2026-10-12** after the agentic-visual-diffing research and the
+build/publish steelman (both in `juxtapose-service/docs/research/`). The agent
+surface comes first because it is the thesis under test, and it does not need
+the addon; the addon and the corpus prove the Storybook/CI upgrade path after
+the thesis holds. Each sub-project gets its own spec → plan → implementation
+cycle; only the Storybook 10 migration is specified here.
 
 | # | Sub-project | Why it is in this position |
 | - | ----------- | -------------------------- |
-| 1 | **Storybook 10 migration** (this doc) | Everything else is built on SB 10; today the addon is only ever run on 8.4.7. |
-| 2 | **Pinned capture image** — Docker, pinned Chromium + fonts; laptop and CI produce identical bytes | Determinism floor for 3–5. Closes #74/#75. Same environment the service renderer will need. |
-| 3 | **Conformance suite** — synthetic SB 10 workbench, one story per feature/hazard, each with an expected outcome; runner asserts outcomes across N runs, then applies mutations and asserts failures, changed regions and affected-story selection | Small, named repros for every failure; "covers everything we need" lives here. |
-| 4 | **Addon E2E** — Playwright drives a real SB 10 with the addon: panel, sidebar dots, test provider, approve/deny writing the manifest, watch mode | The addon UI has unit tests but has never been driven end to end. |
-| 5 | **Real-world corpus** — two large OSS SB 10 design systems pinned at a commit, static builds cached, run 5× in the image with zero tolerated flakes; timings recorded | Scale and realism; validates the claims in ARCHITECTURE.md that were measured on the predecessor tool. |
+| 0 | **Structural engine + Storybook-free agent surface** — DOM/computed-style sidecar captured beside pixels; structural diff → classification → tier-0 verdict; `jux snap <url>`, `jux diff <a> <b> --structural --json` (URL adapter, issue #11); a Claude Code skill. MCP later. | The 10× claim is "verdict in ~300 text tokens, not ~4k image tokens"; it is unproven until this exists. Needs a page + CDP, not Storybook. Same-machine before/after captures sidestep the cross-machine baseline problem. |
+| 1 | **Viewport matrix + cheap Chromatic-parity items** — `viewports` config, viewport in story id + manifest, cost linear in the matrix | Config-level work on a settle pipeline that already re-settles per viewport. Browsers are *not* here: determinism flags are Chromium-specific; Firefox/WebKit arrive with the service renderer. |
+| 2 | **Storybook 10 migration, CLI-first** (this doc) — peer `^10`, examples on 10, capture verified; addon manager fixes follow | Everything downstream is built on SB 10; today the addon only ever runs on 8.4.7. CLI capture is unaffected by 10 (verified); the addon's manager imports are what break. |
+| 3 | **Stale-check and false-green fixes** — squash/rebase/shallow-clone staleness; uncommitted edits visible to `--since`; partial-match full-run fallback; live params wired end to end; hash decoded pixels not WebP bytes | Found in the 2026-10-12 review; each is a silent-wrong-answer path the exact-hash philosophy cannot tolerate. Must land before any public claim. |
+| 4 | **Benchmark** — ~100 labelled real diffs; arms: today's handoff + free image access / tier-0 only / tier-0 + escalation; agreement with human verdicts, tokens, images read, $ | Turns "faster, cheaper, agent-first" into numbers T53 allows us to publish. Flip-to-go gate: tier-0 ≥ image-review agreement at <10% tokens. |
+| 5 | **Pinned capture image** — Docker, pinned Chromium + fonts; laptop and CI produce identical bytes | Determinism floor for 6–8. Closes #74/#75. Same environment the service renderer will need. |
+| 6 | **Conformance suite** — synthetic SB 10 workbench, one story per feature/hazard with an expected outcome; N runs, then mutations asserting failures, regions and affected-story selection | Small, named repros for every failure. |
+| 7 | **Addon E2E** — Playwright drives a real SB 10 with the addon: panel, dots, test provider, approve/deny writing the manifest, watch mode | The addon UI has unit tests but has never been driven end to end. |
+| 8 | **Real-world corpus** — two large OSS SB 10 design systems pinned at a commit, 5× in the image, zero tolerated flakes; timings recorded | Scale and realism; replaces the inherited ARCHITECTURE.md numbers with ours; the only source for a 1,000-story figure. |
 
-Order is conformance-first: corpus failures in an 800-story suite are slow to
-isolate, so the corpus runs last against a pipeline the conformance suite has
-already hardened.
+Later, not scheduled: Figma frame as a third baseline kind for the structural
+diff (after tier 2 exists); browsers via the service renderer.
+
+Within 5–8 the order stays conformance-first: corpus failures in an 800-story
+suite are slow to isolate.
 
 ## Decision: support Storybook 10 only
 
