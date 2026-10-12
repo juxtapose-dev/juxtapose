@@ -20,7 +20,7 @@ import type {
 
 /** Styles recorded per element. `display`/`visibility` are deliberately absent:
  *  display:none elements have no layout entry at all, and visibility is read
- *  only to filter (see VISIBILITY below). */
+ *  only to filter (see `visibilityIdx` in normalizeStructure). */
 export const STRUCTURE_PROPS: readonly string[] = [
   'color',
   'background-color',
@@ -330,7 +330,9 @@ export function normalizeStructure(
         const isPseudo = tag.startsWith('::');
         if (!isPseudo) delete styles.content;
         const pseudoText = isPseudo ? parseContent(values[contentIdx]) : '';
-        const typed = inputValue.get(i);
+        // Sidecars are committed to git: never record a secret field's value.
+        const secret = tag === 'input' && (a.type === 'password' || a.type === 'hidden');
+        const typed = secret ? undefined : inputValue.get(i);
         const text = collapse(pseudoText || typed || ownText.get(i) || '');
         const role = a.role ?? implicitRole(tag, a);
         const name = (a['aria-label'] ?? a.alt ?? a.title ?? text) || undefined;

@@ -37,6 +37,8 @@ const HTML = `<!doctype html><html><head><style>
     <span class="star">Starred</span>
     <svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="#f00"/></svg>
     <input value="typed text" placeholder="Name">
+    <input type="password" value="hunter2">
+    <div style="margin-top:700px;height:1500px"><p>below fold</p></div>
   </main>
   <script>
     document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML =

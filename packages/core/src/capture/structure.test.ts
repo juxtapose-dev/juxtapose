@@ -66,6 +66,7 @@ test('a masked subtree becomes one opaque element', () => {
   const masked = snap().elements.filter((e) => e.tag === 'masked');
   expect(masked).toHaveLength(1);
   expect(snap().elements.map((e) => e.text)).not.toContain('secret');
+  expect(snap().elements.map((e) => e.text)).not.toContain('more');
 });
 
 test('iframe is one element; open shadow content is included', () => {
@@ -115,6 +116,12 @@ test("an input's typed value is its text", () => {
   });
 });
 
+test('a password input is kept but its value is never recorded', () => {
+  const pw = find((e) => e.tag === 'input' && e.text === undefined);
+  expect(pw).toMatchObject({ role: 'textbox' });
+  expect(JSON.stringify(snap())).not.toContain('hunter2');
+});
+
 test('rects are rounded to 0.01px', () => {
   for (const e of snap().elements) {
     for (const v of Object.values(e.rect)) expect(Math.round(v * 100) / 100).toBe(v);
@@ -131,10 +138,11 @@ test('hash is stable and changes with content', () => {
   );
 });
 
-test('records the document content height', () => {
-  // the fixture page is taller than nothing and at least the viewport
-  expect(snap().contentHeight).toBeGreaterThan(0);
+test('records the document content height, taller than the viewport', () => {
   expect(snap().contentHeight).toBe(fixture.raw.documents[0].contentHeight);
+  expect(snap().contentHeight).toBeGreaterThan(fixture.viewport.height);
+  // below-fold content is dropped even though the page extends to it
+  expect(snap().elements.map((e) => e.text)).not.toContain('below fold');
 });
 
 test('gzip round-trips', () => {
