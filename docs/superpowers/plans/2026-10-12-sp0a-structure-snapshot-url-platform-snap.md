@@ -80,6 +80,7 @@
     schema: 'juxtapose.structure/v1';
     viewport: Viewport;
     structureHash: string;
+    contentHeight: number;
     elements: StructureElement[];
     truncated?: { kept: number; total: number };
   }
@@ -142,6 +143,9 @@ export interface StructureSnapshot {
   /** sha256 of the canonical JSON of `elements`. Equal ⇒ identical structure
    *  and styles, so a pixel difference is render drift. */
   structureHash: string;
+  /** Full document height, from CDP. Greater than viewport.height means part
+   *  of the page was never captured — PR (b)'s `below-fold` flag reads this. */
+  contentHeight: number;
   elements: StructureElement[];
   truncated?: { kept: number; total: number };
 }
@@ -375,6 +379,7 @@ const TEXT_NODE = 3;
 /** The subset of a CDP DOMSnapshot.captureSnapshot response we read. */
 export interface CdpSnapshot {
   documents: Array<{
+    contentHeight?: number;
     nodes: {
       parentIndex: number[];
       nodeType: number[];
@@ -598,6 +603,7 @@ export function normalizeStructure(
     schema: 'juxtapose.structure/v1',
     viewport,
     structureHash: hashElements(elements),
+    contentHeight: round(doc.contentHeight ?? viewport.height),
     elements,
   };
   if (total > elements.length) snapshot.truncated = { kept: elements.length, total };
@@ -818,6 +824,12 @@ test('hash is stable and changes with content', () => {
   expect(normalizeStructure(raw, fixture.viewport).structureHash).not.toBe(
     snap().structureHash,
   );
+});
+
+test('records the document content height', () => {
+  // the fixture page is taller than nothing and at least the viewport
+  expect(snap().contentHeight).toBeGreaterThan(0);
+  expect(snap().contentHeight).toBe(fixture.raw.documents[0].contentHeight);
 });
 
 test('gzip round-trips', () => {

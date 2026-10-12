@@ -185,8 +185,15 @@ type Flag =
   | 'large-reflow' // shift count ≥ 10 or |dy| ≥ 50
   | 'unexplained-pixels' // explained !== 'full'
   | 'structure-truncated' // either side hit the element cap
-  | 'no-baseline-structure'; // baseline predates sidecars
+  | 'no-baseline-structure' // baseline predates sidecars
+  | 'below-fold'; // content height > viewport: changes below it are invisible to both pixels and structure
 ```
+
+`below-fold` (added 2026-10-12, PR b): set when either side's document content
+height (CDP `contentHeight`, which PR (a) must record on `StructureSnapshot` as
+`contentHeight`) exceeds the viewport height. Capture is viewport-only, so an
+agent must be told when "no change" may mean "no change in the part we looked
+at".
 
 `summary` example (generated from deltas, no model):
 `style-only (color, spacing): button[name="Save"] background-color #2563eb→#1d4ed8, padding 8px→12px. 2 regions, fully explained.`
@@ -225,6 +232,12 @@ handoffs into one decision.
   `.juxtapose/snaps/<name>.webp` and `<name>.structure.json.gz` (name defaults
   to a slug of the URL; `.juxtapose/snaps/` is gitignored by `jux init`).
   Prints `{ name, image, structure, viewport, env, structureHash }`.
+- **Several pages per call (added 2026-10-12, PR b):** `jux snap <url>…` accepts
+  multiple URLs and an `--as-prefix <p>`, naming each snap `<p>-<slug>`; one
+  browser launch for all of them. `jux diff --prefix before after` pairs snaps
+  by slug and prints one verdict per page plus a page-level summary. This is
+  the URL-mode answer to "which pages did my shared-component edit touch": the
+  agent snaps every page it suspects in one command instead of choosing one.
 - **`jux diff <a> <b> [--json] [--crops]`**
   `a`, `b` are snap names or paths. Prints the tier-0 `StructuralVerdict`.
   Exit 0 identical, 1 different or failed, 2 usage error — the CLI's existing
@@ -276,8 +289,9 @@ implementation time; do not assume. MCP is a later row.
 ≈1,100 lines plus tests. Larger than the steelman's ~750 estimate because it
 includes cause, crops, groups and the URL platform; any of those can move to a
 follow-up if the review wants a smaller first PR. Suggested split: (a)
-structure + URL platform + `snap`; (b) structural diff + `diff` + handoff;
-(c) cause + groups + crops + skill.
+structure + URL platform + `snap`; (b) structural diff + `diff` + handoff +
+the `below-fold` flag + multi-URL `snap`/`diff`; (c) cause + groups + crops +
+skill.
 
 ## Verification
 
