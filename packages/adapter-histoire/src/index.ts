@@ -187,7 +187,18 @@ export class HistoirePlatform implements Platform {
   // nothing to drive without a reload. The pool falls back to navigation,
   // which is the correct behaviour rather than a missing optimisation.
 
-  readonly configDirs = ['.histoire', 'histoire'];
+  // Histoire's config is a root-level file, not a directory like `.storybook`
+  // or `.ladle`. Affected-analysis matches entries by exact path as well as by
+  // prefix, so the config files are listed alongside the setup directory —
+  // otherwise a change to `histoire.config.ts` would not force a full run.
+  readonly configDirs = [
+    '.histoire',
+    'histoire',
+    'histoire.config.ts',
+    'histoire.config.js',
+    'histoire.config.mjs',
+    'histoire.config.cjs',
+  ];
   readonly storyFileGlobs = ['**/*.story.@(vue|svelte|ts|tsx|js|jsx)'];
 }
 

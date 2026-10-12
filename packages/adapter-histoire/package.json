@@ -1,8 +1,15 @@
 {
   "name": "@juxtapose/adapter-histoire",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "Histoire platform adapter for juxtapose visual testing.",
+  "keywords": [
+    "histoire",
+    "visual-regression",
+    "screenshot-testing",
+    "visual-testing"
+  ],
+  "homepage": "https://github.com/juxtapose-dev/juxtapose/tree/main/packages/adapter-histoire#readme",
   "publishConfig": {
     "access": "public"
   },

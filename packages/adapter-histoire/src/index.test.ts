@@ -138,6 +138,17 @@ describe('storyUrl', () => {
   });
 });
 
+describe('configDirs', () => {
+  it('names the root config file, which affected-analysis matches by exact path', () => {
+    // Histoire's config is `histoire.config.ts` at the project root, not a
+    // directory. Leaving it out means a config change would not force a full
+    // run.
+    const dirs = new HistoirePlatform().configDirs;
+    expect(dirs).toContain('histoire.config.ts');
+    expect(dirs).toContain('.histoire');
+  });
+});
+
 describe('detect', () => {
   it('is false without an index rather than throwing', async () => {
     // A throwing detect would abort autodetection for every later platform.

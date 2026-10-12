@@ -1,7 +1,7 @@
 ---
 '@juxtapose/adapter-histoire': minor
-'@juxtapose/core': minor
 '@juxtapose/cli': minor
+'@juxtapose/core': patch
 ---
 
 Add a Histoire adapter.
@@ -13,3 +13,6 @@ on either a `<Story>` or a `<Variant>`, with the variant winning.
 
 Histoire is the first platform whose native unit is not a story — a story file
 holding six variants produces six baselines.
+
+The CLI autodetects it alongside Storybook and Ladle and accepts
+`--platform histoire`; core's `ProjectConfig.platform` union gains the name.
