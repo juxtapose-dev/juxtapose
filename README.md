@@ -14,7 +14,28 @@ npx jux approve --all # bless the current rendering
 npx jux check         # exit 0/1, for CI
 ```
 
-## Why another one
+## Hosted review
+
+<!-- [YOUR COPY] one or two sentences on what hosted review is for and who it
+     is for. Everything below this line is factual and can stay as written. -->
+
+```bash
+npx jux run --comment
+# then review at https://<your-org>.juxtapose.dev
+```
+
+Two things worth knowing up front:
+
+**Your baselines don't move.** They stay committed in your repo. The service
+renders the review surface; git still defines what "approved" means, exactly as
+it does locally. Approving in the browser produces the same manifest diff you
+would get from `jux approve`.
+
+**It's optional.** The CLI and the Storybook addon work with no account at all.
+Hosted review is the same API the addon already talks to — one review surface,
+two places to open it.
+
+## What's different
 
 **Pass/fail is exact.** A story passes if it renders identically to its
 approved baseline. There is no "5% is probably fine" threshold to argue about,
@@ -26,10 +47,9 @@ exact regions that moved.
 that caused it, reviewable next to the code. Branches get the right baselines
 by checking out the branch, and undoing a bad approval is `git revert`.
 
-**Agent-first, not agent-compatible.** Every command emits JSON, and
-`jux handoff` turns a failing story into a prompt an agent can act on — exact
-mismatch figures, changed-region coordinates and the component's source path,
-rather than screenshots it has to squint at.
+**Every command emits JSON**, and `jux handoff` turns a failing story into a
+prompt an agent can act on — exact mismatch figures, changed-region coordinates
+and the component's source path, rather than an image it has to squint at.
 
 ## Getting started
 
@@ -129,22 +149,45 @@ Per-story options go through the platform's own parameter mechanism
 (`parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle and Histoire —
 in Histoire on either a `<Story>` or an individual `<Variant>`):
 
-| option                         | purpose                                            |
-| ------------------------------ | -------------------------------------------------- |
-| `skip`                         | never capture this story                           |
-| `viewport`                     | override the capture size                          |
-| `animations: 'play'`           | let animations run (for stories testing animation) |
-| `captureAfterPlay`             | screenshot after interactions, not at first render |
-| `waitForSelector`              | wait for async content juxtapose can't detect      |
-| `delay`                        | fixed extra wait; last resort                      |
-| `threshold` / `minDiffPercent` | tune the _reported_ diff; the hash still decides   |
-| `captureTimeout`               | max ms to wait for render-ready (default 2000)     |
-| `liveCapture: false`           | exclude from watch-mode recapture (see below)      |
+| option                         | purpose                                             |
+| ------------------------------ | --------------------------------------------------- |
+| `skip`                         | never capture this story                            |
+| `viewport`                     | override the capture size                           |
+| `animations: 'play'`           | let animations run (for stories testing animation)  |
+| `captureAfterPlay`             | screenshot after interactions, not at first render  |
+| `waitForSelector`              | wait for async content juxtapose can't detect       |
+| `delay`                        | fixed extra wait; last resort                       |
+| `threshold` / `minDiffPercent` | tune the _reported_ diff; the hash still decides    |
+| `captureTimeout`               | max ms to wait for render-ready (default 2000)      |
+| `mask`                         | paint over selectors before the shutter (see below) |
+| `liveCapture: false`           | exclude from watch-mode recapture (see below)       |
 
-Captures are reproducible by design: animations are frozen, webfonts and images
+Captures are reproducible: animations are frozen, webfonts and images
 are awaited, and rendering is pinned to settings that don't vary by machine.
 
-### Watch mode
+### Content that changes every run
+
+A clock, a random avatar, a generated id — under an exact hash these are
+permanently red, and no threshold rescues them. Stub the date, seed the random
+source, pin the fixture. That keeps full pixel coverage.
+
+When the nondeterminism isn't yours to control, `mask` covers it:
+
+```jsx
+export const Deploy = {
+  render: () => <DeployStatus />,
+  parameters: { juxtapose: { mask: ['[data-testid="finished-at"]'] } },
+};
+```
+
+Everything outside the box is still compared exactly.
+
+The box is the element's bounding box, so if the volatile content changes the
+element's _size_ the box changes with it and a sliver leaks at the edge. A bare
+timestamp span still failed at 0.015% that way. Give the masked element a fixed
+width.
+
+## Watch mode
 
 ```bash
 pnpm add -D @juxtapose/storybook   # then add it to .storybook/main.js addons
@@ -161,7 +204,7 @@ dev server has no bundler graph of its own to consult. Set
 `liveCapture: false` on a story whose play function or delay makes constant
 recapture cost more than it returns; it still captures on a normal run.
 
-The limit worth knowing is that juxtapose waits on things it can observe —
+juxtapose waits on things it can observe —
 network requests, DOM changes, fonts, images. Content that appears on a bare
 timer is invisible to that, so a story built on `setTimeout` can race the
 capture. `waitForSelector` is the fix.
@@ -175,16 +218,24 @@ Two of these are the ones you install:
 | `@juxtapose/cli`       | the `jux` command — capture, approve, check, handoff |
 | `@juxtapose/storybook` | Storybook addon: review diffs in place, watch mode   |
 
-The rest are pulled in for you, and are only worth knowing about if you are
-building an adapter or a UI of your own:
+Ladle needs no second package — the CLI covers it, and Ladle has no addon slot
+to put a panel in.
+
+The rest arrive as dependencies. You would only reach for one directly to build
+an adapter or a UI of your own:
 
 | package                        | what it is                                                 |
 | ------------------------------ | ---------------------------------------------------------- |
 | `@juxtapose/core`              | capture, diff, baselines, analysis — no platform knowledge |
 | `@juxtapose/server`            | the local review API the addon is a skin over              |
-| `@juxtapose/adapter-storybook` | Storybook adapter                                          |
-| `@juxtapose/adapter-ladle`     | Ladle adapter                                              |
-| `@juxtapose/adapter-histoire`  | Histoire adapter                                           |
+| `@juxtapose/adapter-storybook` | teaches the CLI to drive Storybook                         |
+| `@juxtapose/adapter-ladle`     | teaches the CLI to drive Ladle                             |
+| `@juxtapose/adapter-histoire`  | teaches the CLI to drive Histoire                          |
+
+The two Storybook packages are not alternatives. `adapter-storybook` is how the
+CLI captures stories — it runs in Node, drives a browser, and you never import
+it. `@juxtapose/storybook` is the addon that renders the review UI inside
+Storybook itself. Installing the addon pulls the adapter in.
 
 ## Status
 
@@ -192,10 +243,11 @@ Early, but usable. The capture, diff and approve loop is verified end to end on
 Storybook (React and Vue), Ladle and Histoire, the addon gives you the review UI in
 place, and CI gets PR comments and a self-contained HTML report.
 
-Hosted storage is the main gap. `storage.kind` accepts `"s3"`, but the CLI
-throws on it today — git is the only implemented backend, and `"fs"` is that
-same store pointed at a directory you choose. See the
-[issues](https://github.com/juxtapose-dev/juxtapose/issues) for the roadmap.
+Hosted baseline storage is the main gap. `storage.kind` accepts `"s3"`, but the
+CLI throws on it today — git is the only implemented backend, and `"fs"` is that
+same store pointed at a directory you choose. That is about where the image
+bytes live, not about review: hosted review works with baselines in git. See
+the [issues](https://github.com/juxtapose-dev/juxtapose/issues) for the roadmap.
 
 ## Contributing
 

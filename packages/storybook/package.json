@@ -1,8 +1,17 @@
 {
   "name": "@juxtapose/storybook",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "Storybook addon for juxtapose — review visual diffs next to the story that produced them.",
+  "keywords": [
+    "storybook",
+    "storybook-addon",
+    "visual-regression",
+    "screenshot-testing",
+    "visual-testing",
+    "storybook-addons"
+  ],
+  "homepage": "https://github.com/juxtapose-dev/juxtapose#readme",
   "publishConfig": {
     "access": "public"
   },
@@ -33,6 +42,7 @@
     "storybook": "^8 || ^9 || ^10"
   },
   "devDependencies": {
+    "@emotion/react": "^11.14.0",
     "@types/react": "^18.3.12",
     "react": "^18.3.1",
     "storybook": "^8.4.7"
@@ -40,6 +50,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/juxtapose-dev/juxtapose.git",
-    "directory": "packages/addon-storybook"
+    "directory": "packages/storybook"
   }
 }

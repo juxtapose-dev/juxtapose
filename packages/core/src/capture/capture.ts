@@ -159,7 +159,14 @@ export async function captureStory(
   // byte-exact hash reports as a failure.
   await waitForPaint(page);
 
-  const png = await page.screenshot({ type: 'png' });
+  // A selector matching nothing is not an error — a story that conditionally
+  // renders the element shouldn't fail on the branch where it's absent.
+  const png = await page.screenshot({
+    type: 'png',
+    ...(params.mask?.length
+      ? { mask: params.mask.map((selector) => page.locator(selector)) }
+      : {}),
+  });
 
   // LOSSLESS, deliberately, and it is not a size-vs-quality preference.
   //

@@ -8,6 +8,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { styled } from './storybook.js';
+import { Loupe } from './Loupe.js';
 
 export type ViewMode = 'sxs' | 'slider' | 'onion' | 'flicker';
 
@@ -19,6 +20,9 @@ export interface CompareProps {
   showDiff: boolean;
   /** Desaturate the unchanged parts so the eye goes to what moved. */
   unfocus: boolean;
+  /** Magnify pixels under the cursor. Orthogonal to `mode`: a 1px shift is
+   *  unreadable at 1:1 whichever way the pair is being shown. */
+  loupe?: boolean;
 }
 
 const Frame = styled.div({
@@ -104,42 +108,57 @@ export const Compare: React.FC<CompareProps> = ({
   mode,
   showDiff,
   unfocus,
+  loupe = false,
 }) => {
+  // The lens magnifies the capture under review. Baseline is what the story
+  // used to look like; `current` is what the reviewer is deciding about.
+  const magnify = (node: React.ReactNode) =>
+    loupe ? <Loupe src={currentUrl}>{node}</Loupe> : <>{node}</>;
   // No baseline means a new story: there is nothing to compare against, so
   // show the capture rather than an empty split view.
   if (!baselineUrl) {
-    return (
+    return magnify(
       <Frame>
         <Img src={currentUrl} alt="current capture" />
-      </Frame>
+      </Frame>,
     );
   }
 
   if (mode === 'slider')
-    return <Slider baselineUrl={baselineUrl} currentUrl={currentUrl} />;
+    return magnify(<Slider baselineUrl={baselineUrl} currentUrl={currentUrl} />);
   if (mode === 'onion')
-    return <Onion baselineUrl={baselineUrl} currentUrl={currentUrl} />;
+    return magnify(<Onion baselineUrl={baselineUrl} currentUrl={currentUrl} />);
   if (mode === 'flicker')
-    return <Flicker baselineUrl={baselineUrl} currentUrl={currentUrl} />;
+    return magnify(<Flicker baselineUrl={baselineUrl} currentUrl={currentUrl} />);
 
   return (
     <Pair>
       <div>
         <Caption>Baseline</Caption>
-        <Frame>
-          <Img src={baselineUrl} alt="baseline" />
-        </Frame>
+        {loupe ? (
+          <Loupe src={baselineUrl}>
+            <Frame>
+              <Img src={baselineUrl} alt="baseline" />
+            </Frame>
+          </Loupe>
+        ) : (
+          <Frame>
+            <Img src={baselineUrl} alt="baseline" />
+          </Frame>
+        )}
       </div>
       <div>
         <Caption>Current</Caption>
-        <Frame>
-          <Img
-            src={currentUrl}
-            alt="current"
-            style={unfocus && diffUrl ? { filter: UNFOCUS } : undefined}
-          />
-          {showDiff && diffUrl && <Layer src={diffUrl} alt="" />}
-        </Frame>
+        {magnify(
+          <Frame>
+            <Img
+              src={currentUrl}
+              alt="current"
+              style={unfocus && diffUrl ? { filter: UNFOCUS } : undefined}
+            />
+            {showDiff && diffUrl && <Layer src={diffUrl} alt="" />}
+          </Frame>,
+        )}
       </div>
     </Pair>
   );

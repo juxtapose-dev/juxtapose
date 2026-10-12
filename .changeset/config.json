@@ -13,5 +13,6 @@
     "example-storybook-vue",
     "example-ladle",
     "example-histoire"
-  ]
+  ],
+  "changedFilePatterns": ["src/**", "!src/**/*.test.ts", "package.json"]
 }

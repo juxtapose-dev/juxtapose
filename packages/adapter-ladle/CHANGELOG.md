@@ -1,5 +1,31 @@
 # @juxtapose/adapter-ladle
 
+## 0.2.2
+
+### Patch Changes
+
+- 474a0db: Add npm keywords and a homepage link to each package
+
+  Nothing installed changes; this is what the registry listing shows and how the
+  packages are found in search.
+
+- Updated dependencies [474a0db]
+- Updated dependencies [04615a6]
+- Updated dependencies [f40f5cf]
+  - @juxtapose/core@0.4.0
+
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [c28a95a]
+- Updated dependencies [b6dd903]
+- Updated dependencies [c10ec5c]
+- Updated dependencies [81fc005]
+- Updated dependencies [77fac97]
+- Updated dependencies [d47ddc4]
+  - @juxtapose/core@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes

@@ -9,6 +9,9 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { styled, Badge, Button, EmptyTabContent, Loader } from './storybook.js';
+// Deep import on purpose: '@juxtapose/core' reaches sharp and playwright
+// through the capture modules, and this file is bundled for the browser.
+import { formatPercent } from '@juxtapose/core/format';
 import type { DiffResult, DiffStatus } from '@juxtapose/core';
 import {
   approveStory,
@@ -80,6 +83,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   const [mode, setMode] = useState<ViewMode>('sxs');
   const [showDiff, setShowDiff] = useState(true);
   const [unfocus, setUnfocus] = useState(false);
+  const [loupe, setLoupe] = useState(false);
   const [version, setVersion] = useState(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -206,6 +210,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     },
     d: () => setShowDiff((v) => !v),
     u: () => setUnfocus((v) => !v),
+    z: () => setLoupe((v) => !v),
     '1': () => setMode('sxs'),
     '2': () => setMode('slider'),
     '3': () => setMode('onion'),
@@ -326,6 +331,15 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                       </Button>
                     </>
                   )}
+
+                  <Button
+                    size="small"
+                    variant={loupe ? 'solid' : 'ghost'}
+                    onClick={() => setLoupe((v) => !v)}
+                    title="Magnify pixels under the cursor (z)"
+                  >
+                    Loupe
+                  </Button>
                 </>
               ) : (
                 <StatusNote status={result.status} />
@@ -374,6 +388,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               mode={mode}
               showDiff={showDiff}
               unfocus={unfocus}
+              loupe={loupe}
             />
 
             {pending.length > 0 && (
@@ -459,8 +474,3 @@ const StatusNote: React.FC<{ status: DiffStatus }> = ({ status }) => {
       return null;
   }
 };
-
-function formatPercent(pct: number): string {
-  if (pct >= 0.01) return `${pct.toFixed(2)}%`;
-  return pct > 0 ? '<0.01%' : '0%';
-}

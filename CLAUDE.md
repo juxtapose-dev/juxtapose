@@ -100,8 +100,7 @@ packages/adapter-storybook/ index.json, preview channel
 packages/adapter-ladle/     meta.json enumeration + Ladle's ready signal
 packages/adapter-histoire/  histoire.json, __sandbox.html + ready postMessage
 packages/server/            review API the addon (and any other UI) is a skin over
-packages/addon-storybook/   panel, sidebar dots, test provider, watch mode
-                            — published as @juxtapose/storybook, not addon-storybook
+packages/storybook/         the addon: panel, sidebar dots, test provider, watch mode
 packages/cli/               the `jux` command
 examples/                   Storybook + Ladle + Histoire workbenches
 ```

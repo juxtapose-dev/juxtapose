@@ -1,8 +1,15 @@
 {
   "name": "@juxtapose/adapter-storybook",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "type": "module",
   "description": "Storybook platform adapter for juxtapose visual testing.",
+  "keywords": [
+    "storybook",
+    "visual-regression",
+    "screenshot-testing",
+    "visual-testing"
+  ],
+  "homepage": "https://github.com/juxtapose-dev/juxtapose/tree/main/packages/adapter-storybook#readme",
   "publishConfig": {
     "access": "public"
   },

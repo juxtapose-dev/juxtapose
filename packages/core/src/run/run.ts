@@ -6,6 +6,7 @@
 // failed. On a green run this function never decodes a single image.
 
 import type { Browser } from 'playwright';
+import { captureEnv } from '../capture/env.js';
 import type { Platform } from '../platform.js';
 import type {
   BaselineStore,
@@ -20,6 +21,7 @@ import type {
 import { capturePool } from '../capture/pool.js';
 import { resolveStatus, toDiffStatus, type AncestryCheck } from '../baseline/status.js';
 import { diffImages, resolveThreshold, resolveMinDiffPercent } from '../diff/diff.js';
+import { phases, type Phases } from './phases.js';
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
@@ -40,6 +42,9 @@ export interface RunOptions {
   onArtifact?: (artifact: RunArtifact) => Promise<void>;
   onProgress?: (done: number, total: number, storyId: string) => void;
   signal?: AbortSignal;
+  /** Collects per-phase wall time. Pass one to fold in phases the caller timed
+   *  itself (enumerate, affected, launch); omit and one is made internally. */
+  phases?: Phases;
 }
 
 export interface RunArtifact {
@@ -53,7 +58,8 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const startedAt = new Date();
   const started = Date.now();
   const viewport = opts.config?.viewport ?? DEFAULT_VIEWPORT;
-  const manifest = await opts.store.readManifest();
+  const p = opts.phases ?? phases();
+  const manifest = await p.time('baselines', () => opts.store.readManifest());
   const results: DiffResult[] = [];
 
   const pool = capturePool(opts.stories, {
@@ -66,6 +72,11 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     onProgress: opts.onProgress,
     signal: opts.signal,
   });
+
+  // Capture is measured as the whole streamed loop rather than per story: the
+  // pool runs `concurrency` pages at once, so summing per-story durations would
+  // report several times the wall-clock actually spent.
+  const captureStarted = Date.now();
 
   for await (const outcome of pool) {
     if (outcome.skipped) {
@@ -93,8 +104,11 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       continue;
     }
 
-    results.push(await judge(outcome.snapshot, outcome.story, manifest, opts));
+    results.push(await judge(outcome.snapshot, outcome.story, manifest, opts, p));
   }
+
+  // Diffing happens inside the loop, so subtract it to leave capture alone.
+  p.add('capture', Date.now() - captureStarted - (p.timings.diff ?? 0));
 
   const summary = tally(results);
 
@@ -102,6 +116,10 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     runId: opts.runId,
     branch: opts.branch,
     commitSha: opts.commitSha,
+    // Carried on the report because `approve` has no browser of its own — it
+    // reads captured images off disk, so this is the only path by which the
+    // fingerprint reaches a baseline entry.
+    env: captureEnv(opts.browser),
     capturedCount: opts.stories.length,
     totalCount: opts.totalCount,
     results: results.sort((a, b) => a.storyId.localeCompare(b.storyId)),
@@ -117,6 +135,7 @@ async function judge(
   story: StoryManifest,
   manifest: Awaited<ReturnType<BaselineStore['readManifest']>>,
   opts: RunOptions,
+  p: Phases,
 ): Promise<DiffResult> {
   const baselineStatus = resolveStatus(
     story.storyId,
@@ -153,10 +172,15 @@ async function judge(
     return { ...base, error: 'baseline missing from store' };
   }
 
-  const diff = await diffImages(baseline, snapshot.image, {
-    threshold: resolveThreshold(story.params, opts.config),
-    minDiffPercent: resolveMinDiffPercent(story.params, opts.config),
-  });
+  // Counted as well as timed: under a byte-exact hash the number of diffs is
+  // how broken the run was, and it is the figure that explains a slow one.
+  p.count('diff');
+  const diff = await p.time('diff', () =>
+    diffImages(baseline, snapshot.image, {
+      threshold: resolveThreshold(story.params, opts.config),
+      minDiffPercent: resolveMinDiffPercent(story.params, opts.config),
+    }),
+  );
 
   await opts.onArtifact?.({
     storyId: story.storyId,

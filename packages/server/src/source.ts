@@ -2,7 +2,6 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { chromium, type Browser } from 'playwright';
 import {
@@ -11,6 +10,7 @@ import {
   alwaysAncestor,
   deterministicLaunchOptions,
   encodeStoryId,
+  hashImage,
   resolveAffectedFromPaths,
   runCapture,
   DEFAULT_VIEWPORT,
@@ -99,7 +99,7 @@ export class RunDirSource implements ReviewSource {
       const entry = manifest.baselines[result.storyId];
       if (!entry) continue;
       const current = await this.readImage('current', result.storyId);
-      if (current && hash(current) === entry.hash) approved.push(result.storyId);
+      if (current && hashImage(current) === entry.hash) approved.push(result.storyId);
     }
 
     return { report, approved, running: this.running };
@@ -217,6 +217,9 @@ export class RunDirSource implements ReviewSource {
         commit: this.opts.commitSha,
         approvedBy: process.env.JUXTAPOSE_USER ?? process.env.USER ?? 'unknown',
         approvedAt: new Date().toISOString(),
+        // The run that produced this capture, not the addon process. Approving
+        // through the panel must record the same fingerprint the CLI would.
+        env: this.report?.env,
       });
     });
     // Keep the chain alive even if this link rejects, or one failed approval
@@ -345,6 +348,3 @@ function mergeReports(previous: RunReport | null, fresh: RunReport): RunReport {
 }
 
 /** The same hash the manifest stores, so a match means "already approved". */
-function hash(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}

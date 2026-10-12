@@ -1,5 +1,163 @@
 # @juxtapose/cli
 
+## 0.4.0
+
+### Minor Changes
+
+- 04615a6: Report per-phase timings on `jux run`
+
+  A run reported one total, which is enough to know it was slow and not enough to
+  know why:
+
+  ```
+  15 pass   (1.0s)
+    enumerate 5ms | launch 137ms | baselines 1ms | capture 1.0s
+  ```
+
+  `diff(N)` reports how many diffs actually ran. Under a byte-exact hash that is
+  the figure that explains a slow run, since diffing is a cold path only reached
+  by stories that already failed:
+
+  ```
+  10 pass  ·  5 fail   (0.9s)
+    enumerate 5ms | launch 76ms | diff(5) 110ms | capture 828ms
+  ```
+
+  Capture is measured across the whole streamed loop rather than summed per
+  story, because the pool runs several pages at once and summing would report
+  multiples of the wall-clock actually spent.
+
+- f40f5cf: Record what captured each baseline
+
+  Baselines now carry a `CaptureEnv` — browser version, OS/arch, and the libvips
+  that encoded the WebP. Under a byte-exact hash a toolchain bump and a real
+  regression look identical, so an all-red suite could not be explained. This is
+  the fact that explains it.
+
+  The encoder is a separate field because it moves bytes far more readily than the
+  browser does. Measured on the examples: a libvips bump changed all 17 baseline
+  hashes with zero changed pixels, while Chromium 149 to 151 left 16 of 18 stories
+  byte-identical.
+
+  Existing baselines have no fingerprint and are left alone; an unknown
+  environment is treated as unknown rather than as current, so nothing is
+  silently assumed to match. Approvals made from the CLI, from `init`, and from
+  the addon panel all record it.
+
+### Patch Changes
+
+- 857c104: Fix `jux check` clearing every visual regression
+
+  `check` decided a story was approved if the manifest merely had an entry for it.
+  `resolveStatus` only reports `changed` when an entry already exists, so every
+  real regression had one and every real regression was cleared. `jux check`
+  exited 0 on a suite `jux run` had just failed, which is worse than no gate
+  because CI looks green.
+
+  It now confirms the approval against the bytes, comparing the run's captured
+  image to the manifest hash the way the addon already does. A capture that cannot
+  be read blocks rather than clears.
+
+  Verified end to end against `examples/storybook`: a colour change failing 5
+  stories now exits 1 and names them, and `jux approve --all` returns it to 0.
+
+- 474a0db: Add npm keywords and a homepage link to each package
+
+  Nothing installed changes; this is what the registry listing shows and how the
+  packages are found in search.
+
+- Updated dependencies [474a0db]
+- Updated dependencies [04615a6]
+- Updated dependencies [f40f5cf]
+  - @juxtapose/core@0.4.0
+  - @juxtapose/adapter-storybook@0.2.2
+  - @juxtapose/adapter-ladle@0.2.2
+
+## 0.3.0
+
+### Minor Changes
+
+- 338110f: Add `jux --version`.
+
+  There was no version flag at all. Packages version independently, so one number
+  does not describe an install — this prints the whole set plus the Node version,
+  which is what a bug report needs.
+
+- c10ec5c: Make the PR comment a triage surface rather than a report.
+
+  The heading now carries the decisive number — `3 visual changes need review —
+largest 1.01%` — because it is the only part that renders in the PR timeline
+  and in notification emails. Under a byte-exact hash a bare count cannot be
+  acted on: three antialiasing hairs and three collapsed layouts both read as
+  "3 changed".
+
+  Fixes a correctness bug in the instructions: `jux approve` reads the last
+  **local** run, so the `jux approve --all` the comment printed after a CI run
+  either failed outright or silently approved a stale local run. Every command
+  block now leads with `jux run`.
+
+  Other changes: per-status guidance instead of one instruction for `fail`, `new`
+  and `stale`; commands uncollapsed and prose collapsed, so a first-time reader
+  does not pay a click to find the CTA; errors sorted above magnitude, and never
+  offered as an approve target; `new` and `stale` cells say `first capture` and
+  `pixels identical` rather than an em-dash; columns dropped when every row
+  shares a value; pipes escaped so a story id or error message cannot corrupt the
+  table.
+
+  `DiffResult` now records the `viewport` a capture used. This fixes `jux
+handoff` computing region-area percentages against the project default for any
+  story with a per-story viewport override.
+
+  `--html` is now registered in the argument parser — it previously worked only
+  because unknown flags are tolerated.
+
+### Patch Changes
+
+- c28a95a: Trim the public API surface before it becomes a semver commitment.
+
+  `@juxtapose/core` exported sixteen symbols with no consumer outside the package
+  — `armSettle`, `waitForPaint`, `DOM_IDLE_MS`, `captureStory`, `capturePool`,
+  `diffImages`, `computeChangedRegions` and similar. These are exactly the
+  internals CLAUDE.md describes as load-bearing and easy to break, so publishing
+  them invites downstream code to pin the parts that most need freedom to change.
+  The barrel is now organised by who consumes it — adapter authors, store
+  authors, run drivers, reporters — with a note saying so.
+
+  `formatPercent` moves to `core` and is shared. It had five copies, one already
+  stylistically drifted, and it encodes a product rule rather than a format: a
+  real change must never display as "0.00%".
+
+  `hashImage` is now exported and used by the review server, which had its own
+  copy. Anything comparing against a manifest entry has to use the function the
+  manifest was written with; a second implementation silently diverges the moment
+  the algorithm changes.
+
+- b6dd903: Remove two options that were declared but never read.
+
+  `ProjectConfig.ignore` (glob patterns of story ids to never capture) and the
+  CLI's `--force` flag both parsed fine and did nothing. Setting either was a
+  silent no-op, which is worse than the option not existing — you would conclude
+  the tool ignored your config rather than that the feature was never wired up.
+  Use `parameters.juxtapose.skip` for the `ignore` case.
+
+  Also corrects documentation that had drifted from the code ahead of the first
+  publish: hosted S3 storage was advertised as available when the CLI throws on
+  it, the HTML report and PR comments were listed as unbuilt after shipping, the
+  settle pipeline was documented with animation-freezing in the wrong position
+  (the exact ordering bug that was fixed), and the packages table omitted
+  `@juxtapose/storybook` — the package you install for the addon.
+
+- Updated dependencies [c28a95a]
+- Updated dependencies [b6dd903]
+- Updated dependencies [0c1826a]
+- Updated dependencies [c10ec5c]
+- Updated dependencies [81fc005]
+- Updated dependencies [77fac97]
+- Updated dependencies [d47ddc4]
+  - @juxtapose/core@0.3.0
+  - @juxtapose/adapter-storybook@0.2.1
+  - @juxtapose/adapter-ladle@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes
