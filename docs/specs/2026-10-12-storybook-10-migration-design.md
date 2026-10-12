@@ -10,7 +10,8 @@ juxtapose-service — proven on a synthetic conformance suite and on real,
 large design systems.
 
 **Re-sequenced 2026-10-12** after the agentic-visual-diffing research and the
-build/publish steelman (both in `juxtapose-service/docs/research/`). The agent
+build/publish steelman (both in `juxtapose-service/docs/research/`, landing via
+juxtapose-service PR #155). The agent
 surface comes first because it is the thesis under test, and it does not need
 the addon; the addon and the corpus prove the Storybook/CI upgrade path after
 the thesis holds. Each sub-project gets its own spec → plan → implementation
@@ -20,7 +21,7 @@ cycle; only the Storybook 10 migration is specified here.
 | - | ----------- | -------------------------- |
 | 0 | **Structural engine + Storybook-free agent surface** — DOM/computed-style sidecar captured beside pixels; structural diff → classification → tier-0 verdict; `jux snap <url>`, `jux diff <a> <b> --structural --json` (URL adapter, issue #11); a Claude Code skill. MCP later. | The 10× claim is "verdict in ~300 text tokens, not ~4k image tokens"; it is unproven until this exists. Needs a page + CDP, not Storybook. Same-machine before/after captures sidestep the cross-machine baseline problem. |
 | 1 | **Viewport matrix + cheap Chromatic-parity items** — `viewports` config, viewport in story id + manifest, cost linear in the matrix | Config-level work on a settle pipeline that already re-settles per viewport. Browsers are *not* here: determinism flags are Chromium-specific; Firefox/WebKit arrive with the service renderer. |
-| 2 | **Storybook 10 migration, CLI-first** (this doc) — peer `^10`, examples on 10, capture verified; addon manager fixes follow | Everything downstream is built on SB 10; today the addon only ever runs on 8.4.7. CLI capture is unaffected by 10 (verified); the addon's manager imports are what break. |
+| 2 | **Storybook 10 migration, CLI-first** (this doc) — peer `^10`, examples on 10, capture verified; addon manager fixes follow | Everything downstream is built on SB 10; today the addon only ever runs on 8.6 (declared `^8.4.7`, lockfile 8.6.18). CLI capture is unaffected by 10 (verified); the addon's manager imports are what break. |
 | 3 | **Stale-check and false-green fixes** — squash/rebase/shallow-clone staleness; uncommitted edits visible to `--since`; partial-match full-run fallback; live params wired end to end; hash decoded pixels not WebP bytes | Found in the 2026-10-12 review; each is a silent-wrong-answer path the exact-hash philosophy cannot tolerate. Must land before any public claim. |
 | 4 | **Benchmark** — ~100 labelled real diffs; arms: today's handoff + free image access / tier-0 only / tier-0 + escalation; agreement with human verdicts, tokens, images read, $ | Turns "faster, cheaper, agent-first" into numbers T53 allows us to publish. Flip-to-go gate: tier-0 ≥ image-review agreement at <10% tokens. |
 | 5 | **Pinned capture image** — Docker, pinned Chromium + fonts; laptop and CI produce identical bytes | Determinism floor for 6–8. Closes #74/#75. Same environment the service renderer will need. |
@@ -76,8 +77,8 @@ Confirming each on a live dev server is the first implementation step.
    The fallback logs a warning and returns — so this ships as a silent
    cosmetic regression.
 3. **The test provider has never run.** `test-provider.tsx` was written against
-   10.5's `experimental_getTestProviderStore` but every example is on 8.4.7,
-   where it is a deliberate no-op. It is unexercised code, not working code.
+   10.5's `experimental_getTestProviderStore` but every example resolves to
+   8.6.18 (declared `^8.4.7`), where it is a deliberate no-op. It is unexercised code, not working code.
 4. **Typing is pinned to 8.** devDependency `storybook ^8.4.7`, and the
    comment in `registerTestProvider` casts around 8's `TEST_PROVIDER` type.
    On 10 the real types apply and the casts should go.
@@ -107,9 +108,12 @@ Vite 5 is fine; CI already runs Node 22.
   | `skip` | cleared (`unset`) | skipped stories carry no verdict |
   | in-flight capture | `pending` | |
 
-  Keep the pure `RunReport → Status[]` function and its tests; only the
-  application step changes. Keep the degrade-to-warning behaviour if the store
-  export is missing (an 11-alpha could move it).
+  The pure `RunReport → Status[]` function stays pure and unit-tested, but its
+  vocabulary changes: `SbStatusValue` gains `new`/`warning`/`pending` and
+  drops `warn`, and `toSidebarStatus` emits the table above (today it emits
+  `warn` for both `new` and `stale`). `sidebar.test.ts` is rewritten to the
+  new vocabulary. Keep the degrade-to-warning behaviour if the store export
+  is missing (an 11-alpha could move it).
 - `test-provider.tsx` / `test-provider-state.ts`: drop the 8/9 no-op branch
   and the type casts; the provider is now expected to register, and a failure
   to register is an error worth surfacing.
@@ -117,18 +121,23 @@ Vite 5 is fine; CI already runs Node 22.
   for the version SB 10 builds against.
 
 **Examples** (`examples/storybook`, `examples/storybook-vue`)
-- Upgrade to `storybook`, `@storybook/react-vite`, `@storybook/vue3-vite`
-  `^10.6`. Run Storybook's own automigrate, then review its diff rather than
-  accepting it wholesale.
+- Upgrade every Storybook package to `^10.6` — `storybook`,
+  `@storybook/react-vite` and `@storybook/react` (React example),
+  `@storybook/vue3-vite` and `@storybook/vue3` (Vue example). Leaving the
+  renderer packages on 8.x beside storybook 10 is a peer mismatch and a
+  duplicate preview runtime. Run Storybook's own automigrate, then review its
+  diff rather than accepting it wholesale.
 
 **Repo**
-- Delete `packages/addon-storybook/` — it contains only a stale `dist/` and
-  `tsconfig.tsbuildinfo`, no source or package.json.
+- `packages/addon-storybook/` is untracked residue (a gitignored `dist/` and
+  `tsconfig.tsbuildinfo` from before the package rename) on the author's
+  checkout only; nothing in git. Not part of this PR — `rm -rf` it locally.
 - README / package READMEs: state SB 10 as the requirement.
 - CI: add the `storybook@next` job (`continue-on-error: true`), which swaps the
   example's Storybook packages to `next`, builds, and runs `visual` once.
-- Changeset: minor bump for `@juxtapose/storybook` and
-  `@juxtapose/adapter-storybook` noting the dropped majors.
+- Changeset: minor bump for `@juxtapose/storybook` only, noting the dropped
+  majors. `@juxtapose/adapter-storybook` declares no `storybook` peer and is
+  unaffected, so it gets no changeset.
 
 ## Verification
 
@@ -136,8 +145,9 @@ Done means all of these were run and their output recorded in the PR:
 
 1. `pnpm build && pnpm typecheck && pnpm lint && pnpm test` green.
 2. `pnpm --filter example-storybook visual` and the Vue example produce a
-   report with every story captured; then `pnpm check:determinism` green
-   (it captures the examples repeatedly and asserts byte-stability).
+   report with every story captured; then byte-stability for both:
+   `pnpm check:determinism` (hardcoded to `examples/storybook`) and
+   `node scripts/check-determinism.mjs examples/storybook-vue 3`, as CI does.
 3. **Live-addon smoke check** — the one runnable check this change leaves
    behind: a small Playwright script under `scripts/` that starts the example
    dev server, opens Storybook, and asserts
@@ -146,13 +156,16 @@ Done means all of these were run and their output recorded in the PR:
    - after a run, at least one sidebar item carries a `juxtapose/visual`
      status,
    - the juxtapose row appears in the test-provider panel.
-   It runs in CI. Sub-project 4 grows it into the full addon E2E suite.
+   It runs in CI. Sub-project 7 (addon E2E) grows it into the full suite.
 4. The `storybook@next` job has run at least once, and its result (green or
    the specific break) is recorded in the PR.
 
 ## Out of scope
 
-Docker image, conformance suite, full addon E2E, real-world corpus
-(sub-projects 2–5). Warm-switch determinism (#32). Adopting SB 10's own
-change-detection statuses (`storybook/change-detection`, `new/modified/affected`)
-as an input to affected-story analysis — worth evaluating, separately.
+Everything in the program table other than row 2: the agent surface and
+viewports (0–1), the stale/false-green fixes and benchmark (3–4), Docker image,
+conformance suite, addon E2E and corpus (5–8). Warm-switch determinism (#32).
+Adopting SB 10's own change-detection statuses as an input to affected-story
+analysis — these are status *type ids* in `storybook/manager-api`
+(`CHANGE_DETECTION_STATUS_TYPE_ID = "storybook/change-detection"`, values
+`new/modified/affected`), not a module — worth evaluating, separately.
