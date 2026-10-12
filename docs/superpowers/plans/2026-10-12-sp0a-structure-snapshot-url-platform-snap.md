@@ -29,6 +29,7 @@
 - `display` and `visibility` are not stored as styles. `visibility` is read only to filter hidden elements; `display:none` elements get no layout entry from CDP at all (verified on Chromium 151), and display changes surface as added/removed/resized geometry.
 - Styles are stored compactly: an inherited property only when it differs from the nearest kept ancestor's effective value; a non-inherited property only when it differs from its initial value. `effectiveStyle()` reconstructs the full value, so nothing is lost.
 - `src` is the URL basename only; the content hash in spec §1 moves to PR (b) with the diff that uses it.
+- Added beyond the spec's list, found by probing real CDP output before execution: `fill`/`stroke`/`stroke-width` (SVG paint is computed style, and inherited); `content`, stored only on pseudo-elements, whose visible text it is; pseudo-elements (`::before`/`::after`) kept as elements; an `<input>`'s typed value as its text. Without these, an icon recolour, a CSS icon swap, or changed form contents would have shown as unexplained pixels.
 
 ## Review Focus
 
@@ -170,6 +171,7 @@ const HTML = `<!doctype html><html><head><style>
   .btn { padding: 8px 12px; background: rgb(37, 99, 235); color: white; border-radius: 6px; border: 0; }
   .card { padding: 16px; margin-top: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
   .hidden { visibility: hidden; }
+  .star::before { content: "★"; color: rgb(220, 38, 38); }
 </style></head><body>
   <main>
     <h1 id="title">Settings</h1>
@@ -186,6 +188,9 @@ const HTML = `<!doctype html><html><head><style>
     <span style="display:inline-block;width:0;height:0"></span>
     <iframe srcdoc="<p>inside</p>" width="80" height="40"></iframe>
     <div id="host"></div>
+    <span class="star">Starred</span>
+    <svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="#f00"/></svg>
+    <input value="typed text" placeholder="Name">
   </main>
   <script>
     document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML =
@@ -284,6 +289,14 @@ export const STRUCTURE_PROPS: readonly string[] = [
   'box-shadow',
   'gap',
   'z-index',
+  // SVG paint is computed style, not an attribute: without these an icon
+  // recolour is unexplained pixels.
+  'fill',
+  'stroke',
+  'stroke-width',
+  // A pseudo-element's visible text lives here, not in a text node: without it
+  // a CSS icon swap (`content: "★"` → `"☆"`) is unexplained pixels.
+  'content',
 ];
 
 /** Requested alongside STRUCTURE_PROPS, used only to drop hidden elements. */
@@ -300,6 +313,9 @@ export const INHERITED_PROPS: ReadonlySet<string> = new Set([
   'letter-spacing',
   'text-align',
   'text-transform',
+  'fill',
+  'stroke',
+  'stroke-width',
 ]);
 
 /** Computed-style initial values for non-inherited properties. A value equal
@@ -331,6 +347,7 @@ export const INITIAL_VALUES: Readonly<Record<string, string>> = {
   'box-shadow': 'none',
   gap: 'normal',
   'z-index': 'auto',
+  content: 'normal',
 };
 
 /** Root defaults for inherited props when no kept ancestor exists. */
@@ -341,6 +358,10 @@ const ROOT_INHERITED: Readonly<Record<string, string>> = {
   'letter-spacing': 'normal',
   'text-align': 'start',
   'text-transform': 'none',
+  // SVG paint defaults (CSS initial values, as Chromium computes them)
+  fill: 'rgb(0, 0, 0)',
+  stroke: 'none',
+  'stroke-width': '1px',
 };
 
 const BORDER_SIDES = ['top', 'right', 'bottom', 'left'] as const;
@@ -360,6 +381,12 @@ export interface CdpSnapshot {
       nodeName: number[];
       nodeValue: number[];
       attributes: number[][];
+      /** Rare-string data: parallel arrays of node index → string index.
+       *  Verified on Chromium 151: pseudo-elements appear as element nodes
+       *  named `::before`/`::after` with pseudoType set; an <input>'s typed
+       *  value is in inputValue, not in an attribute. */
+      pseudoType?: { index: number[]; value: number[] };
+      inputValue?: { index: number[]; value: number[] };
     };
     layout: {
       nodeIndex: number[];
@@ -414,9 +441,20 @@ export function normalizeStructure(
   const styleIdx = STRUCTURE_PROPS.map((_, i) => i);
   const visibilityIdx = STRUCTURE_PROPS.length;
 
-  // node index -> layout row
+  // node index -> layout row. A node can have several rows (a pseudo-element
+  // gets one for its box and one per text fragment); the FIRST is the box.
   const layoutOf = new Map<number, number>();
-  layout.nodeIndex.forEach((n, row) => layoutOf.set(n, row));
+  layout.nodeIndex.forEach((n, row) => {
+    if (!layoutOf.has(n)) layoutOf.set(n, row);
+  });
+  const contentIdx = STRUCTURE_PROPS.indexOf('content');
+
+  const rare = (r: { index: number[]; value: number[] } | undefined) => {
+    const m = new Map<number, string>();
+    r?.index.forEach((n, k) => m.set(n, str(r.value[k]) ?? ''));
+    return m;
+  };
+  const inputValue = rare(nodes.inputValue);
 
   // children lists and own text, in document order
   const children = new Map<number, number[]>();
@@ -520,7 +558,13 @@ export function normalizeStructure(
             styles[prop] = v;
           }
         }
-        const text = collapse(ownText.get(i) ?? '');
+        // `content` is meaningful only on a pseudo-element, where it IS the
+        // text; on a normal element it is always `normal`, so drop it there.
+        const isPseudo = tag.startsWith('::');
+        if (!isPseudo) delete styles.content;
+        const pseudoText = isPseudo ? parseContent(values[contentIdx]) : '';
+        const typed = inputValue.get(i);
+        const text = collapse(pseudoText || typed || ownText.get(i) || '');
         const role = a.role ?? implicitRole(tag, a);
         const name = (a['aria-label'] ?? a.alt ?? a.title ?? text) || undefined;
         const el: StructureElement = {
@@ -574,6 +618,15 @@ function implicitRole(tag: string, a: Record<string, string>): string | undefine
 }
 
 const collapse = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+/** Computed `content` is a CSS string like `"★"` (quoted), `none`, `normal`,
+ *  or something like `counter(x)`. Return the visible literal text when there
+ *  is one; otherwise the raw value, so a change is still detected. */
+function parseContent(v: string | undefined): string {
+  if (!v || v === 'none' || v === 'normal') return '';
+  const m = /^"(.*)"$/.exec(v);
+  return m ? m[1] : v;
+}
 
 /** The full value of `prop` for element `index`, reconstructing what the
  *  compact storage omitted. */
@@ -724,6 +777,31 @@ test('styles are compact but effectiveStyle reconstructs them', () => {
   const p = s.elements.findIndex((e) => e.text === 'One');
   expect(s.elements[p].styles.color).toBeUndefined(); // same as ancestor
   expect(effectiveStyle(s, p, 'color')).toBe('rgb(17, 24, 39)');
+});
+
+test('a pseudo-element is an element whose text is its CSS content', () => {
+  const before = find((e) => e.tag === '::before');
+  expect(before).toMatchObject({ text: '★' });
+  expect(before!.styles.color).toBe('rgb(220, 38, 38)');
+  expect(before!.styles.content).toBe('"★"');
+  // `content` is never stored on a normal element
+  expect(
+    snap().elements.filter((e) => !e.tag.startsWith('::') && e.styles.content),
+  ).toEqual([]);
+});
+
+test('SVG paint is captured, inherited-compact like color', () => {
+  const s = snap();
+  const i = s.elements.findIndex((e) => e.tag === 'circle');
+  expect(s.elements[i].styles.fill).toBe('rgb(255, 0, 0)');
+  expect(effectiveStyle(s, i, 'stroke')).toBe('none');
+});
+
+test("an input's typed value is its text", () => {
+  expect(find((e) => e.tag === 'input')).toMatchObject({
+    text: 'typed text',
+    role: 'textbox',
+  });
 });
 
 test('rects are rounded to 0.01px', () => {
