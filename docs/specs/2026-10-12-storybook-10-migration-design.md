@@ -17,17 +17,17 @@ the addon; the addon and the corpus prove the Storybook/CI upgrade path after
 the thesis holds. Each sub-project gets its own spec → plan → implementation
 cycle; only the Storybook 10 migration is specified here.
 
-| # | Sub-project | Why it is in this position |
-| - | ----------- | -------------------------- |
-| 0 | **Structural engine + Storybook-free agent surface** — DOM/computed-style sidecar captured beside pixels; structural diff → classification → tier-0 verdict; `jux snap <url>`, `jux diff <a> <b> --structural --json` (URL adapter, issue #11); a Claude Code skill. MCP later. | The 10× claim is "verdict in ~300 text tokens, not ~4k image tokens"; it is unproven until this exists. Needs a page + CDP, not Storybook. Same-machine before/after captures sidestep the cross-machine baseline problem. |
-| 1 | **Viewport matrix + cheap Chromatic-parity items** — `viewports` config, viewport in story id + manifest, cost linear in the matrix | Config-level work on a settle pipeline that already re-settles per viewport. Browsers are *not* here: determinism flags are Chromium-specific; Firefox/WebKit arrive with the service renderer. |
-| 2 | **Storybook 10 migration, CLI-first** (this doc) — peer `^10`, examples on 10, capture verified; addon manager fixes follow | Everything downstream is built on SB 10; today the addon only ever runs on 8.6 (declared `^8.4.7`, lockfile 8.6.18). CLI capture is unaffected by 10 (verified); the addon's manager imports are what break. |
-| 3 | **Stale-check and false-green fixes** — squash/rebase/shallow-clone staleness; uncommitted edits visible to `--since`; partial-match full-run fallback; live params wired end to end; hash decoded pixels not WebP bytes | Found in the 2026-10-12 review; each is a silent-wrong-answer path the exact-hash philosophy cannot tolerate. Must land before any public claim. |
-| 4 | **Benchmark** — ~100 labelled real diffs; arms: today's handoff + free image access / tier-0 only / tier-0 + escalation; agreement with human verdicts, tokens, images read, $ | Turns "faster, cheaper, agent-first" into numbers T53 allows us to publish. Flip-to-go gate: tier-0 ≥ image-review agreement at <10% tokens. |
-| 5 | **Pinned capture image** — Docker, pinned Chromium + fonts; laptop and CI produce identical bytes | Determinism floor for 6–8. Closes #74/#75. Same environment the service renderer will need. |
-| 6 | **Conformance suite** — synthetic SB 10 workbench, one story per feature/hazard with an expected outcome; N runs, then mutations asserting failures, regions and affected-story selection | Small, named repros for every failure. |
-| 7 | **Addon E2E** — Playwright drives a real SB 10 with the addon: panel, dots, test provider, approve/deny writing the manifest, watch mode | The addon UI has unit tests but has never been driven end to end. |
-| 8 | **Real-world corpus** — two large OSS SB 10 design systems pinned at a commit, 5× in the image, zero tolerated flakes; timings recorded | Scale and realism; replaces the inherited ARCHITECTURE.md numbers with ours; the only source for a 1,000-story figure. |
+| #   | Sub-project                                                                                                                                                                                                                                                                     | Why it is in this position                                                                                                                                                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | **Structural engine + Storybook-free agent surface** — DOM/computed-style sidecar captured beside pixels; structural diff → classification → tier-0 verdict; `jux snap <url>`, `jux diff <a> <b> --structural --json` (URL adapter, issue #11); a Claude Code skill. MCP later. | The 10× claim is "verdict in ~300 text tokens, not ~4k image tokens"; it is unproven until this exists. Needs a page + CDP, not Storybook. Same-machine before/after captures sidestep the cross-machine baseline problem. |
+| 1   | **Viewport matrix + cheap Chromatic-parity items** — `viewports` config, viewport in story id + manifest, cost linear in the matrix                                                                                                                                             | Config-level work on a settle pipeline that already re-settles per viewport. Browsers are _not_ here: determinism flags are Chromium-specific; Firefox/WebKit arrive with the service renderer.                            |
+| 2   | **Storybook 10 migration, CLI-first** (this doc) — peer `^10`, examples on 10, capture verified; addon manager fixes follow                                                                                                                                                     | Everything downstream is built on SB 10; today the addon only ever runs on 8.6 (declared `^8.4.7`, lockfile 8.6.18). CLI capture is unaffected by 10 (verified); the addon's manager imports are what break.               |
+| 3   | **Stale-check and false-green fixes** — squash/rebase/shallow-clone staleness; uncommitted edits visible to `--since`; partial-match full-run fallback; live params wired end to end; hash decoded pixels not WebP bytes                                                        | Found in the 2026-10-12 review; each is a silent-wrong-answer path the exact-hash philosophy cannot tolerate. Must land before any public claim.                                                                           |
+| 4   | **Benchmark** — ~100 labelled real diffs; arms: today's handoff + free image access / tier-0 only / tier-0 + escalation; agreement with human verdicts, tokens, images read, $                                                                                                  | Turns "faster, cheaper, agent-first" into numbers T53 allows us to publish. Flip-to-go gate: tier-0 ≥ image-review agreement at <10% tokens.                                                                               |
+| 5   | **Pinned capture image** — Docker, pinned Chromium + fonts; laptop and CI produce identical bytes                                                                                                                                                                               | Determinism floor for 6–8. Closes #74/#75. Same environment the service renderer will need.                                                                                                                                |
+| 6   | **Conformance suite** — synthetic SB 10 workbench, one story per feature/hazard with an expected outcome; N runs, then mutations asserting failures, regions and affected-story selection                                                                                       | Small, named repros for every failure.                                                                                                                                                                                     |
+| 7   | **Addon E2E** — Playwright drives a real SB 10 with the addon: panel, dots, test provider, approve/deny writing the manifest, watch mode                                                                                                                                        | The addon UI has unit tests but has never been driven end to end.                                                                                                                                                          |
+| 8   | **Real-world corpus** — two large OSS SB 10 design systems pinned at a commit, 5× in the image, zero tolerated flakes; timings recorded                                                                                                                                         | Scale and realism; replaces the inherited ARCHITECTURE.md numbers with ours; the only source for a 1,000-story figure.                                                                                                     |
 
 Later, not scheduled: Figma frame as a third baseline kind for the structural
 diff (after tier 2 exists); browsers via the service renderer.
@@ -39,12 +39,12 @@ suite are slow to isolate.
 
 npm downloads for the week before 2026-10-12, by major:
 
-| major | first release | weekly downloads | share |
-| ----- | ------------- | ---------------- | ----- |
-| 10.x (latest 10.6.2) | 2025-10-28 | 18.3M | ~73% |
-| 8.x  | 2024-03-11 | 4.5M  | ~18% |
-| 9.x  | 2025-05-28 | 1.7M  | ~7%  |
-| 11.x | alpha (`next` = 11.0.0-alpha.6) | — | — |
+| major                | first release                   | weekly downloads | share |
+| -------------------- | ------------------------------- | ---------------- | ----- |
+| 10.x (latest 10.6.2) | 2025-10-28                      | 18.3M            | ~73%  |
+| 8.x                  | 2024-03-11                      | 4.5M             | ~18%  |
+| 9.x                  | 2025-05-28                      | 1.7M             | ~7%   |
+| 11.x                 | alpha (`next` = 11.0.0-alpha.6) | —                | —     |
 
 The 8.x share is mostly maintenance-mode installs — not the teams likely to
 adopt a new visual testing tool. Supporting three majors triples the matrix
@@ -92,6 +92,7 @@ Vite 5 is fine; CI already runs Node 22.
 ## Changes
 
 **`packages/storybook`**
+
 - `storybook.ts`: import from `storybook/manager-api` and `storybook/theming`;
   keep `storybook/internal/components`. Re-export `experimental_getStatusStore`
   and `experimental_getTestProviderStore` from here so the shim stays the only
@@ -99,14 +100,14 @@ Vite 5 is fine; CI already runs Node 22.
 - `sidebar.ts`: replace the API-object probe with the status store. Status
   type id `juxtapose/visual`. Mapping from `DiffStatus`:
 
-  | ours | SB 10 status value | why |
-  | ---- | ------------------ | --- |
-  | `pass` | `success` | |
-  | `fail` | `error` | a hash mismatch is a failed check |
-  | `new` | `new` | no baseline yet — SB now has the exact word |
-  | `stale` | `warning` | baseline exists but is not an ancestor of HEAD |
-  | `skip` | cleared (`unset`) | skipped stories carry no verdict |
-  | in-flight capture | `pending` | |
+  | ours              | SB 10 status value | why                                            |
+  | ----------------- | ------------------ | ---------------------------------------------- |
+  | `pass`            | `success`          |                                                |
+  | `fail`            | `error`            | a hash mismatch is a failed check              |
+  | `new`             | `new`              | no baseline yet — SB now has the exact word    |
+  | `stale`           | `warning`          | baseline exists but is not an ancestor of HEAD |
+  | `skip`            | cleared (`unset`)  | skipped stories carry no verdict               |
+  | in-flight capture | `pending`          |                                                |
 
   The pure `RunReport → Status[]` function stays pure and unit-tested, but its
   vocabulary changes: `SbStatusValue` gains `new`/`warning`/`pending` and
@@ -114,6 +115,7 @@ Vite 5 is fine; CI already runs Node 22.
   `warn` for both `new` and `stale`). `sidebar.test.ts` is rewritten to the
   new vocabulary. Keep the degrade-to-warning behaviour if the store export
   is missing (an 11-alpha could move it).
+
 - `test-provider.tsx` / `test-provider-state.ts`: drop the 8/9 no-op branch
   and the type casts; the provider is now expected to register, and a failure
   to register is an error worth surfacing.
@@ -121,6 +123,7 @@ Vite 5 is fine; CI already runs Node 22.
   for the version SB 10 builds against.
 
 **Examples** (`examples/storybook`, `examples/storybook-vue`)
+
 - Upgrade every Storybook package to `^10.6` — `storybook`,
   `@storybook/react-vite` and `@storybook/react` (React example),
   `@storybook/vue3-vite` and `@storybook/vue3` (Vue example). Leaving the
@@ -129,6 +132,7 @@ Vite 5 is fine; CI already runs Node 22.
   diff rather than accepting it wholesale.
 
 **Repo**
+
 - `packages/addon-storybook/` is untracked residue (a gitignored `dist/` and
   `tsconfig.tsbuildinfo` from before the package rename) on the author's
   checkout only; nothing in git. Not part of this PR — `rm -rf` it locally.
@@ -156,7 +160,7 @@ Done means all of these were run and their output recorded in the PR:
    - after a run, at least one sidebar item carries a `juxtapose/visual`
      status,
    - the juxtapose row appears in the test-provider panel.
-   It runs in CI. Sub-project 7 (addon E2E) grows it into the full suite.
+     It runs in CI. Sub-project 7 (addon E2E) grows it into the full suite.
 4. The `storybook@next` job has run at least once, and its result (green or
    the specific break) is recorded in the PR.
 
@@ -166,6 +170,6 @@ Everything in the program table other than row 2: the agent surface and
 viewports (0–1), the stale/false-green fixes and benchmark (3–4), Docker image,
 conformance suite, addon E2E and corpus (5–8). Warm-switch determinism (#32).
 Adopting SB 10's own change-detection statuses as an input to affected-story
-analysis — these are status *type ids* in `storybook/manager-api`
+analysis — these are status _type ids_ in `storybook/manager-api`
 (`CHANGE_DETECTION_STATUS_TYPE_ID = "storybook/change-detection"`, values
 `new/modified/affected`), not a module — worth evaluating, separately.
