@@ -58,6 +58,49 @@ export interface Snapshot {
   capturedAt: string;
   /** Wall time for this story's capture, ms. */
   durationMs: number;
+  /** Visible elements and their styles, from the same frame as `image`.
+   *  Absent when structure capture failed or was disabled — it explains a
+   *  failure, it never decides one. */
+  structure?: StructureSnapshot;
+}
+
+export interface StructureRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface StructureElement {
+  /** tag + (#id | [data-testid] | :nth-of-type) chain from <html>. */
+  path: string;
+  /** Index of the nearest kept ancestor in `elements`, null at the root. */
+  parent: number | null;
+  tag: string;
+  id?: string;
+  testId?: string;
+  classes?: string[];
+  role?: string;
+  name?: string;
+  text?: string;
+  src?: string;
+  rect: StructureRect;
+  paintOrder: number;
+  /** Compact: see effectiveStyle() in capture/structure.ts. */
+  styles: Record<string, string>;
+}
+
+export interface StructureSnapshot {
+  schema: 'juxtapose.structure/v1';
+  viewport: Viewport;
+  /** sha256 of the canonical JSON of `elements`. Equal ⇒ identical structure
+   *  and styles, so a pixel difference is render drift. */
+  structureHash: string;
+  /** Full document height, from CDP. Greater than viewport.height means part
+   *  of the page was never captured — PR (b)'s `below-fold` flag reads this. */
+  contentHeight: number;
+  elements: StructureElement[];
+  truncated?: { kept: number; total: number };
 }
 
 export interface ChangedRegion {
