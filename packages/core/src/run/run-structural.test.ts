@@ -214,3 +214,44 @@ test('a cause index that throws leaves the verdict without a cause, run intact',
   expect(r.results[0].structural?.classification).toBe('style-only');
   expect(r.results[0].structural?.cause).toBeUndefined();
 });
+
+test('two failing stories with the same change are one group on the report', async () => {
+  const s = store('ok');
+  // The store's manifest only knows 's'; a second id with the same baseline
+  // row is enough, since the stub pool yields the same current capture.
+  const manifest = await s.readManifest();
+  s.readManifest = async () => ({
+    ...manifest,
+    baselines: { ...manifest.baselines, s2: manifest.baselines.s },
+  });
+  const r = await runCapture({
+    browser: {} as Browser,
+    platform: { name: 'x' } as never,
+    store: s,
+    baseUrl: 'about:blank',
+    stories: ['s2', 's'].map((storyId) => ({
+      storyId,
+      title: 't',
+      name: 'n',
+      componentPath: '',
+      params: {},
+    })),
+    totalCount: 2,
+    runId: 'r',
+    branch: 'b',
+    commitSha: 'c',
+  });
+  expect(r.results.map((x) => x.storyId)).toEqual(['s', 's2']);
+  expect(r.groups).toEqual([
+    {
+      signature: r.results[0].structural!.signature,
+      summary: r.results[0].structural!.summary,
+      storyIds: ['s', 's2'],
+    },
+  ]);
+});
+
+test('a run with no shared signature has no groups key', async () => {
+  const r = await run(store('ok'));
+  expect('groups' in r).toBe(false);
+});

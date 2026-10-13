@@ -30,6 +30,7 @@ export type {
   DiffStatus,
   DiffResult,
   RunReport,
+  RunGroup,
   ApprovalMeta,
   BaselineEntry,
   BaselineManifest,
@@ -76,6 +77,7 @@ export {
   type RunOptions,
   type RunArtifact,
 } from './run/run.js';
+export { computeGroups } from './run/groups.js';
 
 // Per-phase timings, so a slow run can say which phase was slow.
 export { phases, formatPhases, type Phases } from './run/phases.js';

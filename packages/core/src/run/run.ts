@@ -24,6 +24,8 @@ import { capturePool } from '../capture/pool.js';
 import { resolveStatus, toDiffStatus, type AncestryCheck } from '../baseline/status.js';
 import { decodeStructure } from '../capture/structure.js';
 import { structuralDiff } from '../diff/structural.js';
+import { compareCodeUnits } from '../diff/structural/deltas.js';
+import { computeGroups } from './groups.js';
 import {
   diffImages,
   type DiffOutput,
@@ -128,6 +130,10 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   );
 
   const summary = tally(results);
+  // Code-unit order: the report is byte-stable across machines, and
+  // localeCompare is not.
+  results.sort((a, b) => compareCodeUnits(a.storyId, b.storyId));
+  const groups = computeGroups(results);
 
   return {
     runId: opts.runId,
@@ -139,8 +145,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     env: captureEnv(opts.browser),
     capturedCount: opts.stories.length,
     totalCount: opts.totalCount,
-    results: results.sort((a, b) => a.storyId.localeCompare(b.storyId)),
+    results,
     summary,
+    ...(groups.length > 0 ? { groups } : {}),
     durationMs: Date.now() - started,
     startedAt: startedAt.toISOString(),
   };

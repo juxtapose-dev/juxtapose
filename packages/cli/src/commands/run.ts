@@ -38,6 +38,8 @@ import {
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
 
+const MAX_GROUPS_SHOWN = 10;
+
 export async function runCommand(flags: CommonFlags): Promise<number> {
   // Checked first: a mistyped ref used to fall through to `git-unavailable`,
   // capture everything, and give every story an unexplained `unknown` cause.
@@ -305,6 +307,23 @@ async function emit(
     }
     if (needsReview.length > 20) {
       process.stdout.write(`  …and ${needsReview.length - 20} more\n`);
+    }
+    // Bounded like the review list: 500 groups would be 1,000 lines. The
+    // report has them all.
+    if (report.groups?.length) {
+      const n = report.groups.length;
+      process.stdout.write(
+        `\n  ${n} change${n === 1 ? '' : 's'} shared by several stories:\n`,
+      );
+      for (const g of report.groups.slice(0, MAX_GROUPS_SHOWN)) {
+        const ids = g.storyIds.slice(0, 5).join(', ');
+        const more = g.storyIds.length > 5 ? `, …${g.storyIds.length - 5} more` : '';
+        process.stdout.write(
+          `  ${g.storyIds.length} stories: ${g.summary}\n    ${ids}${more}\n`,
+        );
+      }
+      if (n > MAX_GROUPS_SHOWN)
+        process.stdout.write(`  …and ${n - MAX_GROUPS_SHOWN} more (see report.json)\n`);
     }
     process.stdout.write(`\n  report: ${path.join(runDir, 'report.json')}\n`);
     process.stdout.write(`  approve all: jux approve --all\n`);

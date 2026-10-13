@@ -228,6 +228,18 @@ export interface DiffResult {
   durationMs: number;
 }
 
+/** One change seen on several stories: the same signature on ≥2 failing
+ *  results. Listing them is what turns 40 handoffs into one decision;
+ *  approving by group is a later row. */
+export interface RunGroup {
+  signature: string;
+  /** The first story's summary, in code-unit order of `storyIds`; labels
+   *  can differ per page, the signature cannot. */
+  summary: string;
+  /** ≥ 2, code-unit sorted. */
+  storyIds: string[];
+}
+
 export interface RunReport {
   runId: string;
   branch: string;
@@ -240,6 +252,8 @@ export interface RunReport {
   totalCount: number;
   results: DiffResult[];
   summary: Record<DiffStatus, number>;
+  /** Present when at least one signature is shared by ≥2 failing stories. */
+  groups?: RunGroup[];
   durationMs: number;
   startedAt: string;
 }
