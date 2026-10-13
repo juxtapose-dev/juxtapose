@@ -67,7 +67,10 @@ describe('buildCauseIndex', () => {
   // answer on examples/storybook.
   it('a fully traced closure has no partial key; any untraced path marks it partial', async () => {
     const full = await index(['src/Card.tsx']).causeFor(card());
-    expect(full).toEqual({ kind: 'in-closure', files: [{ path: 'src/Card.tsx', distance: 1 }] });
+    expect(full).toEqual({
+      kind: 'in-closure',
+      files: [{ path: 'src/Card.tsx', distance: 1 }],
+    });
     expect('partial' in full).toBe(false);
     // A changed file no manifest entry names could be inlined anywhere.
     expect(await index(['src/Card.tsx', 'src/inlined.ts']).causeFor(card())).toEqual({
@@ -76,9 +79,9 @@ describe('buildCauseIndex', () => {
       partial: true,
     });
     // A never-bundled file does not make it partial.
-    expect('partial' in (await index(['src/Card.tsx', 'README.md']).causeFor(card()))).toBe(
-      false,
-    );
+    expect(
+      'partial' in (await index(['src/Card.tsx', 'README.md']).causeFor(card())),
+    ).toBe(false);
   });
 
   it('reports none-in-closure for a story the change cannot reach', async () => {
@@ -318,9 +321,10 @@ describe('the real Storybook manifest', () => {
   // cause must say the rest could not be traced.
   it('a bundled edit beside a story edit is partial, not a confident story-file cause', async () => {
     expect(
-      await realIndex(['../components/src/index.jsx', 'stories/Button.stories.jsx']).causeFor(
-        story(),
-      ),
+      await realIndex([
+        '../components/src/index.jsx',
+        'stories/Button.stories.jsx',
+      ]).causeFor(story()),
     ).toEqual({
       kind: 'in-closure',
       files: [{ path: 'stories/Button.stories.jsx', distance: 0 }],

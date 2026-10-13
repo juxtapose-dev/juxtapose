@@ -253,7 +253,10 @@ describe('describeRegion', () => {
     const structural = verdictFor('background');
     expect(structural.deltaCount).toBeGreaterThan(0);
     const out = buildHandoffPrompt({ ...base, mismatchPercent: 0, structural });
-    const assessment = out.slice(out.indexOf('## Assessment'), out.indexOf('## What to do'));
+    const assessment = out.slice(
+      out.indexOf('## Assessment'),
+      out.indexOf('## What to do'),
+    );
     expect(assessment).toContain(
       `Pixels are below tolerance, but structure records ${structural.deltaCount} delta(s); judge those, not the pixel count.`,
     );
@@ -290,7 +293,10 @@ describe('describeRegion', () => {
     // A full trace keeps the plain wording and steps.
     const full = buildHandoffPrompt({
       ...base,
-      structural: { ...structural, cause: { kind: 'in-closure', files: structural.cause.files } },
+      structural: {
+        ...structural,
+        cause: { kind: 'in-closure', files: structural.cause.files },
+      },
     });
     expect(full).toContain('(the story file itself).');
     expect(full).not.toContain('could not be traced');

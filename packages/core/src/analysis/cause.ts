@@ -219,7 +219,9 @@ function causeOf(
     [...reach.keys()].every((node) => graph.edges.has(node)) &&
     src.changedFiles.every((f) => neverBundled(f) || graph.edges.has(f.path));
   if (files.length > 0)
-    return traced ? { kind: 'in-closure', files } : { kind: 'in-closure', files, partial: true };
+    return traced
+      ? { kind: 'in-closure', files }
+      : { kind: 'in-closure', files, partial: true };
   return traced ? { kind: 'none-in-closure', files: [] } : UNKNOWN;
 }
 
