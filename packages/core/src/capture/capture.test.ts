@@ -177,7 +177,12 @@ describe('captureStory with variants', () => {
       return {};
     }) as Page['send'];
     await capture(page, variant, spyPlatform([]));
-    expect(sent[0]).toEqual([
+    // The settle init script is installed first; the media call is next.
+    expect(sent.map((c) => (c as [string])[0]).slice(0, 2)).toEqual([
+      'Page.addScriptToEvaluateOnNewDocument',
+      'Emulation.setEmulatedMedia',
+    ]);
+    expect(sent[1]).toEqual([
       'Emulation.setEmulatedMedia',
       {
         media: '',

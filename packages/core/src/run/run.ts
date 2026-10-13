@@ -35,6 +35,7 @@ import {
 import { phases, type Phases } from './phases.js';
 import type { CauseIndex } from '../analysis/cause.js';
 import { shellQuote } from '../shell-quote.js';
+import type { SettleLayer } from '../capture/settle-options.js';
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
@@ -62,6 +63,9 @@ export interface RunOptions {
   phases?: Phases;
   /** From `jux run --since`: consulted only for a story that failed. */
   cause?: CauseIndex;
+  /** Per-call settle options (CLI flags, MCP arguments), layered over every
+   *  story's own. The project's come from `config`. */
+  settle?: SettleLayer;
 }
 
 export interface RunArtifact {
@@ -89,6 +93,16 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     viewport,
     onProgress: opts.onProgress,
     ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
+    settleLayers: {
+      project: {
+        ...(opts.config?.settle ? { settle: opts.config.settle } : {}),
+        ...(opts.config?.waitForSelector !== undefined
+          ? { waitForSelector: opts.config.waitForSelector }
+          : {}),
+        ...(opts.config?.delay !== undefined ? { delay: opts.config.delay } : {}),
+      },
+      ...(opts.settle ? { call: opts.settle } : {}),
+    },
     signal: opts.signal,
   });
 
@@ -186,6 +200,11 @@ async function judge(
     // with the regions means nobody downstream has to re-enumerate stories to
     // find out what the coordinates are relative to.
     viewport: snapshot.viewport,
+    // Never silent: a capture taken at the settle cap says so on every
+    // status, a pass included, with what was still pending.
+    ...(snapshot.settle
+      ? { flags: ['settle-timeout' as const], settle: snapshot.settle }
+      : {}),
     durationMs: snapshot.durationMs,
   };
 
@@ -288,6 +307,7 @@ async function tryStructural(
       pixels,
       escalate: { command: `jux handoff ${shellQuote(story.storyId)}` },
       ...(cause ? { cause } : {}),
+      ...(snapshot.settle ? { settleTimeout: true } : {}),
     });
   } catch {
     return undefined;

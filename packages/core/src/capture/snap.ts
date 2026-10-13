@@ -11,6 +11,7 @@ import type { CaptureEnv, Snapshot, StoryParams, Viewport } from '../types.js';
 import { createUrlPlatform } from '../platforms/urls.js';
 import { captureStory } from './capture.js';
 import { captureEnv } from './env.js';
+import type { SettleLayer } from './settle-options.js';
 
 export interface SnapOptions {
   url: string;
@@ -31,6 +32,8 @@ export interface SnapPagesOptions {
   urls: string[];
   viewport?: Viewport;
   params?: StoryParams;
+  /** The project config's settle options, below `params`. */
+  projectSettle?: SettleLayer;
   /** Acquired by the caller (acquireBrowser); not closed here. */
   browser: Browser;
 }
@@ -76,7 +79,13 @@ export async function snapPages(
         const snapshot = await captureStory(
           page,
           story!,
-          { platform, baseUrl: url },
+          {
+            platform,
+            baseUrl: url,
+            ...(opts.projectSettle
+              ? { settleLayers: { project: opts.projectSettle } }
+              : {}),
+          },
           viewport,
         );
         if (!snapshot) throw new Error('page declared skip');

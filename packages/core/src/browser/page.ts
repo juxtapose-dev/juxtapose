@@ -13,6 +13,8 @@ import {
   CdpConnection,
   CdpError,
   TargetClosedError,
+  type CdpEvent,
+  type CdpEventParams,
   type CdpMethod,
   type CdpParams,
   type CdpResult,
@@ -85,6 +87,16 @@ export interface Page {
   send<T = unknown>(method: string, params?: object): Promise<T>;
   /** HTTP status of each main-document response; returns the unsubscribe. */
   onMainResponse(handler: (status: number) => void): () => void;
+  /**
+   * Subscribe to a CDP event on this page's session; returns the
+   * unsubscribe. Optional so a Page implemented outside core still
+   * type-checks; settle tracks no requests on a page without it.
+   * @internal Core's settle wait uses it for Network events.
+   */
+  on?<E extends CdpEvent>(
+    event: E,
+    handler: (params: CdpEventParams<E>) => void,
+  ): () => void;
   /** Storage.clearDataForOrigin on this page's session: localStorage, IndexedDB, Cache Storage, service workers. */
   clearOrigin(origin: string): Promise<void>;
   close(): Promise<void>;
@@ -474,6 +486,16 @@ export class CdpPage implements Page {
 
   url(): string {
     return this.currentUrl;
+  }
+
+  on<E extends CdpEvent>(
+    event: E,
+    handler: (params: CdpEventParams<E>) => void,
+  ): () => void {
+    if (this.closed) return () => {};
+    const off = this.connection.on(event, (p) => handler(p), this.sessionId);
+    this.offs.push(off);
+    return off;
   }
 
   onMainResponse(handler: (status: number) => void): () => void {

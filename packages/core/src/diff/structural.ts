@@ -37,6 +37,8 @@ export interface StructuralDiffInput {
   escalate: { command: string };
   /** From `jux run --since`; `jux diff` has no changed-file set. */
   cause?: Cause;
+  /** The current capture hit its settle cap: flagged `settle-timeout`. */
+  settleTimeout?: boolean;
 }
 
 export const MAX_DELTAS = 20;
@@ -103,6 +105,8 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
   };
   const { classification, styleTags } = classify(ctx);
   const flags = computeFlags(ctx);
+  // Last, so the flags computeFlags orders keep their positions.
+  if (input.settleTimeout) flags.push('settle-timeout');
   const deltas: Delta[] = facts.slice(0, MAX_DELTAS).map((f) => f.delta);
   const summary = buildSummary({
     classification,

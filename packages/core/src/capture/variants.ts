@@ -9,19 +9,15 @@
 
 import { compareCodeUnits } from '../diff/structural/deltas.js';
 import type { StoryManifest, StoryParams, VariantSpec } from '../types.js';
+import { VariantConfigError } from './config-errors.js';
+import { checkSettle, mergeSettle } from './settle-options.js';
 
 /** Underscores are excluded so the `__` key separator can't occur in a name. */
 export const VARIANT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 export const VARIANT_SEPARATOR = '__';
 
-/** A bad variant declaration. The CLI reports it and exits 2. */
-export class VariantConfigError extends Error {
-  constructor(message: string) {
-    super(`jux: ${message}`);
-    this.name = 'VariantConfigError';
-  }
-}
+export { VariantConfigError } from './config-errors.js';
 
 export const captureKey = (baseStoryId: string, variant: string): string =>
   `${baseStoryId}${VARIANT_SEPARATOR}${variant}`;
@@ -51,6 +47,7 @@ export function expandVariants(
     // `variants` is a declaration, not a capture setting, and `colorScheme`
     // is variant-only: the default capture is always light.
     const { variants: ownRaw, colorScheme: _ignored, ...baseParams } = story.params;
+    checkSettle(baseParams.settle, `story '${story.storyId}'`);
     out.push({ ...story, params: baseParams });
 
     // A skipped story skips every variant: there is nothing to vary.
@@ -76,7 +73,7 @@ export function expandVariants(
         variant: name,
         variantParams: layer,
         // Base params, then the extends chain, then the variant itself.
-        params: { ...baseParams, ...layer },
+        params: withSettle({ ...baseParams, ...layer }, baseParams.settle, layer.settle),
       });
     }
   }
@@ -131,6 +128,7 @@ function checkDeclared(raw: unknown, where: string): Record<string, VariantSpec 
         `${where}: variant '${name}' colorScheme must be 'light' or 'dark'`,
       );
     }
+    checkSettle(spec['settle'], `${where}: variant '${name}'`);
     const ext = spec['extends'];
     if (ext !== undefined && typeof ext !== 'string') {
       throw new VariantConfigError(
@@ -169,9 +167,25 @@ function resolveChain(
     cur = spec.extends;
   }
   const layer: VariantSpec = {};
-  for (const spec of chain) Object.assign(layer, spec);
+  for (const spec of chain) {
+    const settle = mergeSettle(layer.settle, spec.settle);
+    Object.assign(layer, spec);
+    if (settle) layer.settle = settle;
+  }
   delete layer.extends;
   return layer;
+}
+
+/** `params` with `settle` merged field by field rather than replaced, so a
+ *  variant's `settle.timeout` keeps the story's `settle.network`. Untouched
+ *  (no `settle` key) when neither side sets one. */
+function withSettle<T extends StoryParams>(
+  params: T,
+  under: StoryParams['settle'],
+  over: StoryParams['settle'],
+): T {
+  const settle = mergeSettle(under, over);
+  return settle ? { ...params, settle } : params;
 }
 
 /**
@@ -191,7 +205,10 @@ export function mergeLiveParams(
   if (!live) return params;
   const { variants: _v, colorScheme: _c, ...settings } = live;
   Object.assign(params, settings, story.variantParams ?? {});
-  return params;
+  const variantSettle = story.variantParams?.settle;
+  return variantSettle
+    ? withSettle(params, settings.settle ?? story.params.settle, variantSettle)
+    : params;
 }
 
 /**

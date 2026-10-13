@@ -12,6 +12,7 @@ import type {
   Cause,
   ChangedRegion,
   DiffStatus,
+  SettleReport,
   StructuralVerdict,
   Viewport,
 } from '../types.js';
@@ -44,6 +45,8 @@ export interface HandoffPayload {
   projectRoot: string;
   /** Set when the capture is a variant: its story, name and what it sets. */
   variant?: { baseStoryId: string; name: string; params: Record<string, unknown> };
+  /** Set when the capture hit its settle cap. */
+  settle?: SettleReport;
 }
 
 /** The handoff's variant field from a run result; undefined for a default
@@ -84,6 +87,16 @@ export function describeVariant(v: NonNullable<HandoffPayload['variant']>): stri
     : `${head}, with no settings of its own`;
 }
 
+/** What a settle-timeout means for this capture, and the knob for each case. */
+function settleSection(s: SettleReport): string[] {
+  return [
+    `**settle-timeout:** the page still had work at the ${s.timeoutMs} ms settle cap, so this capture may show a frame mid-update. Pending:`,
+    ...s.pending.map((p) => `- ${p}`),
+    '',
+    'Before judging the pixels: work that never finishes (a poll, a stream, analytics) belongs in `settle.network.ignore`; slow but finite work needs a higher `settle.timeout`; a request the story must wait for belongs in `settle.network.require`. Then re-run.',
+  ];
+}
+
 export function buildHandoffPrompt(p: HandoffPayload): string {
   const lines: string[] = [];
 
@@ -96,6 +109,9 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     );
   }
   lines.push('');
+  // Ahead of every status: a capture taken mid-update can make a new
+  // baseline wrong or a failure spurious, so it is read before either.
+  if (p.settle) lines.push(...settleSection(p.settle), '');
 
   if (p.status === 'new') {
     lines.push(

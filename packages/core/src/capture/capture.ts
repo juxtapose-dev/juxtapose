@@ -13,13 +13,20 @@ import type {
   StoryParams,
   Viewport,
 } from '../types.js';
+import { FREEZE_ANIMATIONS_CSS, waitForPaint, waitForSelector } from './settle.js';
 import {
-  armSettle,
-  drain,
-  FREEZE_ANIMATIONS_CSS,
-  waitForPaint,
-  waitForSelector,
-} from './settle.js';
+  installIdleDetector,
+  movedSincePaint,
+  resetIdle,
+  waitForIdle,
+  type IdleResult,
+} from './idle.js';
+import {
+  checkSettle,
+  layerScalars,
+  resolveSettle,
+  type SettleLayer,
+} from './settle-options.js';
 import { captureStructure } from './structure.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
 
@@ -60,6 +67,9 @@ export interface CaptureDeps {
   structure?: boolean;
   /** Something the user should know that doesn't fail the story. */
   onWarning?: (message: string) => void;
+  /** Settle options from outside the story: the project config below the
+   *  story's own params, the call (CLI flags, MCP arguments) above them. */
+  settleLayers?: { project?: SettleLayer; call?: SettleLayer };
 }
 
 /** Per-page memo: skip work that only needs doing once per page. */
@@ -97,6 +107,10 @@ export async function captureStory(
   // be captured unmasked, or wait its whole timeout, and the baseline would
   // record the wrong thing. Live params are re-checked below.
   assertSelectors(params);
+
+  // Before the first navigation on this page: the init script applies to
+  // documents created after it is installed.
+  const idle = await installIdleDetector(page);
 
   await ensureViewport(page, effectiveViewport);
 
@@ -143,7 +157,9 @@ export async function captureStory(
     warmPages.delete(page);
   }
   pageCapture.set(page, { key: story.storyId, base: id });
-  if (warm) await armSettle(page);
+  // Before the render is triggered, so a request or ready() call from this
+  // story's render is never mistaken for the previous one's.
+  await resetIdle(page, idle, warm);
 
   const switched =
     warm && deps.platform.switchStory
@@ -158,7 +174,6 @@ export async function captureStory(
     // re-applied for the next story that wants it.
     styleInjected.delete(page);
     warmPages.set(page, deps.baseUrl);
-    await armSettle(page);
   }
 
   // Freeze BEFORE the story renders, not after.
@@ -221,11 +236,27 @@ export async function captureStory(
   // screenshot and would report a meaningless hash.
   if (params.skip === true) return null;
 
+  // Project and call layers around the story's own: waitForSelector and
+  // delay are call > story > project; settle merges field by field. Live
+  // params can carry a `settle` discovery never saw, so it is checked here;
+  // a bad one fails this story with the reason.
+  Object.assign(
+    params,
+    layerScalars(deps.settleLayers?.project, params, deps.settleLayers?.call),
+  );
+  assertSelectors(params);
+  checkSettle(params.settle, `story '${story.storyId}'`);
+  const settle = resolveSettle(
+    deps.settleLayers?.project?.settle,
+    params.settle,
+    deps.settleLayers?.call?.settle,
+  );
+
   if (params.waitForSelector) {
     await waitForSelector(page, params.waitForSelector, timeoutMs);
   }
 
-  await drain(page);
+  const first = await waitForIdle(page, idle, settle);
 
   // Fixed delay is the escape hatch of last resort — it costs the same on
   // every run whether or not it was needed. Prefer waitForSelector.
@@ -238,6 +269,24 @@ export async function captureStory(
   // this the capture intermittently catches an intermediate frame — which a
   // byte-exact hash reports as a failure.
   await waitForPaint(page);
+
+  // Work that landed during the paint barrier (an observer callback, a
+  // request the last frame started) gets one more wait, within what is left
+  // of the cap. Once: a page that keeps moving is captured, not chased.
+  let timedOut: IdleResult | undefined = first.status === 'timeout' ? first : undefined;
+  if (
+    first.status === 'idle' &&
+    (await movedSincePaint(page, idle, first.snap, settle))
+  ) {
+    const second = await waitForIdle(
+      page,
+      idle,
+      settle,
+      Math.max(100, settle.timeoutMs - first.waitedMs),
+    );
+    await waitForPaint(page);
+    if (second.status === 'timeout') timedOut = second;
+  }
 
   // Structure from the same frame the screenshot is about to take: after the
   // paint barrier, before the shutter, with nothing in between that could
@@ -280,6 +329,15 @@ export async function captureStory(
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     ...(structure ? { structure } : {}),
+    ...(timedOut
+      ? {
+          settle: {
+            status: 'timeout' as const,
+            timeoutMs: settle.timeoutMs,
+            pending: timedOut.pending ?? [],
+          },
+        }
+      : {}),
   };
 }
 
