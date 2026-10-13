@@ -451,41 +451,38 @@ export function decodeStructure(b: Buffer): StructureSnapshot {
  * Snapshot the page's structure. Never throws: a missing structure costs the
  * agent some explanation, a thrown error would cost the story its capture.
  *
- * Mask selectors are marked with MASK_ATTR so the normalizer collapses their
- * subtree, then unmarked. Setting an attribute does not affect paint unless a
- * stylesheet targets it, which nothing ships with.
+ * Mask selectors are resolved with page.locator(), the same engine the
+ * screenshot masks with, so they pierce open shadow roots and accept
+ * Playwright-only selectors (text=, >>, :has-text). Matches get MASK_ATTR so
+ * the normalizer collapses their subtree. querySelectorAll would silently
+ * match nothing for those selectors and leak masked content into the sidecar.
  *
- * If marking fails we return undefined without touching CDP: a mask must never
- * leak masked content through the sidecar. Invalid selectors are swallowed
- * in-page, so in a real browser a bad selector never rejects the evaluate.
+ * Fail closed: if marking fails, or any match lost its mark by the time the
+ * snapshot returns (the page mutated in between), return undefined. Setting an
+ * attribute does not affect paint unless a stylesheet targets it, which
+ * nothing ships with.
  */
 export async function captureStructure(
   page: Page,
   viewport: Viewport,
   mask: readonly string[],
 ): Promise<StructureSnapshot | undefined> {
-  const mark = (on: boolean) =>
-    page.evaluate(
-      ({ selectors, attr, on }) => {
-        for (const sel of selectors) {
-          try {
-            const els = document.querySelectorAll(sel);
-            for (let i = 0; i < els.length; i++) {
-              const el = els[i]!;
-              if (on) el.setAttribute(attr, '1');
-              else el.removeAttribute(attr);
-            }
-          } catch {
-            // invalid selector: same as matching nothing
-          }
-        }
-      },
-      { selectors: [...mask], attr: MASK_ATTR, on },
-    );
+  const unmark = () =>
+    page
+      .locator(`[${MASK_ATTR}]`)
+      .evaluateAll((els, attr) => {
+        for (const el of els) el.removeAttribute(attr);
+      }, MASK_ATTR)
+      .catch(() => {});
 
   try {
-    if (mask.length) await mark(true);
+    for (const sel of mask) {
+      await page.locator(sel).evaluateAll((els, attr) => {
+        for (const el of els) el.setAttribute(attr, '1');
+      }, MASK_ATTR);
+    }
   } catch {
+    if (mask.length) await unmark();
     return undefined;
   }
 
@@ -497,6 +494,12 @@ export async function captureStructure(
         includeDOMRects: true,
         includePaintOrder: true,
       })) as unknown as CdpSnapshot;
+      for (const sel of mask) {
+        const intact = await page
+          .locator(sel)
+          .evaluateAll((els, attr) => els.every((e) => e.hasAttribute(attr)), MASK_ATTR);
+        if (!intact) return undefined;
+      }
       return normalizeStructure(raw, viewport);
     } finally {
       await cdp.detach().catch(() => {});
@@ -504,6 +507,6 @@ export async function captureStructure(
   } catch {
     return undefined;
   } finally {
-    if (mask.length) await mark(false).catch(() => {});
+    if (mask.length) await unmark();
   }
 }
