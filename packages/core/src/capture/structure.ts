@@ -269,6 +269,30 @@ export function normalizeStructure(
     const path = parentPath ? `${parentPath}>${step}` : step;
 
     const row = layoutOf.get(i);
+
+    // Mask first, before any check that can descend: a visibility:hidden mask
+    // target with a visibility:visible child used to take the hidden branch
+    // below and record the child's text, while the screenshot mask covered it.
+    if (a[MASK_ATTR] !== undefined) {
+      if (row === undefined) return; // no box: nothing to stand in for
+      total++;
+      if (elements.length < MAX_ELEMENTS) {
+        const [x, y, w, h] = layout.bounds[row];
+        elements.push({
+          path,
+          parent: keptParent,
+          tag: 'masked',
+          rect: { x: round(x), y: round(y), w: round(w), h: round(h) },
+          paintOrder: layout.paintOrders?.[row] ?? 0,
+          styles: {},
+        });
+        effective.push(
+          keptParent === null ? { ...ROOT_INHERITED } : effective[keptParent],
+        );
+      }
+      return; // never descend into a masked subtree
+    }
+
     if (row === undefined) return; // display:none (or no box): drop the subtree
     const values = layout.styles[row].map((s) => str(s) ?? '');
     if (values[visibilityIdx] === 'hidden' || values[visibilityIdx] === 'collapse') {
@@ -285,24 +309,6 @@ export function normalizeStructure(
       rect.x >= viewport.width ||
       rect.y >= viewport.height;
     const empty = rect.w <= 0 || rect.h <= 0;
-
-    if (a[MASK_ATTR] !== undefined) {
-      total++;
-      if (elements.length < MAX_ELEMENTS) {
-        elements.push({
-          path,
-          parent: keptParent,
-          tag: 'masked',
-          rect,
-          paintOrder: layout.paintOrders?.[row] ?? 0,
-          styles: {},
-        });
-        effective.push(
-          keptParent === null ? { ...ROOT_INHERITED } : effective[keptParent],
-        );
-      }
-      return; // never descend into a masked subtree
-    }
 
     const keep = !offscreen && !empty && tag !== 'html' && tag !== 'body';
     let me = keptParent;

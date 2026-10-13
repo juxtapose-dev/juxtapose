@@ -64,9 +64,18 @@ test('drops display:none, visibility:hidden, offscreen, zero-area, html, body', 
 
 test('a masked subtree becomes one opaque element', () => {
   const masked = snap().elements.filter((e) => e.tag === 'masked');
-  expect(masked).toHaveLength(1);
+  // #masked-area, and the visibility:hidden mask below
+  expect(masked).toHaveLength(2);
   expect(snap().elements.map((e) => e.text)).not.toContain('secret');
   expect(snap().elements.map((e) => e.text)).not.toContain('more');
+});
+
+test('a hidden mask target never leaks a visible descendant', () => {
+  // visibility:hidden on the mask target, visibility:visible on its child: the
+  // screenshot mask covers the parent's box, so the child must not be read.
+  expect(JSON.stringify(snap())).not.toContain('SECRET-A');
+  const masked = snap().elements.filter((e) => e.tag === 'masked');
+  expect(masked[1].path).toMatch(/div:nth-of-type\(\d+\)$/);
 });
 
 test('iframe is one element; open shadow content is included', () => {

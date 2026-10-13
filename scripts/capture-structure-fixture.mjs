@@ -39,6 +39,13 @@ const HTML = `<!doctype html><html><head><style>
     <input value="typed text" placeholder="Name">
     <input type="password" value="hunter2">
     <input type="PASSWORD" value="hunter3">
+    <div class="m" data-jux-masked="1" style="visibility:hidden"><p style="visibility:visible">SECRET-A</p></div>
+    <div id="bg" style="display:inline-block;width:20px;height:20px;background-image:url(http://127.0.0.1:9/assets/bg.png?v=3#frag)"></div>
+    <img id="inline-img" src="data:image/svg+xml;utf8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%224%22 height=%224%22/%3E" width="4" height="4">
+    <input autocomplete="one-time-code" value="OTP-SECRET">
+    <input autocomplete="billing CC-Number" value="CARD-SECRET">
+    <input autocomplete="new-password" value="NEWPW-SECRET">
+    <input autocomplete="username" value="USER-VISIBLE">
     <div style="margin-top:700px;height:1500px"><p>below fold</p></div>
   </main>
   <script>
@@ -49,7 +56,7 @@ const HTML = `<!doctype html><html><head><style>
 
 const browser = await chromium.launch();
 const page = await browser.newPage({
-  viewport: { width: 400, height: 600 },
+  viewport: { width: 400, height: 800 },
   deviceScaleFactor: 1,
 });
 await page.setContent(HTML, { waitUntil: 'load' });
@@ -67,6 +74,6 @@ const out = path.join(
 );
 await writeFile(
   out,
-  JSON.stringify({ viewport: { width: 400, height: 600 }, raw }) + '\n',
+  JSON.stringify({ viewport: { width: 400, height: 800 }, raw }) + '\n',
 );
 console.log(`wrote ${out}`);
