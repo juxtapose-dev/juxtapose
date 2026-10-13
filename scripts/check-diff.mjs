@@ -93,7 +93,7 @@ check(again.out === noBrowser.out, 'JSON is byte-identical across runs');
 const human = await jux(['diff', 'before', 'after']);
 check(
   /style-only \(color\)/.test(human.out) &&
-    /^  button\[name="Save"\] color /m.test(human.out),
+    /^ {2}button\[name="Save"\] color /m.test(human.out),
   'human output leads with the summary and lists deltas',
 );
 
