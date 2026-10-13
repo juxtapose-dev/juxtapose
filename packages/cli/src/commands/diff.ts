@@ -2,6 +2,7 @@
 // tier-0 verdict out, no browser. Exit 0 identical, 1 different, 2 usage,
 // 3 when an input exists but cannot be read.
 
+import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -95,8 +96,19 @@ export async function diffCommand(
     // succeeds: it did what this version can. Exit 2 here sent an agent that
     // followed `next:` into a usage error.
     const dir = snapsDir(flags.project);
+    const images = [imagePath(dir, a), imagePath(dir, b)];
+    const absent = images.find((p) => !existsSync(p));
+    if (absent) {
+      process.stderr.write(
+        `jux diff: no file at ${absent}. Take both snaps with \`jux snap <url> --as ${shellQuote(a)}\` and \`--as ${shellQuote(b)}\` first.\n`,
+      );
+      return EXIT.usage;
+    }
+    // --json keeps stdout machine-readable even on this stand-in path.
     process.stdout.write(
-      `open these to compare; crops arrive in a later release\n  ${imagePath(dir, a)}\n  ${imagePath(dir, b)}\n`,
+      flags.json
+        ? `${JSON.stringify({ images })}\n`
+        : `open these to compare; crops arrive in a later release\n  ${images[0]}\n  ${images[1]}\n`,
     );
     return EXIT.clean;
   }
