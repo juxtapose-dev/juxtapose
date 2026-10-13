@@ -71,3 +71,25 @@ test.each(['file:///etc/passwd', 'javascript:alert(1)', 'localhost:3000/x'])(
 test('scheme check is case-insensitive', () => {
   expect(() => createUrlPlatform([{ id: 'x', url: 'HTTPS://x' }])).not.toThrow();
 });
+
+test.each([
+  ' file:///etc/passwd',
+  '\tfile:///etc/passwd',
+  'fi\tle:///etc/passwd',
+  'FILE:///x',
+])('rejects parser-differential scheme %j at construction', (url) => {
+  expect(() => createUrlPlatform([{ id: 'x', url }])).toThrow(/must be http\(s\)/);
+});
+
+test('protocol-relative url resolves against an https origin', async () => {
+  const goto = vi.fn(async () => null);
+  const q = createUrlPlatform([{ id: 'e', url: '//evil.example/x' }]);
+  await q.showStory({ goto } as unknown as Page, 'e', 'https://app.test');
+  expect(goto.mock.calls[0][0]).toBe('https://evil.example/x');
+});
+
+test('a relative url resolving to a non-http scheme is rejected on showStory', async () => {
+  const q = createUrlPlatform([{ id: 'e', url: '/x' }]);
+  const page = { goto: vi.fn() } as unknown as Page;
+  await expect(q.showStory(page, 'e', 'file:///tmp/')).rejects.toThrow(/needs --origin/);
+});

@@ -16,16 +16,30 @@ import type { StoryManifest, UrlEntry } from '../types.js';
 export function createUrlPlatform(urls: UrlEntry[]): Platform {
   // Ids are baseline keys. A Map would silently keep the last duplicate and
   // two pages would share one baseline, so reject them up front.
+  const notHttp = (u: UrlEntry): Error =>
+    new Error(`jux: url '${u.url}' for id '${u.id}' must be http(s)`);
+  const isHttp = (url: URL): boolean =>
+    url.protocol === 'http:' || url.protocol === 'https:';
+
+  // Ids are baseline keys. A Map would silently keep the last duplicate and
+  // two pages would share one baseline, so reject them up front.
   const byId = new Map<string, UrlEntry>();
   for (const u of urls) {
     if (!u.id) throw new Error('jux: url entry has an empty id');
-    // file:, javascript:, data: would let whoever controls the config (a fork
-    // PR in CI) publish local file contents in the image and structure sidecar.
-    // It also turns the typo 'localhost:3000/x' (scheme "localhost:") into an
-    // error instead of a confusing navigation failure.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(u.url) && !/^https?:/i.test(u.url)) {
-      throw new Error(`jux: url '${u.url}' for id '${u.id}' must be http(s)`);
+    // Validate with the same parser navigation uses. A regex disagrees with it:
+    // WHATWG strips leading/trailing C0 controls and spaces and removes tabs and
+    // newlines, so ' file:///x' or 'fi\tle:///x' looks relative to a regex but
+    // navigates to file:. A file:/javascript:/data: url would let whoever
+    // controls the config (a fork PR in CI) publish local file contents in the
+    // image and structure sidecar. 'localhost:3000/x' (scheme "localhost:")
+    // also becomes a clear error instead of a confusing navigation failure.
+    let abs: URL | null = null;
+    try {
+      abs = new URL(u.url);
+    } catch {
+      // relative; checked again against the origin in resolve()
     }
+    if (abs && !isHttp(abs)) throw notHttp(u);
     if (byId.has(u.id)) throw new Error(`jux: duplicate url id '${u.id}'`);
     byId.set(u.id, u);
   }
@@ -33,11 +47,18 @@ export function createUrlPlatform(urls: UrlEntry[]): Platform {
   const resolve = (id: string, baseUrl: string): string => {
     const entry = byId.get(id);
     if (!entry) throw new Error(`jux: no url with id '${id}'`);
-    if (/^[a-z][a-z0-9+.-]*:/i.test(entry.url)) return entry.url;
-    if (!/^https?:/i.test(baseUrl)) {
-      throw new Error(`jux: relative url '${entry.url}' needs --origin`);
+    let final: URL;
+    try {
+      final = new URL(entry.url);
+    } catch {
+      if (!/^https?:/i.test(baseUrl)) {
+        throw new Error(`jux: relative url '${entry.url}' needs --origin`);
+      }
+      final = new URL(entry.url, baseUrl);
     }
-    return new URL(entry.url, baseUrl).toString();
+    // Navigate to exactly what was validated.
+    if (!isHttp(final)) throw notHttp(entry);
+    return final.href;
   };
 
   return {
