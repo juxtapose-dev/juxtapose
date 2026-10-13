@@ -30,7 +30,12 @@ export async function approveCommand(
 
   const requested = new Set(flags.story ?? []);
   const candidates = report.results.filter((r) => {
-    if (requested.size > 0) return requested.has(r.storyId);
+    // A base id means the story and every variant of it in the run.
+    if (requested.size > 0)
+      return (
+        requested.has(r.storyId) ||
+        (r.baseStoryId !== undefined && requested.has(r.baseStoryId))
+      );
     if (!flags.all) return false;
     return r.status === 'fail' || r.status === 'new' || r.status === 'stale';
   });

@@ -19,6 +19,9 @@ import {
   acquireBrowser,
   encodeStoryId,
   encodeStructure,
+  expandVariants,
+  selectByStoryId,
+  VariantConfigError,
   formatPercent,
   formatPhases,
   phases,
@@ -62,28 +65,53 @@ export async function runCommand(
 
   const p = phases();
 
-  const stories = await p.time('enumerate', () =>
-    ctx.platform.enumerate({
-      projectRoot: ctx.projectRoot,
-      buildDir: ctx.buildDir,
-      origin: ctx.origin,
-    }),
-  );
+  let stories;
+  try {
+    // One entry per capture: a story's variants are jobs like any other from
+    // here on, and the platform's own entries are the default captures.
+    stories = await p.time('enumerate', async () =>
+      expandVariants(
+        await ctx.platform.enumerate({
+          projectRoot: ctx.projectRoot,
+          buildDir: ctx.buildDir,
+          origin: ctx.origin,
+        }),
+        ctx.config.variants,
+      ),
+    );
+  } catch (err) {
+    if (!(err instanceof VariantConfigError)) throw err;
+    io.err(`${err.message}\n`);
+    return EXIT.usage;
+  }
 
   if (stories.length === 0) {
     io.err('jux: no stories found\n');
     return 1;
   }
 
-  const selection = flags.all
-    ? { stories, reason: 'no-baseline' as const }
-    : await p.time('affected', () =>
-        resolveAffected(stories, flags.since ?? null, {
-          projectRoot: ctx.projectRoot,
-          configDirs: [...ctx.platform.configDirs],
-          buildDir: ctx.buildDir,
-        }),
+  // --story is explicit and wins over --all and affected analysis: a base id
+  // selects the story with all its variants, a capture key exactly one.
+  let selection: { stories: typeof stories; reason: string };
+  if (flags.story?.length) {
+    const { selected, unknown } = selectByStoryId(stories, flags.story);
+    if (unknown.length > 0) {
+      io.err(
+        `jux run: no story or capture with id ${unknown.map((id) => `'${id}'`).join(', ')}\n`,
       );
+      return EXIT.usage;
+    }
+    selection = { stories: selected, reason: 'requested' };
+  } else
+    selection = flags.all
+      ? { stories, reason: 'no-baseline' as const }
+      : await p.time('affected', () =>
+          resolveAffected(stories, flags.since ?? null, {
+            projectRoot: ctx.projectRoot,
+            configDirs: [...ctx.platform.configDirs],
+            buildDir: ctx.buildDir,
+          }),
+        );
 
   log(
     `jux: ${selection.stories.length}/${stories.length} stories to capture (${selection.reason})`,

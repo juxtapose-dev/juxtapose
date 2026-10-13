@@ -170,7 +170,12 @@ export const TOOLS: Tool[] = [
       properties: {
         all: { type: 'boolean', description: 'Capture every story' },
         since: { type: 'string', description: 'Git ref; trace changes since it' },
-        stories: { type: 'array', items: { type: 'string' }, description: 'Story ids' },
+        stories: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'Story ids: a story id captures it with all its variants, a capture key (id__variant) just that capture',
+        },
       },
     },
   },
@@ -201,7 +206,8 @@ export const TOOLS: Tool[] = [
           type: 'array',
           items: { type: 'string' },
           minItems: 1,
-          description: 'Exact story ids from the last run',
+          description:
+            'Exact story ids or capture keys from the last run; a story id approves all its variants',
         },
       },
       required: ['stories'],
@@ -608,7 +614,12 @@ export class McpServer {
         const report = parseRunReport(
           await readFile(path.join(runDir, 'report.json'), 'utf8'),
         );
-        const known = new Set(report.results.map((r) => r.storyId));
+        // A base id is known when any of its variants is in the run.
+        const known = new Set(
+          report.results.flatMap((r) =>
+            r.baseStoryId !== undefined ? [r.storyId, r.baseStoryId] : [r.storyId],
+          ),
+        );
         const unknown = stories.filter((id) => !known.has(id));
         if (unknown.length)
           return errorResult(

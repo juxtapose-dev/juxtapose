@@ -53,7 +53,9 @@ export async function handoffCommand(
     buildDir: ctx.buildDir,
     origin: ctx.origin,
   });
-  const story = stories.find((s) => s.storyId === storyId);
+  // The platform knows a variant by its story's own id, not the capture key.
+  const baseId = result.baseStoryId ?? storyId;
+  const story = stories.find((s) => s.storyId === baseId);
 
   // The viewport the capture actually used, which is what changedRegions
   // coordinates are relative to. Falling back to the project default here was
