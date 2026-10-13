@@ -193,3 +193,70 @@ describe.skipIf(!chrome)('variant capture with warm switching', () => {
     }
   });
 });
+
+// A page that lays out once at boot from the viewport it booted under, and a
+// platform that, like Storybook's, answers "switched" without re-rendering
+// when asked for the story already on screen. Before the fix, default then
+// mobile captured the mobile variant with the default's layout.
+const BOOT_WIDTH = `<!doctype html><body style="margin:0;font:16px sans-serif"><script>
+document.body.textContent = 'booted at ' + innerWidth + 'x' + innerHeight;
+window.__shown = location.hash.slice(1);
+</script></body>`;
+
+describe.skipIf(!chrome)('warm switching between captures of one story', () => {
+  let srv: Server;
+  let url: string;
+  beforeAll(async () => {
+    srv = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(BOOT_WIDTH);
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    url = `http://127.0.0.1:${(srv.address() as { port: number }).port}/`;
+  });
+  afterAll(() => {
+    srv.closeAllConnections();
+    srv.close();
+  });
+
+  const lazy = (): Platform => ({
+    ...platform,
+    showStory: async (page, id) => {
+      await page.goto(`${url}#${id}`);
+    },
+    // Already showing this story: nothing to do, as Storybook's switch sees it.
+    switchStory: async (page, id) =>
+      (await page.evaluate(() => (window as unknown as { __shown: string }).__shown)) ===
+      id,
+  });
+
+  async function capture(keys: string[], warmSwitch: boolean): Promise<Buffer[]> {
+    const browser = await Browser.launch({ executablePath: chrome!.path });
+    try {
+      const out: Buffer[] = [];
+      for await (const o of capturePool(keys.map(pick), {
+        browser,
+        platform: lazy(),
+        baseUrl: url,
+        viewport: { width: 200, height: 100 },
+        concurrency: 1,
+        warmSwitch,
+      })) {
+        if (!o.snapshot) throw o.error ?? new Error('no snapshot');
+        out.push(o.snapshot.image);
+      }
+      return out;
+    } finally {
+      await browser.close();
+    }
+  }
+
+  it.each([[['card', 'card__mobile']], [['card__mobile', 'card']]])(
+    '%j: the second capture is byte-identical to a cold one',
+    async (order) => {
+      const [, second] = await capture(order, true);
+      const [cold] = await capture([order[1]!], false);
+      expect(second!.equals(cold!)).toBe(true);
+    },
+  );
+});

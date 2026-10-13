@@ -212,7 +212,38 @@ describe('captureStory with variants', () => {
     expect(warnings).toEqual([]);
     await run({ variants: { dark: { colorScheme: 'dark', delay: 50 } } });
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("btn__dark: the story's own 'dark' variant");
+    expect(warnings[0]).toContain(
+      "btn__dark: the story's live parameters declare variant 'dark' differently",
+    );
+    expect(warnings[0]).toContain('where discovery reads them before capture');
+  });
+
+  it('compares live and expanded settings structurally, not by key order', async () => {
+    const warnings: string[] = [];
+    const mobile: StoryManifest = {
+      ...variant,
+      storyId: 'btn__mobile',
+      variant: 'mobile',
+      params: { viewport: { width: 375, height: 812 } },
+      variantParams: { viewport: { width: 375, height: 812 } },
+    };
+    await captureStory(
+      recordingPage(),
+      mobile,
+      {
+        platform: {
+          ...platform,
+          readLiveParams: async () => ({
+            variants: { mobile: { viewport: { height: 812, width: 375 } } },
+          }),
+        },
+        baseUrl: 'x',
+        structure: false,
+        onWarning: (m) => warnings.push(m),
+      },
+      { width: 10, height: 10 },
+    ).catch(() => null);
+    expect(warnings).toEqual([]);
   });
 
   it("a story's live opt-out of a variant skips that capture", async () => {

@@ -293,3 +293,14 @@ describe('selectByStoryId', () => {
     expect(unknown).toEqual(['nope', 'a__nope']);
   });
 });
+
+describe('deepEqual', () => {
+  it('ignores key order, respects array order and types', async () => {
+    const { deepEqual } = await import('./variants.js');
+    expect(deepEqual({ a: 1, b: { c: [1, 2] } }, { b: { c: [1, 2] }, a: 1 })).toBe(true);
+    expect(deepEqual([1, 2], [2, 1])).toBe(false);
+    expect(deepEqual({ a: 1 }, { a: 1, b: undefined })).toBe(false);
+    expect(deepEqual({ a: '1' }, { a: 1 })).toBe(false);
+    expect(deepEqual(null, {})).toBe(false);
+  });
+});

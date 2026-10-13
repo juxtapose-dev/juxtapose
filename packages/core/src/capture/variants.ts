@@ -218,3 +218,21 @@ export function selectByStoryId<T extends { storyId: string; baseStoryId?: strin
   });
   return { selected, unknown: ids.filter((id) => !hit.has(id)) };
 }
+
+/** Structural equality for JSON-shaped values: key order doesn't matter,
+ *  array order does. */
+export function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null)
+    return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+  const ra = a as Record<string, unknown>;
+  const rb = b as Record<string, unknown>;
+  const ka = Object.keys(ra);
+  return (
+    ka.length === Object.keys(rb).length &&
+    ka.every((k) => Object.hasOwn(rb, k) && deepEqual(ra[k], rb[k]))
+  );
+}

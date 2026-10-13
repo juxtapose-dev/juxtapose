@@ -21,7 +21,7 @@ import {
   waitForSelector,
 } from './settle.js';
 import { captureStructure } from './structure.js';
-import { mergeLiveParams, platformStoryId } from './variants.js';
+import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 2000;
 
@@ -66,6 +66,8 @@ export interface CaptureDeps {
 const styleInjected = new WeakSet<Page>();
 const pageViewport = new WeakMap<Page, string>();
 const pageColorScheme = new WeakMap<Page, ColorScheme>();
+/** The capture last shown on a page: its key and its platform story id. */
+const pageCapture = new WeakMap<Page, { key: string; base: string }>();
 const warmPages = new WeakMap<Page, string>();
 
 export async function captureStory(
@@ -113,24 +115,34 @@ export async function captureStory(
   // across a warm switch (measured: card then card__dark captured both light,
   // the reverse both dark). Decided before the scheme is applied, against
   // what the page booted under.
+  //
+  // And another capture of the same story (default -> mobile): the platform
+  // sees its story already rendered and "switches" without re-rendering, so
+  // the variant would be captured from the previous capture's layout.
+  const previous = pageCapture.get(page);
+  const sameStoryOtherCapture =
+    previous !== undefined && previous.base === id && previous.key !== story.storyId;
+  const schemeChanged = pageColorScheme.has(page) && pageColorScheme.get(page) !== scheme;
   const warm =
     deps.warmSwitch === true &&
     warmPages.get(page) === deps.baseUrl &&
-    pageColorScheme.get(page) === scheme &&
+    !schemeChanged &&
+    !sameStoryOtherCapture &&
     !(params.animations === 'play' && styleInjected.has(page));
 
   // Before showStory, on every capture, so the story renders in its scheme
   // from the first frame. Memoized, so it costs nothing when unchanged.
-  const schemeChanged = pageColorScheme.has(page) && pageColorScheme.get(page) !== scheme;
   await ensureColorScheme(page, scheme);
   // A variant shares its story's URL, and a URL differing only in its
   // fragment is a same-document navigation: the cold path below would not
-  // reload, and an app that read the scheme at boot would keep the old one.
-  // Blank the page so the story boots fresh under the new scheme.
-  if (schemeChanged && warmPages.has(page)) {
+  // reload, and an app that read the scheme at boot would keep the old one,
+  // or keep the previous capture's render. Blank the page so the story boots
+  // fresh.
+  if ((schemeChanged || sameStoryOtherCapture) && warmPages.has(page)) {
     await page.goto('about:blank');
     warmPages.delete(page);
   }
+  pageCapture.set(page, { key: story.storyId, base: id });
   if (warm) await armSettle(page);
 
   const switched =
@@ -188,7 +200,7 @@ export async function captureStory(
     }
     if (story.variant !== undefined && liveOverrideDiffers(story, live)) {
       deps.onWarning?.(
-        `jux: ${story.storyId}: the story's own '${story.variant}' variant, declared in its live parameters, is ignored for now; story-level variants are read at enumeration in a later release`,
+        `jux: ${story.storyId}: the story's live parameters declare variant '${story.variant}' differently from the settings it was captured with. Parameters read after render can't change which variants exist or what they set; declare variants in the story's parameters, where discovery reads them before capture.`,
       );
     }
 
@@ -279,7 +291,7 @@ function liveOverrideDiffers(story: StoryManifest, live: StoryParams): boolean {
   if (spec === undefined || spec === false || typeof spec !== 'object') return false;
   const expanded: Record<string, unknown> = story.variantParams ?? {};
   return Object.entries(spec).some(
-    ([k, v]) => k !== 'extends' && JSON.stringify(v) !== JSON.stringify(expanded[k]),
+    ([k, v]) => k !== 'extends' && !deepEqual(v, expanded[k]),
   );
 }
 
