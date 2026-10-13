@@ -25,6 +25,9 @@ import {
   needsReview,
   startRun,
   adjacentStory,
+  approvableCaptures,
+  capturesFor,
+  pickCapture,
   type Bundle,
 } from './api.js';
 import { Compare, type ViewMode } from './Compare.js';
@@ -95,6 +98,12 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Which variant is shown, remembered per story: switching stories shows the
+  // default capture, and a j/k jump can land on a specific variant.
+  const [shown, setShown] = useState<{ story: string | null; variant: string | null }>({
+    story: null,
+    variant: null,
+  });
 
   const refresh = useCallback(async () => {
     try {
@@ -138,11 +147,20 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   const approved = useMemo(() => bundle?.approved ?? [], [bundle]);
   const pending = useMemo(() => needsReview(report, approved), [report, approved]);
 
+  // Storybook selects a story; the run holds its default capture and one per
+  // variant. The panel shows one capture at a time and acts on that one.
+  const captures = useMemo(() => capturesFor(report, storyId), [report, storyId]);
+  const variant = shown.story === storyId ? shown.variant : null;
   const result: DiffResult | undefined = useMemo(
-    () => report?.results.find((r) => r.storyId === storyId),
-    [report, storyId],
+    () => pickCapture(captures, variant),
+    [captures, variant],
   );
-  const isApproved = storyId !== null && approved.includes(storyId);
+  const captureId = result?.storyId ?? null;
+  const isApproved = captureId !== null && approved.includes(captureId);
+  const variantsToApprove = useMemo(
+    () => approvableCaptures(captures, approved),
+    [captures, approved],
+  );
 
   // Only a failing story has two meaningfully different images. `pass` means
   // they are byte-identical and `new` has no baseline at all, so in both cases
@@ -168,10 +186,10 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   }, []);
 
   const approve = useCallback(async () => {
-    if (!storyId) return;
+    if (!captureId) return;
     setBusy(true);
     try {
-      await approveStory(storyId);
+      await approveStory(captureId);
       await refresh();
       setError(null);
     } catch (err) {
@@ -179,7 +197,20 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     } finally {
       setBusy(false);
     }
-  }, [storyId, refresh]);
+  }, [captureId, refresh]);
+
+  const approveVariants = useCallback(async () => {
+    setBusy(true);
+    try {
+      for (const item of variantsToApprove) await approveStory(item.storyId);
+      await refresh();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [variantsToApprove, refresh]);
 
   const approveAll = useCallback(async () => {
     setBusy(true);
@@ -194,20 +225,26 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   }, [pending, refresh]);
 
   const copyHandoff = useCallback(async () => {
-    if (!storyId) return;
-    const text = await fetchHandoff(storyId).catch(() => null);
+    if (!captureId) return;
+    const text = await fetchHandoff(captureId).catch(() => null);
     if (!text) return;
     await navigator.clipboard?.writeText(text).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [storyId]);
+  }, [captureId]);
 
+  // j/k walk captures, not stories: a story with two failing variants is two
+  // stops. Landing on a variant selects its story and shows that variant.
   const jump = useCallback(
     (direction: 'next' | 'prev') => {
-      const target = adjacentStory(report, approved, storyId, direction);
-      if (target) onSelectStory(target);
+      const target = adjacentStory(report, approved, captureId ?? storyId, direction);
+      const hit = target ? report?.results.find((r) => r.storyId === target) : undefined;
+      if (!hit) return;
+      const story = hit.baseStoryId ?? hit.storyId;
+      setShown({ story, variant: hit.variant ?? null });
+      if (story !== storyId) onSelectStory(story);
     },
-    [report, approved, storyId, onSelectStory],
+    [report, approved, captureId, storyId, onSelectStory],
   );
 
   useKeyboardShortcuts(active, {
@@ -293,6 +330,44 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
           />
         ) : (
           <>
+            {captures.length > 1 && (
+              <Toolbar as="div" style={{ borderBottom: 'none', paddingLeft: 0 }}>
+                <ModeGroup role="tablist" aria-label="Variant">
+                  {captures.map((c) => (
+                    <Button
+                      key={c.storyId}
+                      size="small"
+                      role="tab"
+                      aria-selected={c.storyId === captureId}
+                      variant={c.storyId === captureId ? 'solid' : 'ghost'}
+                      onClick={() =>
+                        setShown({ story: storyId, variant: c.variant ?? null })
+                      }
+                      title={`${c.variant ?? 'default'}: ${approved.includes(c.storyId) ? 'approved' : c.status}`}
+                    >
+                      {c.variant ?? 'default'}
+                      {c.status !== 'pass' &&
+                      c.status !== 'skip' &&
+                      !approved.includes(c.storyId)
+                        ? ' •'
+                        : ''}
+                    </Button>
+                  ))}
+                </ModeGroup>
+                <Spacer />
+                {variantsToApprove.length > 1 && (
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    onClick={() => void approveVariants()}
+                    disabled={busy}
+                  >
+                    Approve all variants ({variantsToApprove.length})
+                  </Button>
+                )}
+              </Toolbar>
+            )}
+
             <Toolbar as="div" style={{ borderBottom: 'none', paddingLeft: 0 }}>
               {/*
                 Comparison controls only exist when there is something to
@@ -406,7 +481,14 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
             {pending.length > 0 && (
               <Toolbar as="div" style={{ borderBottom: 'none', paddingLeft: 0 }}>
                 <Muted>
-                  {pending.length} {pending.length === 1 ? 'story needs' : 'stories need'}{' '}
+                  {pending.length}{' '}
+                  {pending.some((r) => r.variant !== undefined)
+                    ? pending.length === 1
+                      ? 'capture needs'
+                      : 'captures need'
+                    : pending.length === 1
+                      ? 'story needs'
+                      : 'stories need'}{' '}
                   review
                 </Muted>
                 <Button size="small" variant="ghost" onClick={() => jump('next')}>

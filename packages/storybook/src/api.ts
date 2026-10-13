@@ -171,3 +171,55 @@ export function adjacentStory(
   const nextIndex = (index + step + pending.length) % pending.length;
   return pending[nextIndex]!.storyId;
 }
+
+/**
+ * A story's captures in the last run: its default capture first, then each
+ * variant by name. The panel's variant switcher is built from this, keyed by
+ * the story Storybook has selected.
+ */
+export function capturesFor(
+  report: RunReport | null,
+  storyId: string | null,
+): DiffResult[] {
+  if (!report || storyId === null) return [];
+  return report.results
+    .filter((r) => (r.baseStoryId ?? r.storyId) === storyId)
+    .sort((a, b) =>
+      a.variant === undefined
+        ? -1
+        : b.variant === undefined
+          ? 1
+          : a.variant < b.variant
+            ? -1
+            : 1,
+    );
+}
+
+/**
+ * The capture to show: the named variant, else the default capture, else the
+ * first variant (a story whose default capture was not in the run).
+ */
+export function pickCapture(
+  captures: readonly DiffResult[],
+  variant: string | null,
+): DiffResult | undefined {
+  return (
+    (variant !== null ? captures.find((r) => r.variant === variant) : undefined) ??
+    captures.find((r) => r.variant === undefined) ??
+    captures[0]
+  );
+}
+
+/** Captures of one story that "Approve all variants" would approve. */
+export function approvableCaptures(
+  captures: readonly DiffResult[],
+  approved: readonly string[],
+): DiffResult[] {
+  const done = new Set(approved);
+  return captures.filter(
+    (r) =>
+      (r.status === 'fail' || r.status === 'new' || r.status === 'stale') &&
+      !r.error &&
+      !done.has(r.storyId),
+  );
+}

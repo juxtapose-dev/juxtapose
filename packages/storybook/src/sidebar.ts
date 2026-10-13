@@ -12,7 +12,7 @@
 // Deep import on purpose: '@juxtapose/core' reaches sharp and the browser driver
 // through the capture modules, and this file is bundled for the browser.
 import { formatPercent } from '@juxtapose/core/format';
-import type { RunReport, DiffStatus } from '@juxtapose/core';
+import type { DiffResult, RunReport, DiffStatus } from '@juxtapose/core';
 
 /** Storybook's status vocabulary. Ours has to map onto these five. */
 export type SbStatusValue = 'pending' | 'success' | 'error' | 'warn' | 'unknown';
@@ -89,17 +89,37 @@ export function statusUpdate(
   const seen = new Set<string>();
   const isApproved = new Set(approved);
 
+  // Storybook's status API is keyed by the real story id, so a story's
+  // variants roll up into its one dot: the worst of them.
+  const byStory = new Map<string, Array<{ status: DiffStatus; r: DiffResult }>>();
   for (const result of report?.results ?? []) {
-    seen.add(result.storyId);
-
-    // An approval since the run means the story is settled, whatever the run
+    const id = result.baseStoryId ?? result.storyId;
+    seen.add(id);
+    // An approval since the run means the capture is settled, whatever the run
     // said at the time. Showing the stale verdict would make approving feel
     // like it did nothing.
-    const status = isApproved.has(result.storyId)
-      ? toSidebarStatus('pass', 0)
-      : toSidebarStatus(result.status, result.mismatchPercent);
+    const status = isApproved.has(result.storyId) ? 'pass' : result.status;
+    const list = byStory.get(id) ?? [];
+    list.push({ status, r: result });
+    byStory.set(id, list);
+  }
 
-    update[result.storyId] = status;
+  for (const [id, captures] of byStory) {
+    const worst = worstCapture(captures);
+    if (!worst) {
+      update[id] = null;
+      continue;
+    }
+    const status = toSidebarStatus(
+      worst.status,
+      worst.status === 'pass' ? 0 : worst.r.mismatchPercent,
+    );
+    // Name the variant that decided the dot, so a red story whose default
+    // capture passes doesn't read as a mistake.
+    update[id] =
+      status && worst.status !== 'pass' && worst.r.variant !== undefined
+        ? { ...status, description: `${worst.r.variant}: ${status.description}` }
+        : status;
   }
 
   for (const id of previousIds) {
@@ -107,6 +127,28 @@ export function statusUpdate(
   }
 
   return update;
+}
+
+/** fail, then new, then stale, then pass. `skip` never decides a dot. */
+const SEVERITY: Record<DiffStatus, number> = {
+  fail: 4,
+  new: 3,
+  stale: 2,
+  pass: 1,
+  skip: 0,
+};
+
+/** The capture whose status a story's dot shows; undefined when every
+ *  capture was skipped. Exported for the rollup test. */
+export function worstCapture<T extends { status: DiffStatus }>(
+  captures: readonly T[],
+): T | undefined {
+  let worst: T | undefined;
+  for (const c of captures) {
+    if (c.status === 'skip') continue;
+    if (!worst || SEVERITY[c.status] > SEVERITY[worst.status]) worst = c;
+  }
+  return worst;
 }
 
 /** Story ids carrying a status, so the next update knows what to clear. */

@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { applyStatuses, decoratedIds, statusUpdate, toSidebarStatus } from './sidebar.js';
+import {
+  applyStatuses,
+  decoratedIds,
+  statusUpdate,
+  toSidebarStatus,
+  worstCapture,
+} from './sidebar.js';
 import type { RunReport, DiffResult, DiffStatus } from '@juxtapose/core';
 
 const result = (
@@ -128,5 +134,60 @@ describe('applyStatuses', () => {
     const fn = vi.fn().mockRejectedValue(new Error('nope'));
     expect(await applyStatuses({ experimental_updateStatus: fn }, {})).toBe(false);
     warn.mockRestore();
+  });
+});
+
+describe('variant rollup', () => {
+  const variant = (
+    base: string,
+    name: string,
+    status: DiffStatus,
+    pct = 0,
+  ): DiffResult => ({
+    ...result(`${base}__${name}`, status, pct),
+    baseStoryId: base,
+    variant: name,
+  });
+
+  it.each<[DiffStatus[], DiffStatus | undefined]>([
+    [['pass', 'fail', 'new'], 'fail'],
+    [['pass', 'stale', 'new'], 'new'],
+    [['pass', 'stale'], 'stale'],
+    [['pass', 'skip'], 'pass'],
+    [['skip', 'skip'], undefined],
+  ])('worst of %j is %s', (statuses, want) => {
+    expect(worstCapture(statuses.map((status) => ({ status })))?.status).toBe(want);
+  });
+
+  it('keys one dot per story, the worst across its captures, naming the variant', () => {
+    const u = statusUpdate(
+      report([
+        result('a', 'pass'),
+        variant('a', 'dark', 'fail', 2),
+        variant('a', 'mobile', 'new'),
+      ]),
+      [],
+      [],
+    );
+    expect(Object.keys(u)).toEqual(['a']);
+    expect(u['a']).toMatchObject({ status: 'error', description: 'dark: 2.00% changed' });
+  });
+
+  it('an approved variant stops deciding the dot', () => {
+    const u = statusUpdate(
+      report([result('a', 'pass'), variant('a', 'dark', 'fail', 2)]),
+      ['a__dark'],
+      [],
+    );
+    expect(u['a']).toMatchObject({ status: 'success' });
+  });
+
+  it('a default failure keeps its plain description', () => {
+    const u = statusUpdate(
+      report([result('a', 'fail', 1), variant('a', 'dark', 'new')]),
+      [],
+      [],
+    );
+    expect(u['a']).toMatchObject({ status: 'error', description: '1.00% changed' });
   });
 });
