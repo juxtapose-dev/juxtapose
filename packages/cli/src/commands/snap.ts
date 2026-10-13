@@ -39,6 +39,8 @@ export interface SnapFlags {
   'no-daemon'?: boolean;
 }
 
+export const MAX_VIEWPORT_SIDE = 10000;
+
 interface Written {
   url: string;
   name: string;
@@ -77,9 +79,18 @@ export async function snapCommand(
     const m = /^(\d+)x(\d+)$/.exec(flags.viewport);
     // 0 passes the pattern but Playwright rejects it, which surfaced as exit 1
     // "could not capture" for what is a usage error.
-    if (!m || Number(m[1]) === 0 || Number(m[2]) === 0) {
+    // The upper bound: lossless WebP cannot encode a side above 16383 px, and
+    // a 10000x10000 frame is already a 400 MB RGBA buffer. Past it the capture
+    // fails late with an encoder or out-of-memory error instead of a usage one.
+    if (
+      !m ||
+      Number(m[1]) === 0 ||
+      Number(m[2]) === 0 ||
+      Number(m[1]) > MAX_VIEWPORT_SIDE ||
+      Number(m[2]) > MAX_VIEWPORT_SIDE
+    ) {
       io.err(
-        `jux snap: --viewport must be WxH, both above 0, got '${flags.viewport}'. Try --viewport 1280x800.\n`,
+        `jux snap: --viewport must be WxH, each 1 to ${MAX_VIEWPORT_SIDE}, got '${flags.viewport}'. Try --viewport 1280x800.\n`,
       );
       return EXIT.usage;
     }

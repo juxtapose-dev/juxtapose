@@ -21,6 +21,8 @@ export interface Session {
   io?: Io;
   /** A browser the caller owns. The command uses it and never closes it. */
   browser?: () => Promise<Browser>;
+  /** Stops work the command can stop between steps (run: no new stories). */
+  signal?: AbortSignal;
 }
 
 /** Collects output for one call. */

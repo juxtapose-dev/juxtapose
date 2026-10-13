@@ -3,12 +3,20 @@
 // Needs `pnpm build` first (CI builds before testing).
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { cropImages } from './mcp.js';
 import { MAX_CROPS, resolveChrome } from '@juxtapose/core';
 
 const CLI = path.resolve(import.meta.dirname, '../../dist/index.js');
@@ -35,7 +43,9 @@ interface ToolResult {
 
 class Client {
   readonly lines: string[] = [];
-  private readonly child: ChildProcessWithoutNullStreams;
+  readonly child: ChildProcessWithoutNullStreams;
+  readonly exited: Promise<number | null>;
+  stderr = '';
   private readonly waiting = new Map<number, (r: Rpc) => void>();
   private next = 1;
 
@@ -43,12 +53,18 @@ class Client {
     this.child = spawn(process.execPath, [CLI, 'mcp', '--project', project], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    this.child.stderr.resume();
+    this.exited = new Promise((r) => this.child.once('exit', r));
+    this.child.stderr.on('data', (d: Buffer) => (this.stderr += d.toString()));
     createInterface({ input: this.child.stdout }).on('line', (line) => {
       this.lines.push(line);
       const msg = JSON.parse(line) as Rpc;
       if (typeof msg.id === 'number') this.waiting.get(msg.id)?.(msg);
     });
+  }
+
+  /** The id the next request() will use. */
+  peekId(): number {
+    return this.next;
   }
 
   request(method: string, params?: unknown): Promise<Rpc> {
@@ -70,9 +86,8 @@ class Client {
 
   /** Closing stdin is how a client ends the session; the server must exit. */
   async close(): Promise<number | null> {
-    const exited = new Promise<number | null>((r) => this.child.once('exit', r));
     this.child.stdin.end();
-    return exited;
+    return this.exited;
   }
 }
 
@@ -163,6 +178,152 @@ describe('jux mcp protocol', () => {
   });
 });
 
+describe('jux mcp confinement', () => {
+  let root: string;
+  let project: string;
+  let outside: string;
+  beforeAll(() => {
+    root = realpathSync(mkdtempSync(path.join(tmpdir(), 'jux-mcp-conf-')));
+    project = path.join(root, 'app');
+    outside = path.join(root, 'elsewhere');
+    mkdirSync(path.join(project, 'packages', 'web'), { recursive: true });
+    mkdirSync(outside);
+    symlinkSync(outside, path.join(project, 'escape'));
+  });
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  test('project must be the server root or inside it, by real path', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    for (const p of [outside, '../elsewhere', 'escape', '/']) {
+      const r = await c.call('diff', { a: 'x', b: 'y', project: p });
+      expect(r.isError).toBe(true);
+      expect(text(r)).toMatch(/'project' must be the server's project/);
+      const s = await c.call('snap', { url: 'http://127.0.0.1:1/', as: 'x', project: p });
+      expect(s.isError).toBe(true);
+      expect(text(s)).toMatch(/'project' must be/);
+    }
+    // Inside is fine: the error is now about the missing snap, not the project.
+    for (const p of ['packages/web', path.join(project, 'packages'), '.']) {
+      const r = await c.call('diff', { a: 'x', b: 'y', project: p });
+      expect(text(r)).toMatch(/no snap named 'x'/);
+    }
+    await c.close();
+    expectOnlyProtocol(c.lines);
+  });
+
+  test('diff takes snap names only, never paths', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    for (const ref of [
+      path.join(outside, 'a.webp'),
+      'a.webp',
+      '../x',
+      'x/y',
+      'Before',
+      '-x',
+    ]) {
+      for (const prefix of [false, true]) {
+        const r = await c.call('diff', { a: ref, b: 'after', prefix });
+        expect(r.isError).toBe(true);
+        expect(text(r)).toMatch(/'a' must be a snap name/);
+      }
+    }
+    await c.close();
+  });
+
+  test('crop images are read only from inside <project>/.juxtapose/crops', async () => {
+    const crops = path.join(project, '.juxtapose', 'crops', 'a~vs~b');
+    mkdirSync(crops, { recursive: true });
+    const png = Buffer.from('\x89PNG fake');
+    writeFileSync(path.join(crops, 'crop-1.png'), png);
+    writeFileSync(path.join(outside, 'secret.png'), 'secret');
+    symlinkSync(path.join(outside, 'secret.png'), path.join(crops, 'crop-2.png'));
+    const result = {
+      isError: false,
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            schema: 'juxtapose.crops/v1',
+            crops: [
+              { file: '.juxtapose/crops/a~vs~b/crop-1.png' },
+              { file: '.juxtapose/crops/a~vs~b/crop-2.png' },
+              { file: '../elsewhere/secret.png' },
+              { file: 'escape/secret.png' },
+            ],
+          }),
+        },
+      ],
+    };
+    const images = await cropImages(result, project);
+    expect(images).toHaveLength(1);
+    expect(images[0]).toMatchObject({ type: 'image', data: png.toString('base64') });
+  });
+});
+
+describe('jux mcp lifecycle', () => {
+  let project: string;
+  beforeAll(() => {
+    project = mkdtempSync(path.join(tmpdir(), 'jux-mcp-life-'));
+  });
+  afterAll(() => rmSync(project, { recursive: true, force: true }));
+
+  test('client responses are ignored; a non-string, non-number id is -32600 with id null', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    const before = c.lines.length;
+    c.send({ jsonrpc: '2.0', id: 99, result: {} });
+    c.send({ jsonrpc: '2.0', id: 98, error: { code: 1, message: 'x' } });
+    for (const id of [null, { x: 1 }, true])
+      c.send({ jsonrpc: '2.0', id, method: 'ping' });
+    await c.request('ping');
+    const replies = c.lines.slice(before).map((l) => JSON.parse(l) as Rpc);
+    const invalid = replies.filter((r) => r.error?.code === -32600);
+    expect(invalid).toHaveLength(3);
+    for (const r of invalid) expect(r.id).toBeNull();
+    // Nothing answered the two responses: only the 3 errors and the ping.
+    expect(replies).toHaveLength(4);
+    await c.close();
+  });
+
+  test('SIGTERM exits promptly with 143, SIGINT with 130', async () => {
+    for (const [sig, code] of [
+      ['SIGTERM', 143],
+      ['SIGINT', 130],
+    ] as const) {
+      const c = new Client(project);
+      await handshake(c);
+      const t0 = Date.now();
+      c.child.kill(sig);
+      expect(await c.exited).toBe(code);
+      expect(Date.now() - t0).toBeLessThan(5000);
+    }
+  });
+
+  test('a client that closes stdout (EPIPE) gets an orderly exit, not a crash', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    c.child.stdout.destroy();
+    for (let i = 0; i < 20; i++) c.send({ jsonrpc: '2.0', id: 1000 + i, method: 'ping' });
+    expect(await c.exited).toBe(3);
+    expect(c.stderr).not.toMatch(/EPIPE|Unhandled|unexpected failure/);
+  });
+
+  test('viewport outside 1..10000 is a usage error', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    const r = await c.call('snap', {
+      url: 'http://127.0.0.1:1/',
+      as: 'x',
+      viewport: { width: 10001, height: 100 },
+    });
+    expect(r.isError).toBe(true);
+    expect(text(r)).toMatch(/each 1 to 10000/);
+    await c.close();
+  });
+});
+
 describe.skipIf(!chrome())('jux mcp against a real page', () => {
   let project: string;
   let server: Server;
@@ -171,7 +332,9 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
   let edited = false;
   beforeAll(async () => {
     project = mkdtempSync(path.join(tmpdir(), 'jux-mcp-page-'));
-    server = createServer((_req, res) => {
+    server = createServer((req, res) => {
+      // Never answers: a call stuck on it is one to cancel or interrupt.
+      if (req.url?.startsWith('/slow')) return;
       res.writeHead(200, { 'content-type': 'text/html' });
       res.end(
         `<!doctype html><body style="margin:0;font:16px sans-serif">
@@ -238,4 +401,58 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     expect(await c.close()).toBe(0);
     expectOnlyProtocol(c.lines);
   }, 60_000);
+
+  test('notifications/cancelled: a queued call never runs, a running one is not answered and frees the queue', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    const slowId = c.peekId();
+    void c.request('tools/call', {
+      name: 'snap',
+      arguments: { url: `${base}slow`, as: 'slow' },
+    });
+    const queuedId = c.peekId();
+    void c.request('tools/call', {
+      name: 'diff',
+      arguments: { a: 'before', b: 'never' },
+    });
+    c.send({
+      jsonrpc: '2.0',
+      method: 'notifications/cancelled',
+      params: { requestId: queuedId },
+    });
+    c.send({
+      jsonrpc: '2.0',
+      method: 'notifications/cancelled',
+      params: { requestId: slowId },
+    });
+    // Answered quickly although the slow snap is still loading.
+    const t0 = Date.now();
+    // Any answer will do (this pair does not exist): it proves the queue moved.
+    const next = await c.call('diff', { a: 'nope', b: 'nope-too' });
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(text(next)).toMatch(/no snap named 'nope'/);
+    const ids = c.lines.map((l) => (JSON.parse(l) as Rpc).id);
+    expect(ids).not.toContain(slowId);
+    expect(ids).not.toContain(queuedId);
+    c.child.kill('SIGTERM');
+    expect(await c.exited).toBe(143);
+  }, 30_000);
+
+  test('SIGTERM during a capture exits promptly without answering it', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    // Warm the browser so the signal lands mid-capture, not mid-launch.
+    await c.call('snap', { url: base, as: 'warm' });
+    const slowId = c.peekId();
+    void c.request('tools/call', {
+      name: 'snap',
+      arguments: { url: `${base}slow`, as: 'slow' },
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    const t0 = Date.now();
+    c.child.kill('SIGTERM');
+    expect(await c.exited).toBe(143);
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect(c.lines.map((l) => (JSON.parse(l) as Rpc).id)).not.toContain(slowId);
+  }, 30_000);
 });

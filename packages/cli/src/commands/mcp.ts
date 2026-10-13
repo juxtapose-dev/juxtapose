@@ -11,7 +11,8 @@
 // Hand-rolled JSON-RPC 2.0 over newline-delimited stdio (MCP 2025-06-18),
 // like the dependency-free CDP driver: the surface is five methods.
 
-import { readFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { readFile, realpath } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { acquireBrowser, MAX_CROPS, type Browser } from '@juxtapose/core';
@@ -185,9 +186,18 @@ const strings = (args: Args, key: string): string[] | undefined => {
 export class McpServer {
   private browser: Promise<Browser> | null = null;
   private readonly project: string;
+  /** The running call's; calls are serialized, so there is one at a time. */
+  private signal: AbortSignal | undefined;
 
   constructor(private readonly flags: McpFlags = {}) {
-    this.project = path.resolve(flags.project ?? process.cwd());
+    // Real path, so the containment check below compares like with like on a
+    // machine where the root itself sits under a symlink (macOS /tmp).
+    const root = path.resolve(flags.project ?? process.cwd());
+    try {
+      this.project = realpathSync(root);
+    } catch {
+      this.project = root;
+    }
   }
 
   /** The session browser, re-acquired if it died (a crash, or `jux browser
@@ -213,7 +223,8 @@ export class McpServer {
     await b?.close().catch(() => {});
   }
 
-  async call(name: string, args: Args): Promise<ToolResult> {
+  async call(name: string, args: Args, signal?: AbortSignal): Promise<ToolResult> {
+    this.signal = signal;
     try {
       switch (name) {
         case 'snap':
@@ -250,9 +261,21 @@ export class McpServer {
     };
   }
 
-  private projectArg(args: Args): string {
+  /** A tool's `project`, confined to the server's root. The CLI trusts its
+   *  own arguments because the user typed them; a tool argument comes from a
+   *  model that may be reading attacker-controlled page text, so it must not
+   *  steer writes (snaps, crops) or reads anywhere else on the machine. The
+   *  real path is checked, so a symlink inside the root cannot point out. */
+  private async projectArg(args: Args): Promise<string> {
     const p = str(args, 'project');
-    return p ? path.resolve(this.project, p) : this.project;
+    if (!p) return this.project;
+    const real = await realpath(path.resolve(this.project, p)).catch(() => null);
+    if (!real) throw new ArgError(`'project' ${p} does not exist`);
+    if (!isInside(real, this.project, true))
+      throw new ArgError(
+        `'project' must be the server's project (${this.project}) or a directory inside it; restart the server with --project to use another`,
+      );
+    return real;
   }
 
   private async snap(args: Args): Promise<ToolResult> {
@@ -283,7 +306,7 @@ export class McpServer {
     }
     const waitFor = str(args, 'waitFor');
     const mask = strings(args, 'mask');
-    const project = this.projectArg(args);
+    const project = await this.projectArg(args);
     const { snapCommand } = await import('./snap.js');
     return this.invoke((s) =>
       snapCommand(
@@ -303,11 +326,13 @@ export class McpServer {
   }
 
   private async diff(args: Args): Promise<ToolResult> {
-    const a = str(args, 'a', true)!;
-    const b = str(args, 'b', true)!;
+    // Names only. The CLI also takes `.webp` paths, which would let a tool
+    // call read (and decode, and crop) any image on the machine.
+    const a = snapRef(args, 'a');
+    const b = snapRef(args, 'b');
     const crops = bool(args, 'crops') === true;
     const prefix = bool(args, 'prefix') === true;
-    const project = this.projectArg(args);
+    const project = await this.projectArg(args);
     const { diffCommand } = await import('./diff.js');
     const result = await this.invoke((s) =>
       diffCommand(a, b, { json: true, project, crops, prefix }, s),
@@ -365,7 +390,7 @@ export class McpServer {
    *  a result (changes found, stories need review) is an answer, not an error. */
   private async invoke(fn: (s: Session) => Promise<number>): Promise<ToolResult> {
     const io = captureIo();
-    const code = await fn({ io });
+    const code = await fn({ io, ...(this.signal ? { signal: this.signal } : {}) });
     const out = io.stdout().trim();
     const err = io.stderr().trim();
     const isError = code >= EXIT.usage || (code !== EXIT.clean && out === '');
@@ -378,6 +403,23 @@ export class McpServer {
   }
 }
 
+const SNAP_NAME = /^[a-z0-9][a-z0-9-]*$/;
+
+function snapRef(args: Args, key: string): string {
+  const v = str(args, key, true)!;
+  if (!SNAP_NAME.test(v))
+    throw new ArgError(
+      `'${key}' must be a snap name (a-z, 0-9 and '-'), such as the 'name' a snap result returned; got '${v}'`,
+    );
+  return v;
+}
+
+/** `child` is `dir` or below it. Both must be real paths. */
+function isInside(child: string, dir: string, orEqual = false): boolean {
+  if (orEqual && child === dir) return true;
+  return child.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
+}
+
 function errorResult(message: string): ToolResult {
   return { content: [{ type: 'text', text: message }], isError: true };
 }
@@ -385,7 +427,10 @@ function errorResult(message: string): ToolResult {
 /** The crop strips `diff --crops` wrote, as image blocks, at most MAX_CROPS
  *  (renderCrops already caps the files; this keeps the response bounded even
  *  if that changes). */
-async function cropImages(result: ToolResult, project: string): Promise<Content[]> {
+export async function cropImages(
+  result: ToolResult,
+  project: string,
+): Promise<Content[]> {
   const json = result.content.find((c) => c.type === 'text' && c.text.startsWith('{'));
   if (!json || json.type !== 'text') return [];
   let files: string[];
@@ -395,9 +440,17 @@ async function cropImages(result: ToolResult, project: string): Promise<Content[
   } catch {
     return [];
   }
+  // Only files the crops step wrote: the paths come from JSON, and a crops
+  // dir swapped for a symlink must not turn this into a file reader.
+  const cropsRoot = await realpath(path.join(project, '.juxtapose', 'crops')).catch(
+    () => null,
+  );
+  if (!cropsRoot || !isInside(cropsRoot, project)) return [];
   const images: Content[] = [];
   for (const file of files.slice(0, MAX_CROPS)) {
-    const data = await readFile(path.join(project, ...file.split('/'))).catch(() => null);
+    const real = await realpath(path.join(project, ...file.split('/'))).catch(() => null);
+    if (!real || !isInside(real, cropsRoot)) continue;
+    const data = await readFile(real).catch(() => null);
     if (data)
       images.push({
         type: 'image',
@@ -421,14 +474,22 @@ export async function handleMessage(
   server: McpServer,
   msg: unknown,
   version: string,
+  signal?: AbortSignal,
 ): Promise<Json | null> {
   if (Array.isArray(msg) || typeof msg !== 'object' || msg === null)
     return rpcError(null, -32600, 'expected one JSON-RPC 2.0 object per line');
   const req = msg as Request;
+  // A response from the client: we send no requests, so there is nothing to
+  // match it to, and answering a response is itself a protocol error.
+  if (!('method' in req) && ('result' in req || 'error' in req)) return null;
   const hasId = 'id' in req && (typeof req.id === 'string' || typeof req.id === 'number');
   const id = hasId ? (req.id as string | number) : null;
+  // MCP ids are strings or numbers, never null; an `id` of another type is a
+  // malformed request, and dropping it would leave the client waiting.
+  if ('id' in req && !hasId)
+    return rpcError(null, -32600, 'id must be a string or number');
   if (req.jsonrpc !== '2.0' || typeof req.method !== 'string')
-    return 'method' in req || hasId ? rpcError(id, -32600, 'invalid request') : null;
+    return rpcError(id, -32600, 'invalid request');
   if (!hasId) return null; // notifications/initialized, cancelled, …
   const params = (req.params ?? {}) as Record<string, unknown>;
   switch (req.method) {
@@ -452,7 +513,7 @@ export async function handleMessage(
       const args = params.arguments ?? {};
       if (typeof args !== 'object' || args === null || Array.isArray(args))
         return rpcError(id, -32602, 'arguments must be an object');
-      const result = await server.call(name, args as Args);
+      const result = await server.call(name, args as Args, signal);
       return rpcResult(id, result as unknown as Json);
     }
     default:
@@ -472,65 +533,134 @@ const rpcError = (id: string | number | null, code: number, message: string): Js
   error: { code, message },
 });
 
+const SIGNALS = { SIGINT: 2, SIGTERM: 15 } as const;
+
 export async function mcpCommand(flags: McpFlags, version: string): Promise<number> {
   // stdout is the protocol channel. Keep a private writer for it, then point
   // process.stdout at stderr so nothing else (a stray console.log in a
   // dependency) can interleave with a JSON-RPC line and corrupt the stream.
   // console.log writes through process.stdout.write, so it is covered too.
-  const writeOut = process.stdout.write.bind(process.stdout);
-  process.stdout.write = process.stderr.write.bind(
-    process.stderr,
-  ) as typeof process.stdout.write;
-  const send = (m: Json) => writeOut(JSON.stringify(m) + '\n');
+  const stdout = process.stdout;
+  const writeOut = stdout.write.bind(stdout);
+  stdout.write = process.stderr.write.bind(process.stderr) as typeof stdout.write;
+  let outBroken = false;
+  const send = (m: Json) => {
+    if (!outBroken) writeOut(JSON.stringify(m) + '\n');
+  };
 
   const server = new McpServer(flags);
+  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
   // Tool calls run one at a time: they share a browser and the snaps dir,
   // and a capture is deterministic only when nothing else is loading. Ping and
   // the rest are answered at once.
   let queue: Promise<unknown> = Promise.resolve();
+  /** Calls not yet answered, by request id, for notifications/cancelled. */
+  const pending = new Map<string | number, AbortController>();
   let shuttingDown = false;
-  const shutdown = async (code: number) => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    await queue.catch(() => {});
-    await server.close();
+
+  const exit = async (code: number, drain: Promise<unknown>): Promise<never> => {
+    await drain.catch(() => {});
+    // Bounded: a browser that will not close must not hold the process.
+    await Promise.race([server.close(), delay(2000)]);
     // Pipes are asynchronous on macOS: exiting now could drop the last reply.
-    await new Promise<void>((r) => writeOut('', () => r()));
+    if (!outBroken)
+      await Promise.race([
+        new Promise<void>((r) => writeOut('', () => r())),
+        delay(1000),
+      ]);
     process.exit(code);
   };
-  process.on('SIGTERM', () => void shutdown(0));
-  process.on('SIGINT', () => void shutdown(0));
+  const stopReading = () => {
+    shuttingDown = true;
+    lines.close();
+    process.stdin.pause();
+  };
 
-  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  // The client went away (EPIPE). Nobody can read a reply, so stop now.
+  stdout.on('error', () => {
+    outBroken = true;
+    if (shuttingDown) return;
+    stopReading();
+    for (const c of pending.values()) c.abort();
+    void exit(EXIT.failure, Promise.resolve());
+  });
+
+  // A signal ends the session now: no new calls, the in-flight one aborted
+  // (closing the browser fails its capture) and not answered. A second signal
+  // means the shutdown itself is stuck.
+  for (const [name, num] of Object.entries(SIGNALS)) {
+    process.on(name, () => {
+      if (shuttingDown) process.exit(128 + num);
+      stopReading();
+      for (const c of pending.values()) c.abort();
+      void exit(128 + num, Promise.resolve());
+    });
+  }
+
+  const onCall = (id: string | number, msg: unknown) => {
+    const controller = new AbortController();
+    pending.set(id, controller);
+    const { signal } = controller;
+    const aborted = new Promise<null>((r) =>
+      signal.addEventListener('abort', () => r(null), { once: true }),
+    );
+    queue = queue.then(async () => {
+      // Cancelled while queued: never starts.
+      if (signal.aborted) return;
+      try {
+        // A cancelled call frees the queue at once. The work may still finish
+        // in the background (only run stops early), but its reply is dropped,
+        // as the cancellation spec requires.
+        const reply = await Promise.race([
+          handleMessage(server, msg, version, signal),
+          aborted,
+        ]);
+        if (reply && !signal.aborted) send(reply);
+      } catch (err) {
+        if (!signal.aborted)
+          send(rpcError(id, -32603, err instanceof Error ? err.message : String(err)));
+      } finally {
+        pending.delete(id);
+      }
+    });
+  };
+
   lines.on('line', (line) => {
-    if (!line.trim()) return;
+    if (shuttingDown || !line.trim()) return;
     let msg: unknown;
     try {
       msg = JSON.parse(line);
     } catch {
-      send(rpcError(null, -32700, 'parse error') as Json);
+      send(rpcError(null, -32700, 'parse error'));
       return;
     }
-    const isCall = (msg as Request | null)?.method === 'tools/call';
-    const respond = async () => {
-      try {
-        const reply = await handleMessage(server, msg, version);
+    const req = msg as Request | null;
+    if (req?.method === 'notifications/cancelled') {
+      const id = (req.params as { requestId?: unknown } | undefined)?.requestId;
+      if (typeof id === 'string' || typeof id === 'number') pending.get(id)?.abort();
+      return;
+    }
+    if (
+      req?.method === 'tools/call' &&
+      req.jsonrpc === '2.0' &&
+      (typeof req.id === 'string' || typeof req.id === 'number')
+    ) {
+      onCall(req.id, msg);
+      return;
+    }
+    void handleMessage(server, msg, version).then(
+      (reply) => {
         if (reply) send(reply);
-      } catch (err) {
-        const id = (msg as Request).id;
-        send(
-          rpcError(
-            typeof id === 'string' || typeof id === 'number' ? id : null,
-            -32603,
-            err instanceof Error ? err.message : String(err),
-          ),
-        );
-      }
-    };
-    if (isCall) queue = queue.then(respond);
-    else void respond();
+      },
+      (err: unknown) =>
+        send(rpcError(null, -32603, err instanceof Error ? err.message : String(err))),
+    );
   });
   await new Promise<void>((resolve) => lines.once('close', resolve));
-  await shutdown(EXIT.clean);
-  return EXIT.clean;
+  // A signal or a broken stdout closed the input; that path owns the exit.
+  if (shuttingDown) return new Promise<never>(() => {});
+  shuttingDown = true;
+  return exit(EXIT.clean, queue);
 }
+
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());

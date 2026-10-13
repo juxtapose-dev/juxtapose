@@ -42,7 +42,7 @@ const MAX_GROUPS_SHOWN = 10;
 
 export async function runCommand(
   flags: CommonFlags,
-  { io = stdio, browser: lent }: Session = {},
+  { io = stdio, browser: lent, signal }: Session = {},
 ): Promise<number> {
   // Checked first: a mistyped ref used to fall through to `git-unavailable`,
   // capture everything, and give every story an unexplained `unknown` cause.
@@ -145,6 +145,7 @@ export async function runCommand(
       phases: p,
       ...(cause ? { cause } : {}),
       runId,
+      ...(signal ? { signal } : {}),
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
       onArtifact: (a) => writeArtifact(runDir, a),

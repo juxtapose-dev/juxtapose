@@ -8,10 +8,22 @@ Each tool calls the same code as the matching `jux` command and returns the
 same versioned JSON that the command prints with `--json`. There is no second
 schema: a parser for `jux diff --json` reads the `diff` tool's result.
 
-The server keeps one browser open for the whole session. The first `snap` or
-`run` call acquires it (the warm browser when it is enabled, otherwise a
-private launch), and every later call reuses it. The server closes it when the
-client closes stdin or sends `SIGTERM`.
+The server keeps one browser for the whole session. The first `snap` or `run`
+call acquires it, and every later call reuses it. Where it comes from depends
+on the warm browser:
+
+- **Warm browser on** (the default outside CI and on macOS and Linux): the
+  server connects to the warm browser daemon, starting it if needed. When the
+  session ends, the server disconnects. The daemon keeps running until it has
+  been idle for 10 minutes, so the next session or `jux` command starts
+  without a launch. To stop it sooner, run `jux browser stop`.
+- **Warm browser off** (`--no-daemon`, `JUX_NO_DAEMON=1`, CI, or Windows): the
+  server launches a private browser and closes it when the session ends.
+
+The session ends when the client closes stdin. The server finishes the call in
+progress, then exits with code 0. On `SIGTERM` or `SIGINT`, the server stops
+reading input, drops the call in progress without answering it, closes the
+browser, and exits with code 143 or 130. A second signal exits immediately.
 
 ## Requirements
 
@@ -24,9 +36,13 @@ client closes stdin or sends `SIGTERM`.
 
 ## Set up the server
 
-The server takes one option, `--project <dir>`, the project root. It defaults
-to the directory the client starts the server in. `--chrome <path>` and
-`--no-daemon` work as they do for `jux snap`.
+The server takes three options:
+
+- `--project <dir>`: the project root. It defaults to the directory the client
+  starts the server in. Tools can work only in this directory or below it.
+- `--chrome <path>`: use this Chromium binary instead of the pinned one, as for
+  `jux snap`.
+- `--no-daemon`: launch a private browser instead of using the warm one.
 
 ### Claude Code
 
@@ -87,8 +103,10 @@ for each failing story. Call `approve` only when the user asks you to.
 
 ## Tools
 
-The server exposes six tools. Each result is one text block that holds the
-command's JSON, unless noted.
+The server exposes six tools. Each result's first text block holds the
+command's JSON, unless noted. When the command also printed a warning, such as
+an approved story whose structure was not saved, a successful result carries
+it as a second text block. The JSON itself never changes shape.
 
 ### snap
 
@@ -101,10 +119,10 @@ Captures pages, pixels and structure, under a name. Same result as
 | `as`       | string              | The snap name for `url`.                                   |
 | `urls`     | string[]            | Several URLs. Requires `asPrefix`.                         |
 | `asPrefix` | string              | Name prefix for `urls`. Snaps are named `<prefix>-<slug>`. |
-| `viewport` | `{ width, height }` | Viewport in CSS pixels. Default 1280×800.                  |
+| `viewport` | `{ width, height }` | CSS pixels, each 1 to 10000. Default 1280×800.             |
 | `waitFor`  | string              | CSS selector to wait for before capturing.                 |
 | `mask`     | string[]            | CSS selectors to blank, such as clocks or random data.     |
-| `project`  | string              | Project directory. Defaults to the server's `--project`.   |
+| `project`  | string              | Project directory: the server's `--project` or inside it.  |
 
 Pass either `url` with `as` or `urls` with `asPrefix`.
 
@@ -116,13 +134,17 @@ Result: for one `url`, the snap object (`name`, `image`, `structure`,
 
 Compares two snaps. Same result as `jux diff --json`.
 
-| Argument  | Type    | Description                                              |
-| --------- | ------- | -------------------------------------------------------- |
-| `a`       | string  | The earlier snap name, or a prefix with `prefix`.        |
-| `b`       | string  | The later snap name, or a prefix with `prefix`.          |
-| `prefix`  | boolean | Compare every `<a>-<slug>` with `<b>-<slug>`.            |
-| `crops`   | boolean | Also render the changed regions. One pair at a time.     |
-| `project` | string  | Project directory. Defaults to the server's `--project`. |
+| Argument  | Type    | Description                                               |
+| --------- | ------- | --------------------------------------------------------- |
+| `a`       | string  | The earlier snap name, or a prefix with `prefix`.         |
+| `b`       | string  | The later snap name, or a prefix with `prefix`.           |
+| `prefix`  | boolean | Compare every `<a>-<slug>` with `<b>-<slug>`.             |
+| `crops`   | boolean | Also render the changed regions. One pair at a time.      |
+| `project` | string  | Project directory: the server's `--project` or inside it. |
+
+`a` and `b` are snap names only: lowercase letters, digits and hyphens,
+starting with a letter or digit. Use the `name` that `snap` returned. Unlike
+`jux diff`, the tool does not accept `.webp` paths.
 
 Result:
 
@@ -187,15 +209,32 @@ stories, are not errors.
 A `snap` of several URLs where one page fails returns `isError: true` and still
 includes the JSON for the pages it wrote.
 
-Protocol problems are JSON-RPC errors: `-32601` for an unknown method, `-32602`
-for an unknown tool, and `-32700` for a line that is not JSON.
+A `project` outside the server's root, including through a symbolic link, and
+a `diff` reference that is not a snap name are tool errors. Nothing is read or
+written.
+
+Protocol problems are JSON-RPC errors:
+
+| Code     | Meaning                                                                |
+| -------- | ---------------------------------------------------------------------- |
+| `-32700` | The line is not JSON.                                                  |
+| `-32600` | Not a valid request, such as an `id` that is not a string or a number. |
+| `-32601` | Unknown method.                                                        |
+| `-32602` | Unknown tool, or `arguments` is not an object.                         |
+| `-32603` | Internal error.                                                        |
 
 ## Protocol
 
 The server speaks MCP `2025-06-18`: JSON-RPC 2.0, one message per line on
 stdin and stdout. It implements `initialize`, `notifications/initialized`,
-`ping`, `tools/list` and `tools/call`. It writes only protocol messages to
-stdout. Logs go to stderr.
+`notifications/cancelled`, `ping`, `tools/list` and `tools/call`. It ignores
+responses from the client, because it sends no requests. It writes only
+protocol messages to stdout. Logs go to stderr.
 
 The server runs tool calls one at a time, in the order it receives them,
 because they share the browser and the snaps directory.
+
+When you cancel a call with `notifications/cancelled`, the server does not
+answer it. A call that has not started never runs. A call that is running no
+longer holds up the calls behind it: `run` stops starting new stories, and
+other tools finish in the background and their result is discarded.
