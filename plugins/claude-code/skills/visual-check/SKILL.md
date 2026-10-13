@@ -72,13 +72,13 @@ The JSON is `juxtapose.verdict/v1`. Check, in this order:
    `deltas` is only the prefix that fits.
 3. `explained`: `full` means the structure accounts for every changed pixel.
    `partial` or `none` means some pixels changed with no DOM or style delta
-   behind them (canvas, images, rendering) — see step 5.
+   behind them (canvas, images, rendering) — see section 5.
 4. `flags[]`:
    - `element-removed`, `text-changed`: always deserve a look.
    - `large-reflow`: many elements moved; check the layout, not just the
      named delta.
    - `unexplained-pixels`: some changed pixels have no delta behind them (see
-     step 5).
+     section 5).
    - `sub-threshold`: the pixel diff marked nothing; the deltas are the whole
      change.
    - `below-fold`: the page is taller than the viewport and anything below it
