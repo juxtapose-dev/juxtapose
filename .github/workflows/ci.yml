@@ -26,6 +26,31 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # The real-Chrome suites (driver, pool, structure capture) skip without
+      # a browser; launch.test.ts fails on CI if they would.
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/jux
+          key: chrome-headless-shell-151.0.7922.34-${{ runner.os }}
+
+      - name: Install Chromium
+        run: node packages/cli/dist/index.js browser install
+
+      # deb.deps ships beside the binary in the Chrome for Testing zip.
+      # Lines may carry version constraints and `a | b` alternatives, which
+      # `apt-get satisfy` understands (comma-joined). If satisfy rejects a line
+      # (a renamed package, a missing deb.deps), fall back to the README's
+      # Ubuntu 24.04 list.
+      - name: Install Chromium system libraries
+        run: |
+          dir=$(dirname "$(node packages/cli/dist/index.js browser path)")
+          sudo apt-get update
+          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$dir/deb.deps")" ||
+            sudo apt-get install -y --no-install-recommends libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
+
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm exec prettier --check .
@@ -71,12 +96,15 @@ jobs:
 
       # deb.deps ships beside the binary in the Chrome for Testing zip.
       # Lines may carry version constraints and `a | b` alternatives, which
-      # `apt-get satisfy` understands (comma-joined).
+      # `apt-get satisfy` understands (comma-joined). If satisfy rejects a line
+      # (a renamed package, a missing deb.deps), fall back to the README's
+      # Ubuntu 24.04 list.
       - name: Install Chromium system libraries
         run: |
           dir=$(dirname "$(node packages/cli/dist/index.js browser path)")
           sudo apt-get update
-          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$dir/deb.deps")"
+          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$dir/deb.deps")" ||
+            sudo apt-get install -y --no-install-recommends libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
 
       - name: Build example workbenches
         run: |
@@ -164,12 +192,15 @@ jobs:
 
       # deb.deps ships beside the binary in the Chrome for Testing zip.
       # Lines may carry version constraints and `a | b` alternatives, which
-      # `apt-get satisfy` understands (comma-joined).
+      # `apt-get satisfy` understands (comma-joined). If satisfy rejects a line
+      # (a renamed package, a missing deb.deps), fall back to the README's
+      # Ubuntu 24.04 list.
       - name: Install Chromium system libraries
         run: |
           dir=$(dirname "$(node packages/cli/dist/index.js browser path)")
           sudo apt-get update
-          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$dir/deb.deps")"
+          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$dir/deb.deps")" ||
+            sudo apt-get install -y --no-install-recommends libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
 
       - name: Build the example workbench
         run: pnpm --filter example-storybook build
