@@ -13,6 +13,7 @@ export {
   SocketTransport,
   FramedTransport,
   NullFramer,
+  FrameTooLargeError,
   type Transport,
 } from './transport.js';
 export {

@@ -2,7 +2,12 @@
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { CdpConnection, CdpError, SendTimeoutError, TargetClosedError } from './cdp.js';
-import { NullFramer, PipeTransport, type Transport } from './transport.js';
+import {
+  FrameTooLargeError,
+  NullFramer,
+  PipeTransport,
+  type Transport,
+} from './transport.js';
 
 class FakeTransport implements Transport {
   sent: { id: number; method: string; params: unknown; sessionId?: string }[] = [];
@@ -394,5 +399,16 @@ describe('NullFramer', () => {
     f.push('{"a":1}\0{"b"', (s) => out.push(s));
     f.push(':2}\0', (s) => out.push(s));
     expect(out).toEqual(['{"a":1}', '{"b":2}']);
+  });
+  it('throws past its cap, whether the frame is unterminated or complete', () => {
+    const out: string[] = [];
+    const f = new NullFramer(8);
+    f.push('12345678\0', (s) => out.push(s));
+    expect(out).toEqual(['12345678']);
+    expect(() => f.push('12345', () => {})).not.toThrow();
+    expect(() => f.push('6789', () => {})).toThrow(FrameTooLargeError);
+    expect(() => new NullFramer(8).push('123456789\0', () => {})).toThrow(
+      FrameTooLargeError,
+    );
   });
 });

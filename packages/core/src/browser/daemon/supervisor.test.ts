@@ -1,13 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import net from 'node:net';
 import { execFileSync, spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { lstat, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startSupervisor, SupervisorLostRace } from './supervisor.js';
+import {
+  startSupervisor,
+  SupervisorLostRace,
+  type SupervisorOptions,
+} from './supervisor.js';
 import {
   daemonPaths,
   ensureDaemonDirs,
@@ -20,6 +24,9 @@ import { CdpConnection, CdpError } from '../cdp.js';
 import { SocketTransport } from '../transport.js';
 import { CHROME_VERSION } from '../pins.js';
 import { chromeForTests } from '../__tests__/helpers.js';
+import { Browser } from '../browser.js';
+import { snapPages } from '../../capture/snap.js';
+import { createServer } from 'node:http';
 
 const chrome = chromeForTests();
 
@@ -66,6 +73,7 @@ async function withSupervisor(
   fn: (ctx: { paths: DaemonPaths; sup: Sup }) => Promise<void>,
   idleMinutes = 10,
   prepare?: (paths: DaemonPaths) => Promise<void>,
+  extra: Partial<SupervisorOptions> = {},
 ): Promise<boolean> {
   return withPaths(async (paths) => {
     await prepare?.(paths);
@@ -76,6 +84,7 @@ async function withSupervisor(
       key: 'test',
       idleMinutes,
       onExit: () => (exited = true),
+      ...extra,
     });
     try {
       await fn({ paths, sup });
@@ -414,6 +423,223 @@ describe.skipIf(!chrome)('supervisor', () => {
         await new Promise<void>((r) => winner?.close(() => r()) ?? r());
       }
     }));
+});
+
+/** A raw client: writes any frame, exposes the socket, sees every frame back. */
+async function rawClient(socketPath: string, hello = true) {
+  const sock = net.connect(socketPath);
+  await new Promise<void>((r, e) => {
+    sock.once('connect', r);
+    sock.once('error', e);
+  });
+  let gone = false;
+  sock.on('close', () => (gone = true));
+  sock.on('error', () => {});
+  const write = (frame: string) => sock.write(frame + '\0');
+  if (hello) write(JSON.stringify({ jux: 'hello', version: CHROME_VERSION }));
+  return { sock, write, isClosed: () => gone };
+}
+
+const sha256 = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+
+const refusedBy = async (p: Promise<unknown>) => {
+  const e = await p.then(
+    () => null,
+    (x: unknown) => x,
+  );
+  expect(e, 'expected a refusal').toBeInstanceOf(CdpError);
+  expect((e as Error).message).toMatch(/jux: .*not this client's/);
+};
+
+describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
+  it('a page session cannot discover, claim or attach another client’s target, nor reach the default context', () =>
+    withSupervisor(async ({ paths }) => {
+      const a = (await connect(paths.socket)).c;
+      const b = (await connect(paths.socket)).c;
+      const pa = await openPage(a);
+      const pb = await openPage(b);
+      const heard: string[] = [];
+      b.on('Target.targetCreated', (p) =>
+        heard.push((p as { targetInfo: { targetId: string } }).targetInfo.targetId),
+      );
+      await refusedBy(
+        b.send('Target.setDiscoverTargets', { discover: true }, pb.sessionId),
+      );
+      await refusedBy(
+        b.send('Target.createTarget', { url: 'about:blank' }, pb.sessionId),
+      );
+      await refusedBy(
+        b.send(
+          'Target.attachToTarget',
+          { targetId: pa.targetId, flatten: true },
+          pb.sessionId,
+        ),
+      );
+      const { targetInfos } = await b.send<{ targetInfos: { targetId: string }[] }>(
+        'Target.getTargets',
+        {},
+        pb.sessionId,
+      );
+      expect(targetInfos.map((t) => t.targetId)).not.toContain(pa.targetId);
+      await refusedBy(
+        b.send('Target.attachToTarget', { targetId: pa.targetId, flatten: true }),
+      );
+      await refusedBy(b.send('Target.closeTarget', { targetId: pa.targetId }));
+      await sleep(100);
+      expect(heard).not.toContain(pa.targetId);
+      a.close();
+      b.close();
+    }));
+
+  it('the browser session takes only the allow-list; everything else is refused', () =>
+    withSupervisor(async ({ paths }) => {
+      const a = (await connect(paths.socket)).c;
+      const b = (await connect(paths.socket)).c;
+      const pa = await openPage(a);
+      const pb = await openPage(b);
+      const refused: [string, object][] = [
+        ['Fetch.enable', { patterns: [{ urlPattern: '*' }] }],
+        ['Tracing.start', { transferMode: 'ReportEvents' }],
+        ['SystemInfo.getProcessInfo', {}],
+        ['Memory.getBrowserSamplingProfile', {}],
+        ['Storage.getCookies', {}],
+        ['Storage.getCookies', { browserContextId: pa.browserContextId }],
+        ['Storage.clearCookies', {}],
+        ['Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: '/tmp' }],
+        ['Browser.grantPermissions', { permissions: ['geolocation'] }],
+        ['Browser.getWindowForTarget', { targetId: pa.targetId }],
+        ['Browser.getWindowBounds', { windowId: 1 }],
+        ['Target.attachToBrowserTarget', {}],
+        ['Target.exposeDevToolsProtocol', { targetId: pb.targetId }],
+        ['Target.setRemoteLocations', { locations: [{ host: 'x', port: 1 }] }],
+        ['Target.getTargetInfo', {}],
+        ['Target.closeTarget', { targetId: [pa.targetId] }],
+        ['Browser.close', {}],
+      ];
+      for (const [method, params] of refused) await refusedBy(b.send(method, params));
+      // On its own page session: the target-escaping Target.* commands and Browser.close.
+      for (const [method, params] of [
+        ['Target.attachToBrowserTarget', {}],
+        ['Target.exposeDevToolsProtocol', { targetId: pb.targetId }],
+        ['Browser.close', {}],
+      ] as [string, object][])
+        await refusedBy(b.send(method, params, pb.sessionId));
+      // Allowed with owned ids.
+      await b.send('Browser.getVersion');
+      await b.send('Storage.getCookies', { browserContextId: pb.browserContextId });
+      await b.send('Storage.clearCookies', { browserContextId: pb.browserContextId });
+      await b.send('Target.getTargetInfo', { targetId: pb.targetId });
+      await b.send('Target.activateTarget', { targetId: pb.targetId });
+      // Any domain on an owned page session.
+      await b.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] }, pb.sessionId);
+      await b.send('Fetch.disable', {}, pb.sessionId);
+      a.close();
+      b.close();
+    }));
+
+  it('malformed frames: before hello the socket is dropped, after hello they are ignored; the daemon lives', () =>
+    withSupervisor(async ({ paths }) => {
+      const a = (await connect(paths.socket)).c;
+      const pa = await openPage(a);
+      for (const frame of ['null', '[]', '"x"', '{}', '{bad']) {
+        const r = await rawClient(paths.socket, false);
+        r.write(frame);
+        for (let i = 0; i < 40 && !r.isClosed(); i++) await sleep(25);
+        expect(r.isClosed(), `pre-hello ${frame}`).toBe(true);
+      }
+      const b = await connect(paths.socket);
+      for (const frame of [
+        'null',
+        '[]',
+        '"x"',
+        '{}',
+        '{bad',
+        '{"id":"x","method":"Browser.getVersion"}',
+      ])
+        b.sock.write(frame + '\0');
+      expect((await b.c.send<{ product: string }>('Browser.getVersion')).product).toMatch(
+        /HeadlessChrome/,
+      );
+      const r = await a.send<{ result: { value: number } }>(
+        'Runtime.evaluate',
+        { expression: '6*7', returnByValue: true },
+        pa.sessionId,
+      );
+      expect(r.result.value).toBe(42);
+      a.close();
+      b.c.close();
+    }));
+
+  it('an unterminated frame past the cap drops only that client', () =>
+    withSupervisor(
+      async ({ paths }) => {
+        const a = (await connect(paths.socket)).c;
+        const r = await rawClient(paths.socket);
+        await sleep(50);
+        r.sock.write(
+          '{"id":1,"method":"Runtime.evaluate","params":{"expression":"' +
+            'x'.repeat(2 * 1024 * 1024),
+        );
+        for (let i = 0; i < 80 && !r.isClosed(); i++) await sleep(25);
+        expect(r.isClosed()).toBe(true);
+        expect((await a.send<{ product: string }>('Browser.getVersion')).product).toMatch(
+          /HeadlessChrome/,
+        );
+        a.close();
+      },
+      10,
+      undefined,
+      { maxFrameChars: 1024 * 1024 },
+    ));
+
+  it('a real capture through the supervisor needs nothing refused and matches a fresh launch byte for byte', async () => {
+    const pages: Record<string, string> = {
+      '/one':
+        '<!doctype html><body style="margin:0;font:16px sans-serif"><h1>One</h1><div style="width:120px;height:40px;border-radius:8px;background:#36c"></div><script>localStorage.x=1</script></body>',
+      '/two':
+        '<!doctype html><body style="margin:0"><p>Two</p><input value="typed"></body>',
+    };
+    const server = createServer((req, res) => {
+      res.setHeader('content-type', 'text/html');
+      res.end(pages[req.url ?? ''] ?? 'missing');
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${(server.address() as net.AddressInfo).port}`;
+    const urls = [`${base}/one`, `${base}/two`];
+    const viewport = { width: 400, height: 300 };
+    try {
+      const fresh = await Browser.launch({ executablePath: chrome!.path });
+      let freshHashes: string[];
+      try {
+        freshHashes = (await snapPages({ urls, viewport, browser: fresh })).pages.map(
+          (p) => (p.snapshot ? sha256(p.snapshot.image) : `error: ${p.error}`),
+        );
+      } finally {
+        await fresh.close();
+      }
+      await withSupervisor(async ({ paths }) => {
+        for (let run = 0; run < 2; run++) {
+          const { c, outcome } = await connect(paths.socket);
+          expect(outcome).toBe('ready');
+          const { product } = await c.send<{ product: string }>('Browser.getVersion');
+          const browser = Browser.fromConnection(c, {
+            version: product,
+            close: async () => c.close(),
+          });
+          const ctx = await browser.newContext({ viewport });
+          await ctx.clearCookies();
+          await ctx.close();
+          const warm = await snapPages({ urls, viewport, browser });
+          expect(warm.pages.map((p) => p.error ?? null)).toEqual([null, null]);
+          expect(warm.pages.map((p) => sha256(p.snapshot!.image))).toEqual(freshHashes);
+          expect(freshHashes.every((h) => /^[0-9a-f]{64}$/.test(h))).toBe(true);
+          await browser.close();
+        }
+      });
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  }, 60_000);
 });
 
 const here = path.dirname(fileURLToPath(import.meta.url));

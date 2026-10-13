@@ -6,15 +6,26 @@
 // 2026-10-13: ten client connect/disconnect cycles against one browser, and
 // the spike's warm captures hashed byte-identical to fresh ones).
 //
-// Clients share one browser, so the supervisor is also the isolation
-// boundary between them:
+// Threat model: the socket is 0600 in a 0700 directory, so every client is
+// the same uid. Isolation between clients is therefore not a privilege
+// boundary (that user can ptrace Chrome anyway); it is a correctness
+// guarantee: two concurrent jux runs sharing this browser must never affect
+// each other's captures, by accident or by a stray command. It is still
+// enforced strictly, as an allow-list, because "by accident" includes any
+// future driver change.
+//
+// Clients share one browser, so the supervisor is the isolation boundary
+// between them:
 // - ids: every client id is rewritten to one from the connection's single
 //   allocator (preflight defect 9), so two clients' id 1 never collide with
 //   each other or with the supervisor's own sends;
 // - ownership: a client owns the contexts it created, the targets created in
 //   them and the sessions attached to those (including child sessions
-//   auto-attached under one of its sessions, defect 12). Commands naming
-//   anything it does not own are refused; events go only to the owner;
+//   auto-attached under one of its sessions, defect 12). On the shared
+//   browser session only an allow-list of commands passes, each naming ids
+//   the client owns; on its own page sessions any domain passes except the
+//   Target/Browser commands that reach beyond that page. Events go only to
+//   their owner; events about nothing a client owns are dropped;
 // - cleanup: when a client's socket closes, the contexts it still owns are
 //   disposed, which is what Chrome's disposeOnDetach would do had the client
 //   held the pipe itself. A context the client disposed itself leaves its set
@@ -47,23 +58,59 @@ const PROBE_TIMEOUT_MS = 2_000;
  */
 const MAX_BACKLOG_CHARS = 256 * 1024 * 1024;
 
-/** Commands that act on the whole browser, i.e. on every client's targets. */
-const BROWSER_WIDE = new Set([
-  'Browser.close',
-  'Browser.crash',
-  'Browser.crashGpuProcess',
-  'Target.attachToBrowserTarget',
-  'Target.setRemoteLocations',
-]);
+type IdKey = 'targetId' | 'browserContextId' | 'sessionId';
+const ID_KEYS: readonly IdKey[] = ['targetId', 'browserContextId', 'sessionId'];
+
 /**
- * Browser-session state shared by every client: auto-attach with
- * waitForDebuggerOnStart would pause other clients' new targets, and
- * discovery is one switch for all. On a page session they are the client's own.
+ * The browser session is shared by every client, so it takes only these
+ * commands, each with the ids listed present and owned by the sender. Anything
+ * else there (Fetch.enable, Tracing.start, Storage.* on the default context,
+ * setDiscoverTargets, ...) would see or change other clients' pages. The driver
+ * sends Browser.getVersion, Target.createBrowserContext/createTarget/
+ * attachToTarget/closeTarget/disposeBrowserContext and Storage.clearCookies
+ * here (browser.ts); the real-capture test proves none of them is refused.
  */
-const BROWSER_SESSION_ONLY = new Set([
-  'Target.setAutoAttach',
-  'Target.setDiscoverTargets',
-]);
+const BROWSER_SESSION_ALLOW: Readonly<Record<string, readonly IdKey[]>> = {
+  'Browser.getVersion': [],
+  'Target.createBrowserContext': [],
+  'Target.getBrowserContexts': [],
+  'Target.getTargets': [], // reply filtered to the sender's targets
+  'Target.disposeBrowserContext': ['browserContextId'],
+  'Target.createTarget': ['browserContextId'],
+  'Target.closeTarget': ['targetId'],
+  'Target.attachToTarget': ['targetId'],
+  'Target.detachFromTarget': [], // sessionId or targetId, checked below
+  'Target.getTargetInfo': ['targetId'],
+  'Target.activateTarget': ['targetId'],
+  'Browser.getWindowForTarget': ['targetId'],
+  'Browser.setDownloadBehavior': ['browserContextId'],
+  'Browser.grantPermissions': ['browserContextId'],
+};
+
+/**
+ * On a page session the client owns, every domain is its own page's, except
+ * Target.* and Browser.*, which reach the browser from any session
+ * (setDiscoverTargets there reports every target; Browser.close closes the
+ * browser). Those pass only from this list, with owned ids as above.
+ */
+const PAGE_SESSION_ALLOW: Readonly<Record<string, readonly IdKey[]>> = {
+  'Browser.getVersion': [],
+  'Target.setAutoAttach': [], // children of this page only
+  'Target.autoAttachRelated': ['targetId'],
+  'Target.getTargets': [],
+  'Target.getTargetInfo': [],
+  'Target.createTarget': ['browserContextId'],
+  'Target.closeTarget': ['targetId'],
+  'Target.attachToTarget': ['targetId'],
+  'Target.detachFromTarget': [],
+  'Target.activateTarget': ['targetId'],
+};
+
+/** What an unlisted command would reach, for the refusal message. */
+const browserWideWhy = (method: string) =>
+  method.startsWith('Storage.')
+    ? 'the default browser context'
+    : 'the browser session (it is shared by every client of the warm-browser daemon)';
 
 /**
  * Another daemon owns the socket (Ruling 21: the stale-lock reclaim race is
@@ -119,6 +166,8 @@ export interface SupervisorOptions {
   onExit?: () => void;
   /** Test seam: runs after the liveness probe, right before listen. */
   beforeListen?: () => Promise<void>;
+  /** Largest frame a client may send; default MAX_BACKLOG_CHARS. Test seam. */
+  maxFrameChars?: number;
 }
 
 type Params = Record<string, unknown>;
@@ -171,6 +220,9 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
 
   const claimTarget = (c: Client, targetId: string | undefined) => {
     if (!targetId || c.gone) return;
+    // Never re-assign a target: ownership comes from creating it (fix round 1:
+    // a discovery event on B's session must not hand B A's target).
+    if (targetOwner.has(targetId) && targetOwner.get(targetId) !== c) return;
     targetOwner.set(targetId, c);
     c.targets.add(targetId);
   };
@@ -244,46 +296,43 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
   };
 
   /**
-   * The client an event is about: the first id it names that someone owns.
-   * `named` without an owner means it concerns a target nobody here owns
-   * (a dropped client's), which no other client may see.
+   * The client a browser-session Target.* event is about: the target's
+   * context when the event carries one (no fallback: a context nobody owns
+   * means nobody may hear it), else the session or target it names.
    */
-  const attribute = (p: Params): { named: boolean; owner?: Client } => {
-    const info = (p['targetInfo'] ?? {}) as Params;
-    const refs: [Map<string, Client>, string | undefined][] = [
-      [contextOwner, str(info['browserContextId'])],
-      [targetOwner, str(info['targetId'])],
-      [targetOwner, str(p['targetId'])],
-      [contextOwner, str(p['browserContextId'])],
-      [sessionOwner, str(p['sessionId'])],
-    ];
-    let named = false;
-    for (const [map, id] of refs) {
-      if (id === undefined) continue;
-      named = true;
-      const owner = map.get(id);
-      if (owner) return { named, owner };
-    }
-    return { named };
+  const ownerOfBrowserEvent = (p: Params): Client | undefined => {
+    const ctx = str(((p['targetInfo'] ?? {}) as Params)['browserContextId']);
+    if (ctx !== undefined) return contextOwner.get(ctx);
+    const session = str(p['sessionId']);
+    if (session !== undefined) return sessionOwner.get(session);
+    const target = str(p['targetId']);
+    if (target !== undefined) return targetOwner.get(target);
+    const context = str(p['browserContextId']);
+    return context === undefined ? undefined : contextOwner.get(context);
   };
 
   const onEvent = (m: RawMessage & { method: string }) => {
     const p = (m.params ?? {}) as Params;
-    const owner = m.sessionId ? sessionOwner.get(m.sessionId) : attribute(p).owner;
-    if (!m.sessionId && !owner && !attribute(p).named) {
-      // About no target at all: every client may hear it.
-      for (const c of clients) if (c.ready) deliver(c, m);
-      return;
-    }
+    let owner: Client | undefined;
+    if (m.sessionId !== undefined) owner = sessionOwner.get(m.sessionId);
+    // Browser-session events: only Target.* ones about a client's own
+    // targets. Nothing else there is any one client's to hear.
+    else if (m.method.startsWith('Target.')) owner = ownerOfBrowserEvent(p);
     if (!owner) return;
-    if (m.method === 'Target.attachedToTarget' || m.method === 'Target.targetCreated') {
-      // A child auto-attached under a client's session, or a target in its
-      // context, belongs to that client.
-      claimSession(
-        owner,
-        m.method === 'Target.attachedToTarget' ? str(p['sessionId']) : undefined,
-      );
-      claimTarget(owner, str(((p['targetInfo'] ?? {}) as Params)['targetId']));
+    const info = (p['targetInfo'] ?? {}) as Params;
+    const infoCtx = str(info['browserContextId']);
+    // A target event on the owner's session about a target in someone else's
+    // context is not the owner's to hear (defense in depth: discovery is refused).
+    if (infoCtx !== undefined && contextOwner.get(infoCtx) !== owner) return;
+    const infoTarget = str(info['targetId']);
+    if (m.method === 'Target.attachedToTarget') {
+      // A child auto-attached under the owner's session, or a target in its context.
+      const held = infoTarget === undefined ? undefined : targetOwner.get(infoTarget);
+      if (held && held !== owner) return;
+      claimSession(owner, str(p['sessionId']));
+      if (infoCtx !== undefined) claimTarget(owner, infoTarget);
+    } else if (m.method === 'Target.targetCreated' && infoCtx !== undefined) {
+      claimTarget(owner, infoTarget);
     }
     deliver(owner, m);
     if (m.method === 'Target.detachedFromTarget') {
@@ -315,52 +364,74 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
   /** Why `c` may not send this, or null. Every refusal names the thing it does not own. */
   const refusal = (c: Client, method: string, params: Params, sessionId?: string) => {
     const no = (what: string) => `jux: ${method} refused: ${what} is not this client's`;
-    if (sessionId !== undefined && sessionOwner.get(sessionId) !== c)
-      return no(`session ${sessionId}`);
-    if (BROWSER_WIDE.has(method))
-      return no('the browser (it is shared by every client of the warm-browser daemon)');
+    const byKey: Record<IdKey, Map<string, Client>> = {
+      targetId: targetOwner,
+      browserContextId: contextOwner,
+      sessionId: sessionOwner,
+    };
+    let required: readonly IdKey[] | undefined;
     if (sessionId === undefined) {
-      if (BROWSER_SESSION_ONLY.has(method))
-        return no(
-          'the browser session (it is shared by every client of the warm-browser daemon)',
-        );
-      if (
-        method === 'Target.createTarget' &&
-        str(params['browserContextId']) === undefined
-      )
-        return no(
-          'the default browser context; create one with Target.createBrowserContext',
-        );
+      // Storage.* acts on one context when it names one (clearCookies does).
+      required =
+        BROWSER_SESSION_ALLOW[method] ??
+        (method.startsWith('Storage.') ? ['browserContextId'] : undefined);
+      if (!required) return no(browserWideWhy(method));
+    } else {
+      if (sessionOwner.get(sessionId) !== c) return no(`session ${sessionId}`);
+      const domain = method.slice(0, method.indexOf('.'));
+      if (domain === 'Target' || domain === 'Browser') {
+        required = PAGE_SESSION_ALLOW[method];
+        if (!required) return no(browserWideWhy(method));
+      } else required = [];
     }
-    const refs: [string, Map<string, Client>][] = [
-      ['targetId', targetOwner],
-      ['browserContextId', contextOwner],
-      ['sessionId', sessionOwner],
-    ];
-    for (const [key, map] of refs) {
-      const id = str(params[key]);
-      if (id !== undefined && map.get(id) !== c) return no(`${key} ${id}`);
+    if (method === 'Target.createTarget' && params['browserContextId'] === undefined)
+      return `${no('the default browser context')}; create one with Target.createBrowserContext`;
+    if (
+      method === 'Target.detachFromTarget' &&
+      params['sessionId'] === undefined &&
+      params['targetId'] === undefined
+    )
+      return no('an unnamed session');
+    for (const key of required)
+      if (params[key] === undefined)
+        return no(
+          key === 'browserContextId'
+            ? 'the default browser context'
+            : `an unnamed ${key}`,
+        );
+    // Every id a command names, required or not, must be an owned string.
+    for (const key of ID_KEYS) {
+      if (!(key in params)) continue;
+      const id = params[key];
+      if (typeof id !== 'string' || byKey[key].get(id) !== c)
+        return no(`${key} ${JSON.stringify(id)}`);
     }
     return null;
   };
 
   const onFrame = (c: Client, frame: string) => {
-    let m: RawMessage & { jux?: string; version?: string };
+    let parsed: unknown;
     try {
-      m = JSON.parse(frame) as typeof m;
+      parsed = JSON.parse(frame);
     } catch {
-      return;
+      parsed = undefined;
     }
+    // `null`, arrays and scalars parse fine and crashed the daemon on a
+    // property read (fix round 1): only plain objects get past here.
+    const m =
+      typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Params)
+        : null;
     if (!c.ready) {
       clearTimeout(c.helloTimer);
-      if (m.jux !== 'hello') {
+      if (m?.['jux'] !== 'hello') {
         c.socket.destroy();
         return;
       }
-      if (m.version !== CHROME_VERSION) {
+      if (m['version'] !== CHROME_VERSION) {
         deliver(c, {
           method: 'jux.refused',
-          params: { reason: `version ${String(m.version)} != ${CHROME_VERSION}` },
+          params: { reason: `version ${String(m['version'])} != ${CHROME_VERSION}` },
         });
         c.socket.end();
         return;
@@ -369,36 +440,53 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
       deliver(c, { method: 'jux.ready', params: { product } });
       return;
     }
-    if (typeof m.id !== 'number' || typeof m.method !== 'string') return;
-    const params = (m.params ?? {}) as Params;
-    const why = refusal(c, m.method, params, m.sessionId);
-    if (why) {
+    // After hello a frame without a usable id has nobody to answer: ignore it.
+    const clientId = m?.['id'];
+    if (!m || typeof clientId !== 'number' || !Number.isSafeInteger(clientId)) return;
+    const method = m['method'];
+    const sessionId = m['sessionId'];
+    const rawParams = m['params'] ?? {};
+    const fail = (message: string) =>
       deliver(c, {
-        id: m.id,
-        error: { code: -32000, message: why },
-        ...(m.sessionId ? { sessionId: m.sessionId } : {}),
+        id: clientId,
+        error: { code: -32000, message },
+        ...(typeof sessionId === 'string' ? { sessionId } : {}),
       });
+    if (
+      typeof method !== 'string' ||
+      (sessionId !== undefined && typeof sessionId !== 'string') ||
+      typeof rawParams !== 'object' ||
+      rawParams === null ||
+      Array.isArray(rawParams)
+    ) {
+      fail(
+        'jux: malformed command: needs a string method, an object params and a string sessionId if any',
+      );
       return;
     }
-    if (m.method === 'Target.disposeBrowserContext') {
+    const params = rawParams as Params;
+    const why = refusal(c, method, params, sessionId);
+    if (why) {
+      fail(why);
+      return;
+    }
+    if (method === 'Target.disposeBrowserContext') {
       // The client is disposing it: do not dispose again on drop.
-      c.contexts.delete(params['browserContextId'] as string);
+      const ctx = str(params['browserContextId']);
+      if (ctx !== undefined) c.contexts.delete(ctx);
     }
     const id = chrome.connection.allocateId();
-    owners.set(id, { client: c, clientId: m.id, method: m.method, params });
+    owners.set(id, { client: c, clientId, method, params });
     try {
       chrome.connection.sendRaw({
         id,
-        method: m.method,
+        method,
         params,
-        ...(m.sessionId ? { sessionId: m.sessionId } : {}),
+        ...(sessionId !== undefined ? { sessionId } : {}),
       });
     } catch (e) {
       owners.delete(id);
-      deliver(c, {
-        id: m.id,
-        error: { code: -32000, message: e instanceof Error ? e.message : String(e) },
-      });
+      fail(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -425,7 +513,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
   const server = net.createServer((socket) => {
     const c: Client = {
       socket,
-      framer: new NullFramer(),
+      framer: new NullFramer(opts.maxFrameChars ?? MAX_BACKLOG_CHARS),
       ready: false,
       gone: false,
       contexts: new Set(),
@@ -444,7 +532,16 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     clients.add(c);
     scheduleIdle();
     socket.setNoDelay(true);
-    socket.on('data', (chunk: Buffer) => c.framer.push(chunk, (f) => onFrame(c, f)));
+    socket.on('data', (chunk: Buffer) => {
+      // A frame past the cap (FrameTooLargeError) or any bug in handling
+      // one client's frame costs that client its connection, never the
+      // daemon every other client shares.
+      try {
+        c.framer.push(chunk, (f) => onFrame(c, f));
+      } catch {
+        socket.destroy();
+      }
+    });
     socket.on('drain', () => flush(c));
     socket.on('close', () => void dropClient(c));
     socket.on('error', () => socket.destroy());
@@ -479,14 +576,12 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     await chrome.close();
     throw e;
   };
-  try {
-    await recheckDaemonDirs(paths, dirs);
-  } catch (e) {
-    await abort(e);
-  }
+  await recheckDaemonDirs(paths, dirs).catch(abort);
   if (await socketIsLive(paths.socket)) await lose();
   await rm(paths.socket, { force: true }).catch(abort);
   await opts.beforeListen?.();
+  // Directly before listen: the directory we verified is still the one we bind in.
+  await recheckDaemonDirs(paths, dirs).catch(abort);
   const listenError = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
     server.once('error', resolve);
     server.listen(paths.socket, () => resolve(null));
