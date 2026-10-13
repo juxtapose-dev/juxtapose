@@ -1,5 +1,5 @@
 ---
-'@juxtapose/core': patch
+'@juxtapose/core': minor
 '@juxtapose/cli': patch
 '@juxtapose/server': patch
 ---
