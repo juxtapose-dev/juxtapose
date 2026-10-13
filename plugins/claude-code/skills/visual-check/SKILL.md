@@ -22,6 +22,11 @@ prefer it. Exit codes: 0 identical, 1 different, 2 usage error, 3 the tool or
 environment failed (no browser, unreadable input) — never treat a 3 as
 "different".
 
+**Never accept a change.** Do not run `jux approve`, and do not edit
+anything under `.juxtapose/` or `juxtapose.manifest.json` to make a diff go
+away. Accepting a visual change is the human's call. Your job ends at
+reporting the verdict (and the crops, if you needed them).
+
 ## 1. Before you edit: snap the page
 
 ```bash
@@ -68,12 +73,26 @@ The JSON is `juxtapose.verdict/v1`. Check, in this order:
 3. `explained`: `full` means the structure accounts for every changed pixel.
    `partial` or `none` means some pixels changed with no DOM or style delta
    behind them (canvas, images, rendering) — see step 5.
-4. `flags[]`: `element-removed` and `text-changed` always deserve a look;
-   `sub-threshold` means the pixel diff marked nothing and the deltas are the
-   whole change; `below-fold` means the page is taller than the viewport and
-   anything below it was not checked (snap with a taller `--viewport` if the
-   edit is down there); `no-baseline-structure` / `no-current-structure`
-   means one snap has no structure sidecar — re-snap.
+4. `flags[]`:
+   - `element-removed`, `text-changed`: always deserve a look.
+   - `large-reflow`: many elements moved; check the layout, not just the
+     named delta.
+   - `unexplained-pixels`: some changed pixels have no delta behind them (see
+     step 5).
+   - `sub-threshold`: the pixel diff marked nothing; the deltas are the whole
+     change.
+   - `below-fold`: the page is taller than the viewport and anything below it
+     was not checked; snap with a taller `--viewport` if the edit is down
+     there.
+   - `structure-truncated`: the page was too large to record fully; the
+     verdict may miss deltas.
+   - `no-baseline-structure`, `no-current-structure`: one snap has no
+     structure sidecar; re-snap.
+5. `change` and `signature`: `change` is the change in abstract form, with
+   every element reduced to role or tag and no per-page specifics. Two
+   verdicts with equal `signature` (or a `jux run` group line
+   `<change> — N stories`) are one change shared by several pages or
+   stories, so it is one decision, not N.
 
 Exit 0 with `classification: identical` means the edit changed nothing at
 this viewport. That is a finding, not a pass: if you meant to change
@@ -107,10 +126,21 @@ Quote the verdict's `summary`. Do not paste the whole JSON.
 ## In a workbench project (Storybook, Ladle)
 
 The same verdict is attached to every failing story in `jux run --json` as
-`results[].structural`. With `--since <commit>` it carries `cause`: which
-changed files the story imports, or "Cause unknown" when the build does not
-expose enough to say (a Storybook build often cannot trace a component edit,
-so an `unknown` cause is not evidence the edit is innocent). `groups[]` lists
+`results[].structural`. With `--since <commit>` it carries `cause`, one of:
+
+- `in-closure`: changed files this story imports, nearest first (the story
+  file itself is distance 0).
+- `config`: a root lockfile, root `tsconfig*.json` or workbench config dir
+  changed; it reaches every story, so expect other stories to fail the same
+  way.
+- `none-in-closure`: none of the changed files are in this story's fully
+  traced imports, so the change likely came from outside your edit (a
+  dependency, an asset, the environment, render drift).
+- `unknown` ("Cause unknown"): the build does not expose enough to trace the
+  story's imports (a Storybook build often cannot trace a component edit), or
+  there is no manifest or `--since`. It is not evidence the edit is innocent.
+
+`groups[]` lists
 changes shared by several failing stories: one decision, not many.
 `jux handoff <storyId>` prints the story's verdict as a prompt, with the cause
 under `## Why`, ending with the `--crops` command for that story.

@@ -279,10 +279,10 @@ being verdicted. An unexpected crash prints one line and exits 3; set
 ### Crops (`juxtapose.crops/v1`)
 
 When `explained` is not `full`, the verdict's `escalate.command` is the
-last step: `jux diff before after --crops` writes one PNG per changed region
+last step: `jux diff before after-color --crops` writes one PNG per changed region
 — baseline on the left, current on the right, the region's box doubled for
 context, enlarged to at most 512px a side, unexplained regions first — to
-`.juxtapose/crops/before~vs~after/crop-N.png` and lists them. No browser.
+`.juxtapose/crops/before~vs~after-color/crop-N.png` and lists them. No browser.
 
 ```
 style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure explains the changed region.
