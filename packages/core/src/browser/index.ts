@@ -55,3 +55,12 @@ export {
   QUERY_ALL_SOURCE,
   queryAllExpression,
 } from './selectors.js';
+export {
+  connectWarmBrowser,
+  daemonEnabled,
+  daemonStatus,
+  stopDaemon,
+  CI_ENV_VARS,
+  type WarmOptions,
+  type SpawnArgs,
+} from './daemon/client.js';

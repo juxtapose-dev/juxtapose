@@ -61,7 +61,7 @@ export interface DirIdentity {
   socketDir: { dev: number; ino: number };
 }
 
-const LOCK_STALE_MS = 30_000;
+export const LOCK_STALE_MS = 30_000;
 // sun_path is 104 bytes on macOS, 108 on Linux; stay under both.
 const MAX_SOCKET_BYTES = 100;
 // Everything that can change fonts, locale formatting or text shaping.
@@ -242,6 +242,18 @@ async function lockIsStale(file: string): Promise<boolean> {
   // An unreadable/empty lock is a holder mid-write: only age can condemn it.
   const dead = Number.isInteger(holder) && holder > 0 && !pidAlive(holder);
   return age > LOCK_STALE_MS || dead;
+}
+
+/**
+ * True while someone else's launch is in progress: the lock exists and is not
+ * stale. A client that lost the lock waits on this, up to the 30 s stale
+ * window, instead of launching a second daemon (Task 11 review).
+ */
+export async function lockHeld(paths: DaemonPaths): Promise<boolean> {
+  return lockIsStale(paths.lock).then(
+    (stale) => !stale,
+    () => false, // no lock file
+  );
 }
 
 /**

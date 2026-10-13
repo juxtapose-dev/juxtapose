@@ -110,6 +110,15 @@ export { TargetClosedError } from './browser/cdp.js';
 export { PageCrashedError, TimeoutError, type Page } from './browser/page.js';
 export { acquireBrowser, type AcquireOptions } from './browser/acquire.js';
 export {
+  connectWarmBrowser,
+  daemonEnabled,
+  daemonStatus,
+  stopDaemon,
+  CI_ENV_VARS,
+  type WarmOptions,
+  type SpawnArgs,
+} from './browser/daemon/client.js';
+export {
   resolveChrome,
   juxCacheDir,
   noBrowserMessage,

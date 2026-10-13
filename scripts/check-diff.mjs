@@ -25,7 +25,10 @@ const jux = async (args, env = {}) => {
   try {
     const r = await exec('node', [cli, ...args, '--project', project], {
       encoding: 'utf8',
-      env: { ...process.env, ...env },
+      // Fresh launches only: the probe below proves `snap` loads the launcher,
+      // which a warm-daemon snap never does, and a check must not leave a
+      // daemon idling behind it.
+      env: { ...process.env, JUX_NO_DAEMON: '1', ...env },
     });
     return { code: 0, out: r.stdout, err: r.stderr };
   } catch (e) {
