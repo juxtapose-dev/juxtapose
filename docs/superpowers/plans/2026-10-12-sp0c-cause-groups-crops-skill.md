@@ -16,7 +16,9 @@
 - Green path unchanged and shown: a passing run reads no sidecar, no manifest and no git output. `prepareCause` loads its inputs on the first `causeFor` call, which happens only inside the `status === 'fail'` branch of `judge()` in `packages/core/src/run/run.ts`. The `cause` phase is timed through `Phases.time('cause', …)` so `jux run` prints it, and Task 7 records before/after timings on the examples.
 - Never fail a story or abort a run: every new read (manifest, git, images, a store's `locate`) is guarded with `try/catch` and degrades to `cause.kind = 'unknown'`, no `cause`, or no crops — never a throw out of `runCapture` or `diffCommand`.
 - Fixtures come from real Chromium output written by committed scripts (`scripts/capture-diff-fixtures.mjs` over `scripts/structural-corpus/page.mjs`), never by hand. The generator formats with the repo's prettier, so regenerating is byte-identical. A test may transform a real fixture (clone it, nudge a rect) but never author one. Crops tests build their two images with sharp itself (the library under test), never from committed bytes.
-- Determinism: every comparator is code-unit (`compareCodeUnits` from `packages/core/src/diff/structural/deltas.ts`), never `localeCompare` — the one `localeCompare` in `run.ts` is replaced in Task 3. No `Map` iteration order leaks into output (collect, then sort). No absolute paths, OS strings or timestamps in any new JSON field: `cause.files[].path` and `crops[].file` are forward-slash paths relative to the project root; `dir` likewise. `JSON.stringify` of a verdict with a cause is byte-identical across processes.
+- Determinism: every comparator is code-unit (`compareCodeUnits` from `packages/core/src/diff/structural/deltas.ts`), never `localeCompare` — the one `localeCompare` in `run.ts` is replaced in Task 3. No `Map` iteration order leaks into output (collect, then sort). No absolute paths, OS strings or timestamps in any new JSON field: `cause.files[].path` and `crops[].file` are forward-slash paths relative to the project root; `dir` likewise. Git reports paths relative to the repository top level, which is not the project root in a monorepo (`examples/storybook` inside this repo), so `prepareCause` maps every git path through `git rev-parse --show-toplevel` before it is compared with a manifest `src`. `JSON.stringify` of a verdict with a cause is byte-identical across processes.
+- `none-in-closure` ("not your code") is claimed only when the closure was fully traced. A bundled workbench (Storybook puts components into chunks that have no `src` in the Vite manifest) leaves part of the closure unresolvable; a changed file found in the resolved part is still `in-closure`, but no hit plus an unresolved node is `unknown`, never `none-in-closure`. This is pinned by a test over a committed copy of the real `examples/storybook` manifest, captured by a committed script, and documented in the README as a limit.
+- One wording for the cause: core's `describeCause(c): string | undefined` is the only place the sentence is written; the CLI review list and the handoff both print it.
 - Size budgets hold for any input: the verdict stays ≤ 1,500 chars with a `cause` of any length (files capped at 5, each path clipped to 80 chars keeping the tail), the summary stays ≤ 300, and the tests feed adversarial inputs (200 changed files with 300-char paths, 5,000 results sharing one signature, 500 groups, 50 regions for crops).
 - Human output groups by element identity, never by label string (`describeDeltas` already does; nothing here re-groups), and leads with the cause: `jux run`'s review list and `jux handoff` print the cause line before the structural summary.
 - Windows-safe paths in any documented field: basename or forward-slash relative. `toPosixRelative` from `affected.ts` for cause paths; `['.juxtapose', 'crops', dir, file].join('/')` for crops.
@@ -35,12 +37,15 @@
   5. `--crops` output is both the verdict and the crops (`juxtapose.crops/v1` wraps the verdict), so the escalation is one call.
   6. The deferred child-follows-parent rule covers resize as well as move: a child whose `(dw, dh)` equals its matched parent's is suppressed the same way as one whose `(dx, dy)` does.
   7. `jux handoff` gains `cropsCommand`: the baseline image lives in the store, not the run dir, so `BaselineStore` gains an optional `locate(storyId)` and the handoff's `images.baseline` path is fixed to use it (today it points at a `-baseline.webp` that `jux run` never writes).
+  8. Verification 6 ("edit one example component") is run against the corpus page served live from a file (`scripts/loop-anecdote/`), not an example Storybook component: the corpus page is the one both arms can reach with a plain URL and no workbench build, and the measured quantity (tokens spent verifying) does not depend on which page was edited. The PR says so.
+  9. `cause` is `unknown`, not `none-in-closure`, whenever the story's closure reaches a manifest node without a `src` (a bundled chunk) and no changed file was found in the resolved part. A pre-flight against the real `examples/storybook` build showed the first draft saying "not your code" for a component edit, which is the worst outcome Review Focus 1 names.
+  10. `--crops` orders regions and labels `explained` from the full coverage result (`SnapComparison.unexplainedRegions`), not from the verdict's budget-fitted `unexplainedRegions` prefix: when deltas fill the 1,500-char budget, the verdict lists fewer unexplained regions than there are, and a crop must not call one of the dropped ones "explained".
 
 ## Review Focus
 
-1. **A story whose `componentPath` the manifest does not know** (the `urls` platform's `''`, a story file outside the built workbench). Expect `cause.kind = 'unknown'`, never `none-in-closure` — a false "not your code" is worse than silence. Test: Task 2 (`cause.test.ts`, "unknown story path").
+1. **A story whose closure the manifest cannot fully resolve** (the `urls` platform's `''`, a story file outside the built workbench, or — the common case — a Storybook build whose components live in `src`-less chunks). Expect `cause.kind = 'unknown'`, never `none-in-closure` — a false "not your code" is worse than silence. Test: Task 2 (`cause.test.ts`, "a story the manifest does not know is unknown" and "the real Storybook manifest never says none-in-closure for a component edit", the latter over a committed copy of `examples/storybook/storybook-static/.vite/manifest.json`).
 2. **`--crops` on a pair whose images have different dimensions** (`dimension-change`, the user forgot `--viewport`). Expect one strip of the overlapping frame, exit 1, no throw, and the human output says the sizes differ. Test: Task 4 (`crops.test.ts`, "different sizes") and Task 5 (`check-diff.mjs`).
-3. **A run where hundreds of stories share one signature** (a design-token bump). Expect one group listing every id, the human output printing the first five ids and a count, `report.json` intact, and `computeGroups` on 5,000 results well under 50 ms. Test: Task 3 (`groups.test.ts`, "5,000 results, one signature").
+3. **A run where hundreds of stories share one signature** (a design-token bump). Expect one group listing every id, the human output printing the first five ids and a count and at most 10 groups, `report.json` intact, and `computeGroups` on 5,000 results under 50 ms (best of 3, fixtures built outside the timed region). Test: Task 3 (`groups.test.ts`, "5,000 results, one signature").
 4. **`--crops` on a sub-threshold change** (bytes differ, zero regions marked — the corpus `background` case). Expect one full-frame strip, exit 1, and a line saying no region was marked. Test: Task 5 (`check-diff.mjs`, "sub-threshold crops").
 5. **A `--since` diff touching hundreds of files with long monorepo paths.** Expect `cause.files` ≤ 5, each path ≤ 80 chars ending in the real file name, the verdict ≤ 1,500 chars, and deltas still present. Test: Task 2 (`structural.test.ts`, "cause fits the budget").
 
@@ -56,6 +61,7 @@
 - Modify: `packages/core/src/diff/structural.test.ts:40-49` (`verdict()` reads the case's `against`)
 - Modify: `packages/core/src/diff/structural/deltas.ts:138-143`
 - Regenerate: `packages/core/src/diff/__fixtures__/structural-corpus.json`
+- Modify: `packages/core/src/diff/structural/summary.test.ts:61-63` (`mentions()` drops the needle's flags; `nested` is the first case with more than one `added`)
 - Test: `packages/core/src/diff/structural/deltas.test.ts`
 
 **Interfaces:**
@@ -128,11 +134,12 @@ if (e.absent) {
 }
 ```
 
-and extend the JSDoc `@param` for `op` so the typedef includes `against` — replace the `OPERATORS` JSDoc comment with:
+and replace the `OPERATORS` JSDoc comment with:
 
 ```js
 /** Order matters only for reporting. `noop` is the baseline every operator
- *  is diffed against unless it names another with `against`. */
+ *  is diffed against unless it names another with `against`. An
+ *  expectation's `absent` is a RegExp no delta's `el`/`after` may match. */
 ```
 
 - [ ] **Step 2: Make the generator and the corpus script honour `against`**
@@ -256,21 +263,28 @@ test('a grandchild following a parent that itself followed is suppressed too', (
   const d = deltas(a, b);
   // Compared on rects, not on facts: row-2's own move is suppressed and the
   // span still reads as following it, so only `main` is listed.
-  expect(d.filter((x) => x.kind === 'moved').map((x) => x.el)).toEqual(['main']);
+  const moved = d.filter(
+    (x): x is Extract<Delta, { kind: 'moved' }> => x.kind === 'moved',
+  );
+  expect(moved.map((x) => x.el)).toEqual(['main']);
 });
 
-test('a child of an unmatched parent is never compared to it', () => {
-  // `inserted` adds a banner; its descendants (none here) and every matched
-  // element whose parent is matched keep today's behaviour: no fact vanishes.
+test('an element whose parent did not move keeps every move (inserted: 8, as before)', () => {
+  // Measured before this change on the real `inserted` capture: the button,
+  // the img, five rows and the canvas move (8 facts); `main` resizes but
+  // does not move, so none of its children follows it. The count must not
+  // change.
   const d = deltas(snap('noop'), snap('inserted'));
-  expect(d.filter((x) => x.kind === 'moved').length).toBeGreaterThanOrEqual(3);
+  expect(d.filter((x) => x.kind === 'moved')).toHaveLength(8);
 });
 ```
+
+`Delta` is already imported at the top of `deltas.test.ts` (`import type { Delta, StructureSnapshot } from '../../types.js';`).
 
 - [ ] **Step 5: Run to verify failure**
 
 Run: `pnpm vitest run packages/core/src/diff/structural/deltas.test.ts`
-Expected: the first test FAILS (a `moved` for `span.meta…` is present and the moved count is > 4); the resize and grandchild tests FAIL likewise. The "differently" and "unmatched parent" tests pass already — they pin that the rule is narrow.
+Expected: the first test FAILS (a `moved` for `span.meta…` is present and the moved count is > 4); the resize and grandchild tests FAIL likewise. The "differently" and "inserted: 8" tests pass already — they pin that the rule is narrow.
 
 - [ ] **Step 6: Implement the suppression in `deltas.ts`**
 
@@ -322,17 +336,32 @@ function parentChange(
 }
 ```
 
-- [ ] **Step 7: Run the whole core suite**
+- [ ] **Step 7: Fix the `mentions()` helper in `summary.test.ts`**
+
+`packages/core/src/diff/structural/summary.test.ts:61-63` counts matches with `new RegExp(needle, 'g')`, which drops the needle's own flags; `/^ {2}added\b/m` then loses its `m` and counts 1 instead of 5 for `nested`, the first case with more than one `added`. Replace the helper with:
+
+```ts
+function mentions(lines: string[], needle: RegExp): number {
+  // Keep the needle's own flags (`m` for line anchors) and add `g` to count.
+  const flags = needle.flags.includes('g') ? needle.flags : needle.flags + 'g';
+  return lines.join('\n').match(new RegExp(needle.source, flags))?.length ?? 0;
+}
+```
+
+Run: `pnpm vitest run packages/core/src/diff/structural/summary.test.ts`
+Expected: PASS for all 21 cases, including `nested` (5 `added` lines counted).
+
+- [ ] **Step 8: Run the whole core suite**
 
 Run: `pnpm vitest run packages/core && pnpm typecheck`
 Expected: PASS, including `structural.test.ts`'s generated `corpus operator 'nested-reorder' → reflow` and `'nested' → element-added` cases, and the unchanged `padding`/`inserted`/`removed`/`reorder` expectations (the corpus page's rows have no children in those cases, so no fact changes). The two 5,000-element performance tests print their timings; the tree test still reports `deltaCount` 110 (the section rects do not move, so no row follows one).
 
-- [ ] **Step 8: Run the end-to-end corpus**
+- [ ] **Step 9: Run the end-to-end corpus**
 
 Run: `pnpm build && node scripts/structural-corpus.mjs`
-Expected: `ok   21 of 21 operators`, with the `nested-reorder` line showing `reflow`, and the budget line (`tier-0 JSON chars: … max ≤ 1500`).
+Expected: `ok   21 of 21 operators`, with the `nested-reorder` line showing `reflow` (measured in pre-flight: 567 chars; `nested` is `element-added` at 1009), and the budget line (`tier-0 JSON chars: … max ≤ 1500`).
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 pnpm format
@@ -354,13 +383,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 
 - Modify: `packages/core/src/types.ts` (`Cause`, `CauseKind`; `cause?` on `StructuralVerdict`)
-- Modify: `packages/core/src/analysis/affected.ts` (export `loadViteManifest`, `gitChangedFiles`, `toPosixRelative`, `ViteManifest`; extract `isLockfileChange`, `isConfigChange`)
+- Modify: `packages/core/src/analysis/affected.ts` (export `loadViteManifest`, `gitChangedFiles`, `toPosixRelative`, `ViteManifest`; extract `isLockfileChange`, `isConfigChange`, `keyToSrc`; add `gitTopLevel`)
 - Create: `packages/core/src/analysis/cause.ts`
-- Modify: `packages/core/src/diff/structural.ts` (`cause?` on the input, fitted into the literal)
-- Modify: `packages/core/src/run/run.ts` (`RunOptions.cause`, `tryStructural` consults it, timed)
-- Modify: `packages/core/src/agent/handoff.ts` (a `## Why` section before `## What changed (structure)`)
+- Create: `scripts/capture-cause-manifest.mjs` (copies the real `examples/storybook` Vite manifest into the fixture, prettier-formatted)
+- Create: `packages/core/src/analysis/__fixtures__/storybook-manifest.json` (generated, committed)
+- Modify: `packages/core/src/diff/structural.ts` (`cause?` on the input, fitted into the literal; owns `MAX_CAUSE_FILES` and `MAX_CAUSE_PATH` so the pure diff module never imports `analysis/`)
+- Modify: `packages/core/src/run/run.ts` (`RunOptions.cause`, `tryStructural` consults it, timed; capture time subtracts it)
+- Modify: `packages/core/src/agent/handoff.ts` (`describeCause`; a `## Why` section before the structure section, present even with no structure snapshot)
 - Modify: `packages/core/src/index.ts` (exports)
-- Modify: `packages/cli/src/commands/run.ts` (wire `--since` to `prepareCause`; cause line in the review list)
+- Modify: `packages/cli/src/commands/run.ts` (wire `--since` to `prepareCause`; cause line in the review list through `describeCause`)
 - Test: `packages/core/src/analysis/cause.test.ts` (new), `packages/core/src/diff/structural.test.ts`, `packages/core/src/run/run-structural.test.ts`, `packages/core/src/agent/handoff.test.ts`, `packages/core/src/analysis/affected.test.ts` (unchanged, must stay green)
 
 **Interfaces:**
@@ -378,11 +409,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   // StructuralVerdict gains, between `flags` and `signature`: cause?: Cause;
   ```
 
-- Produces (affected.ts): `export function loadViteManifest(buildDir: string): Promise<ViteManifest | null>`; `export function gitChangedFiles(sinceCommit: string, cwd: string): string[] | null`; `export function toPosixRelative(root: string, abs: string): string`; `export function isLockfileChange(file: string): boolean`; `export function isConfigChange(file: string, configDirs: string[]): boolean`; `export type ViteManifest`.
+- Produces (affected.ts): `export function loadViteManifest(buildDir: string): Promise<ViteManifest | null>`; `export function gitChangedFiles(sinceCommit: string, cwd: string): string[] | null` (paths as git prints them: relative to the repository top level, forward slashes); `export function gitTopLevel(cwd: string): string | null`; `export function toPosixRelative(root: string, abs: string): string`; `export function isLockfileChange(file: string): boolean`; `export function isConfigChange(file: string, configDirs: string[]): boolean`; `export function keyToSrc(manifest: ViteManifest): Map<string, string>`; `export type ViteManifest`.
 - Produces (cause.ts):
 
   ```ts
-  export const MAX_CAUSE_FILES = 5;
   export interface CauseIndex {
     /** Never throws; never reads anything before the first call. */
     causeFor(componentPath: string): Promise<Cause>;
@@ -390,7 +420,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   export interface CauseSources {
     projectRoot: string;
     configDirs: string[];
-    /** Posix-relative; null when git could not say. */
+    /** Posix paths relative to projectRoot (already mapped from git's
+     *  top-level-relative form); null when git could not say. */
     changedFiles: string[] | null;
     manifest: ViteManifest | null;
   }
@@ -400,12 +431,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     buildDir?: string;
     sinceCommit: string;
     configDirs: string[];
-  }): CauseIndex; // lazy, memoized, guarded
+  }): CauseIndex; // lazy, memoized, guarded; maps git paths through gitTopLevel
   ```
 
-- Produces (structural.ts): `StructuralDiffInput.cause?: Cause`; `export const MAX_CAUSE_PATH = 80`.
+- Produces (structural.ts): `StructuralDiffInput.cause?: Cause`; `export const MAX_CAUSE_FILES = 5`; `export const MAX_CAUSE_PATH = 80`.
 - Produces (run.ts): `RunOptions.cause?: CauseIndex`.
-- Produces (handoff.ts): `export function describeCause(c: Cause): string[]`.
+- Produces (handoff.ts): `export function describeCause(c: Cause): string | undefined` — one sentence, no heading; `undefined` for `unknown`. The only wording of the cause: the handoff puts it under `## Why`, the CLI prints it after `cause: `.
 
 - [ ] **Step 1: Add the types**
 
@@ -441,7 +472,7 @@ In `StructuralVerdict`, after `flags: Flag[];` insert:
 
 In `packages/core/src/index.ts`, add `Cause, CauseKind,` to the type export list after `StructuralVerdict,`.
 
-- [ ] **Step 2: Export the manifest and git helpers from `affected.ts`**
+- [ ] **Step 2: Export the manifest and git helpers from `affected.ts`; capture the real manifest fixture**
 
 In `packages/core/src/analysis/affected.ts`, make `ViteManifest` exported (`export type ViteManifest = …`), and replace the lockfile/config loop in `resolveAffected` (lines 76–84) with:
 
@@ -469,25 +500,95 @@ export function isConfigChange(file: string, configDirs: string[]): boolean {
 }
 ```
 
-Change `async function loadViteManifest`, `function gitChangedFiles` and `function toPosixRelative` to `export async function` / `export function` (bodies unchanged).
+Change `async function loadViteManifest`, `function gitChangedFiles` and `function toPosixRelative` to `export async function` / `export function` (bodies unchanged). Extract the key → src map out of `buildReverseGraph` so the forward graph in `cause.ts` cannot drift from it:
+
+```ts
+/** Vite's `imports[]` holds chunk keys, not source paths; this is the map
+ *  both graph directions resolve an edge through. A chunk with no `src` (a
+ *  bundled component chunk in a Storybook build) has no entry. */
+export function keyToSrc(manifest: ViteManifest): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const [key, entry] of Object.entries(manifest)) {
+    if (entry.src) map.set(key, entry.src);
+  }
+  return map;
+}
+```
+
+and in `buildReverseGraph`, replace its first four lines (the local `keyToSrc` map) with `const srcOf = keyToSrc(manifest);` and `keyToSrc.get(key)` with `srcOf.get(key)`.
+
+Add after `gitChangedFiles`:
+
+```ts
+/** The repository root, which git's paths are relative to. Null outside a
+ *  repository or without git. */
+export function gitTopLevel(cwd: string): string | null {
+  try {
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd,
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+```
 
 Run: `pnpm vitest run packages/core/src/analysis/affected.test.ts`
 Expected: PASS, unchanged.
+
+Create `scripts/capture-cause-manifest.mjs`, which copies the real Storybook build's manifest into a committed fixture (the first draft's hand-written manifest gave every module a `src`, which a real Storybook build does not — CLAUDE.md's `regions.test.ts` lesson):
+
+```js
+// Copies examples/storybook's Vite manifest into the cause fixture. A real
+// Storybook build bundles components into chunks with no `src`, which a
+// hand-written manifest never shows; the cause test must see the real shape.
+// Run after `pnpm --filter example-storybook build`:
+//   node scripts/capture-cause-manifest.mjs
+import { readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import * as prettier from 'prettier';
+
+const root = path.resolve(import.meta.dirname, '..');
+const src = path.join(root, 'examples/storybook/storybook-static/.vite/manifest.json');
+const out = path.join(
+  root,
+  'packages/core/src/analysis/__fixtures__/storybook-manifest.json',
+);
+const manifest = JSON.parse(await readFile(src, 'utf8'));
+// Formatted with the repo's prettier so the committed bytes ARE the output.
+await writeFile(
+  out,
+  await prettier.format(JSON.stringify(manifest), { parser: 'json', filepath: out }),
+);
+const entries = Object.values(manifest);
+console.log(
+  `wrote ${out}: ${entries.length} entries, ${entries.filter((e) => !e.src).length} without src`,
+);
+```
+
+Run: `pnpm --filter example-storybook build && node scripts/capture-cause-manifest.mjs`
+Expected: `wrote …/storybook-manifest.json: 11 entries, 4 without src` (pre-flight measured 11 entries with the component code in `_index-*.js` chunks that have no `src`; the exact hashes differ per build and are not asserted anywhere). Commit the fixture with this task.
 
 - [ ] **Step 3: Write the failing cause tests**
 
 Create `packages/core/src/analysis/cause.test.ts`:
 
 ```ts
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildCauseIndex, prepareCause, MAX_CAUSE_FILES } from './cause.js';
+import { buildCauseIndex, prepareCause } from './cause.js';
+import { MAX_CAUSE_FILES } from '../diff/structural.js';
 import type { ViteManifest } from './affected.js';
 
-// The same shape affected.test.ts uses: Button.stories → Button → shared;
-// Card.stories → Card. `_chunk` has no src (a shared Vite chunk).
+// A minimal graph for the pure logic (Button.stories → Button → shared;
+// Card.stories → Card; `_chunk` has no src, like a bundled chunk). The real
+// shape — components in src-less chunks — is pinned separately below over a
+// committed copy of the examples/storybook build's manifest.
 const manifest: ViteManifest = {
   'src/Button.stories.tsx': {
     file: 'a.js',
@@ -604,12 +705,68 @@ describe('buildCauseIndex', () => {
     expect((await index(null).causeFor(button())).kind).toBe('unknown');
   });
 
-  it('a chunk without src ends the walk without throwing', async () => {
-    expect((await index(['z.js']).causeFor(button())).kind).toBe('none-in-closure');
+  // Review Focus 1 (and refinement 9): a src-less chunk means the closure
+  // was not fully traced. A hit in the traced part is still a hit; no hit
+  // is unknown, never "not your code".
+  it('a closure through a chunk without src is unknown unless a changed file was found', async () => {
+    expect((await index(['README.md']).causeFor(button())).kind).toBe('unknown');
+    expect((await index(['src/shared.ts']).causeFor(button())).kind).toBe('in-closure');
+    // Card's closure has no chunk: fully traced, so none-in-closure is honest.
+    expect((await index(['README.md']).causeFor(card())).kind).toBe('none-in-closure');
   });
 
-  it('an empty change set is none-in-closure', async () => {
-    expect((await index([]).causeFor(button())).kind).toBe('none-in-closure');
+  it('an empty change set on a fully traced closure is none-in-closure', async () => {
+    expect((await index([]).causeFor(card())).kind).toBe('none-in-closure');
+  });
+});
+
+// The real thing: examples/storybook's Vite manifest, copied by
+// scripts/capture-cause-manifest.mjs. Stories have a src; the component
+// library (examples/components/src/index.jsx) is bundled into `_index-*.js`
+// chunks that do not.
+describe('the real Storybook manifest', () => {
+  const real = JSON.parse(
+    readFileSync(
+      path.join(import.meta.dirname, '__fixtures__/storybook-manifest.json'),
+      'utf8',
+    ),
+  ) as ViteManifest;
+  const project = () => path.join(root, 'examples/storybook');
+  const story = () => path.join(project(), 'stories/Button.stories.jsx');
+  const realIndex = (changedFiles: string[]) =>
+    buildCauseIndex({
+      projectRoot: project(),
+      configDirs: ['.storybook'],
+      changedFiles,
+      manifest: real,
+    });
+
+  it('has src-less chunks (or this test is pinning the wrong shape)', () => {
+    expect(Object.values(real).some((e) => !e.src)).toBe(true);
+    expect(real['stories/Button.stories.jsx']?.src).toBe('stories/Button.stories.jsx');
+  });
+
+  it('never says none-in-closure for a component edit', async () => {
+    // Project-relative, as prepareCause maps git's `examples/components/src/index.jsx`.
+    const c = await realIndex(['../components/src/index.jsx']).causeFor(story());
+    expect(c.kind).toBe('unknown');
+  });
+
+  it('never says none-in-closure for an unrelated file either, since the closure is not fully traced', async () => {
+    expect((await realIndex(['../../README.md']).causeFor(story())).kind).toBe('unknown');
+  });
+
+  it('still finds the story file itself', async () => {
+    expect(await realIndex(['stories/Button.stories.jsx']).causeFor(story())).toEqual({
+      kind: 'in-closure',
+      files: [{ path: 'stories/Button.stories.jsx', distance: 0 }],
+    });
+  });
+
+  it('a .storybook change is config', async () => {
+    expect((await realIndex(['.storybook/preview.js']).causeFor(story())).kind).toBe(
+      'config',
+    );
   });
 });
 
@@ -625,24 +782,39 @@ describe('prepareCause', () => {
     expect(await ix.causeFor(button())).toEqual({ kind: 'unknown', files: [] });
   });
 
-  it('with a manifest on disk and explicit changed files, traces the closure', async () => {
-    const buildDir = path.join(root, 'build');
+  it('maps git top-level paths to the project root and traces the closure', async () => {
+    // A real repository with the project in a subdirectory, like
+    // examples/storybook inside this repo: git says `app/src/Card.tsx`, the
+    // manifest says `src/Card.tsx`.
+    const repo = await mkdtemp(path.join(tmpdir(), 'jux-cause-git-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', args, {
+        cwd: repo,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    const project = path.join(repo, 'app');
+    const buildDir = path.join(project, 'build');
     await mkdir(path.join(buildDir, '.vite'), { recursive: true });
+    await mkdir(path.join(project, 'src'), { recursive: true });
     await writeFile(path.join(buildDir, '.vite/manifest.json'), JSON.stringify(manifest));
-    const ix = buildCauseIndex({
-      projectRoot: root,
+    await writeFile(path.join(project, 'src/Card.tsx'), 'v1');
+    git('init', '-q');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '.');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'one');
+    await writeFile(path.join(project, 'src/Card.tsx'), 'v2');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', 'two');
+    const ix = prepareCause({
+      projectRoot: project,
+      buildDir,
+      sinceCommit: 'HEAD~1',
       configDirs: [],
-      changedFiles: ['src/Card.tsx'],
-      manifest: JSON.parse(
-        await (
-          await import('node:fs/promises')
-        ).readFile(path.join(buildDir, '.vite/manifest.json'), 'utf8'),
-      ) as ViteManifest,
     });
-    expect(await ix.causeFor(card())).toEqual({
+    expect(await ix.causeFor(path.join(project, 'src/Card.stories.tsx'))).toEqual({
       kind: 'in-closure',
       files: [{ path: 'src/Card.tsx', distance: 1 }],
     });
+    await rm(repo, { recursive: true, force: true });
   });
 });
 ```
@@ -664,22 +836,31 @@ Create `packages/core/src/analysis/cause.ts`:
 // not your code" the tool can give. Matched CSS rules and source lines are
 // later rows.
 //
+// "Not your code" is said only after a full trace. A Storybook build
+// bundles components into chunks that have no `src` in the manifest, so a
+// story's closure usually ends in an unresolved node; a changed file found
+// before that point is a hit, but no hit is `unknown`, never
+// `none-in-closure`. The first draft said "not your code" for a component
+// edit on examples/storybook, the worst answer the feature can give.
+//
 // Nothing here may fail a story. `prepareCause` reads git and the manifest
 // on the first `causeFor` call, once, inside try/catch; that call happens
 // only in the fail branch of `judge()`, so a green run reads neither.
 
+import path from 'node:path';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
+import { MAX_CAUSE_FILES } from '../diff/structural.js';
 import type { Cause } from '../types.js';
 import {
   gitChangedFiles,
+  gitTopLevel,
   isConfigChange,
   isLockfileChange,
+  keyToSrc,
   loadViteManifest,
   toPosixRelative,
   type ViteManifest,
 } from './affected.js';
-
-export const MAX_CAUSE_FILES = 5;
 
 export interface CauseIndex {
   /** The cause for one story's component path. Never throws, never reads
@@ -690,7 +871,8 @@ export interface CauseIndex {
 export interface CauseSources {
   projectRoot: string;
   configDirs: string[];
-  /** Posix paths relative to projectRoot; null when git could not say. */
+  /** Posix paths relative to projectRoot (git's top-level-relative paths
+   *  already mapped); null when git could not say. */
   changedFiles: string[] | null;
   manifest: ViteManifest | null;
 }
@@ -699,9 +881,9 @@ const UNKNOWN: Cause = { kind: 'unknown', files: [] };
 
 /** The index from already-loaded inputs. Pure. */
 export function buildCauseIndex(src: CauseSources): CauseIndex {
-  const forward = src.manifest ? buildForwardGraph(src.manifest) : null;
+  const graph = src.manifest ? buildForwardGraph(src.manifest) : null;
   return {
-    causeFor: async (componentPath) => causeOf(src, forward, componentPath),
+    causeFor: async (componentPath) => causeOf(src, graph, componentPath),
   };
 }
 
@@ -714,26 +896,21 @@ export function prepareCause(opts: {
   configDirs: string[];
 }): CauseIndex {
   let loading: Promise<CauseIndex> | undefined;
-  const load = async (): Promise<CauseIndex> => {
-    let manifest: ViteManifest | null = null;
-    try {
-      manifest = opts.buildDir ? await loadViteManifest(opts.buildDir) : null;
-    } catch {
-      manifest = null;
-    }
-    let changedFiles: string[] | null = null;
-    try {
-      changedFiles = gitChangedFiles(opts.sinceCommit, opts.projectRoot);
-    } catch {
-      changedFiles = null;
-    }
-    return buildCauseIndex({
+  const load = async (): Promise<CauseIndex> =>
+    buildCauseIndex({
       projectRoot: opts.projectRoot,
       configDirs: opts.configDirs,
-      changedFiles,
-      manifest,
+      manifest: await orNull(() =>
+        opts.buildDir ? loadViteManifest(opts.buildDir) : Promise.resolve(null),
+      ),
+      changedFiles: await orNull(async () =>
+        projectRelative(
+          gitChangedFiles(opts.sinceCommit, opts.projectRoot),
+          gitTopLevel(opts.projectRoot),
+          opts.projectRoot,
+        ),
+      ),
     });
-  };
   return {
     causeFor: async (componentPath) => {
       try {
@@ -746,9 +923,40 @@ export function prepareCause(opts: {
   };
 }
 
+async function orNull<T>(fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch {
+    return null;
+  }
+}
+
+/** Git prints paths relative to the repository top level; the manifest's
+ *  `src` is relative to the project root. In a monorepo these differ
+ *  (`examples/storybook/stories/X.jsx` vs `stories/X.jsx`), and comparing
+ *  them unmapped made every story `none-in-closure`. A file outside the
+ *  project maps to a `../` path, which is still what the manifest would hold
+ *  for it. */
+function projectRelative(
+  files: string[] | null,
+  topLevel: string | null,
+  projectRoot: string,
+): string[] | null {
+  if (files === null || topLevel === null) return null;
+  return files.map((f) => toPosixRelative(projectRoot, path.join(topLevel, f)));
+}
+
+/** src → the srcs (or bare chunk keys) it imports, static and dynamic. */
+interface ForwardGraph {
+  edges: Map<string, string[]>;
+  /** Manifest keys with no `src`: a node here means the walk cannot see
+   *  through it. */
+  unresolved: Set<string>;
+}
+
 function causeOf(
   src: CauseSources,
-  forward: Map<string, string[]> | null,
+  graph: ForwardGraph | null,
   componentPath: string,
 ): Cause {
   if (src.changedFiles === null) return UNKNOWN;
@@ -763,52 +971,54 @@ function causeOf(
       files: global.slice(0, MAX_CAUSE_FILES).map((path) => ({ path, distance: 0 })),
     };
   }
-  if (!forward || componentPath === '') return UNKNOWN;
+  if (!graph || componentPath === '') return UNKNOWN;
   const start = toPosixRelative(src.projectRoot, componentPath);
   // Not in the graph (urls platform, a story outside the build): the
   // closure was never traced, so "none of your files" would be a guess.
-  if (!forward.has(start)) return UNKNOWN;
+  if (!graph.edges.has(start)) return UNKNOWN;
+  const reach = closure(graph.edges, start);
   const changed = new Set(src.changedFiles);
-  const files = [...closure(forward, start)]
+  const files = [...reach]
     .filter(([file]) => changed.has(file))
     .map(([path, distance]) => ({ path, distance }))
     .sort((x, y) => x.distance - y.distance || compareCodeUnits(x.path, y.path))
     .slice(0, MAX_CAUSE_FILES);
-  return files.length > 0
-    ? { kind: 'in-closure', files }
-    : { kind: 'none-in-closure', files: [] };
+  if (files.length > 0) return { kind: 'in-closure', files };
+  // No hit. Honest only if every node on the way had a src to look through.
+  for (const node of reach.keys()) if (graph.unresolved.has(node)) return UNKNOWN;
+  return { kind: 'none-in-closure', files: [] };
 }
 
-/** src → the srcs it imports, static and dynamic. Vite's `imports[]` holds
- *  chunk keys, so each is mapped through key → src first; a chunk with no
- *  src (a shared chunk) stays a key with no outgoing edges, the same limit
- *  affected.ts's reverse graph has. */
-function buildForwardGraph(manifest: ViteManifest): Map<string, string[]> {
-  const keyToSrc = new Map<string, string>();
+/** Edges resolve through the same key → src map affected.ts's reverse graph
+ *  uses; a key with no src is kept as a node (so the walk can report it as
+ *  unresolved) with no outgoing edges. */
+function buildForwardGraph(manifest: ViteManifest): ForwardGraph {
+  const srcOf = keyToSrc(manifest);
+  const edges = new Map<string, string[]>();
+  const unresolved = new Set<string>();
   for (const [key, entry] of Object.entries(manifest)) {
-    if (entry.src) keyToSrc.set(key, entry.src);
-  }
-  const forward = new Map<string, string[]>();
-  for (const entry of Object.values(manifest)) {
-    if (!entry.src) continue;
-    forward.set(
+    if (!entry.src) {
+      unresolved.add(key);
+      continue;
+    }
+    edges.set(
       entry.src,
       [...(entry.imports ?? []), ...(entry.dynamicImports ?? [])].map(
-        (key) => keyToSrc.get(key) ?? key,
+        (k) => srcOf.get(k) ?? k,
       ),
     );
   }
-  return forward;
+  return { edges, unresolved };
 }
 
 /** BFS distance from `start` to everything it reaches, `start` at 0. */
-function closure(forward: Map<string, string[]>, start: string): Map<string, number> {
+function closure(edges: Map<string, string[]>, start: string): Map<string, number> {
   const dist = new Map<string, number>([[start, 0]]);
   const queue = [start];
   for (let k = 0; k < queue.length; k++) {
     const file = queue[k];
     const d = dist.get(file)!;
-    for (const next of forward.get(file) ?? []) {
+    for (const next of edges.get(file) ?? []) {
       if (dist.has(next)) continue;
       dist.set(next, d + 1);
       queue.push(next);
@@ -818,6 +1028,8 @@ function closure(forward: Map<string, string[]>, start: string): Map<string, num
 }
 ```
 
+`MAX_CAUSE_FILES` lives in `packages/core/src/diff/structural.ts` (added in Step 8, a pure module), so `structural.ts` never imports `analysis/`, which pulls in `child_process` and `fs`. Until Step 8 lands, the import above fails to resolve; do Step 8's constant first if running the tests between steps.
+
 In `packages/core/src/index.ts`, after the `resolveAffected` export block add:
 
 ```ts
@@ -825,14 +1037,13 @@ In `packages/core/src/index.ts`, after the `resolveAffected` export block add:
 export {
   buildCauseIndex,
   prepareCause,
-  MAX_CAUSE_FILES,
   type CauseIndex,
   type CauseSources,
 } from './analysis/cause.js';
 ```
 
-Run: `pnpm vitest run packages/core/src/analysis && pnpm typecheck`
-Expected: PASS.
+Run: `pnpm vitest run packages/core/src/analysis && pnpm typecheck && pnpm lint`
+Expected: PASS (the pre-flight's two `no-useless-assignment` errors came from `manifest = null` inside `catch`; `orNull` has no such assignment).
 
 - [ ] **Step 6: Write the failing verdict tests for `cause`**
 
@@ -895,7 +1106,7 @@ Expected: both new tests FAIL (`cause` is not a key; TypeScript error on the unk
 
 In `packages/core/src/diff/structural.ts`:
 
-Add to the imports: `import { MAX_CAUSE_FILES } from '../analysis/cause.js';` and `Cause` to the type import from `'../types.js'`.
+Add `Cause` to the type import from `'../types.js'`. This module stays pure: the cause limits are defined here and `analysis/cause.ts` imports them, never the other way round.
 
 Add to `StructuralDiffInput` after `escalate`:
 
@@ -907,6 +1118,9 @@ Add to `StructuralDiffInput` after `escalate`:
 After `export const MAX_VERDICT = 1500;` add:
 
 ```ts
+/** `cause.files` is capped here as well as in the index: the budget is a
+ *  guarantee for any input. */
+export const MAX_CAUSE_FILES = 5;
 /** Longest `cause.files[].path`. The tail is kept: the file name is what a
  *  reader greps for; a 10-deep monorepo prefix is not. */
 export const MAX_CAUSE_PATH = 80;
@@ -1035,10 +1249,18 @@ it('leads with the cause when the run traced one', () => {
     structural: { ...v, cause: { kind: 'unknown', files: [] } },
   });
   expect(unknown).not.toContain('## Why');
+  // The cause does not depend on structure: with no baseline sidecar the
+  // structure section is replaced by a "re-approve" note, and `## Why` stays.
+  const noStructure = buildHandoffPrompt({
+    ...base,
+    structural: { ...v, deltas: [], flags: ['no-baseline-structure'] },
+  });
+  expect(noStructure).toContain('## Why');
+  expect(noStructure).toContain('No structure snapshot for the baseline');
 });
 ```
 
-(`fixture` is already loaded at the top of `handoff.test.ts` — see its existing structural tests; if it is loaded inside a later `describe`, hoist that `const fixture = …` to module scope.)
+`fixture` is declared at `handoff.test.ts:118` inside a later `describe`; hoist that `const fixture = …` (lines 118–121) to module scope, above the first `describe`, so this test can use it.
 
 - [ ] **Step 10: Run to verify failure**
 
@@ -1094,48 +1316,43 @@ async function tryStructural(
 }
 ```
 
-In `packages/core/src/agent/handoff.ts`, add `Cause` to the type import and, before `lines.push('## What changed (structure)');` inside the `else if (v)` branch — i.e. the branch becomes:
+Also in `runCapture`, the capture phase must not count the cause reads (they happen inside the loop, like the diff): change the `p.add('capture', …)` line to
 
 ```ts
-  } else if (v) {
-    if (v.cause) lines.push(...describeCause(v.cause));
-    lines.push('## What changed (structure)');
+// Diffing and cause tracing happen inside the loop; subtract both to
+// leave capture alone.
+p.add(
+  'capture',
+  Date.now() - captureStarted - (p.timings.diff ?? 0) - (p.timings.cause ?? 0),
+);
 ```
 
-(`describeCause` returns `[]` for `unknown`, so the section only appears when there is something to say.) Add after `describeRegion`:
+In `packages/core/src/agent/handoff.ts`, add `Cause` to the type import. The cause does not depend on structure, so it is printed before the structure/missing-structure branch: directly after the `const missing = …` declaration and before `if (v && missing) {`, insert
 
 ```ts
-/** The cause, in the order an agent should weigh it: what changed that this
- *  story imports, or the fact that nothing it imports changed. */
-export function describeCause(c: Cause): string[] {
+const why = v?.cause && describeCause(v.cause);
+if (why) lines.push('## Why', '', why, '');
+```
+
+Add after `describeRegion`:
+
+```ts
+/** The one wording of a cause, shared by the handoff and the CLI's review
+ *  list. One sentence; undefined when there is nothing honest to say. */
+export function describeCause(c: Cause): string | undefined {
   const away = (d: number) =>
     d === 0 ? 'the story file itself' : `${d} import${d === 1 ? '' : 's'} away`;
   switch (c.kind) {
     case 'in-closure':
-      return [
-        '## Why',
-        '',
-        `Changed files this story imports, nearest first: ${c.files
-          .map((f) => `\`${f.path}\` (${away(f.distance)})`)
-          .join(', ')}.`,
-        '',
-      ];
+      return `Changed files this story imports, nearest first: ${c.files
+        .map((f) => `\`${f.path}\` (${away(f.distance)})`)
+        .join(', ')}.`;
     case 'config':
-      return [
-        '## Why',
-        '',
-        `A change that reaches every story: ${c.files.map((f) => `\`${f.path}\``).join(', ')}. Expect other stories to fail the same way; the run's \`groups\` lists which.`,
-        '',
-      ];
+      return `A change that reaches every story: ${c.files.map((f) => `\`${f.path}\``).join(', ')}. Expect other stories to fail the same way; the run's \`groups\` lists which.`;
     case 'none-in-closure':
-      return [
-        '## Why',
-        '',
-        "None of the files changed since the baseline is in this story's import closure. The cause is outside your diff: a dependency, an asset, the environment, or render drift.",
-        '',
-      ];
+      return "None of the files changed since the baseline is in this story's import closure. The cause is outside your diff: a dependency, an asset, the environment, or render drift.";
     case 'unknown':
-      return [];
+      return undefined;
   }
 }
 ```
@@ -1149,7 +1366,7 @@ Expected: PASS.
 
 In `packages/cli/src/commands/run.ts`:
 
-Add `prepareCause,` and `type DiffResult,` to the `@juxtapose/core` import. After the `log(…stories to capture…)` call and before `if (selection.stories.length === 0)`, add:
+Add `describeCause,`, `prepareCause,` and `type DiffResult,` to the `@juxtapose/core` import. After the `log(…stories to capture…)` call and before `if (selection.stories.length === 0)`, add:
 
 ```ts
 // Only with --since is there a changed-file set to trace. Lazy: the index
@@ -1184,21 +1401,14 @@ for (const r of needsReview.slice(0, 20)) {
 and add after `emptyReport`:
 
 ```ts
-/** What an agent reads first under a failing story: the cause, then the
- *  structural summary. One line each; the handoff has the rest. */
+/** What an agent reads first under a failing story: the cause (the same
+ *  sentence the handoff prints), then the structural summary. One line
+ *  each; the handoff has the rest. */
 function explain(r: DiffResult): string[] {
   const v = r.structural;
   if (!v) return [];
-  const out: string[] = [];
-  const c = v.cause;
-  if (c?.kind === 'in-closure')
-    out.push(`cause: ${c.files.map((f) => f.path).join(', ')}`);
-  else if (c?.kind === 'config')
-    out.push(`cause: reaches every story (${c.files.map((f) => f.path).join(', ')})`);
-  else if (c?.kind === 'none-in-closure')
-    out.push('cause: none of the changed files reach this story');
-  out.push(v.summary);
-  return out;
+  const why = v.cause && describeCause(v.cause);
+  return [...(why ? [`cause: ${why}`] : []), v.summary];
 }
 ```
 
@@ -1207,26 +1417,37 @@ Expected: PASS.
 
 - [ ] **Step 13: See it on a real workbench**
 
-Run (from `examples/storybook`, after `pnpm --filter example-storybook build-storybook` or whatever `pnpm --filter example-storybook visual` builds — check its `package.json` `scripts`):
+The component library is `examples/components/src/index.jsx` (the only source file there); the Storybook build script is `build` (`storybook build -o storybook-static`). All of this happens on a scratch branch so the feature branch's working tree is never swept up or reset:
 
 ```bash
-cd examples/storybook && node ../../packages/cli/dist/index.js run --all >/dev/null; node ../../packages/cli/dist/index.js approve --all >/dev/null
-# edit one shared component, e.g. change a colour in ../components/src/Button.tsx, commit it on a scratch branch
-git add -A && git commit -qm "scratch: button colour" && node ../../packages/cli/dist/index.js run --since HEAD~1
+pnpm --filter example-storybook build
+cd examples/storybook
+node ../../packages/cli/dist/index.js run --all >/dev/null; node ../../packages/cli/dist/index.js approve --all >/dev/null
+git switch -c scratch/cause
+# edit ONE colour in ../components/src/index.jsx (e.g. the Button background), then:
+git add ../components/src/index.jsx && git commit -qm "scratch: button colour"
+pnpm --filter example-storybook build
+node ../../packages/cli/dist/index.js run --since HEAD~1
+node ../../packages/cli/dist/index.js run --since HEAD~1 --json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{for(const r of JSON.parse(s).results)console.log(r.storyId,r.status,r.structural?.cause?.kind,JSON.stringify(r.structural?.cause?.files))})"
+git switch - && git branch -D scratch/cause
+pnpm --filter example-storybook build
 ```
 
-Expected: the failing stories print a `cause: examples/components/src/Button.tsx` line (path relative to the example's project root as the manifest records it) under each, the phase line includes `cause`, and `--json` shows `results[].structural.cause.kind === 'in-closure'`. Then `git reset --hard HEAD~1` to drop the scratch commit (never a bare `git stash`). If the example has no Vite manifest in its build output, the cause is `unknown` — record what the build produced in the PR and verify against the Ladle example instead (`examples/ladle`, `.ladle`/`build` dir), whichever has `.vite/manifest.json`.
+Expected: the button stories fail; the phase line includes `cause`; the `--json` line shows `cause.kind` of `unknown` for each (the component lives in a `src`-less chunk — refinement 9 — so the closure is not fully traced and the tool says nothing rather than "not your code"), and never `none-in-closure`. Then, still on the scratch branch before deleting it, edit `stories/Button.stories.jsx` instead, commit, rebuild, and re-run: the Button stories show `in-closure` with `stories/Button.stories.jsx` at distance 0 and the CLI prints `cause: Changed files this story imports, nearest first: \`stories/Button.stories.jsx\` (the story file itself).`under each. Paste both runs' review lists into the PR; the README's groups/cause example (Task 6) is taken from this output, not written by hand. Never`git add -A`or`reset --hard` here: the only commit touches the one file, on the scratch branch.
 
 - [ ] **Step 14: Commit**
 
 ```bash
 pnpm format
-git add packages/core/src packages/cli/src
+git add packages/core/src packages/cli/src scripts/capture-cause-manifest.mjs
 git commit -m "feat: cause — the story's import closure intersected with the files changed since --since
 
-Lazy and guarded: a green run reads neither git nor the manifest. The
-verdict gains an optional cause fitted to the 1,500-char budget; jux run
-and jux handoff lead with it.
+Lazy and guarded: a green run reads neither git nor the manifest. Git paths
+are mapped from the repository top level to the project root; a closure
+that reaches a src-less chunk is unknown, never none-in-closure (pinned
+over a committed copy of the real examples/storybook manifest). The verdict
+gains an optional cause fitted to the 1,500-char budget; jux run and jux
+handoff lead with it, in one wording.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -1385,20 +1606,30 @@ test('groups sort by size, then signature, with ids in code-unit order', () => {
   expect(JSON.stringify(flipped)).toBe(JSON.stringify(groups));
 });
 
-// Review Focus 3
-test('5,000 failing stories with one signature are one group, fast', () => {
+// Review Focus 3. One verdict reused for every result: building 5,000 real
+// verdicts is ~300 ms of structuralDiff that has nothing to do with grouping.
+test('5,000 failing stories with one signature are one group, under 50 ms', () => {
   const v = verdict('color');
+  const one = fail('story', 'color');
   const results = Array.from({ length: 5000 }, (_, k) => ({
-    ...fail(`story-${k}`, 'color'),
+    ...one,
+    storyId: `story-${k}`,
     structural: v,
   }));
-  const t = performance.now();
   const groups = computeGroups(results);
-  const ms = performance.now() - t;
-  console.log(`computeGroups 5000 results: ${ms.toFixed(1)} ms`);
   expect(groups).toHaveLength(1);
   expect(groups[0].storyIds).toHaveLength(5000);
-  expect(ms).toBeLessThan(250);
+  // Timing: one warm-up, then best of 3, so a cold run on a contended CI
+  // runner does not flake it. Measured 1.2 ms in pre-flight.
+  computeGroups(results);
+  let ms = Infinity;
+  for (let k = 0; k < 3; k++) {
+    const t = performance.now();
+    computeGroups(results);
+    ms = Math.min(ms, performance.now() - t);
+  }
+  console.log(`computeGroups 5000 results: ${ms.toFixed(1)} ms (best of 3)`);
+  expect(ms).toBeLessThan(50);
 });
 
 test('500 distinct shared signatures are 500 groups, each small', () => {
@@ -1558,22 +1789,29 @@ Expected: PASS (any test that asserted the old `localeCompare` order on mixed-ca
 In `packages/cli/src/commands/run.ts` `emit`, after the `if (needsReview.length > 20)` block and before the `report:` line, add:
 
 ```ts
+// Bounded like the review list: 500 groups would be 1,000 lines. The
+// report has them all.
 if (report.groups?.length) {
+  const n = report.groups.length;
   process.stdout.write(
-    `\n  ${report.groups.length} change${report.groups.length === 1 ? '' : 's'} shared by several stories:\n`,
+    `\n  ${n} change${n === 1 ? '' : 's'} shared by several stories:\n`,
   );
-  for (const g of report.groups) {
+  for (const g of report.groups.slice(0, MAX_GROUPS_SHOWN)) {
     const ids = g.storyIds.slice(0, 5).join(', ');
     const more = g.storyIds.length > 5 ? `, …${g.storyIds.length - 5} more` : '';
     process.stdout.write(
       `  ${g.storyIds.length} stories: ${g.summary}\n    ${ids}${more}\n`,
     );
   }
+  if (n > MAX_GROUPS_SHOWN)
+    process.stdout.write(`  …and ${n - MAX_GROUPS_SHOWN} more (see report.json)\n`);
 }
 ```
 
+with `const MAX_GROUPS_SHOWN = 10;` at module level in `packages/cli/src/commands/run.ts`, directly after the imports.
+
 Run: `pnpm build && pnpm typecheck && pnpm lint`
-Expected: PASS. Then on the example workbench (same scratch edit as Task 2 Step 13, which touches a shared component): `jux run --all` prints `N changes shared by several stories:` with the button stories listed, and `report.json` has `groups`.
+Expected: PASS. Then on the example workbench (the scratch-branch edit of `stories/Button.stories.jsx` from Task 2 Step 13 only changes one story; to see a group, edit the shared component `examples/components/src/index.jsx` on the scratch branch instead, rebuild, `jux run --all`): the output prints `1 change shared by several stories:` with the Button stories listed, and `report.json` has `groups`. Paste it into the PR; Task 6's README example is this output.
 
 - [ ] **Step 9: Commit**
 
@@ -1618,8 +1856,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     a: Buffer,
     b: Buffer,
     regions: ChangedRegion[],
-    max?: number,
-  ): Promise<Crop[]>;
+  ): Promise<Crop[]>; // at most MAX_CROPS, in the order given
   export function cropBox(
     r: ChangedRegion,
     frame: { width: number; height: number },
@@ -1802,7 +2039,6 @@ export async function renderCrops(
   a: Buffer,
   b: Buffer,
   regions: ChangedRegion[],
-  max = MAX_CROPS,
 ): Promise<Crop[]> {
   const [ma, mb] = await Promise.all([sharp(a).metadata(), sharp(b).metadata()]);
   // Only the overlap exists on both sides; after a size change that is the
@@ -1815,7 +2051,7 @@ export async function renderCrops(
   // the one thing worth looking at.
   const wanted = regions.length > 0 ? regions : [{ x: 0, y: 0, ...frame }];
   const out: Crop[] = [];
-  for (const region of wanted.slice(0, max)) {
+  for (const region of wanted.slice(0, MAX_CROPS)) {
     const box = cropBox(region, frame);
     if (box.width === 0 || box.height === 0) continue;
     const scale = scaleFor(box);
@@ -1899,17 +2135,21 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 
 - Modify: `packages/cli/src/commands/diff.ts` (replace the stand-in at lines 93–114; `writeCrops`)
+- Modify: `packages/core/src/diff/structural.ts` (`structuralDiffWithCoverage`)
+- Modify: `packages/core/src/diff/compare.ts` (`unexplainedRegions` on the comparison)
 - Modify: `packages/cli/src/index.ts:22,52-65` (usage text)
 - Modify: `packages/core/src/types.ts` (`BaselineStore.locate?`)
 - Modify: `packages/core/src/baseline/git-store.ts` (`locate`)
 - Modify: `packages/core/src/agent/handoff.ts` (`cropsCommand`; the footer)
 - Modify: `packages/cli/src/commands/handoff.ts` (build `cropsCommand`; fix `images.baseline`)
 - Modify: `scripts/check-diff.mjs:133-142` (crops checks)
-- Test: `packages/core/src/agent/handoff.test.ts`, `packages/core/src/baseline/git-store.test.ts` (if present; else the handoff test covers `locate` through a stub), `scripts/check-diff.mjs`
+- Test: `packages/core/src/agent/handoff.test.ts`, `packages/core/src/baseline/git-store.test.ts` (`locate`), `packages/core/src/diff/structural.test.ts` (`structuralDiffWithCoverage`), `scripts/check-diff.mjs`
 
 **Interfaces:**
 
-- Consumes: `renderCrops`, `Crop` (Task 4); `compareSnaps` → `{ pixels, verdict }`; `snapName`, `snapsDir`, `shellQuote`, `EXIT`.
+- Consumes: `renderCrops`, `Crop` (Task 4); `compareSnaps` → `{ pixels, verdict, unexplainedRegions }` (the last added here: every unexplained region from coverage, not the verdict's budget-fitted prefix); `snapName`, `snapsDir`, `shellQuote`, `EXIT`.
+- Produces (structural.ts): `export function structuralDiffWithCoverage(input: StructuralDiffInput): { verdict: StructuralVerdict; unexplainedRegions: ChangedRegion[] }`; `structuralDiff(input)` returns `.verdict` of it (unchanged signature).
+- Produces (compare.ts): `SnapComparison.unexplainedRegions: ChangedRegion[]`.
 - Produces (diff.ts): the `--crops` payload
 
   ```ts
@@ -1925,13 +2165,13 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
       scale: number;
       width: number;
       height: number;
-      /** False for a region the verdict lists as unexplained. */
+      /** False for a region no delta explains (full coverage result). */
       explained: boolean;
     }>;
   }
   ```
 
-  Files land in `<project>/.juxtapose/crops/<a>-vs-<b>/crop-N.png`; the dir is emptied first. Unexplained regions come first.
+  Files land in `<project>/.juxtapose/crops/<a>-vs-<b>/crop-N.png`; the pair dir is emptied first, and `.juxtapose/crops/.gitignore` (`*`) is written so crops self-ignore like snaps. Unexplained regions come first.
 
 - Produces (types.ts): `BaselineStore.locate?(storyId: string): string | undefined` — the baseline image's path on disk, for stores that keep one.
 - Produces (handoff.ts): `HandoffPayload.cropsCommand?: string`.
@@ -1966,12 +2206,72 @@ it('ends with the crops command before the image paths', () => {
 });
 ```
 
-Any existing test that asserts `'## Images'` or `'inspect only if the data above is insufficient'` (there are two: lines 26 and 151 on main) changes to `'## If still unsure'`.
+The existing assertions on the old heading change to the new one: `handoff.test.ts:26` (`indexOf('Images')`) and `:27` (`'inspect only if the data above is insufficient'`) are the two replaced above; `:151` (`'## Images'`) becomes `'## If still unsure'`.
+
+Append to `packages/core/src/baseline/git-store.test.ts`:
+
+```ts
+test('locate names the baseline image path, present or not', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jux-store-'));
+  const store = new GitBaselineStore({ projectRoot: root });
+  const where = store.locate('Components/Button--primary');
+  // Encoded like every other key the store writes, under the default dir.
+  expect(where).toBe(
+    path.join(root, '.juxtapose/baselines', 'Components%2FButton--primary.webp'),
+  );
+  await store.put('Components/Button--primary', Buffer.from('img'), meta);
+  expect(await readFile(where)).toEqual(Buffer.from('img'));
+  const custom = new GitBaselineStore({ projectRoot: root, dir: 'shots' });
+  expect(custom.locate('x')).toBe(path.join(root, 'shots', 'x.webp'));
+});
+```
+
+If `encodeStoryId('Components/Button--primary')` is not `Components%2FButton--primary`, use whatever `encodeStoryId` returns (import it from `./git-store.js`) rather than guessing: `expect(where).toBe(path.join(root, '.juxtapose/baselines', \`${encodeStoryId('Components/Button--primary')}.webp\`))`.
+
+Append to `packages/core/src/diff/structural.test.ts` (refinement 10):
+
+```ts
+test('structuralDiffWithCoverage returns every unexplained region, even the ones the budget drops from the verdict', () => {
+  const a = fixture.cases.noop.structure;
+  const b = structuredClone(a);
+  // 30 deltas fill the budget …
+  for (const e of b.elements) {
+    e.styles = {
+      ...e.styles,
+      opacity: '0.5',
+      transform: 'matrix(1, 0, 0, 1, 1, 0)',
+      'box-shadow': 'rgb(0, 0, 0) 0px 1px 2px 0px',
+    };
+  }
+  // … and 40 regions off every element (the page ends at y≈382) are all unexplained.
+  const regions = Array.from({ length: 40 }, (_, k) => ({
+    x: 16 + k * 10,
+    y: 440,
+    width: 8,
+    height: 8,
+  }));
+  const input: StructuralDiffInput = {
+    baseline: a,
+    current: b,
+    imagesIdentical: false,
+    pixels: { changedRegions: regions, dimensionMismatch: false },
+    escalate: ESC,
+  };
+  const { verdict, unexplainedRegions } = structuralDiffWithCoverage(input);
+  expect(unexplainedRegions).toEqual(regions);
+  expect(verdict.unexplainedRegions.length).toBeLessThan(regions.length);
+  expect(JSON.stringify(verdict).length).toBeLessThanOrEqual(MAX_VERDICT);
+  // the plain call is the same verdict
+  expect(structuralDiff(input)).toEqual(verdict);
+});
+```
+
+(add `structuralDiffWithCoverage` to the import from `./structural.js`).
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `pnpm vitest run packages/core/src/agent`
-Expected: FAIL — `## If still unsure` absent.
+Run: `pnpm vitest run packages/core/src/agent packages/core/src/baseline packages/core/src/diff/structural.test.ts`
+Expected: FAIL — `## If still unsure` absent; `store.locate is not a function`; `structuralDiffWithCoverage` is not exported.
 
 - [ ] **Step 3: The footer and `locate`**
 
@@ -2015,6 +2315,53 @@ In `packages/core/src/baseline/git-store.ts`, add a public method after `structu
     return this.imagePath(storyId);
   }
 ```
+
+In `packages/core/src/diff/structural.ts`, rename the existing `structuralDiff` body into `structuralDiffWithCoverage` and return the full coverage list beside the verdict — the final lines of the function become:
+
+```ts
+  const kept = fit(deltas);
+  return { verdict: build(kept, fit(cov.unexplainedRegions)), unexplainedRegions: cov.unexplainedRegions };
+}
+
+/** The verdict alone; what every caller but `--crops` wants. */
+export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
+  return structuralDiffWithCoverage(input).verdict;
+}
+```
+
+with the signature `export function structuralDiffWithCoverage(input: StructuralDiffInput): { verdict: StructuralVerdict; unexplainedRegions: ChangedRegion[] }` and a doc comment: `/** The verdict plus every unexplained region: the verdict's own list is the prefix that fits the budget, and crops must order and label from the whole. */`. Export it from `packages/core/src/index.ts` beside `structuralDiff`.
+
+In `packages/core/src/diff/compare.ts`, use it:
+
+```ts
+export interface SnapComparison {
+  pixels: DiffOutput;
+  verdict: StructuralVerdict;
+  /** Every region no delta explains, in diff order — not the budget-fitted
+   *  prefix on the verdict. `--crops` orders and labels from this. */
+  unexplainedRegions: ChangedRegion[];
+}
+
+export async function compareSnaps(
+  a: SnapSide,
+  b: SnapSide,
+  escalate: { command: string },
+): Promise<SnapComparison> {
+  const pixels = await diffImages(a.image, b.image);
+  const { verdict, unexplainedRegions } = structuralDiffWithCoverage({
+    baseline: a.structure,
+    current: b.structure,
+    // Byte equality, not mismatchPixels === 0: a sub-threshold colour change
+    // has no mismatching pixels but is still a different image.
+    imagesIdentical: a.image.equals(b.image),
+    pixels,
+    escalate,
+  });
+  return { pixels, verdict, unexplainedRegions };
+}
+```
+
+(import `structuralDiffWithCoverage` instead of `structuralDiff`, and add `ChangedRegion` to the type import).
 
 Run: `pnpm vitest run packages/core && pnpm typecheck`
 Expected: PASS.
@@ -2098,7 +2445,7 @@ interface CropFile {
   scale: number;
   width: number;
   height: number;
-  /** False for a region the verdict lists as unexplained. */
+  /** False for a region no delta explains (from the full coverage result). */
   explained: boolean;
 }
 
@@ -2110,13 +2457,17 @@ async function writeCrops(
   b: string,
   flags: DiffFlags,
   [sa, sb]: [SnapSide, SnapSide],
-  { verdict, pixels }: SnapComparison,
+  { verdict, pixels, unexplainedRegions: allUnexplained }: SnapComparison,
 ): Promise<number> {
   const root = path.resolve(flags.project ?? process.cwd());
   const dirName = `${cropName(a)}-vs-${cropName(b)}`;
   const relDir = ['.juxtapose', 'crops', dirName].join('/');
-  const absDir = path.join(root, '.juxtapose', 'crops', dirName);
+  const cropsRoot = path.join(root, '.juxtapose', 'crops');
+  const absDir = path.join(cropsRoot, dirName);
   await rm(absDir, { recursive: true, force: true });
+  // Self-ignoring, like the snaps dir: crops are scratch, never baselines.
+  await mkdir(cropsRoot, { recursive: true });
+  await writeFile(path.join(cropsRoot, '.gitignore'), '*\n');
   if (verdict.classification === 'identical') {
     process.stdout.write(
       flags.json
@@ -2130,10 +2481,12 @@ async function writeCrops(
     );
     return EXIT.clean;
   }
+  // From the full coverage list, not the verdict's budget-fitted prefix: a
+  // region the budget dropped from the verdict is still unexplained.
   const key = (r: ChangedRegion) => `${r.x},${r.y},${r.width},${r.height}`;
-  const unexplained = new Set(verdict.unexplainedRegions.map(key));
+  const unexplained = new Set(allUnexplained.map(key));
   const regions = [
-    ...verdict.unexplainedRegions,
+    ...allUnexplained,
     ...pixels.changedRegions.filter((r) => !unexplained.has(key(r))),
   ];
   const crops = await renderCrops(sa.image, sb.image, regions);
@@ -2262,8 +2615,9 @@ check(
 writeFileSync(path.join(project, '.juxtapose/crops/before-vs-after/crop-9.png'), 'stale');
 await jux(['diff', 'before', 'after', '--crops']);
 check(
-  !existsSync(path.join(project, '.juxtapose/crops/before-vs-after/crop-9.png')),
-  '--crops empties the pair dir first',
+  !existsSync(path.join(project, '.juxtapose/crops/before-vs-after/crop-9.png')) &&
+    readFileSync(path.join(project, '.juxtapose/crops/.gitignore'), 'utf8') === '*\n',
+  '--crops empties the pair dir first and the crops dir self-ignores',
 );
 const cropsSame = await jux(['diff', 'before', 'same', '--crops', '--json']);
 check(
@@ -2306,11 +2660,11 @@ check(
 Place the `--prefix` + `--crops` check after the existing `p1`/`p2` snaps (it needs them to exist only for the message; it exits before reading them, so position does not matter — keep it with the other crops checks).
 
 Run: `pnpm build && node scripts/check-diff.mjs`
-Expected: every line `ok`, including the seven new crops checks; exit 0.
+Expected: every line `ok`, including the seven new crops checks (pre-flight ran 35/35 on the scratch build); exit 0.
 
 - [ ] **Step 7: Look at one strip**
 
-Open `<tmp project>/.juxtapose/crops/before-vs-after/crop-1.png` from a local run (`jux snap … --as before`, edit, `--as after`, `jux diff before after --crops` in any scratch dir) with the Read tool. Expected: the Save button twice, white text on the left and yellow on the right, crisp pixels, magenta gutter. Record "opened crop-1.png: button left white, right #fef08a, 6×" in the PR.
+Open `<tmp project>/.juxtapose/crops/before-vs-after/crop-1.png` from a local run (`jux snap … --as before`, edit, `--as after`, `jux diff before after --crops` in any scratch dir) with the Read tool. Expected: the Save button twice, white text on the left and yellow on the right, crisp pixels, magenta gutter. At the default 1280×800 the measured line is `(35×12 at 31,84, 7×)` (region 35×12, box 70×24, strip 984×168); record the line you got in the PR, and give that same line to Task 6's README.
 
 - [ ] **Step 8: Commit**
 
@@ -2378,8 +2732,11 @@ the verdict; open an image only when the verdict tells you it cannot explain
 the pixels. A full-page screenshot costs thousands of tokens and misses most
 fine UI changes; the verdict is a few hundred tokens and names them.
 
-`jux` is `npx jux` unless the project puts it on your PATH. Every command
-accepts `--json`; prefer it. Exit codes: 0 identical, 1 different, 2 usage
+How to run `jux`: if `@juxtapose/cli` is in the project's dependencies,
+`npx jux …` works. If it is not, `npx jux` fetches an unrelated npm package
+called `jux`; use `npx -p @juxtapose/cli jux …` instead (or install it:
+`pnpm add -D @juxtapose/cli`). Check `package.json` once before the first
+call. Every command accepts `--json`; prefer it. Exit codes: 0 identical, 1 different, 2 usage
 error, 3 the tool or environment failed (no browser, unreadable input) —
 never treat a 3 as "different".
 
@@ -2485,11 +2842,17 @@ Then: `claude --plugin-dir ./plugins/claude-code` and in the session type `/skil
 
 In `README.md`:
 
+Directly under the first code block (the `npx jux run` / `approve` / `check` lines near the top), add one line:
+
+```markdown
+`npx jux` needs `@juxtapose/cli` installed in the project (`pnpm add -D @juxtapose/cli`); without it, npm resolves `jux` to an unrelated package.
+```
+
 Under the verdict table, change the `escalate.command` row to:
 
 ```
 | `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run. Arguments are shell-quoted when needed, and a `.webp` path argument appears verbatim, so a verdict for two absolute paths names this machine's paths |
-| `cause`              | only in `jux run --since`: `{ kind, files }` where `kind` is `in-closure` (a changed file is in this story's import closure; `files` lists up to 5, nearest first, as `{ path, distance }`), `config` (a lockfile or platform config dir changed, so every story is affected), `none-in-closure` (the closure was traced and no changed file is in it — the strongest "this is not your code" the tool can give, especially beside `render-drift`) or `unknown` (no manifest, git failed, or the story is not in the build graph) |
+| `cause`              | only in `jux run --since`: `{ kind, files }` where `kind` is `in-closure` (a changed file is in this story's import closure; `files` lists up to 5, nearest first, as `{ path, distance }`, paths relative to the project root), `config` (a lockfile or platform config dir changed, so every story is affected), `none-in-closure` (the closure was fully traced and no changed file is in it — the strongest "this is not your code" the tool can give, especially beside `render-drift`) or `unknown` (no manifest, git failed, the story is not in the build graph, or the closure runs into a bundled chunk the manifest cannot see through). Bundled workbenches often give `unknown`: a Storybook build puts components into chunks with no source path, so a component edit is traceable only up to the chunk. A changed story file is still found |
 ```
 
 After the "### Exit codes" section add:
@@ -2509,8 +2872,10 @@ style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure expla
   button[name="Save"] color #ffffff → #fef08a
 
 crops (baseline | current), unexplained first:
-  /work/app/.juxtapose/crops/before-vs-after/crop-1.png  (60×44 at 16,69, 6×)
+  /work/app/.juxtapose/crops/before-vs-after/crop-1.png  (35×12 at 31,84, 7×)
 ```
+
+The block above is the real output of `jux diff before after --crops` on the corpus `color` page at 1280×800 (pre-flight measured region 35×12 at 31,84, box 70×24, 7×, strip 984×168), with the project path shortened to `/work/app`. Regenerate it by running the command (Task 5 Step 7) and paste what it printed; do not type numbers.
 
 With `--json` the payload wraps the verdict: `{ schema, verdict, dir, crops[] }`
 where each crop is `{ file, region, box, scale, width, height, explained }`
@@ -2523,16 +2888,18 @@ crop is the whole overlapping frame.
 
 `jux run --json` adds `groups[]` — `{ signature, summary, storyIds }` for
 every change shared by two or more failing stories, largest first — so a
-token bump that turns 40 stories red reads as one decision. With
-`--since <commit>` each failing story's verdict also carries `cause` (see the
-table above), and the review list prints it first:
+token bump that turns 40 stories red reads as one decision. The review list
+prints up to 10 of them. With `--since <commit>` each failing story's verdict
+also carries `cause` (see the table above), and the review list prints it
+first:
 
 ```
-  fail   components-button--primary 0.42%
-         cause: src/tokens.css
-         style-only (color): button[name="Save"] background-color #2563eb→#1d4ed8. Structure explains the changed region.
+<paste the review list and the groups block from Task 2 Step 13's second run
+(the stories/Button.stories.jsx edit) and Task 3 Step 8's run here, verbatim>
 ```
 ````
+
+The placeholder in that block is filled with real output before the commit — the example is whatever `jux run --since HEAD~1` printed on `examples/storybook` for the story-file edit (a `cause: Changed files this story imports, nearest first: \`stories/Button.stories.jsx\` (the story file itself).`line under each Button story) and whatever`jux run --all`printed for the component edit (the`1 change shared by several stories:` block). Trim nothing but the leading summary line.
 
 Add a "## Claude Code skill" section after "## Agent loop":
 
@@ -2603,8 +2970,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 
-- Consumes: `render` and `LOGO` from `scripts/structural-corpus/page.mjs`; Claude Code session transcripts at `~/.claude/projects/<cwd with / → ->/<sessionId>.jsonl`, where each assistant line is `{ type: 'assistant', timestamp, message: { usage: { input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens }, content: [{ type: 'tool_use', name, input }] } }` (shape checked on a real transcript on 2026-10-12).
-- Produces: `serve.mjs` serves `page.html` live from disk on `PORT` (default 4173); `measure.mjs <transcript.jsonl> [--from <ISO>]` prints a Markdown table of token totals and tool calls; `arms.mjs` exports the two prompts so the PR and the script cannot drift.
+- Consumes: `render` and `LOGO` from `scripts/structural-corpus/page.mjs`; Claude Code session transcripts at `~/.claude/projects/<cwd with every / and . → ->/<sessionId>.jsonl`, where each assistant line is `{ type: 'assistant', timestamp, message: { id, usage: { input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens }, content: [{ type: 'tool_use', name, input }] } }` — one line per content block, and every line of one message repeats the same `id` and `usage` (checked on a real transcript on 2026-10-13: 7 lines for 3 ids).
+- Produces: `serve.mjs` serves `page.html` live from disk on `PORT` (default 4173); `measure.mjs <transcript.jsonl> [--from <ISO>]` prints a Markdown table of token totals (summed once per `message.id`) and tool calls (from every line); `arms.mjs` exports `JUX` (`node packages/cli/dist/index.js`) and the two prompts so the PR and the script cannot drift.
 
 - [ ] **Step 1: The server the agent edits against**
 
@@ -2653,14 +3020,18 @@ Create `scripts/loop-anecdote/arms.mjs`:
 export const TASK =
   'In scripts/loop-anecdote/page.html, change the Save button\'s background to rgb(29, 78, 216) and its text to "Save changes". The page is served at http://127.0.0.1:4173/. Verify the change rendered as intended and report what you verified.';
 
+// `npx jux` would fetch an unrelated npm package named `jux` (this repo does
+// not link a `jux` bin); both arms run the built CLI directly.
+export const JUX = 'node packages/cli/dist/index.js';
+
 export const ARMS = {
   skill: {
     launch: 'claude --plugin-dir plugins/claude-code',
-    prompt: `${TASK} Use /juxtapose:visual-check to verify.`,
+    prompt: `${TASK} Use /juxtapose:visual-check to verify; in this repository \`jux\` is \`${JUX}\` (run from the repo root).`,
   },
   screenshot: {
     launch: 'claude',
-    prompt: `${TASK} Verify by taking a screenshot of the page before and after with \`npx jux snap <url> --as <name>\` and reading the two .webp files; do not use jux diff.`,
+    prompt: `${TASK} Verify by taking a screenshot of the page before and after with \`${JUX} snap <url> --as <name>\` (run from the repo root) and reading the two .webp files; do not use jux diff.`,
   },
 };
 ```
@@ -2674,9 +3045,12 @@ Create `scripts/loop-anecdote/measure.mjs`:
 // calls by name, optionally only from a timestamp (the moment the edit was
 // done and verification began). Usage:
 //   node scripts/loop-anecdote/measure.mjs ~/.claude/projects/<dir>/<session>.jsonl [--from 2026-10-12T20:15:00Z]
-// Transcript lines are JSON; assistant lines carry message.usage (shape
-// checked on a real transcript, 2026-10-12). Anything else is skipped.
-import { readFileSync } from 'node:fs';
+// Transcript lines are JSON; assistant lines carry message.usage. Claude
+// Code writes one line per content block, and every line of one message
+// repeats the same usage and message.id (checked on a real transcript,
+// 2026-10-13: 7 lines for 3 ids), so usage is summed once per id while tool
+// calls are collected from every line.
+import { existsSync, readFileSync } from 'node:fs';
 import { ARMS } from './arms.mjs';
 
 const [file, ...rest] = process.argv.slice(2);
@@ -2686,8 +3060,13 @@ if (!file || file === '--prompts') {
   if (!file) console.log('usage: measure.mjs <transcript.jsonl> [--from <ISO>]');
   process.exit(file ? 0 : 2);
 }
+if (!existsSync(file)) {
+  console.error(`measure.mjs: no transcript at ${file}`);
+  process.exit(1);
+}
 const from = rest[0] === '--from' ? Date.parse(rest[1]) : -Infinity;
 const totals = { turns: 0, input: 0, cacheWrite: 0, cacheRead: 0, output: 0 };
+const counted = new Set();
 const tools = new Map();
 const imageReads = [];
 for (const line of readFileSync(file, 'utf8').split('\n')) {
@@ -2698,20 +3077,23 @@ for (const line of readFileSync(file, 'utf8').split('\n')) {
   } catch {
     continue;
   }
-  if (o.type !== 'assistant' || !o.message?.usage) continue;
+  if (o.type !== 'assistant' || !o.message) continue;
   if (Date.parse(o.timestamp) < from) continue;
-  const u = o.message.usage;
-  totals.turns++;
-  totals.input += u.input_tokens ?? 0;
-  totals.cacheWrite += u.cache_creation_input_tokens ?? 0;
-  totals.cacheRead += u.cache_read_input_tokens ?? 0;
-  totals.output += u.output_tokens ?? 0;
   for (const c of o.message.content ?? []) {
     if (c.type !== 'tool_use') continue;
     tools.set(c.name, (tools.get(c.name) ?? 0) + 1);
     const p = c.input?.file_path ?? '';
     if (/\.(webp|png)$/i.test(p)) imageReads.push(p);
   }
+  const u = o.message.usage;
+  const id = o.message.id ?? o.uuid;
+  if (!u || counted.has(id)) continue;
+  counted.add(id);
+  totals.turns++;
+  totals.input += u.input_tokens ?? 0;
+  totals.cacheWrite += u.cache_creation_input_tokens ?? 0;
+  totals.cacheRead += u.cache_read_input_tokens ?? 0;
+  totals.output += u.output_tokens ?? 0;
 }
 if (totals.turns === 0) {
   console.error(
@@ -2734,7 +3116,7 @@ for (const p of imageReads) console.log(`|   ${p} | |`);
 ```
 
 Run: `node scripts/loop-anecdote/measure.mjs --prompts`
-Expected: both arms' launch lines and prompts print; exit 0. Then `node scripts/loop-anecdote/measure.mjs /nonexistent` exits 1 with a message.
+Expected: both arms' launch lines and prompts print; exit 0. Then `node scripts/loop-anecdote/measure.mjs /nonexistent` exits 1 printing only `measure.mjs: no transcript at /nonexistent` (no stack). Then run it on any real transcript under `~/.claude/projects/` and confirm `assistant turns` equals the count of distinct `message.id` values (`grep -o '"id":"msg_[^"]*"' <file> | sort -u | wc -l`), not the line count.
 
 - [ ] **Step 4: Manual steps for the controller (record in the PR)**
 
@@ -2744,7 +3126,7 @@ These are run by the controller, not an implementer subagent, because they need 
 2. **Arm A (skill):** from the repo root, `claude --plugin-dir plugins/claude-code`. Paste `ARMS.skill.prompt` (print it with `node scripts/loop-anecdote/measure.mjs --prompts`). Let the agent finish. Note the wall-clock time at which the edit was done (the first `Edit` of `page.html`), from the transcript. Exit.
 3. Reset: `git checkout -- scripts/loop-anecdote` is not needed (the file is untracked) — delete `page.html`; restart `serve.mjs` so it is regenerated.
 4. **Arm B (screenshot):** `claude` (no plugin). Paste `ARMS.screenshot.prompt`. Let the agent finish. Exit.
-5. Find each session's transcript: the two newest files in `~/.claude/projects/-Users-jer-Code-juxtapose-.claude-worktrees-sp0c/` (the cwd with `/` replaced by `-`) — or wherever the session was started. Run `node scripts/loop-anecdote/measure.mjs <A.jsonl> --from <edit timestamp>` and the same for B. The `--from` cut isolates the verification step from the shared edit step.
+5. Find each session's transcript: the two newest files in `~/.claude/projects/-Users-jer-Code-juxtapose--claude-worktrees-sp0c/` (the cwd with every `/` and `.` replaced by `-`, so `.claude` becomes `-claude` and the path has a double dash) — or the matching directory for wherever the session was started. Run `node scripts/loop-anecdote/measure.mjs <A.jsonl> --from <edit timestamp>` and the same for B. The `--from` cut isolates the verification step from the shared edit step.
 6. Put both tables in the PR description under the heading **"Verification 6 — one anecdote, not a benchmark (row 4 is the benchmark)"**, with: the Claude Code version (`claude --version`), the model, the date, and whether each arm's final report matched the edit (both deltas named; nothing else claimed). Publish no number outside the PR (T53 in the service repo).
 
 Implementer smoke check: `node scripts/loop-anecdote/serve.mjs & sleep 1; curl -s http://127.0.0.1:4173/ | grep -c 'id="title"'; kill %1`. Expected: `1`.
@@ -2756,10 +3138,10 @@ Run on `examples/storybook` with baselines approved and no edits (so every story
 ```bash
 cd examples/storybook
 for i in 1 2 3; do node ../../packages/cli/dist/index.js run --all | sed -n 1,3p; done
-for i in 1 2 3; do node ../../packages/cli/dist/index.js run --since HEAD | sed -n 1,3p; done
+for i in 1 2 3; do node ../../packages/cli/dist/index.js run --all --since HEAD | sed -n 1,3p; done
 ```
 
-Expected: the phase line never includes `cause` (no story failed, so `causeFor` was never called), no `.vite/manifest.json` read shows up under `strace`/`fs_usage` if you look, and the timings match main's within noise (compare against `git stash`-free: check out main in a second worktree if a number looks off). Record the three lines per arm in the PR.
+(`--since HEAD` alone selects no stories — `resolveAffected` reports `no-changes` — so it would capture nothing and prove nothing; `--all --since HEAD` captures everything with a cause index armed, which is the case refinement 2 covers.) Expected: the phase line never includes `cause` (no story failed, so `causeFor` was never called), no `.vite/manifest.json` read shows up under `strace`/`fs_usage` if you look, and the timings match main's within noise (check out main in a second worktree if a number looks off; never a bare `git stash`). Record the three lines per arm in the PR.
 
 - [ ] **Step 6: The full gate**
 
@@ -2782,10 +3164,12 @@ Then follow `superpowers:finishing-a-development-branch`: PR against `main` titl
 
 ## Self-review
 
-**Spec coverage.** §4 cause → Task 2 (`cause.ts`, verdict field, run/handoff/CLI). §5 groups → Task 3 (`signature` already existed; `RunReport.groups` added, sorted, printed). §6 `--crops` with sharp, 2× bbox, upscaled, capped 512, lists paths, no browser → Tasks 4 and 5 (`renderCrops`, `writeCrops`, probe-guarded in `check-diff.mjs`); `jux handoff` footer crops-first → Task 5; `jux run` unchanged flags → `--since` reused, nothing new. §7 skill, manifest confirmed against the docs → Task 6. Verification 5 → Task 7 Step 5 plus the lazy index test in Task 2. Verification 6 → Task 7 (script + arms + measurer + manual procedure). Deferred item 1 (child follows parent) → Task 1. Deferred item 2 (crops are the escalation an agent reads) → Task 5 and the skill's step 5. Production bar: exit codes (Task 5 pins 0/1/2 for `--crops`), versioned JSON (`juxtapose.crops/v1`; verdict unchanged), errors naming the next command (`--crops --prefix`), no telemetry (nothing added).
+**Spec coverage.** §4 cause → Task 2 (`cause.ts`, verdict field, run/handoff/CLI). §5 groups → Task 3 (`signature` already existed; `RunReport.groups` added, sorted, printed, capped at 10 lines). §6 `--crops` with sharp, 2× bbox, upscaled, capped 512, lists paths, no browser → Tasks 4 and 5 (`renderCrops`, `writeCrops`, probe-guarded in `check-diff.mjs`); `jux handoff` footer crops-first → Task 5; `jux run` unchanged flags → `--since` reused, nothing new. §7 skill, manifest confirmed against the docs and `claude plugin validate` (pre-flight: `✔ Validation passed`) → Task 6. Verification 5 → Task 7 Step 5 (`--all --since HEAD`) plus the lazy index test in Task 2. Verification 6 → Task 7 (script + arms + measurer + manual procedure; corpus page, refinement 8). Deferred item 1 (child follows parent) → Task 1. Deferred item 2 (crops are the escalation an agent reads) → Task 5 and the skill's step 5. Production bar: exit codes (Task 5 pins 0/1/2 for `--crops`), versioned JSON (`juxtapose.crops/v1`; verdict unchanged), errors naming the next command (`--crops --prefix`), no telemetry (nothing added).
 
-**Placeholder scan.** No TBD/TODO; every code step carries the code; every test step carries the test. One judgement call left to the implementer with explicit instructions: the nearest-neighbour edge assertion (Task 4 Step 4) and the Storybook-vs-Ladle manifest presence (Task 2 Step 13), both with the fallback spelled out.
+**Pre-flight rows (2026-10-13, `.superpowers/sdd/2026-10-12-sp0c-cause-groups-crops-skill/preflight.md`), each with where it is fixed.** `summary.test.ts` `mentions()` flags → Task 1 Step 7. Test 5 "unmatched parent" asserted nothing about its title → Task 1 Step 4 (now "inserted: 8, as before", exact count). `x.el` typing on the `Delta` union → Task 1 Step 4 (type guard). Git top-level vs project-relative paths → Task 2 (`gitTopLevel`, `projectRelative`, pinned by the real-repo `prepareCause` test with the project in `app/`). Src-less chunks → `none-in-closure` → Task 2 (`ForwardGraph.unresolved`; the chunk test now asserts `unknown`; the real `examples/storybook` manifest is a committed fixture from `scripts/capture-cause-manifest.mjs`; README documents the limit). Cause time counted twice in `capture` → Task 2 Step 11 (`p.add('capture', … - cause)`). `structural.ts` importing `analysis/` → Task 2 Step 8 (`MAX_CAUSE_FILES` lives in `structural.ts`). Two cause wordings → `describeCause(c): string | undefined` is the one, used by the handoff and the CLI (Task 2 Steps 11–12). `## Why` hidden when structure is missing → Task 2 Step 11 (printed before the missing-structure branch; tested). `prepareCause` test never called `prepareCause` → Task 2 Step 3 (real git repo). Lint `no-useless-assignment` → `orNull` (Task 2 Step 5). Step 13's `git add -A`/`reset --hard` on the feature branch, wrong component path, wrong build script → Task 2 Step 13 (scratch branch, `src/index.jsx`, `build`). Unbounded groups output → Task 3 Step 8 (`MAX_GROUPS_SHOWN = 10`). Groups perf test timing fixture build, < 250 vs "< 50" → Task 3 Step 2 (best of 3 over prebuilt results, < 50 ms, printed). Unused `max` parameter → Task 4 (removed). Crops ordered/labelled from the budget-trimmed prefix → Task 5 (`structuralDiffWithCoverage`, `SnapComparison.unexplainedRegions`, test). No `locate` test → Task 5 Step 1. Crops dir not self-ignored → Task 5 Step 5 (`.juxtapose/crops/.gitignore`), pinned in `check-diff.mjs`. `6×` vs measured `7×` → Task 5 Step 7 and Task 6 README (`(35×12 at 31,84, 7×)`). Handoff test line cites → Task 5 Step 1 (26, 27, 151). `npx jux` is an unrelated package → Task 6 SKILL.md (both cases stated), README note, Task 7 arms use `node packages/cli/dist/index.js`. README examples invented → Task 6 (crops line measured; groups/cause block pasted from the Task 2/3 real runs). `measure.mjs` overcounting per line, stack on a missing file → Task 7 Step 3 (once per `message.id`, tool calls from every line, clean message). `run --since HEAD` captures nothing → Task 7 Step 5 (`--all --since HEAD`). Transcript dir name → Task 7 Step 4. Verification 6 on the corpus page not listed as a refinement → Global Constraints refinement 8.
 
-**Type consistency.** `Cause`/`CauseKind` defined once (Task 2 Step 1) and used by `cause.ts`, `structural.ts`, `handoff.ts`, CLI `run.ts`. `CauseIndex.causeFor(componentPath): Promise<Cause>` matches the `vi.fn(async …)` stubs in `run-structural.test.ts` and `p.time`'s `() => Promise<T>`. `RunGroup` fields `{ signature, summary, storyIds }` match `computeGroups`, the run test and the CLI printer. `Crop` fields `{ region, box, scale, width, height, png }` match `renderCrops`, its test and `writeCrops`'s `CropFile` mapping. `fixture.cases[name].against` is written by the generator (Task 1 Step 2) and read by `structural.test.ts` and `groups.test.ts`. `formatVerdict(v, { next })` is used only by `writeCrops`; `diffPrefix`'s `formatPrefixSet` keeps the default. `BaselineStore.locate?` is optional, so the test stores in `run-structural.test.ts` need no change.
+**Placeholder scan.** No TBD/TODO; every code step carries the code; every test step carries the test. Two judgement calls left to the implementer with explicit instructions: the nearest-neighbour edge assertion (Task 4 Step 4) and the `encodeStoryId` spelling in the `locate` test (Task 5 Step 1), both with the fallback spelled out. The README's groups/cause block is deliberately a paste target for real output (Task 6 Step 4), not prose to invent.
 
-**Review Focus.** 1 → `cause.test.ts` "a story the manifest does not know is unknown". 2 → `crops.test.ts` "images of different sizes" and `check-diff.mjs` "a dimension change crops the overlapping frame". 3 → `groups.test.ts` "5,000 failing stories with one signature". 4 → `check-diff.mjs` "a sub-threshold change crops the whole frame". 5 → `structural.test.ts` "cause fits the budget for any input".
+**Type consistency.** `Cause`/`CauseKind` defined once (Task 2 Step 1) and used by `cause.ts`, `structural.ts`, `handoff.ts`, CLI `run.ts`. `MAX_CAUSE_FILES` defined once in `structural.ts` and imported by `cause.ts` and `cause.test.ts`. `CauseIndex.causeFor(componentPath): Promise<Cause>` matches the `vi.fn(async …)` stubs in `run-structural.test.ts` and `p.time`'s `() => Promise<T>`. `describeCause(c): string | undefined` matches both consumers (`why && lines.push('## Why', '', why, '')`; `` `cause: ${why}` ``). `RunGroup` fields `{ signature, summary, storyIds }` match `computeGroups`, the run test and the CLI printer. `Crop` fields `{ region, box, scale, width, height, png }` match `renderCrops` (no `max` parameter anywhere), its test and `writeCrops`'s `CropFile` mapping. `SnapComparison.unexplainedRegions` is produced by `compareSnaps` from `structuralDiffWithCoverage` and consumed by `writeCrops` as `allUnexplained`. `fixture.cases[name].against` is written by the generator (Task 1 Step 2) and read by `structural.test.ts` and `groups.test.ts`. `formatVerdict(v, { next })` is used only by `writeCrops`; `diffPrefix`'s `formatPrefixSet` keeps the default. `BaselineStore.locate?` is optional, so the test stores in `run-structural.test.ts` need no change; `GitBaselineStore.locate` is tested directly.
+
+**Review Focus.** 1 → `cause.test.ts` "a story the manifest does not know is unknown", "a closure through a chunk without src is unknown unless a changed file was found", and the real-manifest `describe` ("never says none-in-closure for a component edit"). 2 → `crops.test.ts` "images of different sizes" and `check-diff.mjs` "a dimension change crops the overlapping frame". 3 → `groups.test.ts` "5,000 failing stories with one signature … under 50 ms" and the `MAX_GROUPS_SHOWN` cap. 4 → `check-diff.mjs` "a sub-threshold change crops the whole frame". 5 → `structural.test.ts` "cause fits the budget for any input".
