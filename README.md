@@ -180,10 +180,31 @@ export const Deploy = {
 
 Everything outside the box is still compared exactly.
 
-The box is the element's bounding box, so if the volatile content changes the
-element's _size_ the box changes with it and a sliver leaks at the edge. A bare
-timestamp span still failed at 0.015% that way. Give the masked element a fixed
-width.
+A mask hides what is inside the box, not the box itself. The box is the
+element's bounding box, so if the volatile content changes the element's
+_size_, the box changes with it and everything around it moves. A bare
+timestamp span failed at 0.015% that way, from a sliver leaking at the edge.
+
+A fixed width alone is not enough. Our example clock had `width: 200px` and
+still flaked: some timestamps fit on one line and some wrapped to two, so the
+box went from 18 to 36 px tall and pushed the card around it. Pin both
+dimensions:
+
+```jsx
+<span
+  data-testid="finished-at"
+  style={{ display: 'inline-block', width: 280, whiteSpace: 'nowrap' }}
+>
+  {new Date().toISOString()}
+</span>
+```
+
+- **`white-space: nowrap`** keeps the height fixed.
+- **A width that fits the longest value** keeps the text from overflowing the
+  box. Overflowing text is painted outside the mask.
+
+If you can't change the element, mask a fixed-size container around it
+instead.
 
 ## Watch mode
 

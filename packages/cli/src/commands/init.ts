@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import {
+  approveCapture,
   deterministicLaunchOptions,
   encodeStoryId,
   runCapture,
@@ -36,6 +37,13 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
   const say = (msg: string) => {
     if (!ctx.json) process.stdout.write(msg + '\n');
   };
+
+  if (ctx.platform.name === 'urls') {
+    process.stderr.write(
+      "jux: init doesn't apply to platform 'urls'; list pages under `urls` in your config and run `jux run`.\n",
+    );
+    return 2;
+  }
 
   const configPath = path.join(ctx.projectRoot, CONFIG_NAME);
   const alreadyConfigured = existsSync(configPath);
@@ -121,14 +129,21 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     let approved = 0;
     for (const result of capturable) {
       if (result.status === 'fail') continue;
-      const image = await readCapture(runDir, result.storyId);
+      const imagePath = capturePath(runDir, result.storyId);
+      const image = await readFile(imagePath).catch(() => null);
       if (!image) continue;
-      await ctx.store.put(result.storyId, image, {
-        commit,
-        approvedBy,
-        approvedAt,
-        env: report.env,
-      });
+      const { structureError } = await approveCapture(
+        ctx.store,
+        result.storyId,
+        image,
+        { commit, approvedBy, approvedAt, env: report.env },
+        imagePath,
+      );
+      if (structureError) {
+        process.stderr.write(
+          `jux: approved ${result.storyId}, but its structure was not saved: ${structureError}\n`,
+        );
+      }
       approved++;
     }
 
@@ -200,14 +215,7 @@ async function writeArtifact(runDir: string, a: RunArtifact): Promise<void> {
   await writeFile(path.join(runDir, 'images', `${safe}-current.webp`), a.current);
 }
 
-async function readCapture(runDir: string, storyId: string): Promise<Buffer | null> {
-  try {
-    return await readFile(
-      path.join(runDir, 'images', `${encodeStoryId(storyId)}-current.webp`),
-    );
-  } catch {
-    return null;
-  }
-}
+const capturePath = (runDir: string, storyId: string) =>
+  path.join(runDir, 'images', `${encodeStoryId(storyId)}-current.webp`);
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
