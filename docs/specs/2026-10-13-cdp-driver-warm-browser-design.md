@@ -122,21 +122,14 @@ L43058–43066; switches L34630–34690):
 `Browser.setDownloadBehavior` on init; `validateBrowserContextOptions`
 defaults viewport 1280×720 when none — we always pass one).
 
-**Page init** (`FrameSession._initialize`, L37370–37430):
-`Page.enable`, `Page.getFrameTree`, `Log.enable`,
-`Page.setLifecycleEventsEnabled`, `Runtime.enable`,
-`Page.addScriptToEvaluateOnNewDocument` (utility world), `Network.enable`
-(L35824), `Target.setAutoAttach {flatten:true}`,
-`Emulation.setFocusEmulationEnabled {enabled:true}`,
+**Page init** (`FrameSession._initialize`, L37339–37431): `Page.enable`, `Page.getFrameTree`, `Log.enable`, `Page.setLifecycleEventsEnabled`, `Runtime.enable`, `Page.addScriptToEvaluateOnNewDocument` (utility world), `Network.enable` (L35824), `Target.setAutoAttach {flatten:true, waitForDebuggerOnStart:true}` **with a handler** (L37547–37591) that resumes workers and initializes out-of-process iframes — the driver does not send auto-attach at all, since without the handler every worker and cross-origin iframe stays paused, `Emulation.setFocusEmulationEnabled {enabled:true}`,
 `Emulation.setDeviceMetricsOverride` (`_updateViewport` L37735–37760),
 **`Page.setFontFamilies` with a per-OS table** (`platformToFontFamilies`,
 mac/linux/win incl. `forScripts`; applied whenever not headful),
 `Emulation.setEmulatedMedia {media:'', features:[prefers-color-scheme:light,
 prefers-reduced-motion:no-preference, forced-colors:none,
 prefers-contrast:no-preference]}` (`emulatedMedia()` L22120–22129,
-`_updateEmulateMedia` L37772–37787), `Emulation.setGeolocationOverride {}`,
-`Page.setInterceptFileChooserDialog`, `Runtime.runIfWaitingForDebugger`.
-Locale/timezone/UA overrides only when options ask (we never do).
+`_updateEmulateMedia` L37772–37787), `Runtime.runIfWaitingForDebugger`. `Emulation.setGeolocationOverride` (L37709–37712) and `Page.setInterceptFileChooserDialog` (L37800–37805) are skipped on init when no option asks for them, as are locale/timezone/UA overrides (we never ask). Dialogs: `Page.javascriptDialogOpening` is handled (L37643–37653) and, with no `dialog` listener, dismissed; the driver does the same with `Page.handleJavaScriptDialog {accept:false}`.
 `serviceWorkers:'block'` is an init script that replaces
 `navigator.serviceWorker.register` (L51294–51297).
 
@@ -185,11 +178,7 @@ width: ceil(vw/scale), height: ceil(vh/scale), scale}` →
    our `DETERMINISTIC_CHROMIUM_ARGS`. A pruned list was not tested and the
    gain is nothing measurable; the risk is a feature flag that changes raster
    output. Revisit only with a determinism run per removed flag.
-3. **Page initialization is a verbatim port**, including `Page.setFontFamilies`
-   per OS (this is what makes "the same font stack" true across machines for
-   generic families), focus emulation, and emulated-media defaults
-   (`prefers-color-scheme: light`). Rejected: "only what seems pixel-relevant"
-   — we could not have predicted the font table.
+3. **Page initialization is exactly the spike's command list**: `Page.enable`, `Page.setLifecycleEventsEnabled`, `Runtime.enable`, `Network.enable`, `Emulation.setFocusEmulationEnabled`, `Emulation.setDeviceMetricsOverride`, `Page.setFontFamilies` per OS (this is what makes "the same font stack" true across machines for generic families), `Emulation.setEmulatedMedia` (`prefers-color-scheme: light`), plus `Log.enable` (Playwright sends it, no pixel path) and the service-worker init script on snap contexts. Nothing else: `Target.setAutoAttach` without Playwright's attach handler pauses every worker and cross-origin iframe forever, and the geolocation and file-chooser overrides are things Playwright only sends when asked. Rejected: "only what seems pixel-relevant" — we could not have predicted the font table; and "everything Playwright's init can send" — the pre-flight found three commands the spike never sent.
 4. **The adapter seam gets our own `Page` type.** `packages/core/src/browser/page.ts`
    exports `interface Page` with the Playwright-shaped subset the adapters use
    (`goto`, `evaluate`, `waitForFunction`, `waitForSelector`, `url`), so each
@@ -246,17 +235,13 @@ libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6
 libxfixes3 libxkbcommon0 libxrandr2`). We do not run `apt` ourselves.
 10. **Bring your own binary**: `JUX_CHROME=<path>` or `--chrome <path>` on
     `snap`, `run`, `init`. Resolution order: flag → env → jux cache →
-    ms-playwright cache → error that names `jux browser install`. A BYO binary
+    ms-playwright cache → error that names `npx -p @juxtapose/cli jux browser install`. A BYO binary
     is recorded in `CaptureEnv.browser` like any other (the version comes from
     `Browser.getVersion`), so an environment change is still explained.
 11. **`CaptureEnv.browser` keeps its meaning**: `Browser.getVersion().product`
     is `HeadlessChrome/151.0.7922.34`; Playwright reports `151.0.7922.34`. We
     strip the prefix so existing manifests' `env` compares equal.
-12. **Node ≥ 22.** Node 20 reached end of life 2026-04-30; CI already runs 22.
-    The driver uses only `node:net`, `node:child_process`, `node:zlib`,
-    `node:crypto`, `fetch`. (The global `WebSocket` is available from 22 and
-    was used by the spike's daemon client; the shipped daemon does not need
-    it — see 13.)
+12. **Node ≥ 22.2.0.** Node 20 reached end of life 2026-04-30; CI already runs 22. The driver uses only `node:net`, `node:child_process`, `node:zlib` (`zlib.crc32`, added in 22.2 — the floor), `node:crypto`, `fetch`. The changeset says so. (The global `WebSocket` is available from 22 and was used by the spike's daemon client; the shipped daemon does not need it — see 13.)
 13. **Warm browser = a supervisor over a local socket, not a debugging port.**
     Chrome is launched by a detached `jux` supervisor process over the pipe
     (never `--remote-debugging-port`), and the supervisor listens on a Unix
@@ -273,17 +258,14 @@ libxfixes3 libxkbcommon0 libxrandr2`). We do not run `apt` ourselves.
     connect and 257 ms p50 per snap, so the proxy's budget is ≤ 5 ms more.
     Rejected: port + token (Chrome has no token support; the GUID path is
     not a secret by design); daemon written in Chrome itself (cannot run
-    Node). `<hash>` = sha256 of (binary path + version + uid), so a BYO
-    binary and the pinned one never share a supervisor.
+    Node). `<hash>` = sha256 of an **environment fingerprint**: binary path, version, extra launch args, `TZ`, `LANG`, `LC_ALL`, `FONTCONFIG_FILE` and uid. A BYO binary and the pinned one never share a supervisor, and two invocations whose locale or timezone differ — which changes what a page renders — never share one either, so pixels never depend on who started it.
 14. **Liveness**: a headless shell with `--no-startup-window` stays up with
     zero targets as long as a CDP client holds the pipe (verified: ten client
     connect/disconnect cycles against one browser, both with a held
     connection and with a keep-alive `about:blank` target); the supervisor
     holds the pipe. Idle exit after `JUX_BROWSER_IDLE_MINUTES` (default 10)
     with no client connected: `Browser.close`, unlink socket and state file.
-15. **Opt-out and CI**: `JUX_NO_DAEMON=1`, `--no-daemon`, or `CI=true` →
-    private launch over the pipe, exactly PR 1's path. The daemon is never
-    started implicitly in CI.
+15. **Opt-out and CI**: `JUX_NO_DAEMON=1`, `--no-daemon`, or a CI environment → private launch over the pipe, exactly PR 1's path. CI is detected by `CI` (any value but `false`/`0`) or any of `JENKINS_URL`, `TEAMCITY_VERSION`, `BUILDKITE`, `GITLAB_CI`, `TF_BUILD`, `CODEBUILD_BUILD_ID` — the systems that do not set `CI`. The daemon is never started implicitly in CI, where it would outlive the job.
 16. **Determinism of warm captures is the spike's result, not a hope**:
     15/15 and 14/14 against a browser that had already served 12 earlier
     invocations. Each invocation creates its own `BrowserContext`
@@ -291,6 +273,13 @@ libxfixes3 libxkbcommon0 libxrandr2`). We do not run `apt` ourselves.
     disposes it at the end; nothing is shared across invocations but the
     process and its font/GPU-less raster state. `check:determinism` runs once
     with the daemon on and once off in CI.
+
+17. **Hostile pages do not hang a run.** Every CDP send has a Node-side timeout (30 s; `evaluate` takes its own), JavaScript dialogs are dismissed automatically, and `Inspector.targetCrashed` marks the page so later calls fail fast. These are the inputs no example exercises; each has an integration test in the plan.
+18. **No orphans.** Chrome is spawned in our process group (not detached); `SIGINT`, `SIGTERM` and `exit` kill every live Chrome and remove its `jux-chrome-*` profile, then re-raise the signal. The supervisor (PR 2) is the one detached process, and `jux browser stop` ends it.
+
+## Proxies
+
+Node's `fetch` ignores `HTTPS_PROXY` unless the process starts with `--use-env-proxy` (Node 24+; `node --help | grep use-env-proxy` says whether a given Node has it). `jux browser install` re-executes itself with that flag when a proxy variable is set and the flag exists; otherwise the download error names `NODE_USE_ENV_PROXY=1` and `JUX_CHROME` as the ways out.
 
 ## Module layout (PR 1)
 
@@ -305,14 +294,16 @@ packages/core/src/browser/
                   deterministic args (moves/extends capture/launch.ts), graceful
                   Browser.close then SIGKILL after 2 s, temp dir removal
   browser.ts      Browser: version(), newContext(opts), close(), isConnected(),
-                  BrowserContext: newPage(), clearCookies(), clearOrigin(origin),
-                  close()
-  page.ts         Page interface + CdpPage: init sequence (verbatim port),
+                  BrowserContext: newPage(), clearCookies(), close()
+  page.ts         Page interface + CdpPage: the spike's init sequence, dialog
+                  auto-dismiss, node-side timeouts, clearOrigin(origin), onMainResponse,
                   goto, evaluate, waitForFunction (rAF), waitForSelector,
                   addStyleTag, setViewportSize, screenshot({mask}), url(),
                   send() for raw CDP (structure.ts, snap.ts)
   selectors.ts    querySelectorAll over document + open shadow roots (document
                   order), isCssSelector guard — used by masks and structure.ts
+  acquire.ts      acquireBrowser(): the one launch policy (resolve → launch;
+                  PR 2 adds the daemon here and nowhere else)
   resolve.ts      resolveChrome({flag, env}) → {path, source}
   install.ts      installChrome({version, platform, cacheDir, fetch}): download,
                   sha256 verify, extract, mode bits, .complete marker
@@ -348,38 +339,37 @@ export interface Page {
   setViewportSize(viewport: Viewport): Promise<void>;
   screenshot(opts?: { mask?: string[] }): Promise<Buffer>;
   send<T = unknown>(method: string, params?: object): Promise<T>;
+  onMainResponse(handler: (status: number) => void): () => void;
+  clearOrigin(origin: string): Promise<void>;
   close(): Promise<void>;
 }
 ```
+
+`evaluate` and `waitForFunction` also take `{ timeout }`; `goto`'s timeout covers `Page.navigate` and the **main frame's** `load` (filtered on `frameId === targetId`, which Chromium guarantees for the top frame — verified 2026-10-13; a same-process child iframe fires its own `load`). `clearOrigin` sends `Storage.clearDataForOrigin` on the page's session, as today's `snap.ts` does; the browser-session form has no `browserContextId` and would clear the default context. `snapPages` and `runCapture` take an injected `Browser` from `acquireBrowser()`; they never launch.
 
 Differences from Playwright's `Page` that adapters can see: `evaluate` takes
 one argument (both adapters already pass one object); `waitForFunction`
 rejects with `TimeoutError` on timeout (adapters already `.catch`);
 `screenshot.mask` is `string[]` not `Locator[]` (core-internal); `send`
 replaces `context().newCDPSession(page)`. `@juxtapose/core` exports `Page`,
-`Browser`, `BrowserContext`, `launchBrowser`, `resolveChrome`, `installChrome`.
+`Browser`, `BrowserContext`, `acquireBrowser`, `resolveChrome`, `installChrome`.
 
 ## Migration and compatibility
 
 - **Baselines**: unchanged bytes, unchanged `env.browser` string, so no
   manifest changes. The upgrade note says so and shows the determinism table.
-- **Install**: `npx playwright install chromium` → `jux browser install`.
-  `jux init` runs it when no browser resolves (prompt-free; downloads ~100 MB
-  with a progress line). Error text when nothing resolves:
-  `jux: no browser. Run \`jux browser install\`, or set JUX_CHROME=<path>.`(exit 3).`scripts/check-snap.mjs`asserts this text and uses`JUX_CACHE_DIR=/nonexistent`+`PLAYWRIGHT_BROWSERS_PATH=/nonexistent`.
+- **Install**: `npx playwright install chromium` → `npx -p @juxtapose/cli jux browser install` (every user-facing line: README, `packages/cli/README.md`, CONTRIBUTING, the skill, the error text). `jux init` runs it when no browser resolves (prompt-free; downloads ~100 MB with a progress line). Error text when nothing resolves: `jux: no browser. Run \`npx -p @juxtapose/cli jux browser install\`, or set JUX_CHROME=<path to a Chromium headless shell>.`(exit 3), or the platform explanation on linux-arm64.`scripts/check-snap.mjs`asserts this text and uses`JUX_CACHE_DIR=/nonexistent`+`PLAYWRIGHT_BROWSERS_PATH=/nonexistent`.
 - **Playwright users who already have the cache** pay nothing: the
   ms-playwright 1234 build is reused.
-- **Breaking**: Playwright-only mask selectors (explicit error);
-  `peerDependencies.playwright` removed from core and both adapters (a user's
-  own Playwright is irrelevant now); Node ≥ 22.
+- **Breaking** (all three named in the changeset): Playwright-only selectors in `mask` **and** `waitForSelector`/`--wait-for` now fail the story with `jux: selector '…' is not a CSS selector` instead of silently matching nothing; `peerDependencies.playwright` removed from core and both adapters (a user's own Playwright is irrelevant now); Node ≥ 22.2.0.
 - **Docs**: README (install, browsers, `JUX_CHROME`, daemon section in PR 2),
   `plugins/claude-code/skills/visual-check/SKILL.md:44`, `packages/*/README.md`
   where install is mentioned, `.github/workflows/ci.yml:64,142` → `jux browser
 install` (cache key on the pinned version), `ARCHITECTURE.md` layout.
 - **Scripts**: `scripts/capture-diff-fixtures.mjs`,
   `scripts/capture-structure-fixture.mjs`, `scripts/structural-corpus/*.mjs`
-  move to the driver; the `no-playwright.mjs` probe becomes a no-browser
-  probe (`JUX_CHROME=/nonexistent` + refuse `node:child_process.spawn`).
+  move to the driver (the structure fixture page is served over local HTTP and captured through `Page`, as production does — there is no `setContent`); the `no-playwright.mjs` probe becomes a no-browser probe: a module-resolve hook that fails `jux diff` if it loads `playwright`, `node:child_process` or `browser/launch.js`. No module is patched; `launchChrome` takes an injectable `spawn` for tests instead.
+- **Lockfile**: the controller runs one `pnpm install` after the package manifests change (plan: after Task 9); implementers never do.
 - **Changesets**: minor for every package (`@juxtapose/core`,
   `adapter-storybook`, `adapter-ladle`, `cli`, `server`, `storybook`).
 
@@ -392,7 +382,7 @@ install` (cache key on the pinned version), `ARCHITECTURE.md` layout.
   Clients verify `pid` is alive and the socket connects before trusting it;
   a stale file is unlinked and the daemon relaunched. Spawn races: the client
   that wins `open(lock, O_EXCL)` launches; others poll the state file for
-  2 s, then fall back to a private launch. Node exposes no peer-credential
+  2 s, then fall back to a private launch. A leftover `.sock` without a `.json` is removed before the supervisor listens. Node exposes no peer-credential
   API on a Unix socket, so the access control is the directory (`0700`) and
   socket (`0600`) modes on POSIX; on Windows a named pipe created by
   `net.createServer` is owned by the creating user. Downloads: HTTPS to
