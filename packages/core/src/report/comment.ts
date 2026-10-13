@@ -16,6 +16,7 @@
 
 import type { DiffResult, RunReport, Viewport } from '../types.js';
 import { formatPercent, isSubThreshold } from './format.js';
+import { shellQuote } from '../shell-quote.js';
 
 /**
  * Invisible marker identifying our own comment.
@@ -241,7 +242,7 @@ function commands(rows: DiffResult[]): string[] {
   if (worthInvestigating) {
     out.push(
       annotate(
-        `jux handoff ${worthInvestigating.storyId}`,
+        `jux handoff ${shellQuote(worthInvestigating.storyId)}`,
         'unsure? agent-ready prompt: what moved, where',
       ),
     );
@@ -253,7 +254,7 @@ function commands(rows: DiffResult[]): string[] {
   const approvable = rows.find((r) => !r.error);
   out.push(
     approvable
-      ? annotate('jux approve --all', `or --story ${approvable.storyId}`)
+      ? annotate('jux approve --all', `or --story ${shellQuote(approvable.storyId)}`)
       : 'jux approve --all',
   );
   return out;

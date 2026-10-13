@@ -16,6 +16,7 @@ import type {
   Viewport,
 } from '../types.js';
 import { describeDeltas } from '../diff/structural/summary.js';
+import { shellQuote } from '../shell-quote.js';
 
 export interface HandoffPayload {
   storyId: string;
@@ -113,7 +114,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
       lines.push('');
       lines.push(
         'Check these deltas against the change you intended. If they are all intended,',
-        `the change is expected: approve it (\`jux approve --story ${p.storyId}\`). If any`,
+        `the change is expected: approve it (\`jux approve --story ${shellQuote(p.storyId)}\`). If any`,
         'delta is one you did not intend, fix that before approving.',
       );
     }
@@ -223,7 +224,7 @@ function actions(p: HandoffPayload, opts: { approveVerb: string }): string[] {
 
   out.push(
     '',
-    `- **Intentional** → \`jux approve --story ${p.storyId}\` to ${opts.approveVerb}.`,
+    `- **Intentional** → \`jux approve --story ${shellQuote(p.storyId)}\` to ${opts.approveVerb}.`,
     '- **Regression** → propose a fix. Do not apply it without confirmation.',
   );
   return out;
