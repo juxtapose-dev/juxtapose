@@ -15,11 +15,14 @@
 //   is a hit, but no hit is `unknown`. The first draft said "not your code"
 //   for a component edit on examples/storybook, the worst answer the
 //   feature can give.
-// - Every changed source or style file is some entry's `src`. A module
-//   Rollup inlined into a chunk has no entry of its own, so a changed file
-//   the manifest never names could sit inside any chunk, this story's
-//   included. Files the bundler never sees (Markdown, a fixture JSON) do not
-//   block the claim; they cannot be imported as code.
+// - Every changed file is some entry's `src`. A module Rollup inlined into
+//   a chunk has no entry of its own, so a changed file the manifest never
+//   names could sit inside any chunk, this story's included. That holds for
+//   far more than code: JSON, SVG, GraphQL, `?raw` text, images and .mdx are
+//   all importable. So the exemption is an allowlist of files no bundler
+//   imports (prose docs, licences, git and editor dotfiles, `.github/`), and
+//   anything else unnamed blocks the claim. A list of bundled extensions
+//   failed open: every importable type it missed was a false "not yours".
 //
 // Even then the claim is about the traced imports, not about every byte the
 // story renders (a stylesheet linked from preview-head, a public asset), so
@@ -154,9 +157,19 @@ interface ForwardGraph {
   edges: Map<string, string[]>;
 }
 
-/** Extensions a bundler turns into modules: a changed file with one of these
- *  that no manifest entry names may have been inlined into any chunk. */
-const BUNDLED = /\.(?:[cm]?js|jsx|tsx?|vue|svelte|css|scss|sass|less|styl|pcss|mdx)$/;
+/** Files no bundler imports. `.mdx` is not one: it compiles to a module. */
+const NEVER_BUNDLED_EXT = /\.(?:md|markdown|mdown|rst|adoc)$/i;
+const NEVER_BUNDLED_NAME =
+  /^(?:LICENSE.*|CHANGELOG.*|AUTHORS.*|CODEOWNERS|\.gitignore|\.gitattributes|\.editorconfig)$/;
+
+function neverBundled(f: ChangedFile): boolean {
+  const name = f.path.slice(f.path.lastIndexOf('/') + 1);
+  return (
+    NEVER_BUNDLED_EXT.test(name) ||
+    NEVER_BUNDLED_NAME.test(name) ||
+    f.repoPath.startsWith('.github/')
+  );
+}
 
 /** Reaches every story: a root lockfile or tsconfig, or a workbench config
  *  dir. Checked in both forms, since a monorepo's root files are only
@@ -201,7 +214,9 @@ function causeOf(
   // No hit. Honest only if every node on the way had a src to look through,
   // and no changed module could be hiding inlined in a chunk.
   for (const node of reach.keys()) if (!graph.edges.has(node)) return UNKNOWN;
-  for (const f of changed) if (BUNDLED.test(f) && !graph.edges.has(f)) return UNKNOWN;
+  for (const f of src.changedFiles) {
+    if (!neverBundled(f) && !graph.edges.has(f.path)) return UNKNOWN;
+  }
   return { kind: 'none-in-closure', files: [] };
 }
 

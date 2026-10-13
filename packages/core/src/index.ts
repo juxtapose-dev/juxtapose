@@ -91,6 +91,7 @@ export { deterministicLaunchOptions, type LaunchOptions } from './capture/launch
 export {
   resolveAffected,
   resolveAffectedFromPaths,
+  gitIsCommit,
   type AffectedOptions,
   type AffectedResult,
 } from './analysis/affected.js';

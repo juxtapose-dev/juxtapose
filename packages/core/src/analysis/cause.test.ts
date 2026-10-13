@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildCauseIndex, prepareCause } from './cause.js';
 import { MAX_CAUSE_FILES } from '../diff/structural.js';
-import type { ViteManifest } from './affected.js';
+import { gitChangedFiles, type ViteManifest } from './affected.js';
 
 // A minimal graph for the pure logic (Button.stories → Button → shared;
 // Card.stories → Card; `_chunk` has no src, like a bundled chunk). The real
@@ -107,9 +107,10 @@ describe('buildCauseIndex', () => {
       files: [{ path: 'pnpm-lock.yaml', distance: 0 }],
     });
     expect((await index(['.storybook/preview.ts']).causeFor(card())).kind).toBe('config');
-    // a nested package.json is not a dependency change
+    // A nested package.json is not a dependency change. It is not a manifest
+    // src either, and a JSON file can be imported, so it is unknown.
     expect((await index(['src/fixtures/package.json']).causeFor(card())).kind).toBe(
-      'none-in-closure',
+      'unknown',
     );
   });
 
@@ -164,15 +165,32 @@ describe('buildCauseIndex', () => {
   });
 
   // Ruling 8: the manifest is chunk-level. A module inlined into a chunk has
-  // no entry, so a changed source file the manifest never names could be
-  // inside any chunk, this story's included.
-  it('a changed source file no manifest entry names is unknown, never none-in-closure', async () => {
+  // no entry, so a changed file the manifest never names could be inside any
+  // chunk, this story's included. Fail safe: only a short allowlist of files
+  // no bundler imports is exempt; anything else (JSON, SVG, ?raw assets,
+  // .mdx) can be imported, so it blocks the claim.
+  it('a changed file no manifest entry names is unknown unless it is never bundled', async () => {
     expect((await index(['src/inlined.ts']).causeFor(card())).kind).toBe('unknown');
     expect((await index(['src/theme.css']).causeFor(card())).kind).toBe('unknown');
-    // A file the bundler never sees does not block the claim.
-    expect((await index(['docs/notes.md']).causeFor(card())).kind).toBe(
-      'none-in-closure',
-    );
+    expect((await index(['src/data.json']).causeFor(card())).kind).toBe('unknown');
+    expect((await index(['src/icon.svg']).causeFor(card())).kind).toBe('unknown');
+    expect((await index(['docs/x.mdx']).causeFor(card())).kind).toBe('unknown');
+    expect((await index(['src/query.graphql']).causeFor(card())).kind).toBe('unknown');
+    // Files no bundler imports do not block the claim.
+    for (const never of [
+      'README.md',
+      'docs/notes.md',
+      'docs/guide.rst',
+      'docs/a.adoc',
+      'LICENSE',
+      'CHANGELOG.md',
+      'AUTHORS',
+      'CODEOWNERS',
+      '.gitignore',
+      '.editorconfig',
+      '.github/workflows/ci.yml',
+    ])
+      expect((await index([never]).causeFor(card())).kind, never).toBe('none-in-closure');
     // Named by the manifest but outside this closure: still honest.
     expect((await index(['src/Button.tsx']).causeFor(card())).kind).toBe(
       'none-in-closure',
@@ -215,9 +233,9 @@ describe('buildCauseIndex', () => {
     expect((await nested('tsconfig.base.json')).kind).toBe('config');
     // and at the project root itself
     expect((await index(['tsconfig.json']).causeFor(card())).kind).toBe('config');
-    // a nested tsconfig (a fixture) is not one
+    // a nested tsconfig (a fixture) is not one (and, unnamed, is unknown)
     expect((await index(['src/fixtures/tsconfig.json']).causeFor(card())).kind).toBe(
-      'none-in-closure',
+      'unknown',
     );
   });
 });
@@ -398,6 +416,20 @@ process.stdout.write(JSON.stringify(await ix.causeFor(process.argv[3] + '/x.ts')
       kind: 'in-closure',
       files: [{ path: comp, distance: 1 }],
     });
+    await rm(r.repo, { recursive: true, force: true });
+  });
+
+  // Rename detection is a user setting (`diff.renames`); with it on, git
+  // lists only the new name and the old story's change vanished.
+  it('lists both sides of a rename whatever the git config', async () => {
+    const r = await scratchRepo(manifest, { 'src/Card.stories.tsx': 'v1' });
+    r.git('mv', 'app/src/Card.stories.tsx', 'app/src/Kard.stories.tsx');
+    r.git('-c', 'diff.renames=true', 'commit', '-qm', 'rename');
+    r.git('config', 'diff.renames', 'true');
+    expect(gitChangedFiles('HEAD~1', r.project)?.sort()).toEqual([
+      'app/src/Card.stories.tsx',
+      'app/src/Kard.stories.tsx',
+    ]);
     await rm(r.repo, { recursive: true, force: true });
   });
 });

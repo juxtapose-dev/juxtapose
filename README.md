@@ -230,13 +230,16 @@ failure so an agent can compare the deltas with what it meant to change.
 `results[].structural`, and `jux handoff` leads with it.
 
 `cause` follows the Vite build manifest, which records chunks, not every
-module. "Changed" means since `--since`, including uncommitted edits and
-untracked files. `none-in-closure` is claimed only when every module on the
-story's import path has its own manifest entry with a source path, and every
-changed source or style file (`.js`, `.ts`, `.jsx`, `.tsx`, `.css`, `.scss`,
-`.vue`, `.svelte`, `.mdx`, …) is named by some entry: a module Rollup inlined
-into a chunk is otherwise invisible. In every other case the answer is
-`unknown`, never a false "not your code". A Storybook build bundles
+module. "Changed" means since `--since` (which must name a commit), including
+uncommitted edits and untracked files, with both sides of a rename.
+`none-in-closure` is claimed only when every module on the story's import
+path has its own manifest entry with a source path, and every changed file is
+named by some entry. A module Rollup inlined into a chunk is otherwise
+invisible, and almost anything can be imported (JSON, SVG, `?raw` text,
+images, `.mdx`), so the only exemptions are files no bundler imports: prose
+docs (`.md`, `.rst`, `.adoc`, …), `LICENSE*`, `CHANGELOG*`, `AUTHORS*`,
+`CODEOWNERS`, git and editor dotfiles, and `.github/`. In every other case the
+answer is `unknown`, never a false "not your code". A Storybook build bundles
 components into chunks with no source path, so there a component edit is
 `unknown`; the story file itself, and modules with their own entry, are
 still traced.

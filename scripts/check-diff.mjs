@@ -325,6 +325,41 @@ check(
   'an undecodable pair neither side owns is pair-undecodable with file null',
 );
 
+// `jux run --since` checks its ref before anything else: a typo used to
+// fall through to git-unavailable and a full run, and cause said `unknown`
+// for every story with no hint why.
+const sinceMsg = (ref) =>
+  `jux run: --since '${ref}' is not a commit. Try \`--since main\` or \`--since HEAD~1\`.\n`;
+const badRef = await jux(['run', '--since', 'no-such-ref']);
+check(
+  badRef.code === 2 && badRef.err === sinceMsg('no-such-ref'),
+  'run --since with an unknown ref is usage (2) with a hint',
+);
+const dashRef = await jux(['run', '--since=--output=x']);
+check(
+  dashRef.code === 2 && dashRef.err === sinceMsg('--output=x'),
+  'run --since with a leading dash is refused, never handed to git as an option',
+);
+const repo = mkdtempSync(path.join(tmpdir(), 'jux-since-'));
+const git = (...args) =>
+  exec('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo });
+await git('init', '-q');
+await git('commit', '-q', '--allow-empty', '-m', 'one');
+let goodRef;
+try {
+  await exec('node', [cli, 'run', '--since', 'HEAD', '--project', repo], {
+    encoding: 'utf8',
+  });
+  goodRef = { code: 0, err: '' };
+} catch (e) {
+  goodRef = { code: e.code, err: e.stderr };
+}
+check(
+  goodRef.code !== 2 && !goodRef.err.includes('is not a commit'),
+  'run --since with a real commit passes the check',
+);
+rmSync(repo, { recursive: true, force: true });
+
 server.close();
 rmSync(project, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);

@@ -242,7 +242,13 @@ export function gitChangedFiles(sinceCommit: string, cwd: string): string[] | nu
   // A leading dash would be read as an option (`--output=<file>` writes one).
   if (sinceCommit.startsWith('-')) return null;
   try {
-    const tracked = git(['diff', '--name-only', '-z', sinceCommit, '--'], cwd);
+    // --no-renames: with rename detection (a user setting, `diff.renames`)
+    // git lists only the new name, and a story whose file was moved away
+    // lost its change. Both sides are listed instead.
+    const tracked = git(
+      ['diff', '--name-only', '--no-renames', '-z', sinceCommit, '--'],
+      cwd,
+    );
     // `:/` and `--full-name`: the whole repository, top-level-relative, even
     // when cwd is a subdirectory, matching `git diff`'s paths.
     const untracked = git(
@@ -254,6 +260,18 @@ export function gitChangedFiles(sinceCommit: string, cwd: string): string[] | nu
     );
   } catch {
     return null;
+  }
+}
+
+/** Whether `ref` names a commit, for checking `--since` before a run leans
+ *  on it. A leading dash is refused: git would read it as an option. */
+export function gitIsCommit(ref: string, cwd: string): boolean {
+  if (ref.startsWith('-')) return false;
+  try {
+    git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], cwd);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -269,6 +287,7 @@ export function gitTopLevel(cwd: string): string | null {
 }
 
 const GIT_TIMEOUT_MS = 10_000;
+const GIT_MAX_BUFFER = 64 * 1024 * 1024;
 
 /** Every git call goes through here. Git's stderr is dropped: outside a
  *  repository it printed "fatal: not a git repository" and `git diff`'s full
@@ -281,6 +300,10 @@ function git(args: string[], cwd: string): string {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
     timeout: GIT_TIMEOUT_MS,
+    // The 1 MiB default holds about 15,000 changed paths of 70 bytes; a
+    // vendored tree or a repo-wide rename passes that, and an overflow throws. Past this
+    // larger cap the caller's catch still degrades (unknown, or a full run).
+    maxBuffer: GIT_MAX_BUFFER,
   });
 }
 

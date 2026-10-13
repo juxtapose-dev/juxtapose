@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import {
   buildComment,
   describeCause,
+  gitIsCommit,
   prepareCause,
   type DiffResult,
   buildHtmlReport,
@@ -35,8 +36,20 @@ import {
   type CommonFlags,
 } from '../context.js';
 import { serveStatic } from '../serve-static.js';
+import { EXIT } from '../exit-codes.js';
 
 export async function runCommand(flags: CommonFlags): Promise<number> {
+  // Checked first: a mistyped ref used to fall through to `git-unavailable`,
+  // capture everything, and give every story an unexplained `unknown` cause.
+  if (
+    flags.since !== undefined &&
+    !gitIsCommit(flags.since, path.resolve(flags.project ?? process.cwd()))
+  ) {
+    process.stderr.write(
+      `jux run: --since '${flags.since}' is not a commit. Try \`--since main\` or \`--since HEAD~1\`.\n`,
+    );
+    return EXIT.usage;
+  }
   const ctx = await resolveContext(flags);
   const log = (msg: string) => {
     if (!ctx.json) process.stderr.write(msg + '\n');
