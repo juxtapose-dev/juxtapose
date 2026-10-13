@@ -29,8 +29,8 @@ addons.register(ADDON_ID, (api: unknown) => {
     render: ({ active }: { active?: boolean }) => <PanelHost active={active === true} />,
   });
 
-  // Storybook 10 only; a silent no-op on 8 and 9, where there is no test
-  // panel to appear in.
+  // The testing module's provider: the store contract on 10, the legacy one
+  // on 8.6, a silent no-op where neither exists.
   registerTestProvider(api);
 
   startSidebarDecoration(api);

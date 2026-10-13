@@ -1,22 +1,25 @@
 // Registers juxtapose as a Storybook test provider, so it appears in the
-// built-in "Run tests" panel and participates in "run all tests".
+// built-in testing module and participates in "Run tests".
 //
-// Storybook 10 only, verified rather than assumed: 8.6's manager-api exports
-// nothing test-related at all, while 10.5 exports
-// `experimental_getTestProviderStore`, `onRunAll` and `TestProviderStore`.
-// The addon supports ^8 || ^9 || ^10, so this degrades to a silent no-op on
-// the older majors — there is no test panel to appear in, which is an expected
-// state rather than an error.
+// Two contracts, verified live on 10.6 and 8.6 by
+// scripts/check-test-provider.mjs (#117):
+// - Storybook 9 and 10: a provider store from the `storybook/manager-api`
+//   module export `experimental_getTestProviderStore`. It is NOT on the `api`
+//   object `addons.register` passes, which is why reading it there left the
+//   provider unregistered on 10.6. 9.0's published module exports the same.
+// - Storybook 8.5-8.6: no store. The manager `api` carries
+//   `updateTestProviderState`, and "Run tests" is a channel event.
+// Anything else (8.4 and earlier) degrades to a silent no-op.
 //
 // The decisions live in test-provider-state.ts, which has no Storybook
 // imports and is therefore testable without a DOM.
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { addons, types, styled } from './storybook.js';
+import { addons, managerApi, types, styled } from './storybook.js';
 import { mutedColor } from './theme.js';
 import { fetchBundle, fetchProgress, startRun, type Bundle } from './api.js';
 import {
-  getTestProviderStore,
+  resolveProviderStore,
   stateAfterRun,
   TEST_PROVIDER_ID,
   TEST_PROVIDER_STATE,
@@ -43,27 +46,33 @@ const Muted = styled.span(({ theme }) => ({
  * absence is expected.
  */
 export function registerTestProvider(api: unknown): boolean {
-  const store = getTestProviderStore(api);
-  if (!store) return false;
+  const resolved = resolveProviderStore(managerApi, api);
+  if (!resolved) return false;
+  const { store, contract } = resolved;
+  const render = () => <TestProviderRow store={store} />;
 
-  // Storybook 8's declared type for a TEST_PROVIDER addon predates the shape
-  // 10 accepts, so the compile-time and run-time contracts genuinely differ.
-  // We only get here when the 10-era store probe succeeded, so the runtime is
-  // the newer one. Narrowing the *parameter* rather than casting the whole
-  // object keeps the render function and type field checked.
+  // Storybook 8's declared type for a TEST_PROVIDER addon is the legacy shape
+  // (`name`, `runnable`), and that is what 8.6 needs at run time: without
+  // `runnable` its "Run tests" button skips the provider. 10 takes only
+  // `type` and `render`. Narrowing the *parameter* rather than casting the
+  // whole object keeps the render function and type field checked.
   const add = addons.add.bind(addons) as (id: string, addon: TestProviderAddon) => void;
-  add(TEST_PROVIDER_ID, {
-    type: types.experimental_TEST_PROVIDER,
-    render: () => <TestProviderRow store={store} />,
-  });
+  add(
+    TEST_PROVIDER_ID,
+    contract === 'legacy'
+      ? { type: types.experimental_TEST_PROVIDER, name: 'Visual', runnable: true, render }
+      : { type: types.experimental_TEST_PROVIDER, render },
+  );
 
   return true;
 }
 
-/** What Storybook 10 accepts for a test provider. */
+/** What Storybook accepts for a test provider: 10's shape, plus 8.6's extras. */
 interface TestProviderAddon {
   type: unknown;
   render: () => React.ReactElement;
+  name?: string;
+  runnable?: boolean;
 }
 
 const TestProviderRow: React.FC<{ store: ProviderStore }> = ({ store }) => {

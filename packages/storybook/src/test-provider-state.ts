@@ -27,33 +27,133 @@ export interface ProviderStore {
   onRunAll?(listener: () => void): () => void;
 }
 
-/** Shapes Storybook has exposed the store getter under. */
 export const TEST_PROVIDER_ID = 'juxtapose/tests';
 
 /**
- * Probe for the provider store.
+ * Probe one object for the provider store getter.
  *
- * Storybook 10 exposes `experimental_getTestProviderStore`; the prefix is an
- * explicit warning it will move again. Returning null is the expected outcome
- * on 8 and 9, which have no test panel at all — verified against the published
- * packages, where 8.6's manager-api exports nothing test-related. So a miss is
- * silent rather than a warning.
+ * On Storybook 10 the getter is a *module export* of `storybook/manager-api`
+ * (`experimental_getTestProviderStore`), not a property of the manager `api`
+ * handed to `addons.register`. Probing only the `api` object was #117: it
+ * returned null on 10.6 and the provider never registered. So callers pass the
+ * module namespace first and the `api` object as a fallback; the prefix is an
+ * explicit warning the getter will move again.
  */
-export function getTestProviderStore(api: unknown): ProviderStore | null {
-  if (typeof api !== 'object' || api === null) return null;
+export function getTestProviderStore(source: unknown): ProviderStore | null {
+  if (typeof source !== 'object' || source === null) return null;
   const get =
-    ('experimental_getTestProviderStore' in api
-      ? api.experimental_getTestProviderStore
+    ('experimental_getTestProviderStore' in source
+      ? source.experimental_getTestProviderStore
       : undefined) ??
-    ('getTestProviderStore' in api ? api.getTestProviderStore : undefined);
+    ('getTestProviderStore' in source ? source.getTestProviderStore : undefined);
   if (typeof get !== 'function') return null;
 
   try {
-    const store: unknown = get.call(api, TEST_PROVIDER_ID);
+    const store: unknown = get.call(source, TEST_PROVIDER_ID);
     return isProviderStore(store) ? store : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Storybook 8.5-8.6's run request, emitted on the manager channel when the
+ * testing module's "Run tests" button runs a provider. The channel delivers a
+ * manager emit to manager listeners too, so the addon hears its own UI.
+ */
+export const LEGACY_RUN_REQUEST = 'testingModuleRunRequest';
+
+interface LegacyTestingApi {
+  updateTestProviderState(id: string, update: LegacyStateUpdate): void;
+  /** 8.6 returns the unsubscribe; `off` covers a channel that does not. */
+  on(event: string, listener: (payload: unknown) => void): (() => void) | undefined;
+  off?(event: string, listener: (payload: unknown) => void): void;
+}
+
+/** The fields of 8.x's Addon_TestProviderState this addon drives. */
+export interface LegacyStateUpdate {
+  running: boolean;
+  failed: boolean;
+  crashed: boolean;
+}
+
+const LEGACY_STATE: Record<TestProviderStateValue, LegacyStateUpdate> = {
+  [TEST_PROVIDER_STATE.pending]: { running: false, failed: false, crashed: false },
+  [TEST_PROVIDER_STATE.running]: { running: true, failed: false, crashed: false },
+  [TEST_PROVIDER_STATE.succeeded]: { running: false, failed: false, crashed: false },
+  [TEST_PROVIDER_STATE.crashed]: { running: false, failed: false, crashed: true },
+};
+
+function isLegacyTestingApi(api: unknown): api is LegacyTestingApi {
+  return (
+    typeof api === 'object' &&
+    api !== null &&
+    'updateTestProviderState' in api &&
+    typeof api.updateTestProviderState === 'function' &&
+    'on' in api &&
+    typeof api.on === 'function'
+  );
+}
+
+/**
+ * Storybook 8.x's store-less contract, adapted to the ProviderStore the row
+ * already speaks.
+ *
+ * 8.6 has no provider store: its manager `api` carries
+ * `updateTestProviderState(id, { running, failed, crashed })`, and "Run tests"
+ * arrives as a channel event naming the provider. Verified live on 8.6.18;
+ * 8.5.0's published types match. 8.4 declares the addon type but has no
+ * `updateTestProviderState`, so it declines here and registration is a
+ * no-op. Mapping onto the same four states keeps the row identical.
+ */
+export function legacyProviderStore(api: unknown): ProviderStore | null {
+  if (!isLegacyTestingApi(api)) return null;
+  return {
+    setState(state) {
+      try {
+        api.updateTestProviderState(TEST_PROVIDER_ID, LEGACY_STATE[state]);
+      } catch {
+        // 8.6 reads the provider's entry unguarded; before its testing module
+        // has initialised there is none, and a state update is not worth a throw.
+      }
+    },
+    onRunAll(listener) {
+      const onRequest = (payload: unknown) => {
+        if (
+          typeof payload === 'object' &&
+          payload !== null &&
+          'providerId' in payload &&
+          payload.providerId === TEST_PROVIDER_ID
+        )
+          listener();
+      };
+      const off = api.on(LEGACY_RUN_REQUEST, onRequest);
+      return () => {
+        if (typeof off === 'function') off();
+        else api.off?.(LEGACY_RUN_REQUEST, onRequest);
+      };
+    },
+  };
+}
+
+/** Which registration contract the running Storybook speaks. */
+export type ProviderContract = 'store' | 'legacy';
+
+/**
+ * Find the provider store, newest contract first.
+ *
+ * `managerApi` is the `storybook/manager-api` module namespace; `api` is the
+ * object `addons.register` hands over. Null means this Storybook has no test
+ * providers at all, which is a silent no-op rather than an error.
+ */
+export function resolveProviderStore(
+  managerApi: unknown,
+  api: unknown,
+): { store: ProviderStore; contract: ProviderContract } | null {
+  const store = getTestProviderStore(managerApi) ?? getTestProviderStore(api);
+  if (store) return { store, contract: 'store' };
+  const legacy = legacyProviderStore(api);
+  return legacy ? { store: legacy, contract: 'legacy' } : null;
 }
 
 /** A narrowing type guard, so callers get a real ProviderStore rather than a

@@ -27,9 +27,12 @@ export {
 export { registerTestProvider } from './test-provider.js';
 export {
   getTestProviderStore,
+  legacyProviderStore,
+  resolveProviderStore,
   stateAfterRun,
   TEST_PROVIDER_ID,
   TEST_PROVIDER_STATE,
+  type ProviderContract,
   type ProviderStore,
   type TestProviderStateValue,
 } from './test-provider-state.js';

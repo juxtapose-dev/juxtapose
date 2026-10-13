@@ -15,6 +15,11 @@ dev server has no bundler graph of its own to consult. Set
 `liveCapture: false` on a story whose play function or delay makes constant
 recapture cost more than it returns; it still captures on a normal run.
 
+To run the whole suite on demand, use Storybook's **Run tests** button. The
+addon registers as a test provider, so the visual suite runs alongside your
+other tests. The test provider needs Storybook 8.5 or later and is checked
+against 8.6 and 10.6.
+
 juxtapose waits on things it can observe —
 network requests, DOM changes, fonts, images. Content that appears on a bare
 timer is invisible to that, so a story built on `setTimeout` can race the
