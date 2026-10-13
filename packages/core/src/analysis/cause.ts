@@ -210,14 +210,17 @@ function causeOf(
     .map(([path, distance]) => ({ path, distance }))
     .sort((x, y) => x.distance - y.distance || compareCodeUnits(x.path, y.path))
     .slice(0, MAX_CAUSE_FILES);
-  if (files.length > 0) return { kind: 'in-closure', files };
-  // No hit. Honest only if every node on the way had a src to look through,
-  // and no changed module could be hiding inlined in a chunk.
-  for (const node of reach.keys()) if (!graph.edges.has(node)) return UNKNOWN;
-  for (const f of src.changedFiles) {
-    if (!neverBundled(f) && !graph.edges.has(f.path)) return UNKNOWN;
-  }
-  return { kind: 'none-in-closure', files: [] };
+  // Fully traced: every node on the way had a src to look through, and no
+  // changed module could be hiding inlined in a chunk. A hit without it is
+  // still a hit, but not the whole answer: on examples/storybook a token edit
+  // bundled into the component chunk, beside a label edit in the story,
+  // named only the story file, for stories the token had changed.
+  const traced =
+    [...reach.keys()].every((node) => graph.edges.has(node)) &&
+    src.changedFiles.every((f) => neverBundled(f) || graph.edges.has(f.path));
+  if (files.length > 0)
+    return traced ? { kind: 'in-closure', files } : { kind: 'in-closure', files, partial: true };
+  return traced ? { kind: 'none-in-closure', files: [] } : UNKNOWN;
 }
 
 /** Edges resolve through the same key → src map affected.ts's reverse graph

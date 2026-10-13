@@ -173,6 +173,10 @@ export interface Cause {
   kind: CauseKind;
   /** At most 5, nearest first; posix paths relative to the project root. */
   files: Array<{ path: string; distance: number }>;
+  /** `in-closure` only: the closure was not fully traced (a bundled chunk
+   *  with no src, or a changed file the manifest never names), so the cause
+   *  may be a file not listed. Absent, never false, when the trace was full. */
+  partial?: true;
 }
 
 /** Tier-0: what changed, in a few hundred characters, with whether it

@@ -53,10 +53,32 @@ const card = () => path.join(root, 'src/Card.stories.tsx');
 
 describe('buildCauseIndex', () => {
   it('finds a changed file in the closure with its graph distance', async () => {
+    // Button's closure runs into `_chunk`: a hit, but not a full trace.
     expect(await index(['src/shared.ts']).causeFor(button())).toEqual({
       kind: 'in-closure',
       files: [{ path: 'src/shared.ts', distance: 2 }],
+      partial: true,
     });
+  });
+
+  // A hit is not the whole story unless the trace was complete: a changed
+  // file the walk could not see (inlined, or behind a src-less chunk) may be
+  // the real cause, and naming only the visible one read as a confident
+  // answer on examples/storybook.
+  it('a fully traced closure has no partial key; any untraced path marks it partial', async () => {
+    const full = await index(['src/Card.tsx']).causeFor(card());
+    expect(full).toEqual({ kind: 'in-closure', files: [{ path: 'src/Card.tsx', distance: 1 }] });
+    expect('partial' in full).toBe(false);
+    // A changed file no manifest entry names could be inlined anywhere.
+    expect(await index(['src/Card.tsx', 'src/inlined.ts']).causeFor(card())).toEqual({
+      kind: 'in-closure',
+      files: [{ path: 'src/Card.tsx', distance: 1 }],
+      partial: true,
+    });
+    // A never-bundled file does not make it partial.
+    expect('partial' in (await index(['src/Card.tsx', 'README.md']).causeFor(card()))).toBe(
+      false,
+    );
   });
 
   it('reports none-in-closure for a story the change cannot reach', async () => {
@@ -159,9 +181,11 @@ describe('buildCauseIndex', () => {
       },
     };
     expect((await index(['README.md'], dangling).causeFor(card())).kind).toBe('unknown');
-    expect((await index(['src/Card.tsx'], dangling).causeFor(card())).kind).toBe(
-      'in-closure',
-    );
+    expect(await index(['src/Card.tsx'], dangling).causeFor(card())).toEqual({
+      kind: 'in-closure',
+      files: [{ path: 'src/Card.tsx', distance: 1 }],
+      partial: true,
+    });
   });
 
   // Ruling 8: the manifest is chunk-level. A module inlined into a chunk has
@@ -281,10 +305,26 @@ describe('the real Storybook manifest', () => {
     expect((await realIndex(['../../README.md']).causeFor(story())).kind).toBe('unknown');
   });
 
-  it('still finds the story file itself', async () => {
+  it('still finds the story file itself, as a partial trace', async () => {
     expect(await realIndex(['stories/Button.stories.jsx']).causeFor(story())).toEqual({
       kind: 'in-closure',
       files: [{ path: 'stories/Button.stories.jsx', distance: 0 }],
+      partial: true,
+    });
+  });
+
+  // The real-workbench case: a token edit in the bundled component library
+  // plus a label edit in the story. Only the story file is visible, so the
+  // cause must say the rest could not be traced.
+  it('a bundled edit beside a story edit is partial, not a confident story-file cause', async () => {
+    expect(
+      await realIndex(['../components/src/index.jsx', 'stories/Button.stories.jsx']).causeFor(
+        story(),
+      ),
+    ).toEqual({
+      kind: 'in-closure',
+      files: [{ path: 'stories/Button.stories.jsx', distance: 0 }],
+      partial: true,
     });
   });
 
@@ -397,6 +437,7 @@ process.stdout.write(JSON.stringify(await ix.causeFor(process.argv[3] + '/x.ts')
     expect(await ix.causeFor(path.join(r.project, 'src/Button.stories.tsx'))).toEqual({
       kind: 'in-closure',
       files: [{ path: 'src/shared.ts', distance: 2 }],
+      partial: true,
     });
     await rm(r.repo, { recursive: true, force: true });
   });

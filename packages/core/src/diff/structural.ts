@@ -226,6 +226,7 @@ function fitCause(c: Cause): Cause {
       path: clipHead(f.path, MAX_CAUSE_PATH),
       distance: f.distance,
     })),
+    ...(c.partial ? { partial: true as const } : {}),
   };
 }
 

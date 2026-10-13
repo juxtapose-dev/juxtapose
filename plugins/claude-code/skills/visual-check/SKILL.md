@@ -129,7 +129,9 @@ The same verdict is attached to every failing story in `jux run --json` as
 `results[].structural`. With `--since <commit>` it carries `cause`, one of:
 
 - `in-closure`: changed files this story imports, nearest first (the story
-  file itself is distance 0).
+  file itself is distance 0). With `partial: true` the trace was incomplete
+  ("other imports could not be traced"): a listed file is not necessarily
+  the cause, so check every file you changed, not only those.
 - `config`: a root lockfile, root `tsconfig*.json` or workbench config dir
   changed; it reaches every story, so expect other stories to fail the same
   way.

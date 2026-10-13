@@ -197,6 +197,15 @@ const MAX_REGIONS = 12;
 
 function actions(p: HandoffPayload, opts: { approveVerb: string }): string[] {
   const out = ['## What to do', ''];
+  // A partial trace names the changed files it could see; the one that
+  // changed the pixels may be one it could not. Pointing the agent at the
+  // listed file sent it to the story's label edit for a bundled token change.
+  if (p.structural?.cause?.partial) {
+    out.push(
+      'The files under "Why" changed and are imported, but are not necessarily the cause: other imports could not be traced. Check every file changed since the base, not only those.',
+      '',
+    );
+  }
 
   if (p.componentPath) {
     out.push(
@@ -251,7 +260,7 @@ export function describeCause(c: Cause): string {
     case 'in-closure':
       return `Changed files this story imports, nearest first: ${c.files
         .map((f) => `\`${f.path}\` (${away(f.distance)})`)
-        .join(', ')}.`;
+        .join(', ')}${c.partial ? '; other imports could not be traced' : ''}.`;
     case 'config':
       return `A change that reaches every story: ${c.files.map((f) => `\`${f.path}\``).join(', ')}. Expect other stories to fail the same way; the run's \`groups\` lists which.`;
     case 'none-in-closure':

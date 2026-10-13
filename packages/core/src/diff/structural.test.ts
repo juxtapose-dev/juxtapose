@@ -605,6 +605,12 @@ test('cause fits the budget for any input: ≤5 files, paths ≤80 chars keeping
   expect(JSON.stringify(v).length).toBeLessThanOrEqual(1500);
   expect(v.deltas.length).toBeGreaterThan(0);
   expect(JSON.stringify(verdict('padding', { cause }))).toBe(JSON.stringify(v));
+  // `partial` rides along and the budget still holds.
+  const vp = verdict('padding', { cause: { ...cause, partial: true } });
+  expect(vp.cause?.partial).toBe(true);
+  expect(Object.keys(vp.cause!)).toEqual(['kind', 'files', 'partial']);
+  expect(JSON.stringify(vp).length).toBeLessThanOrEqual(MAX_VERDICT);
+  expect('partial' in v.cause!).toBe(false);
 });
 
 // A clip that lands between the halves of a surrogate pair would leave a

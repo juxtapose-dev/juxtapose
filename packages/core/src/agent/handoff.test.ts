@@ -246,6 +246,35 @@ describe('describeRegion', () => {
     expect(out).toContain('## What changed');
   });
 
+  it('a partial in-closure cause says other imports could not be traced, and does not blame the file', () => {
+    const structural = {
+      ...verdictFor('color'),
+      cause: {
+        kind: 'in-closure' as const,
+        files: [{ path: 'stories/Button.stories.jsx', distance: 0 }],
+        partial: true as const,
+      },
+    };
+    const out = buildHandoffPrompt({
+      ...base,
+      componentPath: '/repo/stories/Button.stories.jsx',
+      structural,
+    });
+    expect(out).toContain(
+      'Changed files this story imports, nearest first: `stories/Button.stories.jsx` (the story file itself); other imports could not be traced.',
+    );
+    const todo = out.slice(out.indexOf('## What to do'));
+    expect(todo).toContain('not necessarily the cause');
+    // A full trace keeps the plain wording and steps.
+    const full = buildHandoffPrompt({
+      ...base,
+      structural: { ...structural, cause: { kind: 'in-closure', files: structural.cause.files } },
+    });
+    expect(full).toContain('(the story file itself).');
+    expect(full).not.toContain('could not be traced');
+    expect(full).not.toContain('not necessarily the cause');
+  });
+
   it('with deltas, advises approving by the real command', () => {
     const out = buildHandoffPrompt({ ...base, structural: verdictFor('color') });
     expect(out).toContain('`jux approve --story components-button--primary`');
