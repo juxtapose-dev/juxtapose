@@ -97,6 +97,35 @@ export {
   type SnapPageResult,
 } from './capture/snap.js';
 export { deterministicLaunchOptions, type LaunchOptions } from './capture/launch.js';
+export { chromeArgs, PARITY_CHROMIUM_ARGS } from './capture/launch.js';
+
+// The browser driver: our own CDP client over chrome-headless-shell. Adapters
+// consume `Page` (see its doc comment for which members are stable).
+// `Browser` and `BrowserContext` are types only: `acquireBrowser` is the one
+// place that decides where a Browser comes from, so `Browser.launch` is not
+// public.
+export type { Browser, BrowserContext } from './browser/browser.js';
+export { BrowserDiedError } from './browser/browser.js';
+export { TargetClosedError } from './browser/cdp.js';
+export { PageCrashedError, TimeoutError, type Page } from './browser/page.js';
+export { acquireBrowser, type AcquireOptions } from './browser/acquire.js';
+export {
+  resolveChrome,
+  juxCacheDir,
+  noBrowserMessage,
+  NO_BROWSER_MESSAGE,
+  type ChromeSource,
+  type ResolvedChrome,
+} from './browser/resolve.js';
+export {
+  installChrome,
+  proxyReexecArgs,
+  stderrProgress,
+  type InstallOptions,
+  type InstallResult,
+} from './browser/install.js';
+export { CHROME_VERSION, CHROME_PINS, chromePlatform } from './browser/pins.js';
+export { assertCssSelector } from './browser/selectors.js';
 export {
   resolveAffected,
   resolveAffectedFromPaths,

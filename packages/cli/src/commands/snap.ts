@@ -11,9 +11,11 @@
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  acquireBrowser,
   compareCodeUnits,
   encodeStructure,
   snapPages,
+  type Browser,
   type CaptureEnv,
   type SnapPageResult,
   type Viewport,
@@ -32,6 +34,7 @@ export interface SnapFlags {
   viewport?: string;
   'wait-for'?: string;
   mask?: string[];
+  chrome?: string;
 }
 
 interface Written {
@@ -130,9 +133,12 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
   }
 
   let captured: Awaited<ReturnType<typeof snapPages>>;
+  let browser: Browser | undefined;
   try {
+    browser = await acquireBrowser({ chrome: flags.chrome });
     captured = await snapPages({
       urls,
+      browser,
       ...(viewport ? { viewport } : {}),
       params: {
         ...(flags['wait-for'] ? { waitForSelector: flags['wait-for'] } : {}),
@@ -142,10 +148,10 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
   } catch (err) {
     // Only the browser itself can throw here; per-page problems come back as
     // results. No browser means nothing was captured, for any url.
-    process.stderr.write(
-      `jux snap: could not launch the browser: ${errorMessage(err)}${captureHint(errorMessage(err))}\n`,
-    );
+    process.stderr.write(`${describeLaunchFailure(errorMessage(err))}\n`);
     return EXIT.failure;
+  } finally {
+    await browser?.close().catch(() => {});
   }
   const { env, pages } = captured;
 
@@ -265,12 +271,29 @@ async function readSnapSet(dir: string, prefix: string): Promise<Set<string> | n
   }
 }
 
+/** Core messages carry their own `jux: ` and, for launch failures, their own
+ *  "could not launch the browser: "; wrapped, both read doubled. */
+const stripJuxPrefix = (m: string): string =>
+  m.replace(/^jux: /, '').replace(/^could not launch the browser: /, '');
+
+/** The message plus its hint. The hint opens with ". ", so a message that
+ *  already ends in a period would print "ready.. Run". */
+function withHint(message: string): string {
+  const hint = captureHint(message);
+  const body = stripJuxPrefix(message);
+  return hint ? `${body.replace(/\.$/, '')}${hint}` : body;
+}
+
+export function describeLaunchFailure(message: string): string {
+  return `jux snap: could not launch the browser: ${withHint(message)}`;
+}
+
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
 function describeFailure(r: SnapPageResult): string | null {
-  if (r.error) return `could not capture ${r.url}: ${r.error}${captureHint(r.error)}`;
+  if (r.error) return `could not capture ${r.url}: ${withHint(r.error)}`;
   if (r.status !== null && (r.status < 200 || r.status >= 300)) {
     return `${r.url} returned HTTP ${r.status}; nothing written. Fix the route or URL, then retry.`;
   }
@@ -307,9 +330,12 @@ export async function writeSnap(
 
 /** The next step depends on what broke: a missing browser and a down server
  *  need different commands. Anything else shows its message alone. */
-function captureHint(message: string): string {
-  if (/Executable doesn't exist|Cannot find (package|module) 'playwright/i.test(message))
-    return '. Install the browser with `npx playwright install chromium`, then retry.';
+export function captureHint(message: string): string {
+  // The core messages (noBrowserMessage, launch failures) already name the
+  // install step; repeating it would print it twice.
+  if (/jux browser install/.test(message)) return '';
+  if (/could not launch the browser|does not exist/.test(message))
+    return '. Run `npx -p @juxtapose/cli jux browser install`, or set JUX_CHROME=<path>, then retry.';
   if (
     /ERR_CONNECTION_REFUSED|ECONNREFUSED|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE/.test(
       message,

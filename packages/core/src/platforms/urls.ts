@@ -9,7 +9,7 @@
 // Lives in core rather than its own adapter package because it has no
 // knowledge of any workbench and `jux snap` must always have it.
 
-import type { Page } from 'playwright';
+import type { Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
 import type { StoryManifest, UrlEntry } from '../types.js';
 
@@ -74,7 +74,7 @@ export function createUrlPlatform(urls: UrlEntry[]): Platform {
       }));
     },
     async showStory(page: Page, storyId: string, baseUrl: string) {
-      await page.goto(resolve(storyId, baseUrl), { waitUntil: 'load' });
+      await page.goto(resolve(storyId, baseUrl));
     },
     previewUrl() {
       return 'about:blank';

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { expect, test, vi } from 'vitest';
-import type { Browser } from 'playwright';
+import type { Browser } from '../browser/browser.js';
 import { encodeStructure } from '../capture/structure.js';
 import { hashImage } from '../baseline/status.js';
 import type { BaselineStore, ChangedRegion, StructureSnapshot } from '../types.js';

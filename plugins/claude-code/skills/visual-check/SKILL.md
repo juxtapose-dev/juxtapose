@@ -41,7 +41,7 @@ jux snap http://localhost:5173/ http://localhost:5173/settings --as-prefix befor
 ```
 
 If the dev server is not running, start it first. If `jux snap` exits 3
-because the browser is missing, run `npx playwright install chromium` and
+because the browser is missing, run `npx -p @juxtapose/cli jux browser install` and
 retry. Do not skip the before snap: there is no way to take it after the
 edit.
 

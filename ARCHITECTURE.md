@@ -17,7 +17,7 @@ unchanged; the shape is different in three ways:
 
 ```
 packages/
-  core/               @juxtapose/core        capture, diff, storage, analysis — no platform knowledge
+  core/               @juxtapose/core        capture (own CDP driver in browser/), diff, storage, analysis — no platform knowledge
   adapter-storybook/  @juxtapose/adapter-storybook   index.json enumeration + preview channel driver
   adapter-ladle/      @juxtapose/adapter-ladle       meta.json enumeration + Ladle's ready signal
   cli/                @juxtapose/cli         `jux` — init, run, approve, check, handoff

@@ -6,9 +6,9 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Page } from 'playwright';
 import { navigateToStory } from '@juxtapose/core';
 import type {
+  Page,
   Platform,
   EnumerateTarget,
   SettleContext,

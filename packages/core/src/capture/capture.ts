@@ -3,7 +3,8 @@
 // nondeterminism left in this path becomes a false failure somewhere.
 
 import sharp from 'sharp';
-import type { Page } from 'playwright';
+import type { Page } from '../browser/page.js';
+import { assertCssSelector } from '../browser/selectors.js';
 import type { Platform } from '../platform.js';
 import type { Snapshot, StoryManifest, StoryParams, Viewport } from '../types.js';
 import {
@@ -72,6 +73,12 @@ export async function captureStory(
   const timeoutMs = params.captureTimeout ?? DEFAULT_CAPTURE_TIMEOUT_MS;
   const ctx = { story, params, timeoutMs };
 
+  // Selector syntax is validated before the page is touched: a Playwright-only
+  // selector (`text=`, `>>`) would otherwise match nothing and the story would
+  // be captured unmasked, or wait its whole timeout, and the baseline would
+  // record the wrong thing. Live params are re-checked below.
+  assertSelectors(params);
+
   await ensureViewport(page, effectiveViewport);
 
   // Arm before triggering the render, or the observer misses the mutations it
@@ -130,6 +137,7 @@ export async function captureStory(
   const live = await deps.platform.readLiveParams?.(page, story.storyId);
   if (live) {
     Object.assign(params, live);
+    assertSelectors(params);
 
     // Viewport is the one param that cannot be applied retroactively — the
     // story has already laid out. Re-set it and let the platform settle
@@ -157,7 +165,7 @@ export async function captureStory(
   // Fixed delay is the escape hatch of last resort — it costs the same on
   // every run whether or not it was needed. Prefer waitForSelector.
   if (params.delay && params.delay > 0) {
-    await page.waitForTimeout(params.delay);
+    await new Promise<void>((r) => setTimeout(r, params.delay));
   }
 
   // Last barrier before the shutter: the DOM being quiet does not mean the
@@ -177,12 +185,7 @@ export async function captureStory(
 
   // A selector matching nothing is not an error — a story that conditionally
   // renders the element shouldn't fail on the branch where it's absent.
-  const png = await page.screenshot({
-    type: 'png',
-    ...(params.mask?.length
-      ? { mask: params.mask.map((selector) => page.locator(selector)) }
-      : {}),
-  });
+  const png = await page.screenshot(params.mask?.length ? { mask: params.mask } : {});
 
   // LOSSLESS, deliberately, and it is not a size-vs-quality preference.
   //
@@ -238,4 +241,9 @@ async function freezeAnimations(page: Page, params: StoryParams): Promise<void> 
   if (styleInjected.has(page)) return;
   await page.addStyleTag({ content: FREEZE_ANIMATIONS_CSS }).catch(() => {});
   styleInjected.add(page);
+}
+
+function assertSelectors(params: StoryParams): void {
+  for (const sel of params.mask ?? []) assertCssSelector(sel);
+  if (params.waitForSelector) assertCssSelector(params.waitForSelector);
 }

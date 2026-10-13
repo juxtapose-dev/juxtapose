@@ -5,17 +5,19 @@
 // pipeline can stay unexported (see index.ts): callers get the result of the
 // load-bearing ordering without being able to reorder it.
 
-import type { BrowserContext, Page } from 'playwright';
+import type { Browser, BrowserContext } from '../browser/browser.js';
+import type { Page } from '../browser/page.js';
 import type { CaptureEnv, Snapshot, StoryParams, Viewport } from '../types.js';
 import { createUrlPlatform } from '../platforms/urls.js';
 import { captureStory } from './capture.js';
 import { captureEnv } from './env.js';
-import { deterministicLaunchOptions } from './launch.js';
 
 export interface SnapOptions {
   url: string;
   viewport?: Viewport;
   params?: StoryParams;
+  /** Acquired by the caller (acquireBrowser); not closed here. */
+  browser: Browser;
 }
 
 export interface SnapResult {
@@ -29,6 +31,8 @@ export interface SnapPagesOptions {
   urls: string[];
   viewport?: Viewport;
   params?: StoryParams;
+  /** Acquired by the caller (acquireBrowser); not closed here. */
+  browser: Browser;
 }
 
 export interface SnapPageResult {
@@ -42,7 +46,7 @@ export interface SnapPageResult {
 const DEFAULT_SNAP_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
 /**
- * Capture several URLs with one browser, one context and one page, in order.
+ * Capture several URLs with one context and one page, in order.
  * A page that fails records its error and the rest still capture: the agent
  * asked for all of them and wants to know which ones it got.
  *
@@ -54,23 +58,11 @@ export async function snapPages(
   opts: SnapPagesOptions,
 ): Promise<{ env: CaptureEnv; pages: SnapPageResult[] }> {
   const viewport = opts.viewport ?? DEFAULT_SNAP_VIEWPORT;
-  // playwright is an optional peer of core; load it here so importing core
-  // does not require it.
-  const { chromium } = await import('playwright');
-  const browser = await chromium.launch(deterministicLaunchOptions());
+  const context = await opts.browser.newContext({ viewport, blockServiceWorkers: true });
   try {
-    const context = await browser.newContext({
-      viewport,
-      deviceScaleFactor: 1,
-      serviceWorkers: 'block',
-    });
     const page = await context.newPage();
     let status: number | null = null;
-    page.on('response', (r) => {
-      if (r.request().isNavigationRequest() && r.frame() === page.mainFrame()) {
-        status = r.status();
-      }
-    });
+    const off = page.onMainResponse((s) => (status = s));
     const pages: SnapPageResult[] = [];
     for (const [k, url] of opts.urls.entries()) {
       status = null;
@@ -97,9 +89,10 @@ export async function snapPages(
       }
       await resetBetweenPages(context, page, url);
     }
-    return { env: captureEnv(browser), pages };
+    off();
+    return { env: captureEnv(opts.browser), pages };
   } finally {
-    await browser.close().catch(() => {});
+    await context.close().catch(() => {});
   }
 }
 
@@ -107,8 +100,9 @@ export async function snapPages(
  * A navigation keeps everything origin-scoped: cookies, localStorage,
  * IndexedDB, Cache Storage and service workers. One context is shared by every
  * page (a context per page would cost the launch savings back), so the
- * previous page's origin is wiped through CDP instead; otherwise a page's
- * pixels could depend on which page was captured before it. Service workers
+ * previous page's origin is wiped through the page's own CDP session
+ * (Storage.clearDataForOrigin, as before) instead; otherwise a page's pixels
+ * could depend on which page was captured before it. Service workers
  * are blocked at context creation, since clearing cannot stop one that has
  * already intercepted the next navigation.
  *
@@ -124,8 +118,6 @@ async function resetBetweenPages(
   requestedUrl: string,
 ): Promise<void> {
   await context.clearCookies().catch(() => {});
-  const cdp = await context.newCDPSession(page).catch(() => null);
-  if (!cdp) return;
   // A redirect lands on another origin (a login host, a canonical port) that
   // holds state of its own.
   const origins = new Set<string>();
@@ -137,17 +129,13 @@ async function resetBetweenPages(
       // about:blank, chrome-error:// — no origin to clear.
     }
   }
-  for (const origin of origins) {
-    await cdp
-      .send('Storage.clearDataForOrigin', { origin, storageTypes: 'all' })
-      .catch(() => {});
-  }
-  await cdp.detach().catch(() => {});
+  for (const origin of origins) await page.clearOrigin(origin).catch(() => {});
 }
 
 export async function snapPage(opts: SnapOptions): Promise<SnapResult> {
   const { env, pages } = await snapPages({
     urls: [opts.url],
+    browser: opts.browser,
     ...(opts.viewport ? { viewport: opts.viewport } : {}),
     ...(opts.params ? { params: opts.params } : {}),
   });

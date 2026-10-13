@@ -3,7 +3,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { chromium, type Browser } from 'playwright';
 import {
   approveCapture,
   compareCodeUnits,
@@ -11,7 +10,8 @@ import {
   buildHandoffPrompt,
   createAncestryCheck,
   alwaysAncestor,
-  deterministicLaunchOptions,
+  acquireBrowser,
+  type Browser,
   encodeStoryId,
   hashImage,
   resolveAffectedFromPaths,
@@ -316,7 +316,7 @@ export class RunDirSource implements ReviewSource {
     // Kept alive across runs: launching Chromium is most of the latency on a
     // single-story recapture, which is the common case in the panel.
     if (this.browser?.isConnected()) return this.browser;
-    this.browser = await chromium.launch(deterministicLaunchOptions());
+    this.browser = await acquireBrowser();
     return this.browser;
   }
 

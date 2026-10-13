@@ -2,7 +2,6 @@
 
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium } from 'playwright';
 import {
   buildComment,
   describeCause,
@@ -17,7 +16,7 @@ import {
   runCapture,
   createAncestryCheck,
   alwaysAncestor,
-  deterministicLaunchOptions,
+  acquireBrowser,
   encodeStoryId,
   encodeStructure,
   formatPercent,
@@ -107,15 +106,20 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
   const needsServer = !ctx.origin && ctx.platform.name !== 'urls';
   const server = needsServer ? await serveStatic(ctx.buildDir!) : null;
   const baseUrl = ctx.origin ?? server?.url ?? 'about:blank';
-  const browser = await p.time('launch', () =>
-    chromium.launch(deterministicLaunchOptions()),
-  );
+  let browser;
+  try {
+    browser = await p.time('launch', () => acquireBrowser({ chrome: flags.chrome }));
+  } catch (err) {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    await server?.close();
+    return EXIT.failure;
+  }
 
   const runId = `${Date.now().toString(36)}`;
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);
-  await mkdir(path.join(runDir, 'images'), { recursive: true });
-
   try {
+    // Inside the try, so a failed mkdir still closes the browser below.
+    await mkdir(path.join(runDir, 'images'), { recursive: true });
     const report = await runCapture({
       browser,
       platform: ctx.platform,

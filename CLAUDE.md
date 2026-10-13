@@ -89,6 +89,7 @@ exactly this reason.
 ```
 packages/core/              no platform knowledge — never import an adapter here
   capture/    settle pipeline, worker pool, launch flags
+  browser/    CDP driver, launcher, installer — a port of what Playwright did for us; see the 2026-10-13 spec before touching init or screenshot
   baseline/   hash comparison (the pass/fail authority) + git store
   diff/       pixelmatch wrapper + region extraction — COLD PATH
   analysis/   which stories a change could affect

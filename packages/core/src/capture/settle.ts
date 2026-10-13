@@ -7,7 +7,7 @@
 // Arming must happen before the render is triggered, or the observer misses
 // the mutations it is supposed to be watching.
 
-import type { Page } from 'playwright';
+import type { Page } from '../browser/page.js';
 
 /** Quiet period with no DOM mutations and no in-flight fetches before we
  *  declare the page settled. */
@@ -140,6 +140,8 @@ export async function waitForSelector(
   selector: string,
   timeoutMs: number,
 ): Promise<void> {
+  // Timing out is swallowed (capture what rendered); a non-CSS selector is a
+  // configuration error and throws synchronously from the page before the wait.
   await page.waitForSelector(selector, { timeout: timeoutMs }).catch(() => {});
 }
 

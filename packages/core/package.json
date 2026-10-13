@@ -6,7 +6,7 @@
   "keywords": [
     "visual-regression",
     "screenshot-testing",
-    "playwright",
+    "cdp",
     "visual-testing",
     "pixelmatch"
   ],
@@ -15,6 +15,9 @@
     "access": "public"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=22.2.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -31,14 +34,6 @@
   "dependencies": {
     "pixelmatch": "^6.0.0",
     "sharp": "^0.35.3"
-  },
-  "peerDependencies": {
-    "playwright": "^1.48.0"
-  },
-  "peerDependenciesMeta": {
-    "playwright": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@types/pixelmatch": "^5.2.6"

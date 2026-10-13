@@ -96,12 +96,14 @@ const down = await run(['http://127.0.0.1:1/', '--as', 'down']);
 check(down.code === 3 && /could not capture/.test(down.out), 'unreachable host exits 3');
 
 const noBrowser = await run([`http://127.0.0.1:${port}/ok`, '--as', 'nobrowser'], {
+  JUX_CACHE_DIR: '/nonexistent',
   PLAYWRIGHT_BROWSERS_PATH: '/nonexistent',
+  JUX_CHROME: '',
 });
 check(
   noBrowser.code === 3 &&
     /could not launch the browser/.test(noBrowser.out) &&
-    /playwright install/.test(noBrowser.out),
+    /npx -p @juxtapose\/cli jux browser install/.test(noBrowser.out),
   'no browser exits 3 and names the install command',
 );
 

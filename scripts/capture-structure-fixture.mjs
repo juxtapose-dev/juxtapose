@@ -1,13 +1,12 @@
 // Generates packages/core/src/capture/__fixtures__/structure-basic.cdp.json
 // from real Chromium. Run: node scripts/capture-structure-fixture.mjs
 // Re-run whenever STRUCTURE_PROPS changes; commit the result.
-import { createRequire } from 'node:module';
+import { createServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-const require = createRequire(path.join(root, 'packages/core/package.json'));
-const { chromium } = require('playwright');
+const { acquireBrowser } = await import(path.join(root, 'packages/core/dist/index.js'));
 const { STRUCTURE_PROPS } = await import(
   path.join(root, 'packages/core/dist/capture/structure.js')
 );
@@ -54,26 +53,29 @@ const HTML = `<!doctype html><html><head><style>
   </script>
 </body></html>`;
 
-const browser = await chromium.launch();
-const page = await browser.newPage({
-  viewport: { width: 400, height: 800 },
-  deviceScaleFactor: 1,
+// Served over local HTTP and navigated like a production capture, never
+// setContent: the fixture is produced through Page exactly as captures are.
+const server = createServer((_, res) => {
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  res.end(HTML);
 });
-await page.setContent(HTML, { waitUntil: 'load' });
-const cdp = await page.context().newCDPSession(page);
-const raw = await cdp.send('DOMSnapshot.captureSnapshot', {
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const browser = await acquireBrowser();
+const viewport = { width: 400, height: 800 };
+const context = await browser.newContext({ viewport });
+const page = await context.newPage();
+await page.goto(`http://127.0.0.1:${server.address().port}/`);
+const raw = await page.send('DOMSnapshot.captureSnapshot', {
   computedStyles: [...STRUCTURE_PROPS, 'visibility'],
   includeDOMRects: true,
   includePaintOrder: true,
 });
 await browser.close();
+server.close();
 
 const out = path.join(
   root,
   'packages/core/src/capture/__fixtures__/structure-basic.cdp.json',
 );
-await writeFile(
-  out,
-  JSON.stringify({ viewport: { width: 400, height: 800 }, raw }) + '\n',
-);
+await writeFile(out, JSON.stringify({ viewport, raw }) + '\n');
 console.log(`wrote ${out}`);

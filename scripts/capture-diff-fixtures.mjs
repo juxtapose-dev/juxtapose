@@ -2,7 +2,6 @@
 // real Chromium: every corpus operator captured through the real settle
 // pipeline, each diffed against `noop` with the real pixel diff.
 // Run after `pnpm build`: node scripts/capture-diff-fixtures.mjs
-import { createRequire } from 'node:module';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import * as prettier from 'prettier';
@@ -10,11 +9,9 @@ import { OPERATORS } from './structural-corpus/page.mjs';
 import { startCorpusServer } from './structural-corpus/server.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
-const require = createRequire(path.join(root, 'packages/core/package.json'));
-const { chromium } = require('playwright');
 const dist = (p) => import(path.join(root, 'packages/core/dist', p));
 const { captureStory } = await dist('capture/capture.js');
-const { deterministicLaunchOptions } = await dist('capture/launch.js');
+const { acquireBrowser } = await dist('index.js');
 const { createUrlPlatform } = await dist('platforms/urls.js');
 const { diffImages } = await dist('diff/diff.js');
 
@@ -22,8 +19,8 @@ const viewport = { width: 640, height: 480 };
 const server = await startCorpusServer();
 let browser;
 try {
-  browser = await chromium.launch(deterministicLaunchOptions());
-  const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+  browser = await acquireBrowser();
+  const context = await browser.newContext({ viewport });
   const page = await context.newPage();
 
   const capture = async (name) => {

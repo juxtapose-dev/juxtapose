@@ -9,11 +9,13 @@
 
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { chromium } from 'playwright';
 import {
   approveCapture,
-  deterministicLaunchOptions,
+  acquireBrowser,
+  installChrome,
+  resolveChrome,
   encodeStoryId,
   runCapture,
   alwaysAncestor,
@@ -29,6 +31,8 @@ import {
   type CommonFlags,
 } from '../context.js';
 import { serveStatic } from '../serve-static.js';
+import { EXIT } from '../exit-codes.js';
+import { installWithProxy } from './browser.js';
 
 const CONFIG_NAME = 'juxtapose.config.json';
 
@@ -76,13 +80,38 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
 
   const server = ctx.origin ? null : await serveStatic(ctx.buildDir!);
   const baseUrl = ctx.origin ?? server!.url;
-  const browser = await chromium.launch(deterministicLaunchOptions());
+  let browser;
+  try {
+    if (!resolveChrome({ flag: flags.chrome })) {
+      // Same path as `jux browser install`: proxy re-exec, and a stderr line
+      // before the download (never silent, even with --json or in CI).
+      const out = await installWithProxy(
+        {
+          env: process.env,
+          writeErr: (s) => process.stderr.write(s),
+          install: installChrome,
+          // The child's stdout is the install report; init's stdout stays its own.
+          spawn: (cmd, args, env) =>
+            spawnSync(cmd, args, { stdio: ['ignore', 2, 'inherit'], env }),
+          argv: [process.argv[1], 'browser', 'install'],
+        },
+        { force: false, json: flags.json === true },
+      );
+      if ('code' in out && out.code !== EXIT.clean)
+        throw new Error('jux: the browser install failed (see above).');
+    }
+    browser = await acquireBrowser({ chrome: flags.chrome });
+  } catch (err) {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    await server?.close();
+    return EXIT.failure;
+  }
 
   const runId = Date.now().toString(36);
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);
-  await mkdir(path.join(runDir, 'images'), { recursive: true });
-
   try {
+    // Inside the try, so a failed mkdir still closes the browser below.
+    await mkdir(path.join(runDir, 'images'), { recursive: true });
     say('Capturing…');
 
     const report = await runCapture({

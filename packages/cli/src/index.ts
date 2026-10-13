@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
 import { EXIT } from './exit-codes.js';
+import { BROWSER_HELP } from './commands/browser-help.js';
 
 const USAGE = `
 jux — visual regression testing for component workbenches
@@ -19,6 +20,7 @@ Usage
   jux check [options]            exit non-zero if anything needs review
   jux handoff <storyId>          print an agent prompt for one failing story
   jux snap <url>… [options]      capture pages: pixels + structure, no workbench
+  jux browser install|path|status  manage the pinned browser (install downloads it once, ~100 MB)
   jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix)
   jux --version                  print installed package versions
 
@@ -30,26 +32,9 @@ Common options
   --platform <name>              storybook | ladle | urls (default: autodetect)
   --concurrency <n>              parallel pages (default: 8)
   --run <dir>                    run directory to read (approve, check, handoff)
+  --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
 
-run
-  --since <commit>               only capture stories affected since this commit; failing stories
-                                 then say which changed files they import (cause)
-  --all                          capture everything, skip affected-analysis
-  --comment                      post a summary as a GitHub PR comment
-  --html                         write a self-contained report.html to the run dir
-
-approve
-  --story <id>                   approve one story (repeatable)
-  --all                          approve everything that failed or is new
-
-snap
-  --as <name>                    name for this snap (default: from the url)
-  --as-prefix <p>                several urls: name each <p>-<slug> (slug = path), one browser
-                                 launch; first removes older <p>-* snaps
-  --viewport <WxH>               default 1280x800
-  --wait-for <selector>          wait for this selector before capture
-  --mask <selector>              cover before capture (repeatable)
-
+${BROWSER_HELP}
 diff
   <a>, <b>                       snap names (from --as), or paths to .webp files
   --prefix                       pair <a>-<slug> with <b>-<slug> and verdict every page
@@ -109,6 +94,7 @@ async function main(argv: string[]): Promise<number> {
       'wait-for': { type: 'string' },
       mask: { type: 'string', multiple: true },
       crops: { type: 'boolean', default: false },
+      chrome: { type: 'string' },
     },
   });
 
@@ -137,6 +123,10 @@ async function main(argv: string[]): Promise<number> {
       const { snapCommand } = await import('./commands/snap.js');
       return snapCommand(positionals, values as never);
     }
+    case 'browser': {
+      const { browserCommand } = await import('./commands/browser.js');
+      return browserCommand(argv.slice(1), values.json === true);
+    }
     case 'diff': {
       const { diffCommand } = await import('./commands/diff.js');
       return diffCommand(positionals[0], positionals[1], values as never);
@@ -149,7 +139,16 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-const COMMANDS = ['init', 'run', 'approve', 'check', 'handoff', 'snap', 'diff'];
+const COMMANDS = [
+  'init',
+  'run',
+  'approve',
+  'check',
+  'handoff',
+  'snap',
+  'diff',
+  'browser',
+];
 
 function distance(a: string, b: string): number {
   let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
