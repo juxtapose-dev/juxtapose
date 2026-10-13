@@ -21,14 +21,20 @@ export function startCorpusServer() {
       // a slug of host + path and drops the query, so `/?op=a` and `/?op=b`
       // would collide on one file.
       const m = /^\/op\/([a-z-]+)$/.exec(url.pathname);
+      // Render before writing the head: an unknown operator throws, and a
+      // 404 after `writeHead(200)` is ERR_HTTP_HEADERS_SENT, which killed the
+      // server (the review's `/op/home`).
+      let html;
       try {
         if (!m) throw new Error(`not found: ${url.pathname}`);
-        res.writeHead(200, { 'content-type': 'text/html' });
-        res.end(pageHtml(overrides.get(m[1]) ?? m[1]));
+        html = pageHtml(overrides.get(m[1]) ?? m[1]);
       } catch (e) {
-        res.writeHead(404);
+        res.writeHead(404, { 'content-type': 'text/plain' });
         res.end(e.message);
+        return;
       }
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(html);
     });
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
