@@ -68,6 +68,15 @@ export class CdpConnection {
   onClose: ((reason?: string) => void) | null = null;
   /** Every parsed frame, before routing. The PR 2 supervisor proxies from here. */
   onRaw: ((m: RawMessage) => void) | null = null;
+  /**
+   * A throwing event handler or onRaw must not escape into the stream's data
+   * event (an uncaught exception would kill the daemon) nor skip the rest of
+   * the chunk. Default: one line on stderr.
+   */
+  onError: (error: unknown, where: 'handler' | 'onRaw') => void = (error, where) => {
+    const msg = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`jux: ${where} threw: ${msg}\n`);
+  };
 
   constructor(private readonly transport: Transport) {
     transport.onMessage = (m) => this.dispatch(m);
@@ -78,12 +87,26 @@ export class CdpConnection {
     return this._closed;
   }
 
+  get pendingCount(): number {
+    return this.pending.size;
+  }
+
+  /** Number of distinct (session, method) handler keys; empty sets are pruned. */
+  get handlerKeyCount(): number {
+    return this.handlers.size;
+  }
+
   allocateId(): number {
     return ++this.lastId;
   }
 
+  /**
+   * Throws TargetClosedError once the connection is closed, so a proxying
+   * caller (the PR 2 supervisor) learns its client message was not delivered
+   * instead of waiting for a reply that cannot come.
+   */
   sendRaw(message: RawMessage & { id: number; method: string }): void {
-    if (this._closed) return;
+    if (this._closed) throw new TargetClosedError(this.closeReason, message.method);
     this.transport.send(JSON.stringify(message));
   }
 
@@ -109,9 +132,15 @@ export class CdpConnection {
         reject,
         timer,
       });
-      this.sendRaw(
-        sessionId ? { id, method, params, sessionId } : { id, method, params },
-      );
+      try {
+        this.sendRaw(
+          sessionId ? { id, method, params, sessionId } : { id, method, params },
+        );
+      } catch (e) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      }
     });
   }
 
@@ -120,15 +149,24 @@ export class CdpConnection {
     let set = this.handlers.get(key);
     if (!set) this.handlers.set(key, (set = new Set()));
     set.add(handler);
-    return () => set.delete(handler);
+    return () => {
+      set.delete(handler);
+      if (set.size === 0 && this.handlers.get(key) === set) this.handlers.delete(key);
+    };
   }
 
+  /**
+   * Without a sessionId this listens on the browser session only, where
+   * session-scoped events never arrive; pass the page's sessionId for page
+   * events.
+   */
   once<P = unknown>(
     method: string,
     sessionId?: string,
     predicate: (p: P) => boolean = () => true,
   ): Promise<P> {
-    if (this._closed) return Promise.reject(new TargetClosedError());
+    if (this._closed)
+      return Promise.reject(new TargetClosedError(this.closeReason, method));
     return new Promise<P>((resolve, reject) => {
       const onClosed = (e: Error) => {
         off();
@@ -159,7 +197,11 @@ export class CdpConnection {
     } catch {
       return; // Chrome never sends non-JSON frames; nothing to do but ignore.
     }
-    this.onRaw?.(m);
+    try {
+      this.onRaw?.(m);
+    } catch (e) {
+      this.onError(e, 'onRaw');
+    }
     if (m.id !== undefined) {
       const p = this.pending.get(m.id);
       if (!p) return; // a raw (proxied) id, or a reply after its timeout
@@ -171,11 +213,21 @@ export class CdpConnection {
     }
     if (m.method) {
       const set = this.handlers.get(`${m.sessionId ?? ''}\n${m.method}`);
-      if (set) for (const h of [...set]) h(m.params, m.sessionId);
+      if (set) this.runHandlers(set, m);
       // Session-less listeners see every event (the browser session's Target.* events).
       if (m.sessionId) {
         const all = this.handlers.get(`\n${m.method}`);
-        if (all) for (const h of [...all]) h(m.params, m.sessionId);
+        if (all) this.runHandlers(all, m);
+      }
+    }
+  }
+
+  private runHandlers(set: Set<Handler>, m: RawMessage): void {
+    for (const h of [...set]) {
+      try {
+        h(m.params, m.sessionId);
+      } catch (e) {
+        this.onError(e, 'handler');
       }
     }
   }

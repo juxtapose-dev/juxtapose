@@ -16,18 +16,25 @@ export interface Transport {
 }
 
 export class NullFramer {
-  private buffer = '';
+  // Pieces of the frame in progress. Joined once when its NUL arrives and only
+  // the new chunk is scanned: re-slicing one growing string made a 20 MB frame
+  // in 64 KB chunks cost 339 ms (40 MB: 1.5 s), quadratic in frame size.
+  private parts: string[] = [];
   // Chunk boundaries can fall inside a multi-byte UTF-8 character; a plain
   // toString() per chunk would corrupt it into U+FFFD.
   private readonly decoder = new StringDecoder('utf8');
   push(chunk: Buffer | string, onFrame: (frame: string) => void): void {
-    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
+    const text = typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
+    let start = 0;
     let end: number;
-    while ((end = this.buffer.indexOf('\0')) >= 0) {
-      const frame = this.buffer.slice(0, end);
-      this.buffer = this.buffer.slice(end + 1);
+    while ((end = text.indexOf('\0', start)) >= 0) {
+      this.parts.push(text.slice(start, end));
+      const frame = this.parts.length === 1 ? this.parts[0]! : this.parts.join('');
+      this.parts = [];
+      start = end + 1;
       onFrame(frame);
     }
+    if (start < text.length) this.parts.push(text.slice(start));
   }
 }
 
@@ -45,6 +52,10 @@ export abstract class FramedTransport implements Transport {
     this.framer.push(chunk, (f) => this.onMessage?.(f));
   }
 
+  // Outgoing writes are unbounded on purpose: CDP commands are small and the
+  // driver awaits replies, so the write queue stays short. The PR 2 supervisor
+  // proxies arbitrary client traffic and must honor write() back-pressure
+  // (drain) itself before it forwards large payloads.
   send(message: string): void {
     if (this.closed) return;
     this.write(message + '\0');
@@ -65,19 +76,22 @@ export abstract class FramedTransport implements Transport {
 export class PipeTransport extends FramedTransport {
   constructor(
     private readonly writable: NodeJS.WritableStream,
-    readable: NodeJS.ReadableStream,
+    private readonly readable: NodeJS.ReadableStream,
   ) {
     super();
-    readable.on('data', (chunk: Buffer) => this.feed(chunk));
+    readable.on('data', this.onData);
     readable.on('close', () => this.emitClose('pipe closed'));
     readable.on('error', (e: Error) => this.emitClose(e.message));
     writable.on('error', (e: Error) => this.emitClose(e.message));
   }
+  private readonly onData = (chunk: Buffer): void => this.feed(chunk);
   protected write(data: string): void {
     this.writable.write(data);
   }
   protected destroy(): void {
-    // The process owns the fds; launch.ts closes them with the process.
+    // The process owns the fds (launch.ts closes them with the process); we
+    // only stop listening so a closed transport delivers nothing more.
+    this.readable.removeListener('data', this.onData);
   }
 }
 

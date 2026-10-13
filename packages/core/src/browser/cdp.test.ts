@@ -1,6 +1,6 @@
 // packages/core/src/browser/cdp.test.ts
 import { PassThrough } from 'node:stream';
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { CdpConnection, CdpError, SendTimeoutError, TargetClosedError } from './cdp.js';
 import { NullFramer, PipeTransport, type Transport } from './transport.js';
 
@@ -147,25 +147,132 @@ describe('CdpConnection hardening', () => {
     t.close();
     await expect(c.send('Browser.getVersion')).rejects.toThrow(/Browser\.getVersion/);
   });
-  it('a timed-out send is removed, so a late reply is dropped silently', async () => {
-    const t = new FakeTransport();
-    const c = new CdpConnection(t);
-    const seen: number[] = [];
-    c.onRaw = (m) => m.id !== undefined && seen.push(m.id);
-    await expect(c.send('X.y', {}, undefined, { timeout: 10 })).rejects.toBeInstanceOf(
-      SendTimeoutError,
-    );
-    expect(() => t.reply(1, {})).not.toThrow();
-    expect(() => t.fail(1, -1, 'late')).not.toThrow();
-    expect(seen).toEqual([1, 1]);
+  describe('timer and pending bookkeeping', () => {
+    afterEach(() => vi.useRealTimers());
+    it('a timed-out send leaves no pending entry or timer, and a late reply is dropped', async () => {
+      vi.useFakeTimers();
+      const t = new FakeTransport();
+      const c = new CdpConnection(t);
+      const seen: number[] = [];
+      c.onRaw = (m) => m.id !== undefined && seen.push(m.id);
+      const p = c.send('X.y', {}, undefined, { timeout: 10 });
+      const assertion = expect(p).rejects.toBeInstanceOf(SendTimeoutError);
+      expect(c.pendingCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(10);
+      await assertion;
+      expect(c.pendingCount).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(() => t.reply(1, {})).not.toThrow();
+      expect(() => t.fail(1, -1, 'late')).not.toThrow();
+      expect(seen).toEqual([1, 1]);
+    });
+    it('a reply clears the pending entry and its timer', async () => {
+      vi.useFakeTimers();
+      const t = new FakeTransport();
+      const c = new CdpConnection(t);
+      const p = c.send('A.b', {}, undefined, { timeout: 15 });
+      expect(vi.getTimerCount()).toBe(1);
+      t.reply(1, { ok: true });
+      await expect(p).resolves.toEqual({ ok: true });
+      expect(c.pendingCount).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+    it('a transport that throws on send rejects the send and cleans up', async () => {
+      vi.useFakeTimers();
+      const t = new FakeTransport();
+      t.send = () => {
+        throw new Error('EPIPE');
+      };
+      const c = new CdpConnection(t);
+      await expect(c.send('A.b')).rejects.toThrow(/EPIPE/);
+      expect(c.pendingCount).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
   });
-  it('a reply before the timeout clears the timer and never rejects later', async () => {
+  it('a throwing event handler or onRaw does not stop later frames in the same chunk', async () => {
+    const uncaught: unknown[] = [];
+    const spy = (e: unknown) => uncaught.push(e);
+    process.on('uncaughtException', spy);
+    try {
+      const t = new FakeTransport();
+      const c = new CdpConnection(t);
+      const errors: string[] = [];
+      c.onError = (e, where) => errors.push(`${where}:${(e as Error).message}`);
+      c.on('E.one', () => {
+        throw new Error('boom');
+      });
+      let n = 0;
+      c.on('E.one', () => n++); // a sibling handler still runs
+      c.onRaw = (m) => {
+        if (m.method === 'E.one') throw new Error('raw boom');
+      };
+      const p = c.send('A.b');
+      t.onMessage?.(
+        JSON.stringify({ method: 'E.one', params: {} }) +
+          '' /* one frame per call, as the framer delivers */,
+      );
+      t.reply(1, { ok: 1 });
+      await expect(p).resolves.toEqual({ ok: 1 });
+      expect(n).toBe(1);
+      expect(errors).toEqual(['onRaw:raw boom', 'handler:boom']);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.off('uncaughtException', spy);
+    }
+  });
+  it('through a PipeTransport, a throwing handler does not drop the reply in the same chunk', async () => {
+    const out = new PassThrough();
+    const inp = new PassThrough();
+    const c = new CdpConnection(new PipeTransport(out, inp));
+    c.onError = () => undefined;
+    c.on('E.one', () => {
+      throw new Error('boom');
+    });
+    const p = c.send('A.b');
+    inp.write('{"method":"E.one","params":{}}\0{"id":1,"result":{"ok":2}}\0');
+    await expect(p).resolves.toEqual({ ok: 2 });
+  });
+  it('the default onError reports one line to stderr', () => {
     const t = new FakeTransport();
     const c = new CdpConnection(t);
-    const p = c.send('A.b', {}, undefined, { timeout: 15 });
-    t.reply(1, { ok: true });
-    await expect(p).resolves.toEqual({ ok: true });
-    await new Promise((r) => setTimeout(r, 40));
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      c.on('E.one', () => {
+        throw new Error('boom');
+      });
+      t.event('E.one', {});
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(String(write.mock.calls[0]?.[0])).toMatch(/^jux: .*boom.*\n$/);
+    } finally {
+      write.mockRestore();
+    }
+  });
+  it('off() removes the handler key once its set is empty', () => {
+    const c = new CdpConnection(new FakeTransport());
+    const off1 = c.on('E.one', () => undefined, 'S1');
+    const off2 = c.on('E.one', () => undefined, 'S1');
+    expect(c.handlerKeyCount).toBe(1);
+    off1();
+    expect(c.handlerKeyCount).toBe(1);
+    off2();
+    expect(c.handlerKeyCount).toBe(0);
+  });
+  it('once after close rejects with a TargetClosedError that carries the close reason and method', async () => {
+    const t = new FakeTransport();
+    const c = new CdpConnection(t);
+    t.close();
+    const e = await c.once('Page.lifecycleEvent', 'S1').catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(TargetClosedError);
+    expect((e as Error).message).toMatch(/closed by test.*Page\.lifecycleEvent/);
+  });
+  it('sendRaw after close throws TargetClosedError', () => {
+    const t = new FakeTransport();
+    const c = new CdpConnection(t);
+    t.close();
+    expect(() => c.sendRaw({ id: c.allocateId(), method: 'A.b' })).toThrow(
+      TargetClosedError,
+    );
   });
   it('produces no unhandled rejections across timeout, close and late replies', async () => {
     const unhandled: unknown[] = [];
@@ -233,6 +340,13 @@ describe('PipeTransport', () => {
     inp.write(bytes.subarray(cut));
     expect(got).toEqual(['{"t":"\u{1F600}é"}']);
   });
+  it('close() stops reading', () => {
+    const { t, inp, got } = make();
+    t.close();
+    inp.write('{"a":1}\0');
+    expect(got).toEqual([]);
+    expect(inp.listenerCount('data')).toBe(0);
+  });
   it('NUL-terminates what it writes', () => {
     const { t, out } = make();
     t.send('{"id":1}');
@@ -245,6 +359,31 @@ describe('PipeTransport', () => {
     inp.destroy();
     await expect(p).rejects.toThrow(/Page\.navigate/);
     expect(c.closed).toBe(true);
+  });
+});
+
+describe('NullFramer scale', () => {
+  it('frames a 20 MB frame delivered in 64 KB chunks in under 100 ms', () => {
+    const f = new NullFramer();
+    const frames: number[] = [];
+    const body = Buffer.alloc(20 * 1024 * 1024, 0x61);
+    const wire = Buffer.concat([body, Buffer.from('\0')]);
+    const start = performance.now();
+    for (let i = 0; i < wire.length; i += 65536)
+      f.push(wire.subarray(i, i + 65536), (s) => frames.push(s.length));
+    const ms = performance.now() - start;
+    console.log(`20 MB framed in ${ms.toFixed(1)} ms`);
+    expect(frames).toEqual([body.length]);
+    expect(ms).toBeLessThan(100);
+  });
+  it('still decodes a multi-byte character split across chunks', () => {
+    const f = new NullFramer();
+    const out: string[] = [];
+    const b = Buffer.from('é😀\0');
+    f.push(b.subarray(0, 1), (s) => out.push(s));
+    f.push(b.subarray(1, 4), (s) => out.push(s));
+    f.push(b.subarray(4), (s) => out.push(s));
+    expect(out).toEqual(['é😀']);
   });
 });
 
