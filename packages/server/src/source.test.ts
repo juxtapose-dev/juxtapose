@@ -130,3 +130,77 @@ describe('mergeReports', () => {
     expect('groups' in mergeReports(report([other]), stale)).toBe(false);
   });
 });
+
+describe('RunDirSource with variants', () => {
+  const enumerated = [
+    { ...story('card--a'), title: 'Card', name: 'A', componentPath: '/src/Card.tsx' },
+    { ...story('card--b'), componentPath: '/src/Card.tsx' },
+    { ...story('other'), componentPath: '/src/Other.tsx' },
+  ];
+  const platform = {
+    name: 'fake',
+    enumerate: async () => enumerated,
+  } as unknown as Platform;
+
+  async function source(runDir = '/nonexistent') {
+    const root = await mkdtemp(path.join(tmpdir(), 'jux-src-var-'));
+    return new RunDirSource({
+      projectRoot: root,
+      platform,
+      store: new GitBaselineStore({ projectRoot: root }),
+      config: { variants: { dark: { colorScheme: 'dark' } } } as ProjectConfig,
+      baseUrl: 'http://127.0.0.1:1',
+      runDir,
+      branch: 'main',
+      commitSha: 'abc',
+    });
+  }
+
+  it('stories() are captures: project variants expanded', async () => {
+    const s = await source();
+    expect((await s.stories()).map((x) => x.storyId)).toEqual([
+      'card--a',
+      'card--a__dark',
+      'card--b',
+      'card--b__dark',
+      'other',
+      'other__dark',
+    ]);
+  });
+
+  it('affected(base id) expands to every capture sharing the component', async () => {
+    const s = await source();
+    expect((await s.affected('card--a')).sort()).toEqual([
+      'card--a',
+      'card--a__dark',
+      'card--b',
+      'card--b__dark',
+    ]);
+  });
+
+  it("handoff on a variant uses the run's viewport, the story's source, and names the variant", async () => {
+    const runDir = await mkdtemp(path.join(tmpdir(), 'jux-src-run-'));
+    const result: DiffResult = {
+      storyId: 'card--a__dark',
+      baseStoryId: 'card--a',
+      variant: 'dark',
+      variantParams: { colorScheme: 'dark' },
+      status: 'new',
+      mismatchPixels: 0,
+      mismatchPercent: 0,
+      changedRegions: [],
+      viewport: { width: 375, height: 812 },
+      durationMs: 1,
+    };
+    await writeFile(
+      path.join(runDir, 'report.json'),
+      JSON.stringify({ runId: 'r', results: [result] }),
+    );
+    const text = await (await source(runDir)).handoff('card--a__dark');
+    expect(text).toContain('# Visual change: Card — A');
+    expect(text).toContain(
+      'the `dark` variant of `card--a`, captured with colorScheme dark',
+    );
+    expect(text).toContain('/src/Card.tsx');
+  });
+});

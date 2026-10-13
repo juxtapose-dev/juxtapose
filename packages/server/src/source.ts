@@ -6,8 +6,10 @@ import path from 'node:path';
 import {
   approveCapture,
   compareCodeUnits,
+  expandVariants,
   computeGroups,
   buildHandoffPrompt,
+  handoffVariant,
   createAncestryCheck,
   alwaysAncestor,
   acquireBrowser,
@@ -21,6 +23,9 @@ import {
   type Platform,
   type ProjectConfig,
   parseRunReport,
+  platformStoryId,
+  prepareCaptures,
+  selectByStoryId,
   type RunReport,
   type StoryManifest,
 } from '@juxtapose/core';
@@ -118,12 +123,30 @@ export class RunDirSource implements ReviewSource {
     };
   }
 
+  /**
+   * Every capture: the enumerated stories with the params the preview
+   * declares (when the platform can discover them) and their variants
+   * expanded. Keyed by capture key, like everything the run writes.
+   */
   async stories(): Promise<StoryManifest[]> {
     if (this.storyCache) return this.storyCache;
-    this.storyCache = await this.opts.platform.enumerate({
+    const enumerated = await this.opts.platform.enumerate({
       projectRoot: this.opts.projectRoot,
       origin: this.opts.baseUrl,
     });
+    const projectVariants = this.opts.config.variants;
+    // Discovery needs a page, so it only runs for a platform that has it; the
+    // browser it starts is the one the next capture would start anyway.
+    this.storyCache = this.opts.platform.discoverParams
+      ? await prepareCaptures(enumerated, {
+          platform: this.opts.platform,
+          browser: await this.ensureBrowser(),
+          baseUrl: this.opts.baseUrl,
+          viewport: this.opts.config.viewport ?? DEFAULT_VIEWPORT,
+          ...(projectVariants ? { projectVariants } : {}),
+          onWarning: (m) => process.stderr.write(`juxtapose: ${m}\n`),
+        })
+      : expandVariants(enumerated, projectVariants);
     return this.storyCache;
   }
 
@@ -155,9 +178,19 @@ export class RunDirSource implements ReviewSource {
     const cached = this.affectedCache.get(storyId);
     if (cached) return cached;
 
+    // The workbench rerenders a story by its own id; what gets recaptured is
+    // every capture of it, variants included, and of whatever shares its
+    // component. Keys, so the run takes exactly these captures.
     const stories = await this.stories();
-    const triggered = stories.find((s) => s.storyId === storyId);
-    if (!triggered?.componentPath) return [storyId];
+    const keysFor = (ids: string[]) =>
+      selectByStoryId(stories, ids).selected.map((s) => s.storyId);
+    const triggered = stories.find(
+      (s) => s.storyId === storyId || platformStoryId(s) === storyId,
+    );
+    if (!triggered?.componentPath) {
+      const keys = keysFor([storyId]);
+      return keys.length > 0 ? keys : [storyId];
+    }
 
     const matched = await resolveAffectedFromPaths(stories, [triggered.componentPath], {
       projectRoot: this.opts.projectRoot,
@@ -175,7 +208,7 @@ export class RunDirSource implements ReviewSource {
     // serialize `parameters.juxtapose` — so the opt-out is honoured on Ladle
     // today and on Storybook once #12 lands. It never over-captures: an
     // unreadable param leaves the story in, which is the status quo.
-    const result = watchTargets(storyId, matched);
+    const result = keysFor(watchTargets(storyId, matched));
     this.affectedCache.set(storyId, result);
     return result;
   }
@@ -190,7 +223,9 @@ export class RunDirSource implements ReviewSource {
     const result = report?.results.find((r) => r.storyId === storyId);
     if (!result) return null;
 
-    const story = (await this.stories()).find((s) => s.storyId === storyId);
+    // The source is the story's; a variant has no file of its own.
+    const baseId = result.baseStoryId ?? storyId;
+    const story = (await this.stories()).find((s) => s.storyId === baseId);
     const images = path.join(this.opts.runDir, 'images');
     const safe = encodeStoryId(storyId);
 
@@ -201,7 +236,13 @@ export class RunDirSource implements ReviewSource {
       mismatchPercent: result.mismatchPercent,
       mismatchPixels: result.mismatchPixels,
       changedRegions: result.changedRegions,
-      viewport: story?.params.viewport ?? this.opts.config.viewport ?? DEFAULT_VIEWPORT,
+      // What the capture was taken at, which changedRegions are relative to;
+      // a variant's viewport is not its story's.
+      viewport:
+        result.viewport ??
+        story?.params.viewport ??
+        this.opts.config.viewport ??
+        DEFAULT_VIEWPORT,
       componentPath: story?.componentPath ?? '',
       images: {
         baseline: path.join(images, `${safe}-baseline.webp`),
@@ -210,6 +251,7 @@ export class RunDirSource implements ReviewSource {
           result.status === 'fail' ? path.join(images, `${safe}-diff.webp`) : undefined,
       },
       projectRoot: this.opts.projectRoot,
+      ...(handoffVariant(result) ? { variant: handoffVariant(result) } : {}),
     });
   }
 
@@ -248,9 +290,8 @@ export class RunDirSource implements ReviewSource {
     if (this.running) return;
 
     const all = await this.stories();
-    const selected = storyIds?.length
-      ? all.filter((s) => storyIds.includes(s.storyId))
-      : all;
+    // A base id runs the story with all its variants; a key, one capture.
+    const selected = storyIds?.length ? selectByStoryId(all, storyIds).selected : all;
 
     this.running = true;
     this.done = 0;
