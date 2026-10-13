@@ -1,6 +1,6 @@
 # The jux CLI and toolchain for agentic UI development
 
-Status: draft for review · 2026-10-12 · follows sub-project 0
+Status: approved · 2026-10-12 · follows sub-project 0
 (`docs/specs/2026-10-12-sp0-structural-diff-agent-surface-design.md`, "SP0")
 and maps onto the program table in
 `docs/specs/2026-10-12-storybook-10-migration-design.md` ("row N").
@@ -378,8 +378,8 @@ next.
 
 ## Decisions this spec makes (flagged for review)
 
-Owner review, 2026-10-12: decisions 1, 2, 6 and 8 are **approved**. The rest
-are still open.
+Owner review, 2026-10-12: all nine decisions are **approved** as
+recommended.
 
 1. **Exit code 3 for tool and environment failures.** Today a crash exits 1,
    the same as "needs review". Scripts that test for exactly 1 will see 3;
