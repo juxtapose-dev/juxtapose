@@ -231,9 +231,13 @@ export async function launchChrome(opts: {
   clearTimeout(timer);
   if (outcome !== 'ready') {
     if (outcome === 'timeout' && !entry.gone) proc.kill('SIGKILL');
-    const result = await Promise.race([exited, sleep(FAILURE_WAIT_MS)]);
+    // Ref'd timers here: an async spawn failure (EACCES on the 'error' event)
+    // leaves no child handle and a stderr that never closes, so with unref'd
+    // timers a bare `jux snap --chrome <non-exec>` drained its event loop here
+    // and exited 0 silently, leaking the profile.
+    const result = await Promise.race([exited, sleep(FAILURE_WAIT_MS, { ref: true })]);
     if (!entry.gone) proc.kill('SIGKILL');
-    if (!stderrClosed) await sleep(STDERR_DRAIN_MS);
+    if (!stderrClosed) await sleep(STDERR_DRAIN_MS, { ref: true });
     connection.close();
     live.delete(entry);
     await rm(userDataDir, { recursive: true, force: true, maxRetries: 3 });
@@ -271,7 +275,16 @@ export async function launchChrome(opts: {
   return { connection, pid: proc.pid!, userDataDir, close };
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
+/**
+ * Unref'd by default: close() waits on a live child, whose handle already holds
+ * the loop, and must not keep a host alive on its own. Pass `ref` where nothing
+ * else may be holding the loop open.
+ */
+const sleep = (ms: number, opts: { ref?: boolean } = {}) =>
+  new Promise<void>((r) => {
+    const t = setTimeout(r, ms);
+    if (!opts.ref) t.unref();
+  });
 
 /** ENOENT / EACCES on spawn: say what to do, not just what the kernel said. */
 function describeSpawnError(error: Error, executablePath: string): string {

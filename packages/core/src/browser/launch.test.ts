@@ -270,6 +270,46 @@ describe('real signals', () => {
   );
 });
 
+describe('a launch that fails asynchronously settles with nothing else alive', () => {
+  // EACCES arrives on the 'error' event, not as a sync throw, and stderr never
+  // emits 'close'. With only unref'd timers on the failure path the bare host
+  // drained its event loop mid-cleanup: exit 0, no message, profile leaked.
+  it.skipIf(!existsSync(builtLaunch) || process.platform === 'win32')(
+    'a non-executable binary exits the host 1 with the reason and no profile',
+    async () => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'jux-nonexec-'));
+      const file = path.join(dir, 'chrome');
+      writeFileSync(file, '#!/bin/sh\nexit 0\n');
+      chmodSync(file, 0o644);
+      try {
+        const child = childSpawn(
+          process.execPath,
+          [path.join(here, '__tests__/failed-launch-host.mjs'), file],
+          { stdio: ['ignore', 'pipe', 'pipe'] },
+        );
+        let out = '';
+        child.stdout.on('data', (d: Buffer) => (out += d.toString()));
+        child.stderr.on('data', (d: Buffer) => (out += d.toString()));
+        const code = await new Promise<number | null>((resolve) =>
+          child.once('exit', (c) => resolve(c)),
+        );
+        expect(out).toMatch(
+          /REJECTED jux: could not launch the browser: .*is not executable/,
+        );
+        expect(code).toBe(1);
+        const root = path.join(tmpdir(), `jux-${process.getuid?.() ?? 'u'}`);
+        const leaked = readdirSync(root).filter((n) =>
+          n.startsWith(`jux-chrome-${child.pid}-`),
+        );
+        expect(leaked).toEqual([]);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    10_000,
+  );
+});
+
 describe('failed launches clean up and explain', () => {
   const tmpScript = (body: string) => {
     const dir = mkdtempSync(path.join(tmpdir(), 'jux-fakebin-'));
