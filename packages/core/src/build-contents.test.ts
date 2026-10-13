@@ -4,7 +4,7 @@ import path from 'node:path';
 import { expect, it } from 'vitest';
 
 // `files: ["dist"]` ships whatever tsc emits, and test fixtures that are .ts
-// (capture/__fixtures__/spike-args.ts) were being emitted into the tarball.
+// (browser/__fixtures__/spike-args.ts) were being emitted into the tarball.
 // Asks tsc for its input list rather than reading dist, which keeps stale
 // output from earlier builds.
 it('the core build compiles no test fixtures or helpers', () => {

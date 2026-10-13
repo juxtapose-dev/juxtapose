@@ -314,12 +314,17 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       const d = inProcessDaemon();
       try {
         const t0 = Date.now();
+        // A loaded CI runner took over 2 s to start Chrome (2026-10-13), so
+        // the default budget fell back to a private launch. This test is about
+        // replacing stale state, so give the spawn room; the ceiling still
+        // proves it never waited out the 30 s stale-lock age.
         const { browser, warm } = await connectWarmBrowser({
           executablePath: chrome!.path,
           stateDir: cache,
           spawnDaemon: d.spawnDaemon,
+          connectTimeoutMs: 15_000,
         });
-        expect(Date.now() - t0).toBeLessThan(2500);
+        expect(Date.now() - t0).toBeLessThan(15_000);
         expect(warm).toBe(true);
         expect(d.count()).toBe(1);
         expect(browser.version()).toBe(CHROME_VERSION);

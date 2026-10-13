@@ -12,7 +12,7 @@ import { rmSync } from 'node:fs';
 import { lstat, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { chromeArgs } from '../capture/launch.js';
+import { chromeArgs } from './flags.js';
 import { CdpConnection } from './cdp.js';
 import { ensurePrivateDir } from './private-dir.js';
 import { PipeTransport } from './transport.js';

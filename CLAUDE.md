@@ -39,9 +39,9 @@ the same story. Moving that call is not a refactor; it is a behavior change.
 idle callback) runs immediately before the screenshot. Without it, captures
 intermittently catch an intermediate frame.
 
-**Browser flags matter.** `capture/launch.ts` forces CPU rasterization, sRGB, no
+**Browser flags matter.** `browser/flags.ts` forces CPU rasterization, sRGB, no
 LCD/subpixel text, and a pinned device scale factor. GPU rasterization was
-producing off-by-one differences on antialiased edges. `launch.test.ts` guards
+producing off-by-one differences on antialiased edges. `flags.test.ts` guards
 these; if you're tempted to trim the list, that test explains each one.
 
 **Warm-page switching is opt-in and off by default** (`warmSwitch: true`). It is
@@ -96,8 +96,8 @@ exactly this reason.
 
 ```
 packages/core/              no platform knowledge — never import an adapter here
-  capture/    settle pipeline, worker pool, launch flags
-  browser/    CDP driver, launcher, installer — a port of what Playwright did for us; see the 2026-10-13 spec before touching init or screenshot
+  capture/    settle pipeline, worker pool
+  browser/    CDP driver, launch flags, installer, warm daemon; imports nothing else from core (lint-enforced), exported as `@juxtapose/core/browser` — a port of what Playwright did for us; see the 2026-10-13 spec before touching init or screenshot
   baseline/   hash comparison (the pass/fail authority) + git store
   diff/       pixelmatch wrapper + region extraction — COLD PATH
   analysis/   which stories a change could affect

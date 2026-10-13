@@ -7,7 +7,7 @@
 // sends when asked. The screenshot is a verbatim port of
 // Screenshotter.screenshotPage (coreBundle.js L21258–21370).
 
-import type { Viewport } from '../types.js';
+import type { Viewport } from './types.js';
 import { CdpConnection, CdpError, TargetClosedError } from './cdp.js';
 import { assertCssSelector, QUERY_ALL_SOURCE, queryAllExpression } from './selectors.js';
 

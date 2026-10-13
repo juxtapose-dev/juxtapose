@@ -96,8 +96,8 @@ export {
   type SnapPagesOptions,
   type SnapPageResult,
 } from './capture/snap.js';
-export { deterministicLaunchOptions, type LaunchOptions } from './capture/launch.js';
-export { chromeArgs, PARITY_CHROMIUM_ARGS } from './capture/launch.js';
+export { deterministicLaunchOptions, type LaunchOptions } from './browser/flags.js';
+export { chromeArgs, PARITY_CHROMIUM_ARGS } from './browser/flags.js';
 
 // The browser driver: our own CDP client over chrome-headless-shell. Adapters
 // consume `Page` (see its doc comment for which members are stable).

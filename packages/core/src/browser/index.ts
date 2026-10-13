@@ -68,3 +68,13 @@ export {
   type StopResult,
   type CommandReader,
 } from './daemon/client.js';
+export { acquireBrowser, type AcquireOptions } from './acquire.js';
+export { daemonSupported, type DaemonState } from './daemon/state.js';
+export {
+  chromeArgs,
+  deterministicLaunchOptions,
+  DETERMINISTIC_CHROMIUM_ARGS,
+  PARITY_CHROMIUM_ARGS,
+  type LaunchOptions,
+} from './flags.js';
+export type { Viewport } from './types.js';

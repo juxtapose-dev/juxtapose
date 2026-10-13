@@ -24,7 +24,7 @@ import { lstat, readdir, readFile, rm, stat } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromeArgs } from '../../capture/launch.js';
+import { chromeArgs } from '../flags.js';
 import { Browser } from '../browser.js';
 import { CdpConnection } from '../cdp.js';
 import { CHROME_VERSION } from '../pins.js';

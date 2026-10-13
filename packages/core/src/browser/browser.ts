@@ -5,7 +5,7 @@
 // concurrently rendering stories never share storage or service workers
 // (pool.ts measured isolation at ~0% cost).
 
-import type { Viewport } from '../types.js';
+import type { Viewport } from './types.js';
 import { CdpConnection } from './cdp.js';
 import type { SpawnFn } from './launch.js';
 import { CdpPage, type Page } from './page.js';
