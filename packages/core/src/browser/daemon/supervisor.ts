@@ -465,23 +465,16 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
    * Chrome never answers a command in flight on a session whose target died
    * (probe: Runtime.evaluate 'while(1){}', then dispose the context). Its
    * owner entry would stay forever, one per hung story, in a daemon that
-   * lives for hours. The waiting client gets an error instead of its own
-   * send timeout.
+   * lives for hours, so the entry goes. Nothing is answered in Chrome's
+   * place: a synthetic error reply reached the client before the detach
+   * event, so the page saw CdpError where a fresh launch gives
+   * TargetClosedError, and the pool, which rebuilds a worker only on
+   * TargetClosedError or PageCrashedError, failed the next story on that
+   * worker too (PR #102 re-review N1). The client's own detach handling
+   * rejects page work; any other sender times out, as against a fresh Chrome.
    */
   const purgeSession = (sessionId: string) => {
-    for (const [id, o] of owners) {
-      if (o.sessionId !== sessionId) continue;
-      owners.delete(id);
-      if (!o.client.gone)
-        deliver(o.client, {
-          id: o.clientId,
-          sessionId,
-          error: {
-            code: -32001,
-            message: `jux: ${o.method}: session ${sessionId} detached before Chrome replied`,
-          },
-        });
-    }
+    for (const [id, o] of owners) if (o.sessionId === sessionId) owners.delete(id);
   };
 
   const onEvent = (m: RawMessage & { method: string }) => {

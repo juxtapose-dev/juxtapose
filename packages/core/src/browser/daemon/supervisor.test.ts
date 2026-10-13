@@ -20,7 +20,7 @@ import {
   pidAlive,
   type DaemonPaths,
 } from './state.js';
-import { CdpConnection, CdpError } from '../cdp.js';
+import { CdpConnection, CdpError, TargetClosedError } from '../cdp.js';
 import { SocketTransport } from '../transport.js';
 import { CHROME_VERSION } from '../pins.js';
 import { chromeForTests } from '../__tests__/helpers.js';
@@ -680,7 +680,7 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
       const hung = a.send('Runtime.evaluate', { expression: 'while(1){}' }, pa.sessionId);
       const settled = hung.then(
         () => 'resolved',
-        (e: unknown) => (e as Error).message,
+        (e: unknown) => e,
       );
       await sleep(100);
       expect(sup.inFlight).toBe(1);
@@ -690,7 +690,12 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
       });
       for (let i = 0; i < 40 && sup.inFlight > 0; i++) await sleep(50);
       expect(sup.inFlight).toBe(0);
-      expect(await settled).toMatch(/detached before Chrome replied/);
+      // The supervisor answers nothing in Chrome's place: a fresh Chrome
+      // never answers either, so the client's own detach handling (or its
+      // send timeout) decides, exactly as it would without the daemon.
+      expect(await Promise.race([settled, sleep(200).then(() => 'pending')])).toBe(
+        'pending',
+      );
 
       const b = await connect(paths.socket);
       const pb = await openPage(b.c);
@@ -712,6 +717,36 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         process.kill(sup.chromePid, 'SIGCONT');
       }
       a.close();
+    }));
+
+  it('a page whose target closes mid-command rejects with TargetClosedError, as on a fresh launch', () =>
+    withSupervisor(async ({ paths }) => {
+      // PR #102 re-review N1: the supervisor used to answer the in-flight
+      // command with a synthetic error before forwarding the detach, so the
+      // caller saw CdpError where a fresh launch gives TargetClosedError, and
+      // the pool (which rebuilds a worker only on TargetClosedError or
+      // PageCrashedError) kept the dead page for the next story.
+      const { c } = await connect(paths.socket);
+      const { product } = await c.send<{ product: string }>('Browser.getVersion');
+      const browser = Browser.fromConnection(c, {
+        version: product,
+        close: async () => c.close(),
+      });
+      const ctx = await browser.newContext({ viewport: { width: 200, height: 100 } });
+      const page = (await ctx.newPage()) as unknown as {
+        targetId: string;
+        evaluate: (e: string) => Promise<unknown>;
+      };
+      const hung = page.evaluate('new Promise(() => {})').then(
+        () => 'resolved',
+        (e: unknown) => e,
+      );
+      await sleep(200);
+      await c.send('Target.closeTarget', { targetId: page.targetId });
+      const err = await hung;
+      expect(err).toBeInstanceOf(TargetClosedError);
+      await ctx.close().catch(() => {});
+      await browser.close();
     }));
 
   it('idleMinutes past setTimeout’s range is clamped (no 1 ms exit); non-finite is refused', async () => {
