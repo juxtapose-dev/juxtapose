@@ -145,7 +145,7 @@ async function waitForStoryLoaded(page: Page, timeoutMs: number): Promise<void> 
 
 function readParams(meta: Record<string, unknown> | undefined): StoryParams {
   const ns = meta?.[META_NAMESPACE];
-  return ns && typeof ns === 'object' ? (ns as StoryParams) : {};
+  return ns && typeof ns === 'object' ? ns : {};
 }
 
 async function loadMeta(target: EnumerateTarget): Promise<LadleMeta | null> {

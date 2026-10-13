@@ -465,11 +465,17 @@ export class McpServer {
     if (urls && as) throw new ArgError("'as' goes with 'url'; use 'asPrefix'");
     let viewport: string | undefined;
     if (args.viewport !== undefined) {
-      const v = args.viewport as { width?: unknown; height?: unknown } | null;
+      const v = args.viewport;
       // Shape only; snapCommand owns the range, so the CLI and the tool agree.
-      if (!v || typeof v.width !== 'number' || typeof v.height !== 'number')
+      if (
+        typeof v !== 'object' ||
+        v === null ||
+        !('width' in v && 'height' in v) ||
+        typeof v.width !== 'number' ||
+        typeof v.height !== 'number'
+      )
         throw new ArgError("'viewport' must be {width, height}");
-      viewport = `${v.width as number}x${v.height as number}`;
+      viewport = `${v.width}x${v.height}`;
     }
     const waitFor = str(args, 'waitFor');
     const mask = strings(args, 'mask');
@@ -804,7 +810,7 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
   // console.log writes through process.stdout.write, so it is covered too.
   const stdout = process.stdout;
   const writeOut = stdout.write.bind(stdout);
-  stdout.write = process.stderr.write.bind(process.stderr) as typeof stdout.write;
+  stdout.write = process.stderr.write.bind(process.stderr);
   let outBroken = false;
   const send = (m: Json) => {
     if (!outBroken) writeOut(JSON.stringify(m) + '\n');

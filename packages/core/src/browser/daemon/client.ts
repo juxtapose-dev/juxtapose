@@ -208,7 +208,7 @@ function buildClosure(entry: string): { hash: string; files: string[] } {
     }
     hash.update(`${path.basename(file)}\0${src}\0`);
     for (const m of src.matchAll(RELATIVE_IMPORT))
-      queue.push(path.resolve(path.dirname(file), m[1]!));
+      queue.push(path.resolve(path.dirname(file), m[1]));
   }
   return { hash: hash.digest('hex').slice(0, 16), files: [...seen] };
 }

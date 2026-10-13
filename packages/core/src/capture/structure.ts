@@ -553,11 +553,11 @@ export async function captureStructure(
   }
 
   try {
-    const raw = (await page.send('DOMSnapshot.captureSnapshot', {
+    const raw = await page.send<CdpSnapshot>('DOMSnapshot.captureSnapshot', {
       computedStyles: [...STRUCTURE_PROPS, 'visibility'],
       includeDOMRects: true,
       includePaintOrder: true,
-    })) as unknown as CdpSnapshot;
+    });
     for (const [k, sel] of mask.entries()) {
       const v = (await verify(sel)) as { total: number; marked: number } | undefined;
       // Every current match still marked, and none of the marked ones gone.

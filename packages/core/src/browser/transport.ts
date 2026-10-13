@@ -49,7 +49,7 @@ export class NullFramer {
       this.partsChars += end - start;
       if (this.partsChars > this.maxFrameChars)
         throw new FrameTooLargeError(this.maxFrameChars);
-      const frame = this.parts.length === 1 ? this.parts[0]! : this.parts.join('');
+      const frame = this.parts.length === 1 ? this.parts[0] : this.parts.join('');
       this.parts = [];
       this.partsChars = 0;
       start = end + 1;

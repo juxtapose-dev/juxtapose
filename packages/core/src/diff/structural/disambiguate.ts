@@ -54,7 +54,7 @@ export function disambiguate(
       const suffix = ` (${ordinal(nthOf(s))})`;
       rename.set(
         key(s),
-        distinct ? scoped[k]! : clip(l, MAX_LABEL - suffix.length) + suffix,
+        distinct ? scoped[k] : clip(l, MAX_LABEL - suffix.length) + suffix,
       );
     }
   }

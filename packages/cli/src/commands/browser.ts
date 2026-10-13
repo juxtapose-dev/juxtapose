@@ -425,7 +425,7 @@ async function daemonCommand(
       return daemonFailure(sub, json, io, `jux: ${why.join('; ')}`, {
         stopped: stoppedPids.length > 0,
         stoppedPids,
-        pid: left[0]!.pid,
+        pid: left[0].pid,
         notStopped: left,
       });
     }
