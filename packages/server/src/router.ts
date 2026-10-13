@@ -5,6 +5,7 @@
 // own Vite dev server where an extra HTTP stack would just be in the way.
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { VariantConfigError } from '@juxtapose/core';
 import type { ImageKind, ReviewSource } from './types.js';
 
 /** Mounted under this prefix so it cannot collide with workbench routes. */
@@ -38,7 +39,13 @@ export function createRouter(source: ReviewSource): Handler {
     try {
       await route(source, method, path, query, req, res);
     } catch (err) {
-      // A failure here is a bug in the tool, not in the user's stories, so
+      // A variant declaration error is the user's to fix: a 400 with the
+      // message names the story and variant.
+      if (err instanceof VariantConfigError) {
+        json(res, 400, { error: err.message });
+        return true;
+      }
+      // Anything else is a bug in the tool, not in the user's stories, so
       // surface it rather than silently returning an empty report.
       json(res, 500, { error: err instanceof Error ? err.message : String(err) });
     }
@@ -120,6 +127,9 @@ async function route(
         return json(res, 400, { error: 'storyIds must be an array of strings' });
       storyIds = raw;
     }
+    // Resolved first, so a variant config error answers this request with a
+    // 400 instead of failing the run silently in the background.
+    await source.stories();
     // Deliberately not awaited: a run takes seconds and the client polls
     // /progress. Holding the request open would just time out.
     void source.run(storyIds).catch(() => {});

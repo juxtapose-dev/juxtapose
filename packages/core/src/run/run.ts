@@ -54,6 +54,8 @@ export interface RunOptions {
   /** Receives each story's images so the caller decides where they land. */
   onArtifact?: (artifact: RunArtifact) => Promise<void>;
   onProgress?: (done: number, total: number, storyId: string) => void;
+  /** Non-fatal capture notices; the caller decides where they go. */
+  onWarning?: (message: string) => void;
   signal?: AbortSignal;
   /** Collects per-phase wall time. Pass one to fold in phases the caller timed
    *  itself (enumerate, affected, launch); omit and one is made internally. */
@@ -86,6 +88,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     warmSwitch: opts.config?.warmSwitch,
     viewport,
     onProgress: opts.onProgress,
+    ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
     signal: opts.signal,
   });
 
@@ -98,6 +101,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     if (outcome.skipped) {
       results.push({
         storyId: outcome.story.storyId,
+        ...variantOf(outcome.story),
         status: 'skip',
         mismatchPixels: 0,
         mismatchPercent: 0,
@@ -110,6 +114,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     if (outcome.error || !outcome.snapshot) {
       results.push({
         storyId: outcome.story.storyId,
+        ...variantOf(outcome.story),
         status: 'fail',
         mismatchPixels: 0,
         mismatchPercent: 0,
@@ -172,6 +177,7 @@ async function judge(
 
   const base: DiffResult = {
     storyId: story.storyId,
+    ...variantOf(story),
     status,
     mismatchPixels: 0,
     mismatchPercent: 0,
@@ -286,6 +292,20 @@ async function tryStructural(
   } catch {
     return undefined;
   }
+}
+
+/** The grouping fields a report needs, present only on a variant capture so
+ *  a default capture's result serializes exactly as it did before variants. */
+function variantOf(
+  story: StoryManifest,
+): Pick<DiffResult, 'baseStoryId' | 'variant' | 'variantParams'> {
+  return story.variant !== undefined && story.baseStoryId !== undefined
+    ? {
+        baseStoryId: story.baseStoryId,
+        variant: story.variant,
+        variantParams: story.variantParams ?? {},
+      }
+    : {};
 }
 
 function tally(results: DiffResult[]): Record<DiffStatus, number> {

@@ -22,6 +22,9 @@ import {
   createAncestryCheck,
   type ProjectConfig,
   type RunArtifact,
+  prepareCaptures,
+  VariantConfigError,
+  DEFAULT_VIEWPORT,
 } from '@juxtapose/core';
 import {
   resolveContext,
@@ -117,6 +120,34 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
   try {
     // Inside the try, so a failed mkdir still closes the browser below.
     await mkdir(path.join(runDir, 'images'), { recursive: true });
+    // The same capture set `jux run` would take: discovered params and
+    // variants included, so init approves every baseline a run will check.
+    let captures;
+    try {
+      captures = await prepareCaptures(stories, {
+        platform: ctx.platform,
+        browser,
+        baseUrl,
+        viewport: ctx.config.viewport ?? DEFAULT_VIEWPORT,
+        ...(ctx.config.variants ? { projectVariants: ctx.config.variants } : {}),
+        onWarning: (m) => process.stderr.write(`${m}\n`),
+        // Beside the runs, so it is ignored wherever runs are; an unchanged
+        // static build skips the preview load.
+        cache: {
+          dir: path.join(ctx.projectRoot, '.juxtapose', 'runs', '.cache'),
+          target: {
+            projectRoot: ctx.projectRoot,
+            ...(ctx.buildDir ? { buildDir: ctx.buildDir } : {}),
+            ...(ctx.origin ? { origin: ctx.origin } : {}),
+          },
+        },
+      });
+    } catch (err) {
+      if (!(err instanceof VariantConfigError)) throw err;
+      process.stderr.write(`${err.message}\n`);
+      return EXIT.usage;
+    }
+
     say('Capturing…');
 
     const report = await runCapture({
@@ -124,8 +155,8 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       platform: ctx.platform,
       store: ctx.store,
       baseUrl,
-      stories,
-      totalCount: stories.length,
+      stories: captures,
+      totalCount: captures.length,
       config: ctx.config,
       ancestry: isGitRepo(ctx.projectRoot)
         ? createAncestryCheck(ctx.projectRoot)

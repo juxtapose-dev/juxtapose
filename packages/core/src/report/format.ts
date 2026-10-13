@@ -35,3 +35,33 @@ export function describeMagnitude(r: Parameters<typeof isSubThreshold>[0]): stri
     ? 'subtle change, diff marks no pixels'
     : `${formatPercent(r.mismatchPercent)} changed`;
 }
+
+/** The fields a capture's label is made of. Structural so the addon can use
+ *  it on what it fetched without importing core's types. */
+export interface CaptureRef {
+  storyId: string;
+  baseStoryId?: string;
+  variant?: string;
+}
+
+/** `button--primary · dark` for a variant, the bare id for a default capture. */
+export function captureLabel(r: CaptureRef): string {
+  return r.variant !== undefined && r.baseStoryId !== undefined
+    ? `${r.baseStoryId} · ${r.variant}`
+    : r.storyId;
+}
+
+/** How many distinct stories a set of captures covers. */
+export function countStories(results: readonly CaptureRef[]): number {
+  return new Set(results.map((r) => r.baseStoryId ?? r.storyId)).size;
+}
+
+/** Whether any of these captures is a variant: the cue to say "captures"
+ *  rather than "stories", so output without variants reads as it always has. */
+export const hasVariants = (results: readonly CaptureRef[]): boolean =>
+  results.some((r) => r.variant !== undefined);
+
+/** Byte-identical output across machines needs a locale-free order;
+ *  `localeCompare` is not one. */
+export const compareCodeUnits = (a: string, b: string): number =>
+  a < b ? -1 : a > b ? 1 : 0;

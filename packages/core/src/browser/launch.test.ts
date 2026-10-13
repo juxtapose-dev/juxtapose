@@ -58,6 +58,11 @@ describe.skipIf(!chrome)('launchChrome', () => {
     process.on('unhandledRejection', onUnhandled);
     try {
       const b = await launchChrome({ executablePath: chrome!.path });
+      // Stopped first, so the send is truly in flight when the kill lands:
+      // sent to a running browser, the reply sometimes won the race and the
+      // promise resolved (seen under full-suite load, 2026-10-13). A stopped
+      // process can't answer, and SIGKILL still ends it.
+      process.kill(b.pid, 'SIGSTOP');
       const pending = b.connection.send('Target.createBrowserContext');
       process.kill(b.pid, 'SIGKILL');
       await expect(pending).rejects.toBeInstanceOf(TargetClosedError);

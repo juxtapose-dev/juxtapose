@@ -64,6 +64,13 @@ export interface Page {
   waitForSelector(selector: string, opts?: { timeout?: number }): Promise<void>;
   addStyleTag(opts: { content: string }): Promise<void>;
   setViewportSize(viewport: Viewport): Promise<void>;
+  /**
+   * Re-apply the fixed media emulation with this `prefers-color-scheme`.
+   * Optional so a Page implemented outside core still type-checks; core
+   * falls back to the raw CDP call when it is absent.
+   * @internal Core sets it per capture for variants; adapters must not.
+   */
+  setColorScheme?(scheme: 'light' | 'dark'): Promise<void>;
   screenshot(opts?: { mask?: string[] }): Promise<Buffer>;
   /**
    * Raw CDP on this page's session, for DOMSnapshot.
@@ -241,15 +248,21 @@ const metricsOverride = (
   screenOrientation: { angle: 0, type: 'landscapePrimary' },
 });
 
-const EMULATED_MEDIA: Protocol.Emulation.SetEmulatedMediaRequest = {
+// Only the color scheme varies (per-story variants); every other feature is
+// pinned for every capture.
+export const emulatedMedia = (
+  scheme: 'light' | 'dark',
+): Protocol.Emulation.SetEmulatedMediaRequest => ({
   media: '',
   features: [
-    { name: 'prefers-color-scheme', value: 'light' },
+    { name: 'prefers-color-scheme', value: scheme },
     { name: 'prefers-reduced-motion', value: 'no-preference' },
     { name: 'forced-colors', value: 'none' },
     { name: 'prefers-contrast', value: 'no-preference' },
   ],
-};
+});
+
+const EMULATED_MEDIA = emulatedMedia('light');
 
 // Screenshotter._preparePageForScreenshots with caret:'hide', animations:'allow'.
 const PREPARE_SCREENSHOT = `(function (hideCaret) {
@@ -633,6 +646,10 @@ export class CdpPage implements Page {
       return;
     await this.send('Emulation.setDeviceMetricsOverride', metricsOverride(viewport));
     this.viewport = viewport;
+  }
+
+  async setColorScheme(scheme: 'light' | 'dark'): Promise<void> {
+    await this.send('Emulation.setEmulatedMedia', emulatedMedia(scheme));
   }
 
   /** Screenshotter.screenshotPage: prepare → fonts.ready → mask → getLayoutMetrics → captureScreenshot → cleanup. */

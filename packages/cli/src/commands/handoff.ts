@@ -7,6 +7,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
   buildHandoffPrompt,
+  handoffVariant,
   encodeStoryId,
   parseRunReport,
   type HandoffPayload,
@@ -53,7 +54,9 @@ export async function handoffCommand(
     buildDir: ctx.buildDir,
     origin: ctx.origin,
   });
-  const story = stories.find((s) => s.storyId === storyId);
+  // The platform knows a variant by its story's own id, not the capture key.
+  const baseId = result.baseStoryId ?? storyId;
+  const story = stories.find((s) => s.storyId === baseId);
 
   // The viewport the capture actually used, which is what changedRegions
   // coordinates are relative to. Falling back to the project default here was
@@ -106,6 +109,7 @@ export async function handoffCommand(
       ? `jux diff ${shellQuote(baselineImage)} ${shellQuote(currentImage)} --crops --project ${shellQuote(ctx.projectRoot)}`
       : undefined;
 
+  const variant = handoffVariant(result);
   const payload: HandoffPayload = {
     storyId,
     storyTitle: story ? `${story.title} — ${story.name}` : storyId,
@@ -124,6 +128,7 @@ export async function handoffCommand(
       diff: result.status === 'fail' ? path.join(images, `${safe}-diff.webp`) : undefined,
     },
     projectRoot: ctx.projectRoot,
+    ...(variant ? { variant } : {}),
   };
 
   io.out(buildHandoffPrompt(payload) + '\n');

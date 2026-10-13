@@ -16,6 +16,8 @@ import type {
   Viewport,
 } from '../types.js';
 import { describeDeltas } from '../diff/structural/summary.js';
+import { shellQuote } from '../shell-quote.js';
+import { compareCodeUnits } from '../report/format.js';
 
 export interface HandoffPayload {
   storyId: string;
@@ -40,6 +42,46 @@ export interface HandoffPayload {
   };
   /** So a session running in the wrong repo can detect the mismatch. */
   projectRoot: string;
+  /** Set when the capture is a variant: its story, name and what it sets. */
+  variant?: { baseStoryId: string; name: string; params: Record<string, unknown> };
+}
+
+/** The handoff's variant field from a run result; undefined for a default
+ *  capture. */
+export function handoffVariant(r: {
+  baseStoryId?: string;
+  variant?: string;
+  variantParams?: object;
+}): HandoffPayload['variant'] {
+  return r.baseStoryId !== undefined && r.variant !== undefined
+    ? {
+        baseStoryId: r.baseStoryId,
+        name: r.variant,
+        params: { ...(r.variantParams ?? {}) },
+      }
+    : undefined;
+}
+
+/** "the `dark` variant of `card--default`, captured with colorScheme dark and
+ *  viewport 375×812": the conditions an agent is fixing under. */
+export function describeVariant(v: NonNullable<HandoffPayload['variant']>): string {
+  const settings = Object.entries(v.params)
+    .sort(([a], [b]) => compareCodeUnits(a, b))
+    .map(([k, val]) => {
+      if (
+        k === 'viewport' &&
+        typeof val === 'object' &&
+        val !== null &&
+        'width' in val &&
+        'height' in val
+      )
+        return `viewport ${String(val.width)}×${String(val.height)}`;
+      return `${k} ${typeof val === 'string' ? val : JSON.stringify(val)}`;
+    });
+  const head = `the \`${v.name}\` variant of \`${v.baseStoryId}\``;
+  return settings.length > 0
+    ? `${head}, captured with ${settings.join(', ')}`
+    : `${head}, with no settings of its own`;
 }
 
 export function buildHandoffPrompt(p: HandoffPayload): string {
@@ -48,6 +90,11 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   lines.push(`# Visual change: ${p.storyTitle}`);
   lines.push('');
   lines.push(`Story \`${p.storyId}\` is **${p.status}**.`);
+  if (p.variant) {
+    lines.push(
+      `This capture is ${describeVariant(p.variant)}. Reproduce under those conditions; the story's default capture is a separate baseline.`,
+    );
+  }
   lines.push('');
 
   if (p.status === 'new') {
@@ -113,7 +160,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
       lines.push('');
       lines.push(
         'Check these deltas against the change you intended. If they are all intended,',
-        `the change is expected: approve it (\`jux approve --story ${p.storyId}\`). If any`,
+        `the change is expected: approve it (\`jux approve --story ${shellQuote(p.storyId)}\`). If any`,
         'delta is one you did not intend, fix that before approving.',
       );
     }
@@ -223,7 +270,7 @@ function actions(p: HandoffPayload, opts: { approveVerb: string }): string[] {
 
   out.push(
     '',
-    `- **Intentional** → \`jux approve --story ${p.storyId}\` to ${opts.approveVerb}.`,
+    `- **Intentional** → \`jux approve --story ${shellQuote(p.storyId)}\` to ${opts.approveVerb}.`,
     '- **Regression** → propose a fix. Do not apply it without confirmation.',
   );
   return out;

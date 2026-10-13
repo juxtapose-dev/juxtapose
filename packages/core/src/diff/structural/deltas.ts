@@ -17,6 +17,7 @@ import {
 import type { Delta, StructureRect, StructureSnapshot } from '../../types.js';
 import { abstractLabel, clip, label } from './label.js';
 import type { ElementMatch } from './match.js';
+import { compareCodeUnits } from '../../report/format.js';
 
 export interface Fact {
   delta: Delta;
@@ -281,7 +282,5 @@ function factKey(d: Delta): string {
   return d.kind === 'style' ? d.prop : d.kind === 'attr' ? d.attr : '';
 }
 
-/** Byte-identical output across machines needs a locale-free order;
- *  `localeCompare` is not one. */
-export const compareCodeUnits = (a: string, b: string): number =>
-  a < b ? -1 : a > b ? 1 : 0;
+// Defined with the browser-safe formatters so the addon shares it.
+export { compareCodeUnits };

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { serve, type ServeHandle } from './serve.js';
 import type { ReviewSource, ReviewBundle, RunProgress, ImageKind } from './types.js';
-import type { StoryManifest } from '@juxtapose/core';
+import { VariantConfigError, type StoryManifest } from '@juxtapose/core';
 
 /** Records what the HTTP layer asked for, so tests assert on the contract
  *  rather than on a real capture pipeline. */
@@ -12,6 +12,7 @@ class FakeSource implements ReviewSource {
   images = new Map<string, Buffer>();
   handoffText: string | null = 'PROMPT';
   approveError: Error | null = null;
+  storiesError: Error | null = null;
 
   async bundle(): Promise<ReviewBundle> {
     return { report: null, approved: this.approved, running: false };
@@ -20,6 +21,7 @@ class FakeSource implements ReviewSource {
     return { running: true, done: 2, total: 5, storyId: 'a--b' };
   }
   async stories(): Promise<StoryManifest[]> {
+    if (this.storiesError) throw this.storiesError;
     return [
       { storyId: 'a--b', title: 'A', name: 'B', componentPath: '/x.tsx', params: {} },
     ];
@@ -204,5 +206,21 @@ describe('review API', () => {
     const res = await fetch(`${handle.url}/iframe.html`);
     expect(res.status).toBe(404);
     expect(await res.text()).toBe('not found');
+  });
+});
+
+describe('variant config errors', () => {
+  it('answer 400 with the message, and a run is not started', async () => {
+    source.storiesError = new VariantConfigError(
+      "story 'a--b' variant 'dark' extends unknown variant 'nope'",
+    );
+    const stories = await fetch(api('/stories'));
+    expect(stories.status).toBe(400);
+    expect(((await stories.json()) as { error: string }).error).toContain(
+      "story 'a--b' variant 'dark'",
+    );
+    const run = await fetch(api('/run'), { method: 'POST', body: '{}' });
+    expect(run.status).toBe(400);
+    expect(source.runCalls).toEqual([]);
   });
 });

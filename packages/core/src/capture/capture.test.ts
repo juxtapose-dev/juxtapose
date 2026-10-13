@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { captureStory } from './capture.js';
 import type { Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
-import type { StoryManifest } from '../types.js';
+import type { StoryManifest, StoryParams } from '../types.js';
 
 function recordingPage(): Page & { calls: string[] } {
   const calls: string[] = [];
@@ -22,6 +22,9 @@ function recordingPage(): Page & { calls: string[] } {
     waitForSelector: rec('waitForSelector', undefined),
     addStyleTag: rec('addStyleTag', undefined),
     setViewportSize: rec('setViewportSize', undefined),
+    setColorScheme: async (scheme: 'light' | 'dark') => {
+      calls.push(`setColorScheme:${scheme}`);
+    },
     screenshot: rec('screenshot', Buffer.alloc(0)),
     send: rec('send', {} as never),
     onMainResponse: () => () => {},
@@ -89,5 +92,176 @@ describe('captureStory', () => {
       ),
     ).rejects.toThrow(/not a CSS selector/);
     expect(page.calls).toEqual([]);
+  });
+});
+
+describe('captureStory with variants', () => {
+  const variant: StoryManifest = {
+    storyId: 'btn__dark',
+    baseStoryId: 'btn',
+    variant: 'dark',
+    title: 'T',
+    name: 'btn',
+    componentPath: '',
+    params: { colorScheme: 'dark' },
+    variantParams: { colorScheme: 'dark' },
+  };
+  const plain: StoryManifest = { ...story({}), storyId: 'other' };
+
+  /** Records every id a platform call receives. The fake screenshot is not an
+   *  image, so the capture rejects at encode, after every platform call. */
+  function spyPlatform(ids: string[]): Platform {
+    return {
+      ...platform,
+      showStory: async (page, id) => {
+        ids.push(`show:${id}`);
+        await page.goto('x');
+      },
+      settle: async (_page, ctx) => {
+        ids.push(`settle:${ctx.story.storyId}`);
+      },
+      readLiveParams: async (_page, id) => {
+        ids.push(`live:${id}`);
+        return undefined;
+      },
+      switchStory: async (_page, id) => {
+        ids.push(`switch:${id}`);
+        return false;
+      },
+    };
+  }
+
+  const capture = (page: Page, s: StoryManifest, p: Platform) =>
+    captureStory(
+      page,
+      s,
+      { platform: p, baseUrl: 'x', structure: false },
+      { width: 10, height: 10 },
+    ).catch(() => null);
+
+  it("every platform call receives the platform's own id, never the capture key", async () => {
+    const ids: string[] = [];
+    await capture(recordingPage(), variant, spyPlatform(ids));
+    expect(ids).toEqual(['show:btn', 'settle:btn', 'live:btn']);
+  });
+
+  it('sets the scheme before showStory, resets to light for a default capture, and memoizes', async () => {
+    const page = recordingPage();
+    const p = spyPlatform([]);
+    await capture(page, variant, p);
+    await capture(page, plain, p);
+    await capture(page, plain, p);
+    const relevant = page.calls.filter(
+      (c) => c.startsWith('setColorScheme') || c === 'goto',
+    );
+    // dark before the first navigation; light before the second; nothing on
+    // the third because the page is already light.
+    expect(relevant).toEqual([
+      'setColorScheme:dark',
+      'goto',
+      'setColorScheme:light',
+      // The scheme changed on a page holding a story: blanked first, so a
+      // same-URL story boots fresh rather than navigating in-document.
+      'goto',
+      'goto',
+      'goto',
+    ]);
+  });
+
+  it('falls back to raw CDP media emulation on a Page without setColorScheme', async () => {
+    const page = recordingPage();
+    const sent: unknown[] = [];
+    delete (page as Partial<Page>).setColorScheme;
+    page.send = (async (method: string, params?: object) => {
+      sent.push([method, params]);
+      return {};
+    }) as Page['send'];
+    await capture(page, variant, spyPlatform([]));
+    expect(sent[0]).toEqual([
+      'Emulation.setEmulatedMedia',
+      {
+        media: '',
+        features: [
+          { name: 'prefers-color-scheme', value: 'dark' },
+          { name: 'prefers-reduced-motion', value: 'no-preference' },
+          { name: 'forced-colors', value: 'none' },
+          { name: 'prefers-contrast', value: 'no-preference' },
+        ],
+      },
+    ]);
+  });
+
+  it('warns when the live preview declares the variant differently', async () => {
+    const warnings: string[] = [];
+    const run = (live: StoryParams) =>
+      captureStory(
+        recordingPage(),
+        variant,
+        {
+          platform: { ...platform, readLiveParams: async () => live },
+          baseUrl: 'x',
+          structure: false,
+          onWarning: (m) => warnings.push(m),
+        },
+        { width: 10, height: 10 },
+      ).catch(() => null);
+    // Same settings as expanded: nothing to say.
+    await run({ variants: { dark: { colorScheme: 'dark' } } });
+    // Another variant's declaration is not this capture's concern.
+    await run({ variants: { mobile: { viewport: { width: 1, height: 1 } } } });
+    expect(warnings).toEqual([]);
+    await run({ variants: { dark: { colorScheme: 'dark', delay: 50 } } });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(
+      "btn__dark: the story's live parameters declare variant 'dark' differently",
+    );
+    expect(warnings[0]).toContain('where discovery reads them before capture');
+  });
+
+  it('compares live and expanded settings structurally, not by key order', async () => {
+    const warnings: string[] = [];
+    const mobile: StoryManifest = {
+      ...variant,
+      storyId: 'btn__mobile',
+      variant: 'mobile',
+      params: { viewport: { width: 375, height: 812 } },
+      variantParams: { viewport: { width: 375, height: 812 } },
+    };
+    await captureStory(
+      recordingPage(),
+      mobile,
+      {
+        platform: {
+          ...platform,
+          readLiveParams: async () => ({
+            variants: { mobile: { viewport: { height: 812, width: 375 } } },
+          }),
+        },
+        baseUrl: 'x',
+        structure: false,
+        onWarning: (m) => warnings.push(m),
+      },
+      { width: 10, height: 10 },
+    ).catch(() => null);
+    expect(warnings).toEqual([]);
+  });
+
+  it("a story's live opt-out of a variant skips that capture", async () => {
+    const page = recordingPage();
+    const result = await captureStory(
+      page,
+      variant,
+      {
+        platform: {
+          ...platform,
+          readLiveParams: async () => ({ variants: { dark: false } }),
+        },
+        baseUrl: 'x',
+        structure: false,
+      },
+      { width: 10, height: 10 },
+    );
+    expect(result).toBeNull();
+    expect(page.calls).not.toContain('screenshot');
   });
 });

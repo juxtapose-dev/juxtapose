@@ -15,6 +15,7 @@ function timingOutPage(): Page {
     waitForSelector: timeout,
     addStyleTag: async () => {},
     setViewportSize: async () => {},
+    setColorScheme: async () => {},
     screenshot: async () => Buffer.alloc(0),
     send: async () => ({}) as never,
     onMainResponse: () => () => {},

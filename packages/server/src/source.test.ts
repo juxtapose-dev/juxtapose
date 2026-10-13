@@ -1,12 +1,13 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { RunDirSource, mergeReports, watchTargets } from './source.js';
 import {
   encodeStoryId,
   encodeStructure,
   GitBaselineStore,
+  VariantConfigError,
   type DiffResult,
   type Platform,
   type RunReport,
@@ -128,5 +129,184 @@ describe('mergeReports', () => {
     expect(mergeReports(report([]), stale).groups).toBeUndefined();
     const other = { ...fail('a'), structural: { ...verdict, signature: 'other' } };
     expect('groups' in mergeReports(report([other]), stale)).toBe(false);
+  });
+});
+
+describe('RunDirSource with variants', () => {
+  const enumerated = [
+    { ...story('card--a'), title: 'Card', name: 'A', componentPath: '/src/Card.tsx' },
+    { ...story('card--b'), componentPath: '/src/Card.tsx' },
+    { ...story('other'), componentPath: '/src/Other.tsx' },
+  ];
+  const platform = {
+    name: 'fake',
+    enumerate: async () => enumerated,
+  } as unknown as Platform;
+
+  async function source(runDir = '/nonexistent') {
+    const root = await mkdtemp(path.join(tmpdir(), 'jux-src-var-'));
+    return new RunDirSource({
+      projectRoot: root,
+      platform,
+      store: new GitBaselineStore({ projectRoot: root }),
+      config: { variants: { dark: { colorScheme: 'dark' } } } as ProjectConfig,
+      baseUrl: 'http://127.0.0.1:1',
+      runDir,
+      branch: 'main',
+      commitSha: 'abc',
+    });
+  }
+
+  it('stories() are captures: project variants expanded', async () => {
+    const s = await source();
+    expect((await s.stories()).map((x) => x.storyId)).toEqual([
+      'card--a',
+      'card--a__dark',
+      'card--b',
+      'card--b__dark',
+      'other',
+      'other__dark',
+    ]);
+  });
+
+  it('affected(base id) expands to every capture sharing the component', async () => {
+    const s = await source();
+    expect((await s.affected('card--a')).sort()).toEqual([
+      'card--a',
+      'card--a__dark',
+      'card--b',
+      'card--b__dark',
+    ]);
+  });
+
+  it("handoff on a variant uses the run's viewport, the story's source, and names the variant", async () => {
+    const runDir = await mkdtemp(path.join(tmpdir(), 'jux-src-run-'));
+    const result: DiffResult = {
+      storyId: 'card--a__dark',
+      baseStoryId: 'card--a',
+      variant: 'dark',
+      variantParams: { colorScheme: 'dark' },
+      status: 'new',
+      mismatchPixels: 0,
+      mismatchPercent: 0,
+      changedRegions: [],
+      viewport: { width: 375, height: 812 },
+      durationMs: 1,
+    };
+    await writeFile(
+      path.join(runDir, 'report.json'),
+      JSON.stringify({ runId: 'r', results: [result] }),
+    );
+    const text = await (await source(runDir)).handoff('card--a__dark');
+    expect(text).toContain('# Visual change: Card — A');
+    expect(text).toContain(
+      'the `dark` variant of `card--a`, captured with colorScheme dark',
+    );
+    expect(text).toContain('/src/Card.tsx');
+  });
+});
+
+describe('RunDirSource story loading', () => {
+  const base = [story('a'), story('b')];
+
+  async function make(platform: Platform, config: ProjectConfig = {}, runDir = '/none') {
+    const root = await mkdtemp(path.join(tmpdir(), 'jux-src-load-'));
+    return new RunDirSource({
+      projectRoot: root,
+      platform,
+      store: new GitBaselineStore({ projectRoot: root }),
+      config,
+      baseUrl: 'http://127.0.0.1:1',
+      runDir,
+      branch: 'main',
+      commitSha: 'abc',
+    });
+  }
+
+  it('concurrent callers share one load', async () => {
+    let calls = 0;
+    const platform = {
+      name: 'fake',
+      enumerate: async () => {
+        calls++;
+        await new Promise((r) => setTimeout(r, 20));
+        return base;
+      },
+    } as unknown as Platform;
+    const s = await make(platform);
+    const all = await Promise.all([s.stories(), s.stories(), s.affected('a')]);
+    expect(all[0]).toHaveLength(2);
+    expect(calls).toBe(1);
+  });
+
+  it('a variant config error is kept until the stories or the config change', async () => {
+    let calls = 0;
+    const platform = {
+      name: 'fake',
+      enumerate: async () => {
+        calls++;
+        return base;
+      },
+    } as unknown as Platform;
+    const s = await make(platform, { variants: { Dark: {} } } as ProjectConfig);
+    await expect(s.stories()).rejects.toBeInstanceOf(VariantConfigError);
+    await expect(s.stories()).rejects.toThrow(/variant name 'Dark'/);
+    expect(calls).toBe(1);
+    await s.flushIndex();
+    await expect(s.stories()).rejects.toBeInstanceOf(VariantConfigError);
+    expect(calls).toBe(2);
+  });
+
+  it('a config file edit retries a cached config error', async () => {
+    const platform = { name: 'fake', enumerate: async () => base } as unknown as Platform;
+    const s = await make(platform, { variants: { Dark: {} } } as ProjectConfig);
+    await expect(s.stories()).rejects.toBeInstanceOf(VariantConfigError);
+    // The source keeps its config object; editing the file is what a user
+    // does, and the stamp is what notices it.
+    const root = (s as unknown as { opts: { projectRoot: string } }).opts.projectRoot;
+    await writeFile(path.join(root, 'juxtapose.config.json'), '{}');
+    const spy = vi.spyOn(
+      s as unknown as { loadStories: () => Promise<unknown> },
+      'loadStories',
+    );
+    await expect(s.stories()).rejects.toBeInstanceOf(VariantConfigError);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('handoff reads the index, never discovery (no browser for a prompt)', async () => {
+    const runDir = await mkdtemp(path.join(tmpdir(), 'jux-src-hand-'));
+    await writeFile(
+      path.join(runDir, 'report.json'),
+      JSON.stringify({
+        runId: 'r',
+        results: [
+          {
+            storyId: 'a__dark',
+            baseStoryId: 'a',
+            variant: 'dark',
+            variantParams: { colorScheme: 'dark' },
+            status: 'new',
+            mismatchPixels: 0,
+            mismatchPercent: 0,
+            changedRegions: [],
+            durationMs: 1,
+          },
+        ],
+      }),
+    );
+    const platform = {
+      name: 'fake',
+      enumerate: async () => base,
+      discoverParams: async () => {
+        throw new Error('discovery must not run for a handoff');
+      },
+    } as unknown as Platform;
+    const s = await make(platform, {}, runDir);
+    const browser = vi
+      .spyOn(s as unknown as { ensureBrowser: () => Promise<unknown> }, 'ensureBrowser')
+      .mockRejectedValue(new Error('no browser for a handoff'));
+    const text = await s.handoff('a__dark');
+    expect(text).toContain('the `dark` variant of `a`, captured with colorScheme dark');
+    expect(browser).not.toHaveBeenCalled();
   });
 });

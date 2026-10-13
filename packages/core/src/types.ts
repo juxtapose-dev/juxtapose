@@ -30,6 +30,28 @@ export interface StoryParams {
    *  stories whose play function or delay makes a keystroke-triggered capture
    *  cost more than it returns. Default true. */
   liveCapture?: boolean;
+  /** Named capture variants of this story: each is captured, judged and
+   *  approved on its own under the key `${storyId}__${name}`. `false` opts
+   *  this story out of a project-wide variant of that name. */
+  variants?: Record<string, VariantSpec | false>;
+  /** Set on a variant's resolved params; a variant-only field. The default
+   *  capture is always light, so a story's own `colorScheme` is ignored. */
+  colorScheme?: ColorScheme;
+}
+
+export type ColorScheme = 'light' | 'dark';
+
+/** One named variant: any per-story option, plus a color scheme and the name
+ *  of another variant to start from. `skip` is not a field; set the variant to
+ *  `false` to drop it. */
+export interface VariantSpec extends Omit<
+  StoryParams,
+  'skip' | 'variants' | 'liveCapture'
+> {
+  colorScheme?: ColorScheme;
+  /** Another variant (of this story or the project) whose fields this one
+   *  starts from. Chains resolve; a cycle or unknown name is a config error. */
+  extends?: string;
 }
 
 // Lives with the browser driver, which must not import from the rest of core.
@@ -37,8 +59,20 @@ export type { Viewport } from './browser/types.js';
 
 /** One capturable story, normalised across platforms. */
 export interface StoryManifest {
-  /** Stable, URL-safe. Platform-native id (Storybook's `id`, Ladle's key). */
+  /** Stable, URL-safe. The capture key: the platform-native id (Storybook's
+   *  `id`, Ladle's key) for a default capture, `${baseStoryId}__${variant}`
+   *  for a variant. Everything keyed by story (manifest, baselines, run
+   *  images, report.json) uses this. */
   storyId: string;
+  /** Set on variant entries: the platform's own id, which every platform call
+   *  receives. Absent on a default capture, where it equals `storyId`. */
+  baseStoryId?: string;
+  /** Set on variant entries: the variant's name. */
+  variant?: string;
+  /** Set on variant entries: the fields the variant and its `extends` chain
+   *  set, already merged into `params`. Kept apart because live params merge
+   *  under them — a variant's viewport must beat the story's own. */
+  variantParams?: Omit<VariantSpec, 'extends'>;
   /** Group/kind, e.g. "Components/Button". */
   title: string;
   /** Story name within the group, e.g. "Primary". */
@@ -51,6 +85,9 @@ export interface StoryManifest {
 
 export interface Snapshot {
   storyId: string;
+  /** Copied from the StoryManifest: set only on a variant capture. */
+  baseStoryId?: string;
+  variant?: string;
   /** WebP-encoded. PNG is an intermediate, never stored. */
   image: Buffer;
   viewport: Viewport;
@@ -219,7 +256,15 @@ export interface StructuralVerdict {
 export type DiffStatus = 'pass' | 'fail' | 'new' | 'stale' | 'skip';
 
 export interface DiffResult {
+  /** The capture key. */
   storyId: string;
+  /** Set only on a variant capture, so reports can group without parsing keys. */
+  baseStoryId?: string;
+  variant?: string;
+  /** Set only on a variant capture: what the variant sets (its resolved
+   *  `extends` chain). Recorded for the same reason as `viewport` — a handoff
+   *  can say the conditions it was captured under without re-enumerating. */
+  variantParams?: Omit<VariantSpec, 'extends'>;
   status: DiffStatus;
   mismatchPixels: number;
   mismatchPercent: number;
@@ -317,6 +362,8 @@ export interface UrlEntry {
   /** Absolute, or relative to --origin. */
   url: string;
   params?: StoryParams;
+  /** Same as `params.variants`; the two are merged, and these win. */
+  variants?: Record<string, VariantSpec | false>;
 }
 
 /** Project config, from juxtapose.config.{ts,js,json} or package.json#juxtapose. */
@@ -340,6 +387,10 @@ export interface ProjectConfig {
   viewport?: Viewport;
   threshold?: number;
   minDiffPercent?: number;
+  /** Variants every story gets, by name. A story's own variant of the same
+   *  name wins; a story sets one to `false` to opt out. Applies to every
+   *  platform, the urls list included. */
+  variants?: Record<string, VariantSpec | false>;
   storage?: StorageConfig;
   /** `jux mcp` settings. */
   mcp?: {

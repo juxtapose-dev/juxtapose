@@ -100,6 +100,21 @@ describe('resolveAffected', () => {
     expect(r.stories).toHaveLength(2);
   });
 
+  it.each([
+    'juxtapose.config.json',
+    '.juxtaposerc.json',
+    'examples/storybook/juxtapose.config.json',
+  ])('escalates to a full run when the juxtapose config %s changes', async (file) => {
+    // Project-wide variants live there: a new one changes every story's
+    // capture set, and the bundler graph never names the file.
+    const r = await resolveAffected(stories, 'HEAD~1', {
+      ...opts(),
+      changedFiles: ['src/Card.stories.tsx', file],
+    });
+    expect(r.reason).toBe('config-changed');
+    expect(r.stories).toHaveLength(2);
+  });
+
   it('escalates to a full run when a lockfile changes', async () => {
     const r = await resolveAffected(stories, 'HEAD~1', {
       ...opts(),
@@ -199,5 +214,40 @@ describe('resolveAffectedFromPaths', () => {
       { projectRoot: root },
     );
     expect(r.map((s) => s.storyId)).toEqual(['button--primary']);
+  });
+});
+
+describe('a project in a subdirectory of its repository', () => {
+  it("escalates on the project's own package.json, not another package's", async () => {
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, mkdirSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const repo = mkdtempSync(path.join(tmpdir(), 'jux-affected-repo-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: repo });
+      const web = path.join(repo, 'apps', 'web');
+      mkdirSync(web, { recursive: true });
+      const s = [
+        {
+          storyId: 'a',
+          title: 'a',
+          name: 'a',
+          componentPath: path.join(web, 'src/A.tsx'),
+          params: {},
+        },
+      ];
+      const run = (file: string) =>
+        resolveAffected(s, 'HEAD~1', {
+          projectRoot: web,
+          configDirs: ['.storybook'],
+          changedFiles: [file],
+        });
+      // It can carry `juxtapose.variants`: every capture may change.
+      expect((await run('apps/web/package.json')).reason).toBe('config-changed');
+      // Another package's manifest is no reason by itself.
+      expect((await run('apps/api/package.json')).reason).not.toBe('config-changed');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

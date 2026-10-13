@@ -36,6 +36,8 @@ export interface PoolOptions {
   /** Reuse warm pages and switch stories in place. Faster, but does not
    *  currently reproduce cold-load pixels exactly — see CaptureDeps. */
   warmSwitch?: boolean;
+  /** Non-fatal notices from capture, e.g. an ignored live variant override. */
+  onWarning?: (message: string) => void;
 }
 
 export interface CaptureOutcome {
@@ -102,6 +104,7 @@ export async function* capturePool(
       platform: opts.platform,
       baseUrl: opts.baseUrl,
       warmSwitch: opts.warmSwitch,
+      ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
     };
 
     try {

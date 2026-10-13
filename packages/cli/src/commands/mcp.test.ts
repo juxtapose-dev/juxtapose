@@ -749,4 +749,50 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
       rmSync(runProject, { recursive: true, force: true });
     }
   }, 60_000);
+
+  test('run and approve with a base id cover the story and all its variants', async () => {
+    const runProject = mkdtempSync(path.join(tmpdir(), 'jux-mcp-variants-'));
+    writeFileSync(
+      path.join(runProject, 'juxtapose.config.json'),
+      JSON.stringify({
+        platform: 'urls',
+        urls: [
+          { id: 'home', url: base },
+          { id: 'other', url: `${base}?other` },
+        ],
+        variants: {
+          dark: { colorScheme: 'dark' },
+          mobile: { viewport: { width: 375, height: 812 } },
+        },
+      }),
+    );
+    const c = new Client(runProject);
+    try {
+      await handshake(c);
+      const run = await c.call('run', { stories: ['home'] });
+      expect(run.isError).toBe(false);
+      const report = JSON.parse(text(run)) as {
+        results: Array<{ storyId: string; baseStoryId?: string; variant?: string }>;
+      };
+      expect(report.results.map((r) => [r.storyId, r.baseStoryId, r.variant])).toEqual([
+        ['home', undefined, undefined],
+        ['home__dark', 'home', 'dark'],
+        ['home__mobile', 'home', 'mobile'],
+      ]);
+
+      const approved = await c.call('approve', { stories: ['home'] });
+      expect(approved.isError).toBe(false);
+      expect(JSON.parse(text(approved))).toEqual({
+        approved: ['home', 'home__dark', 'home__mobile'],
+        failed: [],
+      });
+
+      const unknown = await c.call('run', { stories: ['home__nope'] });
+      expect(unknown.isError).toBe(true);
+      expect(text(unknown)).toMatch(/home__nope/);
+      expect(await c.close()).toBe(0);
+    } finally {
+      rmSync(runProject, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

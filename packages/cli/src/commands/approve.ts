@@ -5,7 +5,12 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { approveCapture, encodeStoryId, parseRunReport } from '@juxtapose/core';
+import {
+  approveCapture,
+  encodeStoryId,
+  parseRunReport,
+  type DiffResult,
+} from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
 import { errorMessage } from '../guards.js';
 import { latestRunDir } from '../run-dir.js';
@@ -29,10 +34,27 @@ export async function approveCommand(
   const report = parseRunReport(await readFile(path.join(runDir, 'report.json'), 'utf8'));
 
   const requested = new Set(flags.story ?? []);
+  const needsApproval = (r: DiffResult) =>
+    r.status === 'fail' || r.status === 'new' || r.status === 'stale';
+  // A requested id naming a story with variants in this run is a fan-out:
+  // every capture of it, its default included, is approved only if it needs
+  // it. A skipped capture has no image (it failed the whole call) and a
+  // passing one would only rewrite its approval metadata. An id with no
+  // variants in the run is an exact key, approved as asked.
+  const fanOut = new Set(
+    report.results.flatMap((r) =>
+      r.baseStoryId !== undefined && requested.has(r.baseStoryId) ? [r.baseStoryId] : [],
+    ),
+  );
   const candidates = report.results.filter((r) => {
-    if (requested.size > 0) return requested.has(r.storyId);
+    if (requested.size > 0) {
+      const story = r.baseStoryId ?? r.storyId;
+      if (fanOut.has(story))
+        return needsApproval(r) || (requested.has(r.storyId) && r.storyId !== story);
+      return requested.has(r.storyId);
+    }
     if (!flags.all) return false;
-    return r.status === 'fail' || r.status === 'new' || r.status === 'stale';
+    return needsApproval(r);
   });
 
   if (requested.size === 0 && !flags.all) {

@@ -15,7 +15,14 @@
 //    camo. So the text has to carry everything and link out for pixels.
 
 import type { DiffResult, RunReport, Viewport } from '../types.js';
-import { formatPercent, isSubThreshold } from './format.js';
+import {
+  captureLabel,
+  countStories,
+  formatPercent,
+  hasVariants,
+  isSubThreshold,
+} from './format.js';
+import { shellQuote } from '../shell-quote.js';
 
 /**
  * Invisible marker identifying our own comment.
@@ -128,6 +135,8 @@ function triageOrder(results: DiffResult[]): DiffResult[] {
  * acted on; the largest mismatch can.
  */
 function heading(rows: DiffResult[]): string {
+  // Rows are captures. With variants among them, "story" would miscount.
+  const [one, many] = hasVariants(rows) ? ['capture', 'captures'] : ['story', 'stories'];
   const errors = rows.filter((r) => r.error).length;
   const fails = rows.filter(changed);
 
@@ -135,7 +144,7 @@ function heading(rows: DiffResult[]): string {
     const rest = rows.length - errors;
     const tail =
       rest > 0 ? ` — ${rest} more ${rest === 1 ? 'needs' : 'need'} review` : '';
-    return `${count(errors, 'story', 'stories')} failed to capture${tail}`;
+    return `${count(errors, one, many)} failed to capture${tail}`;
   }
 
   // Derived from `rows`, not `report.summary`: summary.fail counts errored
@@ -145,7 +154,7 @@ function heading(rows: DiffResult[]): string {
   // A first run is 100% new by construction. Calling that a failure teaches
   // people the tool cries wolf on day one.
   if (rows.every((r) => r.status === 'new')) {
-    return `${count(rows.length, 'new story', 'new stories')} — no baselines yet`;
+    return `${count(rows.length, `new ${one}`, `new ${many}`)} — no baselines yet`;
   }
 
   if (rows.every((r) => r.status === 'stale')) {
@@ -153,7 +162,7 @@ function heading(rows: DiffResult[]): string {
   }
 
   if (fails.length === 0) {
-    return `${count(rows.length, 'story', 'stories')} need review`;
+    return `${count(rows.length, one, many)} need review`;
   }
 
   const largest = Math.max(...fails.map((r) => r.mismatchPercent));
@@ -165,7 +174,7 @@ function heading(rows: DiffResult[]): string {
 
   // Mixed: name the shape, since "5 changes" would overstate what changed.
   if (rows.length > fails.length) {
-    return `${count(rows.length, 'story', 'stories')} need review — ${fails.length} changed, ${magnitude}`;
+    return `${count(rows.length, one, many)} need review — ${fails.length} changed, ${magnitude}`;
   }
 
   const noun = count(fails.length, 'visual change', 'visual changes');
@@ -201,7 +210,7 @@ function table(rows: DiffResult[]): string[] {
 
   for (const r of rows.slice(0, MAX_ROWS)) {
     const cells = [
-      `\`${cell(r.storyId)}\``,
+      `\`${cell(captureLabel(r))}\``,
       showStatus ? (r.status === 'fail' ? 'changed' : r.status) : null,
       showDetail ? detail(r) : null,
     ].filter((c): c is string => c !== null);
@@ -241,7 +250,7 @@ function commands(rows: DiffResult[]): string[] {
   if (worthInvestigating) {
     out.push(
       annotate(
-        `jux handoff ${worthInvestigating.storyId}`,
+        `jux handoff ${shellQuote(worthInvestigating.storyId)}`,
         'unsure? agent-ready prompt: what moved, where',
       ),
     );
@@ -253,7 +262,7 @@ function commands(rows: DiffResult[]): string[] {
   const approvable = rows.find((r) => !r.error);
   out.push(
     approvable
-      ? annotate('jux approve --all', `or --story ${approvable.storyId}`)
+      ? annotate('jux approve --all', `or --story ${shellQuote(approvable.storyId)}`)
       : 'jux approve --all',
   );
   return out;
@@ -335,6 +344,14 @@ function passingBody(report: RunReport): string {
   // `pass` counts CAPTURED passes, so "42 stories match" is a lie on a narrowed
   // run where only six were captured.
   const narrowed = report.capturedCount < report.totalCount;
+  if (hasVariants(report.results)) {
+    const stories = countStories(report.results);
+    const across = `across ${count(stories, 'story', 'stories')}`;
+    const head = narrowed
+      ? `${count(s.pass, 'capture taken matches', 'captures taken match')} their baselines, ${across}.`
+      : `${count(s.pass, 'capture matches', 'captures match')} their baselines, ${across}.`;
+    return s.skip > 0 ? `${head} ${s.skip} skipped.` : head;
+  }
   const head = narrowed
     ? `${count(s.pass, 'captured story matches', 'captured stories match')} their baselines.`
     : `${count(s.pass, 'story matches', 'stories match')} their baselines.`;

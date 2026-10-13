@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { adjacentStory, needsReview, imageUrl, isSubThreshold } from './api.js';
+import {
+  adjacentStory,
+  approvableCaptures,
+  approveEach,
+  describeFailures,
+  capturesFor,
+  needsReview,
+  imageUrl,
+  isSubThreshold,
+  pickCapture,
+} from './api.js';
 import type { RunReport, DiffResult, DiffStatus } from '@juxtapose/core';
 
 const result = (storyId: string, status: DiffStatus): DiffResult => ({
@@ -103,5 +113,64 @@ describe('isSubThreshold', () => {
   it('does not flag stories that did not fail', () => {
     expect(isSubThreshold(result('a', 'new'))).toBe(false);
     expect(isSubThreshold(undefined)).toBe(false);
+  });
+});
+
+describe('variant switcher', () => {
+  const v = (base: string, name: string, status: DiffStatus): DiffResult => ({
+    ...result(`${base}__${name}`, status),
+    baseStoryId: base,
+    variant: name,
+  });
+  const r = report([
+    v('card', 'mobile', 'new'),
+    result('card', 'pass'),
+    v('card', 'dark', 'fail'),
+    result('cards', 'new'),
+  ]);
+
+  it("lists a story's captures, default first, then variants by name", () => {
+    expect(capturesFor(r, 'card').map((c) => c.storyId)).toEqual([
+      'card',
+      'card__dark',
+      'card__mobile',
+    ]);
+    // A prefix of another id is not that story.
+    expect(capturesFor(r, 'cards').map((c) => c.storyId)).toEqual(['cards']);
+    expect(capturesFor(null, 'card')).toEqual([]);
+  });
+
+  it('shows the chosen variant, else the default capture', () => {
+    const captures = capturesFor(r, 'card');
+    expect(pickCapture(captures, 'dark')?.storyId).toBe('card__dark');
+    expect(pickCapture(captures, null)?.storyId).toBe('card');
+    // A variant that is gone (renamed, not in this run) falls back.
+    expect(pickCapture(captures, 'gone')?.storyId).toBe('card');
+    // No default in the run (only a variant was recaptured): the first one.
+    expect(pickCapture(captures.slice(1), null)?.storyId).toBe('card__dark');
+  });
+
+  it('"Approve all variants" takes only captures that need it and are not yet approved', () => {
+    const captures = capturesFor(r, 'card');
+    expect(approvableCaptures(captures, []).map((c) => c.storyId)).toEqual([
+      'card__dark',
+      'card__mobile',
+    ]);
+    expect(approvableCaptures(captures, ['card__dark']).map((c) => c.storyId)).toEqual([
+      'card__mobile',
+    ]);
+  });
+});
+
+describe('approveEach', () => {
+  it('attempts every id and reports the failures with reasons', async () => {
+    const tried: string[] = [];
+    const failed = await approveEach(['a', 'b', 'c'], async (id) => {
+      tried.push(id);
+      if (id === 'b') throw new Error('409');
+    });
+    expect(tried).toEqual(['a', 'b', 'c']);
+    expect(failed).toEqual([{ id: 'b', reason: '409' }]);
+    expect(describeFailures(failed)).toBe('b (409)');
   });
 });
