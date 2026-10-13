@@ -29,6 +29,7 @@ import {
   resolveChrome,
   type ChromeSource,
 } from './resolve.js';
+import { errorMessage } from './guards.js';
 import { installZip } from './zip.js';
 
 export interface InstallOptions {
@@ -136,7 +137,7 @@ export async function installChrome(opts: InstallOptions): Promise<InstallResult
     res = await doFetch(pin.url);
   } catch (err) {
     throw new Error(
-      `jux: download failed for ${pin.url}: ${(err as Error).message}.${proxyHint(env, nodeFlags)} ${nextStep}`,
+      `jux: download failed for ${pin.url}: ${errorMessage(err)}.${proxyHint(env, nodeFlags)} ${nextStep}`,
       { cause: err },
     );
   }
@@ -151,7 +152,7 @@ export async function installChrome(opts: InstallOptions): Promise<InstallResult
   let overLength = false;
   const hash = createHash('sha256');
   try {
-    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    for await (const chunk of res.body) {
       const b = Buffer.from(chunk);
       received += b.length;
       // A server streaming past the pinned size is wrong already; stop buffering.
@@ -165,7 +166,7 @@ export async function installChrome(opts: InstallOptions): Promise<InstallResult
     }
   } catch (err) {
     throw new Error(
-      `jux: download interrupted for ${pin.url}: ${(err as Error).message}.${proxyHint(env, nodeFlags)} ${nextStep}`,
+      `jux: download interrupted for ${pin.url}: ${errorMessage(err)}.${proxyHint(env, nodeFlags)} ${nextStep}`,
       { cause: err },
     );
   }
@@ -210,11 +211,15 @@ async function verifyInstall(installDir: string, binary: string): Promise<void> 
   try {
     out = await new Promise<string>((resolve, reject) =>
       execFile(binary, ['--version'], { timeout: 15_000 }, (err, stdout) =>
-        err ? reject(err) : resolve(stdout),
+        // ExecFileException is an Error at runtime but an Omit<> type, which
+        // the reject-with-an-Error lint cannot see through; instanceof can.
+        err
+          ? reject(err instanceof Error ? err : new Error(err.message, { cause: err }))
+          : resolve(stdout),
       ),
     );
   } catch (err) {
-    return fail(`\`${binary} --version\` failed: ${(err as Error).message}`);
+    return fail(`\`${binary} --version\` failed: ${errorMessage(err)}`);
   }
   if (!out.includes(CHROME_VERSION))
     return fail(

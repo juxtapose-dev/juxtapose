@@ -12,8 +12,10 @@ import { rmSync } from 'node:fs';
 import { lstat, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Readable, Writable } from 'node:stream';
 import { chromeArgs } from './flags.js';
 import { CdpConnection } from './cdp.js';
+import { errnoCode, errorMessage } from './guards.js';
 import { ensurePrivateDir } from './private-dir.js';
 import { PipeTransport } from './transport.js';
 
@@ -23,7 +25,8 @@ export interface LaunchedChrome {
   connection: CdpConnection;
   pid: number;
   userDataDir: string;
-  close(): Promise<void>;
+  /** A property, not a method: Browser.launch hands it on detached. */
+  close: () => Promise<void>;
 }
 
 /** How long Browser.close gets, then how long SIGTERM gets, before SIGKILL. */
@@ -108,7 +111,7 @@ export async function sweepStaleProfiles(dir: string): Promise<void> {
         process.kill(Number(m[1]), 0);
         continue; // owner alive (EPERM also lands here via the throw below)
       } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== 'ESRCH') continue;
+        if (errnoCode(e) !== 'ESRCH') continue;
       }
       const full = path.join(dir, name);
       try {
@@ -173,7 +176,7 @@ export async function launchChrome(opts: {
   } catch (error) {
     await rm(userDataDir, { recursive: true, force: true });
     throw new Error(
-      `jux: could not launch the browser: ${describeSpawnError(error as Error, opts.executablePath)}`,
+      `jux: could not launch the browser: ${describeSpawnError(error, opts.executablePath)}`,
       { cause: error },
     );
   }
@@ -197,10 +200,13 @@ export async function launchChrome(opts: {
     live.delete(entry);
   });
 
-  const transport = new PipeTransport(
-    proc.stdio[3] as NodeJS.WritableStream,
-    proc.stdio[4] as NodeJS.ReadableStream,
-  );
+  // fds 3 and 4 are 'pipe' in the stdio list above, so spawn gives each a
+  // stream. Checked, not asserted: a SpawnFn that does not would otherwise
+  // fail inside PipeTransport with a TypeError about `.on`.
+  const [, , , toChrome, fromChrome] = proc.stdio;
+  if (!(toChrome instanceof Writable) || !(fromChrome instanceof Readable))
+    throw new Error('jux: the browser process has no CDP pipe on fds 3 and 4');
+  const transport = new PipeTransport(toChrome, fromChrome);
   const connection = new CdpConnection(transport);
   void exited.then(() => transport.close());
 
@@ -279,13 +285,13 @@ const sleep = (ms: number, opts: { ref?: boolean } = {}) =>
   });
 
 /** ENOENT / EACCES on spawn: say what to do, not just what the kernel said. */
-function describeSpawnError(error: Error, executablePath: string): string {
-  const code = (error as NodeJS.ErrnoException).code;
+function describeSpawnError(error: unknown, executablePath: string): string {
+  const code = errnoCode(error);
   if (code === 'ENOENT' || code === 'EACCES') {
     const what = code === 'ENOENT' ? 'does not exist' : 'is not executable';
     return `${executablePath} ${what}. Install the pinned browser with \`npx -p @juxtapose/cli jux browser install\`, or point JUX_CHROME at a Chrome you already have.`;
   }
-  return `${error.message} (${executablePath})`;
+  return `${errorMessage(error)} (${executablePath})`;
 }
 
 /** Linux: `error while loading shared libraries: libnss3.so` → name the apt line. */

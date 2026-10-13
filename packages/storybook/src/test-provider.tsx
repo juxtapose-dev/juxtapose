@@ -13,6 +13,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { addons, types, styled } from './storybook.js';
+import { mutedColor } from './theme.js';
 import { fetchBundle, fetchProgress, startRun, type Bundle } from './api.js';
 import {
   getTestProviderStore,
@@ -32,7 +33,7 @@ const Row = styled.div({
 });
 
 const Muted = styled.span(({ theme }) => ({
-  color: theme.textMutedColor,
+  color: mutedColor(theme),
 }));
 
 /**
@@ -50,7 +51,7 @@ export function registerTestProvider(api: unknown): boolean {
   // We only get here when the 10-era store probe succeeded, so the runtime is
   // the newer one. Narrowing the *parameter* rather than casting the whole
   // object keeps the render function and type field checked.
-  const add = addons.add as (id: string, addon: TestProviderAddon) => void;
+  const add = addons.add.bind(addons) as (id: string, addon: TestProviderAddon) => void;
   add(TEST_PROVIDER_ID, {
     type: types.experimental_TEST_PROVIDER,
     render: () => <TestProviderRow store={store} />,

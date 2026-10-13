@@ -128,12 +128,11 @@ export async function applyStatuses(
   api: unknown,
   update: StatusUpdate,
 ): Promise<boolean> {
-  const candidate = api as {
-    experimental_updateStatus?: (addonId: string, update: StatusUpdate) => Promise<void>;
-    updateStatus?: (addonId: string, update: StatusUpdate) => Promise<void>;
-  };
-
-  const fn = candidate?.experimental_updateStatus ?? candidate?.updateStatus;
+  const host = typeof api === 'object' && api !== null ? api : undefined;
+  const fn =
+    (host && 'experimental_updateStatus' in host
+      ? host.experimental_updateStatus
+      : undefined) ?? (host && 'updateStatus' in host ? host.updateStatus : undefined);
   if (typeof fn !== 'function') {
     console.warn(
       '[juxtapose] this Storybook version exposes no status API; ' +
@@ -143,7 +142,7 @@ export async function applyStatuses(
   }
 
   try {
-    await fn.call(candidate, ADDON_ID, update);
+    await fn.call(host, ADDON_ID, update);
     return true;
   } catch (err) {
     console.warn('[juxtapose] could not update sidebar statuses:', err);

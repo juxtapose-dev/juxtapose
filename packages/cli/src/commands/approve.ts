@@ -5,8 +5,9 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { approveCapture, encodeStoryId, type RunReport } from '@juxtapose/core';
+import { approveCapture, encodeStoryId, parseRunReport } from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
+import { errorMessage } from '../guards.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
 
@@ -25,9 +26,7 @@ export async function approveCommand(
     return 1;
   }
 
-  const report = JSON.parse(
-    await readFile(path.join(runDir, 'report.json'), 'utf8'),
-  ) as RunReport;
+  const report = parseRunReport(await readFile(path.join(runDir, 'report.json'), 'utf8'));
 
   const requested = new Set(flags.story ?? []);
   const candidates = report.results.filter((r) => {
@@ -90,7 +89,7 @@ export async function approveCommand(
     } catch (err) {
       failed.push({
         storyId: result.storyId,
-        reason: `could not write baseline: ${(err as Error).message}`,
+        reason: `could not write baseline: ${errorMessage(err)}`,
       });
     }
   }

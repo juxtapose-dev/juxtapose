@@ -16,6 +16,7 @@ import { inflateRawSync, crc32 } from 'node:zlib';
 import { chmod, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { errnoCode } from './guards.js';
 
 export interface ZipEntry {
   name: string;
@@ -118,7 +119,7 @@ function readZipUnchecked(buf: Buffer, limits: ZipLimits): ZipEntry[] {
       try {
         data = inflateRawSync(raw, { maxOutputLength: Math.max(usize, 1) });
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE')
+        if (errnoCode(err) === 'ERR_BUFFER_TOO_LARGE')
           throw new Error(`zip: entry too large: ${name}`, { cause: err });
         throw err;
       }
@@ -199,7 +200,7 @@ export interface InstallOptions extends ZipLimits {
 }
 
 const isRaceError = (err: unknown): boolean => {
-  const code = (err as NodeJS.ErrnoException).code;
+  const code = errnoCode(err);
   return code === 'EEXIST' || code === 'ENOTEMPTY' || code === 'EPERM';
 };
 
@@ -228,7 +229,7 @@ export async function installZip(
       await rename(finalDir, old);
       aside = old;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      if (errnoCode(err) !== 'ENOENT') throw err;
     }
     try {
       await rename(tmp, finalDir);

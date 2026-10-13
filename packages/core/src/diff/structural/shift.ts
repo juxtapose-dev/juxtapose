@@ -12,17 +12,20 @@ import { compareCodeUnits, sortFacts, type Fact } from './deltas.js';
 
 const MIN_RUN = 3;
 
+type MovedFact = Fact & { delta: Extract<Delta, { kind: 'moved' }> };
+const isMoved = (f: Fact): f is MovedFact => f.delta.kind === 'moved';
+
 export function synthesizeShifts(facts: Fact[]): Fact[] {
   const anchors = facts.filter(
     (f) => f.delta.kind !== 'moved' && f.delta.kind !== 'shift',
   );
-  const moved = facts.filter((f) => f.delta.kind === 'moved');
+  const moved = facts.filter(isMoved);
   if (moved.length < MIN_RUN) return facts;
 
   // Group by displacement, keeping document order within a group.
-  const groups = new Map<string, Fact[]>();
+  const groups = new Map<string, MovedFact[]>();
   for (const f of moved) {
-    const d = f.delta as Extract<Delta, { kind: 'moved' }>;
+    const d = f.delta;
     const key = `${d.dx},${d.dy}`;
     const g = groups.get(key);
     if (g) g.push(f);
@@ -86,15 +89,16 @@ export function synthesizeShifts(facts: Fact[]): Fact[] {
  *  (2) is ahead of (3) because a nearer odd move is usually a consequence of
  *  the same cause: in `inserted` the logo drops off the button's line between
  *  the banner and the rows, and the rows moved because of the banner. */
-function collapse(run: Fact[], anchors: Fact[], moved: Fact[]): Fact | undefined {
+function collapse(
+  run: MovedFact[],
+  anchors: Fact[],
+  moved: MovedFact[],
+): Fact | undefined {
   // Only runs of at least MIN_RUN reach here.
   const first = run[0]!;
   const last = run[run.length - 1]!;
-  const d = first.delta as Extract<Delta, { kind: 'moved' }>;
-  const other = moved.filter((f) => {
-    const m = f.delta as Extract<Delta, { kind: 'moved' }>;
-    return m.dx !== d.dx || m.dy !== d.dy;
-  });
+  const d = first.delta;
+  const other = moved.filter((f) => f.delta.dx !== d.dx || f.delta.dy !== d.dy);
   const base = (f: Fact) => f.source.index; // moves are matched: baseline side
   const crossed = other
     .filter(
@@ -103,7 +107,8 @@ function collapse(run: Fact[], anchors: Fact[], moved: Fact[]): Fact | undefined
         (base(f) > base(last) && f.order < first.order),
     )
     .sort((x, y) => base(x) - base(y));
-  const preceding = (fs: Fact[]) => fs.filter((f) => f.order < first.order).at(-1);
+  const preceding = <F extends Fact>(fs: F[]) =>
+    fs.filter((f) => f.order < first.order).at(-1);
   const anchor =
     (crossed[0] && headOf(crossed[0], moved)) ??
     preceding(anchors) ??
@@ -127,13 +132,13 @@ function collapse(run: Fact[], anchors: Fact[], moved: Fact[]): Fact | undefined
 /** The first of the moves contiguous (in document order) with `f` that
  *  share its displacement: an element and the descendants that moved with it
  *  read as the element. */
-function headOf(f: Fact, moved: Fact[]): Fact {
-  const m = f.delta as Extract<Delta, { kind: 'moved' }>;
+function headOf(f: MovedFact, moved: MovedFact[]): MovedFact {
+  const m = f.delta;
   // f is always one of moved (an anchor drawn from it), so k starts in range
   // and only walks down to 0.
   let k = moved.indexOf(f);
   while (k > 0) {
-    const p = moved[k - 1]!.delta as Extract<Delta, { kind: 'moved' }>;
+    const p = moved[k - 1]!.delta;
     if (p.dx !== m.dx || p.dy !== m.dy) break;
     k--;
   }

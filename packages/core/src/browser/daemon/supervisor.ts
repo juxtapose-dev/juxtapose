@@ -37,7 +37,8 @@ import { chmod, lstat, rm, utimes } from 'node:fs/promises';
 import { CHROME_VERSION } from '../pins.js';
 import { launchChrome, type LaunchedChrome } from '../launch.js';
 import { NullFramer } from '../transport.js';
-import type { RawMessage } from '../cdp.js';
+import type { CdpEventParams, JuxEvents, RawMessage } from '../cdp.js';
+import { isRecord } from '../guards.js';
 import {
   clearState,
   ensureDaemonDirs,
@@ -303,6 +304,15 @@ export interface SupervisorOptions {
 
 type Params = Record<string, unknown>;
 
+/** A hello reply, typed by the same map the client's `once` reads it through. */
+const juxEvent = <E extends keyof JuxEvents>(method: E, params: CdpEventParams<E>) => ({
+  method,
+  params,
+});
+
+/** A frame's params or result as an object; `{}` for anything else, as for an absent one. */
+const record = (v: unknown): Params => (isRecord(v) ? v : {});
+
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
 /** True when something accepts connections on `socketPath`. */
@@ -337,9 +347,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
   });
   let product: string;
   try {
-    ({ product } = await chrome.connection.send<{ product: string }>(
-      'Browser.getVersion',
-    ));
+    ({ product } = await chrome.connection.send('Browser.getVersion'));
   } catch (e) {
     await chrome.close();
     throw e;
@@ -403,7 +411,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
 
   const onReply = (m: RawMessage, o: Owner) => {
     const c = o.client;
-    const result = (m.result ?? {}) as Params;
+    const result = record(m.result);
     if (!m.error) {
       if (o.method === 'Target.createBrowserContext') {
         const id = str(result['browserContextId']);
@@ -418,11 +426,13 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
         o.method === 'Target.getTargets' &&
         Array.isArray(result['targetInfos'])
       ) {
-        const mine = (result['targetInfos'] as Params[]).filter(
-          (t) =>
-            targetOwner.get(str(t['targetId']) ?? '') === c ||
-            contextOwner.get(str(t['browserContextId']) ?? '') === c,
-        );
+        const mine = result['targetInfos'].filter((t) => {
+          const info = record(t);
+          return (
+            targetOwner.get(str(info['targetId']) ?? '') === c ||
+            contextOwner.get(str(info['browserContextId']) ?? '') === c
+          );
+        });
         m = { ...m, result: { ...result, targetInfos: mine } };
       } else if (
         o.method === 'Target.getBrowserContexts' &&
@@ -430,7 +440,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
       ) {
         // Same as getTargets: another client's context ids are not this one's
         // to see. The default context is nobody's, so its id goes too.
-        const mine = (result['browserContextIds'] as unknown[]).filter(
+        const mine = result['browserContextIds'].filter(
           (id) => contextOwner.get(str(id) ?? '') === c,
         );
         const rest: Params = { ...result, browserContextIds: mine };
@@ -451,7 +461,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
    * means nobody may hear it), else the session or target it names.
    */
   const ownerOfBrowserEvent = (p: Params): Client | undefined => {
-    const ctx = str(((p['targetInfo'] ?? {}) as Params)['browserContextId']);
+    const ctx = str(record(p['targetInfo'])['browserContextId']);
     if (ctx !== undefined) return contextOwner.get(ctx);
     const session = str(p['sessionId']);
     if (session !== undefined) return sessionOwner.get(session);
@@ -477,11 +487,11 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     for (const [id, o] of owners) if (o.sessionId === sessionId) owners.delete(id);
   };
 
-  const onEvent = (m: RawMessage & { method: string }) => {
-    const p = (m.params ?? {}) as Params;
+  const onEvent = (m: RawMessage, method: string) => {
+    const p = record(m.params);
     // Before any owner check: entries of a client that is gone are purged
     // too (dropClient does that as well, but this covers a late detach).
-    if (m.method === 'Target.detachedFromTarget') {
+    if (method === 'Target.detachedFromTarget') {
       const s = str(p['sessionId']);
       if (s !== undefined) purgeSession(s);
     }
@@ -489,31 +499,31 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     if (m.sessionId !== undefined) owner = sessionOwner.get(m.sessionId);
     // Browser-session events: only Target.* ones about a client's own
     // targets. Nothing else there is any one client's to hear.
-    else if (m.method.startsWith('Target.')) owner = ownerOfBrowserEvent(p);
+    else if (method.startsWith('Target.')) owner = ownerOfBrowserEvent(p);
     if (!owner) return;
-    const info = (p['targetInfo'] ?? {}) as Params;
+    const info = record(p['targetInfo']);
     const infoCtx = str(info['browserContextId']);
     // A target event on the owner's session about a target in someone else's
     // context is not the owner's to hear (defense in depth: discovery is refused).
     if (infoCtx !== undefined && contextOwner.get(infoCtx) !== owner) return;
     const infoTarget = str(info['targetId']);
-    if (m.method === 'Target.attachedToTarget') {
+    if (method === 'Target.attachedToTarget') {
       // A child auto-attached under the owner's session, or a target in its context.
       const held = infoTarget === undefined ? undefined : targetOwner.get(infoTarget);
       if (held && held !== owner) return;
       claimSession(owner, str(p['sessionId']));
       if (infoCtx !== undefined) claimTarget(owner, infoTarget);
-    } else if (m.method === 'Target.targetCreated' && infoCtx !== undefined) {
+    } else if (method === 'Target.targetCreated' && infoCtx !== undefined) {
       claimTarget(owner, infoTarget);
     }
     deliver(owner, m);
-    if (m.method === 'Target.detachedFromTarget') {
+    if (method === 'Target.detachedFromTarget') {
       const s = str(p['sessionId']);
       if (s && sessionOwner.get(s) === owner) {
         sessionOwner.delete(s);
         owner.sessions.delete(s);
       }
-    } else if (m.method === 'Target.targetDestroyed') {
+    } else if (method === 'Target.targetDestroyed') {
       const t = str(p['targetId']);
       if (t && targetOwner.get(t) === owner) {
         targetOwner.delete(t);
@@ -530,7 +540,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
       onReply(m, o);
       return;
     }
-    if (m.method) onEvent(m as RawMessage & { method: string });
+    if (m.method) onEvent(m, m.method);
   };
 
   /** Why `c` may not send this, or null. Every refusal names the thing it does not own. */
@@ -595,10 +605,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     }
     // `null`, arrays and scalars parse fine and crashed the daemon on a
     // property read (fix round 1): only plain objects get past here.
-    const m =
-      typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-        ? (parsed as Params)
-        : null;
+    const m = isRecord(parsed) ? parsed : null;
     if (!c.ready) {
       clearTimeout(c.helloTimer);
       if (m?.['jux'] !== 'hello') {
@@ -606,15 +613,17 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
         return;
       }
       if (m['version'] !== CHROME_VERSION) {
-        deliver(c, {
-          method: 'jux.refused',
-          params: { reason: `version ${String(m['version'])} != ${CHROME_VERSION}` },
-        });
+        deliver(
+          c,
+          juxEvent('jux.refused', {
+            reason: `version ${String(m['version'])} != ${CHROME_VERSION}`,
+          }),
+        );
         c.socket.end();
         return;
       }
       c.ready = true;
-      deliver(c, { method: 'jux.ready', params: { product } });
+      deliver(c, juxEvent('jux.ready', { product }));
       return;
     }
     // After hello a frame without a usable id has nobody to answer: ignore it.
@@ -632,16 +641,14 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     if (
       typeof method !== 'string' ||
       (sessionId !== undefined && typeof sessionId !== 'string') ||
-      typeof rawParams !== 'object' ||
-      rawParams === null ||
-      Array.isArray(rawParams)
+      !isRecord(rawParams)
     ) {
       fail(
         'jux: malformed command: needs a string method, an object params and a string sessionId if any',
       );
       return;
     }
-    const params = rawParams as Params;
+    const params = rawParams;
     const why = refusal(c, method, params, sessionId);
     if (why) {
       fail(why);
@@ -835,10 +842,6 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
       return owners.size;
     },
     browserContextIds: async () =>
-      (
-        await chrome.connection.send<{ browserContextIds: string[] }>(
-          'Target.getBrowserContexts',
-        )
-      ).browserContextIds,
+      (await chrome.connection.send('Target.getBrowserContexts')).browserContextIds,
   };
 }

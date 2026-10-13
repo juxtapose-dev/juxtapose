@@ -16,6 +16,7 @@
 
 import { startSupervisor, SupervisorLostRace } from './supervisor.js';
 import { daemonPaths, releaseLockHeldBy } from './state.js';
+import { isRecord, isStringArray } from '../guards.js';
 
 interface MainArgs {
   executablePath: string;
@@ -26,18 +27,21 @@ interface MainArgs {
 }
 
 function parseArgs(raw: string | undefined): MainArgs {
-  const a = JSON.parse(raw ?? '') as Partial<MainArgs>;
+  const bad = () => new Error(`jux: supervisor-main: bad arguments ${raw ?? '(none)'}`);
+  const a: unknown = JSON.parse(raw ?? '');
+  // `null` or an array used to fail on a property read with a TypeError.
+  if (!isRecord(a)) throw bad();
+  const { executablePath, args, stateDir, key, idleMinutes } = a;
   if (
-    typeof a.executablePath !== 'string' ||
-    !Array.isArray(a.args) ||
-    !a.args.every((x) => typeof x === 'string') ||
-    typeof a.stateDir !== 'string' ||
-    typeof a.key !== 'string' ||
-    typeof a.idleMinutes !== 'number' ||
-    !(a.idleMinutes > 0)
+    typeof executablePath !== 'string' ||
+    !isStringArray(args) ||
+    typeof stateDir !== 'string' ||
+    typeof key !== 'string' ||
+    typeof idleMinutes !== 'number' ||
+    !(idleMinutes > 0)
   )
-    throw new Error(`jux: supervisor-main: bad arguments ${raw ?? '(none)'}`);
-  return a as MainArgs;
+    throw bad();
+  return { executablePath, args, stateDir, key, idleMinutes };
 }
 
 let paths: ReturnType<typeof daemonPaths> | null = null;

@@ -28,11 +28,6 @@ export interface ProviderStore {
 }
 
 /** Shapes Storybook has exposed the store getter under. */
-interface StoreHost {
-  experimental_getTestProviderStore?: (id: string) => unknown;
-  getTestProviderStore?: (id: string) => unknown;
-}
-
 export const TEST_PROVIDER_ID = 'juxtapose/tests';
 
 /**
@@ -45,12 +40,16 @@ export const TEST_PROVIDER_ID = 'juxtapose/tests';
  * silent rather than a warning.
  */
 export function getTestProviderStore(api: unknown): ProviderStore | null {
-  const host = api as StoreHost | undefined;
-  const get = host?.experimental_getTestProviderStore ?? host?.getTestProviderStore;
+  if (typeof api !== 'object' || api === null) return null;
+  const get =
+    ('experimental_getTestProviderStore' in api
+      ? api.experimental_getTestProviderStore
+      : undefined) ??
+    ('getTestProviderStore' in api ? api.getTestProviderStore : undefined);
   if (typeof get !== 'function') return null;
 
   try {
-    const store = get.call(host, TEST_PROVIDER_ID);
+    const store: unknown = get.call(api, TEST_PROVIDER_ID);
     return isProviderStore(store) ? store : null;
   } catch {
     return null;
@@ -63,7 +62,8 @@ function isProviderStore(value: unknown): value is ProviderStore {
   return (
     typeof value === 'object' &&
     value !== null &&
-    typeof (value as ProviderStore).setState === 'function'
+    'setState' in value &&
+    typeof value.setState === 'function'
   );
 }
 

@@ -9,7 +9,6 @@ import { createServer, type Server } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import type { AddressInfo } from 'node:net';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -96,7 +95,11 @@ export async function serveStatic(dir: string): Promise<StaticServer> {
   });
 
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok));
-  const { port } = server.address() as AddressInfo;
+  // A TCP listen always has an AddressInfo; the string form is for pipes.
+  const address = server.address();
+  if (address === null || typeof address === 'string')
+    throw new Error(`jux: static server has no TCP address (${String(address)})`);
+  const { port } = address;
 
   return {
     url: `http://127.0.0.1:${port}`,

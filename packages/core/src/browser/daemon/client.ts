@@ -28,6 +28,7 @@ import { chromeArgs } from '../flags.js';
 import { Browser } from '../browser.js';
 import { CdpConnection } from '../cdp.js';
 import { CHROME_VERSION } from '../pins.js';
+import { errnoCode, isRecord } from '../guards.js';
 import { SocketTransport } from '../transport.js';
 import {
   acquireLock,
@@ -217,8 +218,8 @@ const PACKAGE_JSON = fileURLToPath(new URL('../../../package.json', import.meta.
 
 function packageVersion(): string {
   try {
-    const pkg = JSON.parse(readFileSync(PACKAGE_JSON, 'utf8')) as { version?: unknown };
-    return typeof pkg.version === 'string' ? pkg.version : '';
+    const pkg: unknown = JSON.parse(readFileSync(PACKAGE_JSON, 'utf8'));
+    return isRecord(pkg) && typeof pkg['version'] === 'string' ? pkg['version'] : '';
   } catch {
     return '';
   }
@@ -352,11 +353,11 @@ function tryConnect(paths: DaemonPaths, timeoutMs: number): Promise<Probe> {
     sock.once('connect', () => {
       const t = new SocketTransport(sock);
       const c = (conn = new CdpConnection(t));
-      c.once<{ product: string }>('jux.ready').then(
+      c.once('jux.ready').then(
         (p) => finish({ kind: 'ok', connection: c, product: p.product }),
         () => finish({ kind: 'refused', reason: 'socket closed during hello' }),
       );
-      c.once<{ reason?: string }>('jux.refused').then(
+      c.once('jux.refused').then(
         (p) => finish({ kind: 'refused', reason: p.reason ?? 'hello refused' }),
         () => {},
       );
@@ -448,7 +449,7 @@ async function procCommand(pid: number): Promise<string | null> {
     return (await readFile(`/proc/${pid}/cmdline`, 'utf8')).replace(/\0/g, ' ').trim();
   } catch (e) {
     // No such pid is an answer only when /proc is really there.
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT')
+    if (errnoCode(e) === 'ENOENT')
       return (await stat('/proc/self').catch(() => null)) ? '' : null;
     return null;
   }
@@ -789,7 +790,7 @@ async function stateFiles(
   stateDir: string,
 ): Promise<{ paths: DaemonPaths; state: DaemonState }[]> {
   const dir = path.join(path.resolve(stateDir), 'browser');
-  const names = await readdir(dir).catch(() => [] as string[]);
+  const names = await readdir(dir).catch((): string[] => []);
   const out: { paths: DaemonPaths; state: DaemonState }[] = [];
   for (const name of names.sort()) {
     if (!name.endsWith('.json') || name.startsWith('.')) continue;
@@ -852,10 +853,10 @@ async function stopOne(
     // supervisor-main) must not delete a live daemon's files: it would keep
     // running, unreachable, with its Chrome. Only a socket nobody answers on
     // proves the pid was reused.
-    const p =
+    const p: Probe =
       s.socket === paths.socket
         ? await probe(paths, STATUS_PROBE_TIMEOUT_MS)
-        : ({ kind: 'dead' } as Probe);
+        : { kind: 'dead' };
     if (p.kind === 'ok') p.connection.close();
     if (p.kind !== 'dead')
       return {

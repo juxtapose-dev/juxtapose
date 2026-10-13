@@ -146,6 +146,11 @@ function createStore(projectRoot: string, config: ProjectConfig): BaselineStore 
   }
 }
 
+/**
+ * The user's config, as written. Kept as casts: each setting is checked where
+ * it is used (resolveSnapSlots takes `unknown`), and a schema check here would
+ * reject configs that work today, which is a change of its own.
+ */
 export async function loadConfig(projectRoot: string): Promise<ProjectConfig> {
   for (const name of ['juxtapose.config.json', '.juxtaposerc.json']) {
     try {

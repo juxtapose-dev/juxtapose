@@ -64,11 +64,11 @@ export default tseslint.config(
   // are outside every project, so the type-aware rules cannot run there and
   // they keep the syntax-only rules above.
   //
-  // recommended-type-checked, minus the rules that still have hits on this
-  // codebase (counts when enabled): require-await 9, no-unsafe-assignment 5,
-  // unbound-method 2, no-unsafe-member-access 1, no-unsafe-argument 1,
-  // prefer-promise-reject-errors 1. Each is a cleanup of its own; turning one
-  // on means fixing its hits in the same change.
+  // recommended-type-checked, minus require-await (9 hits when enabled).
+  // Those are interface methods and callbacks that are `async` without an
+  // await on purpose: `async` turns a synchronous throw into a rejection the
+  // caller's `.catch` sees. Dropping it would change that; keeping it under
+  // the rule would mean `Promise.resolve` wrappers that say less.
   ...tseslint.configs.recommendedTypeChecked.map((config) => ({
     ...config,
     files: TYPED_SRC,
@@ -91,11 +91,6 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
 
       '@typescript-eslint/require-await': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/unbound-method': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
-      '@typescript-eslint/no-unsafe-argument': 'off',
-      '@typescript-eslint/prefer-promise-reject-errors': 'off',
     },
   },
 

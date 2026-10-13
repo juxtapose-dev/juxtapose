@@ -48,6 +48,16 @@ describe('CdpConnection', () => {
     expect((await p).product).toBe('HeadlessChrome/151');
     await q;
   });
+  it('ignores frames that are JSON but not a message, and keeps going', async () => {
+    const t = new FakeTransport();
+    const c = new CdpConnection(t);
+    const p = c.send('Browser.getVersion');
+    // `null` used to throw out of the transport's data event.
+    for (const frame of ['null', '[1]', '"x"', '{"id":"1"}', '{"id":1,"error":"no"}'])
+      expect(() => t.onMessage?.(frame)).not.toThrow();
+    t.reply(1, { product: 'HeadlessChrome/151' });
+    await expect(p).resolves.toEqual({ product: 'HeadlessChrome/151' });
+  });
   it('rejects with CdpError carrying the protocol code and method', async () => {
     const t = new FakeTransport();
     const c = new CdpConnection(t);

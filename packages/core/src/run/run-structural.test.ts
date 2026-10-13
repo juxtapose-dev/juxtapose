@@ -167,10 +167,13 @@ test('no current structure → no structural at all', async () => {
   expect(r.results[0].structural).toBeUndefined();
 });
 
-test('a malformed decoded baseline never fails the run: still fail, no structural', async () => {
+// decodeStructure rejects the wrong shape at the boundary, so a malformed
+// sidecar reads as absent, like a corrupt one, instead of throwing later
+// inside the structural diff and losing the verdict.
+test('a malformed decoded baseline never fails the run: still fail, reads as absent', async () => {
   const r = await run(store('malformed'));
   expect(r.results[0].status).toBe('fail');
-  expect(r.results[0].structural).toBeUndefined();
+  expect(r.results[0].structural?.flags).toContain('no-baseline-structure');
   expect(r.results[0].mismatchPixels).toBeGreaterThan(0);
 });
 

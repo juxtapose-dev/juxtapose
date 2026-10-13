@@ -20,6 +20,7 @@ import {
   type BaselineStore,
   type Platform,
   type ProjectConfig,
+  parseRunReport,
   type RunReport,
   type StoryManifest,
 } from '@juxtapose/core';
@@ -86,7 +87,7 @@ export class RunDirSource implements ReviewSource {
   constructor(private readonly opts: SourceOptions) {}
 
   setBaseUrl(baseUrl: string): void {
-    (this.opts as { baseUrl: string }).baseUrl = baseUrl;
+    this.opts.baseUrl = baseUrl;
   }
 
   async bundle(): Promise<ReviewBundle> {
@@ -324,7 +325,7 @@ export class RunDirSource implements ReviewSource {
     if (this.report) return this.report;
     try {
       const raw = await readFile(path.join(this.opts.runDir, 'report.json'), 'utf8');
-      this.report = JSON.parse(raw) as RunReport;
+      this.report = parseRunReport(raw);
     } catch {
       this.report = null;
     }

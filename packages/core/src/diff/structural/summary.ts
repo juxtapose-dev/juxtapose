@@ -438,9 +438,10 @@ function shorthand(changes: ContentDelta[], arrow = '→'): Part[] {
   const collapsed = new Map<string, Part>(); // first longhand seen → clause
   const absorbed = new Set<string>();
   for (const [name, sides] of BOXES) {
-    const ds = sides.map((p) => style.get(p));
-    if (ds.some((d) => d === undefined)) continue;
-    const four = ds as Array<Extract<Delta, { kind: 'style' }>>;
+    const four = sides
+      .map((p) => style.get(p))
+      .filter((d): d is Extract<Delta, { kind: 'style' }> => d !== undefined);
+    if (four.length !== sides.length) continue;
     const first = changes.find((c) => c.kind === 'style' && sides.includes(c.prop));
     if (first?.kind !== 'style') continue;
     collapsed.set(first.prop, {

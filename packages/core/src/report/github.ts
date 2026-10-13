@@ -5,6 +5,7 @@
 // add to every project.
 
 import { readFile } from 'node:fs/promises';
+import { isRecord } from '../browser/guards.js';
 import { COMMENT_MARKER } from './comment.js';
 
 /**
@@ -80,12 +81,12 @@ async function readPrNumber(env: NodeJS.ProcessEnv): Promise<number | null> {
   const eventPath = env.GITHUB_EVENT_PATH;
   if (eventPath) {
     try {
-      const event = JSON.parse(await readFile(eventPath, 'utf8')) as {
-        pull_request?: { number?: number };
-        number?: number;
-      };
-      const n = event.pull_request?.number ?? event.number;
-      if (typeof n === 'number') return n;
+      const event: unknown = JSON.parse(await readFile(eventPath, 'utf8'));
+      if (isRecord(event)) {
+        const pr = event['pull_request'];
+        const n = (isRecord(pr) ? pr['number'] : undefined) ?? event['number'];
+        if (typeof n === 'number') return n;
+      }
     } catch {
       // Malformed or unreadable payload; fall through to the ref.
     }
@@ -100,6 +101,11 @@ interface Comment {
   id: number;
   body?: string;
 }
+
+const isComment = (v: unknown): v is Comment =>
+  isRecord(v) &&
+  typeof v['id'] === 'number' &&
+  (v['body'] === undefined || typeof v['body'] === 'string');
 
 /**
  * Create or update the juxtapose comment.
@@ -126,8 +132,10 @@ export async function postComment(
         });
 
     if (!res.ok) return null;
-    const created = (await res.json()) as { html_url?: string };
-    return created.html_url ?? null;
+    const created: unknown = await res.json();
+    return isRecord(created) && typeof created['html_url'] === 'string'
+      ? created['html_url']
+      : null;
   } catch {
     return null;
   }
@@ -148,8 +156,15 @@ async function findOwnComment(ctx: GitHubContext): Promise<Comment | null> {
     );
     if (!res.ok) return null;
 
-    const comments = (await res.json()) as Comment[];
-    const found = comments.find((c) => c.body?.includes(COMMENT_MARKER));
+    const comments: unknown = await res.json();
+    // Thrown, not null: null means "no comment of ours", which would post a
+    // duplicate. postComment turns this into "nothing posted", as the
+    // TypeError on `.find` it replaces did.
+    if (!Array.isArray(comments))
+      throw new Error('jux: GitHub returned a non-array comment list');
+    const found = comments.find(
+      (c): c is Comment => isComment(c) && c.body?.includes(COMMENT_MARKER) === true,
+    );
     if (found) return found;
     if (comments.length < 100) return null;
   }

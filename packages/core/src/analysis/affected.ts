@@ -13,16 +13,35 @@
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { isRecord, isStringArray } from '../browser/guards.js';
 import type { StoryManifest } from '../types.js';
 
 interface ViteManifestEntry {
-  file: string;
+  /** Always written by Vite; never read here, so not required of the file. */
+  file?: string;
   src?: string;
   imports?: string[];
   dynamicImports?: string[];
 }
 
 export type ViteManifest = Record<string, ViteManifestEntry>;
+
+const optional = <T>(v: unknown, is: (v: unknown) => v is T) => v === undefined || is(v);
+const isString = (v: unknown): v is string => typeof v === 'string';
+
+/** The fields buildReverseGraph reads, with the types it reads them as. */
+function isViteManifest(v: unknown): v is ViteManifest {
+  return (
+    isRecord(v) &&
+    Object.values(v).every(
+      (e) =>
+        isRecord(e) &&
+        optional(e['src'], isString) &&
+        optional(e['imports'], isStringArray) &&
+        optional(e['dynamicImports'], isStringArray),
+    )
+  );
+}
 
 export interface AffectedOptions {
   projectRoot: string;
@@ -224,7 +243,12 @@ function walkDependents(reverse: Map<string, Set<string>>, seeds: string[]): Set
 export async function loadViteManifest(buildDir: string): Promise<ViteManifest | null> {
   for (const rel of ['.vite/manifest.json', 'manifest.json']) {
     try {
-      return JSON.parse(await readFile(path.join(buildDir, rel), 'utf8')) as ViteManifest;
+      const parsed: unknown = JSON.parse(
+        await readFile(path.join(buildDir, rel), 'utf8'),
+      );
+      // Not a Vite manifest (another tool's manifest.json): no graph, which
+      // escalates to capturing everything, as a missing one does.
+      if (isViteManifest(parsed)) return parsed;
     } catch {
       // try next
     }

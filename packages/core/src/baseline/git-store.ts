@@ -19,6 +19,16 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { ApprovalMeta, BaselineManifest, BaselineStore } from '../types.js';
 import { hashImage } from './status.js';
+import { isRecord } from '../browser/guards.js';
+
+/**
+ * The envelope only, exactly the check this file always made: version 1 and
+ * a `baselines` of type object. Entries are not checked one by one; the guard
+ * vouches for the envelope, the cast it replaces vouched for nothing.
+ */
+function isBaselineManifest(v: unknown): v is BaselineManifest {
+  return isRecord(v) && v['version'] === 1 && typeof v['baselines'] === 'object';
+}
 
 const MANIFEST_NAME = 'juxtapose.manifest.json';
 const EMPTY: BaselineManifest = { version: 1, baselines: {} };
@@ -94,13 +104,8 @@ export class GitBaselineStore implements BaselineStore {
   async readManifest(): Promise<BaselineManifest> {
     if (!existsSync(this.manifestPath)) return structuredClone(EMPTY);
     try {
-      const parsed = JSON.parse(
-        await readFile(this.manifestPath, 'utf8'),
-      ) as BaselineManifest;
-      if (parsed?.version !== 1 || typeof parsed.baselines !== 'object') {
-        return structuredClone(EMPTY);
-      }
-      return parsed;
+      const parsed: unknown = JSON.parse(await readFile(this.manifestPath, 'utf8'));
+      return isBaselineManifest(parsed) ? parsed : structuredClone(EMPTY);
     } catch {
       // A corrupt manifest means every story reads as `new`, which is loud and
       // recoverable. Throwing here would block the run entirely.

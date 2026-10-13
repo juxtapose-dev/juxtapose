@@ -10,7 +10,11 @@ import type { ImageKind, ReviewSource } from './types.js';
 /** Mounted under this prefix so it cannot collide with workbench routes. */
 export const API_PREFIX = '/jux/api';
 
-const IMAGE_KINDS = new Set<ImageKind>(['current', 'baseline', 'diff']);
+const isImageKind = (s: string): s is ImageKind =>
+  s === 'current' || s === 'baseline' || s === 'diff';
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
 
 export interface Handler {
   (req: IncomingMessage, res: ServerResponse): Promise<boolean>;
@@ -67,8 +71,8 @@ async function route(
   const image = /^\/image\/([^/]+)\/(.+)$/.exec(path);
   if (method === 'GET' && image) {
     // Both groups are non-optional, so a match always fills them.
-    const kind = image[1]! as ImageKind;
-    if (!IMAGE_KINDS.has(kind)) return json(res, 400, { error: 'unknown image kind' });
+    const kind = image[1]!;
+    if (!isImageKind(kind)) return json(res, 400, { error: 'unknown image kind' });
 
     const bytes = await source.image(kind, decodeURIComponent(image[2]!));
     if (!bytes) return json(res, 404, { error: 'no such image' });
@@ -96,17 +100,29 @@ async function route(
   }
 
   if (method === 'POST' && path === '/approve') {
-    const body = await readJson<{ storyId?: string }>(req);
-    if (!body?.storyId) return json(res, 400, { error: 'storyId required' });
-    await source.approve(body.storyId);
+    const body = await readJson(req);
+    const storyId = isRecord(body) ? body['storyId'] : undefined;
+    if (typeof storyId !== 'string' || !storyId)
+      return json(res, 400, { error: 'storyId required' });
+    await source.approve(storyId);
     return json(res, 200, { ok: true });
   }
 
   if (method === 'POST' && path === '/run') {
-    const body = await readJson<{ storyIds?: string[] }>(req);
+    const body = await readJson(req);
+    const raw = isRecord(body) ? body['storyIds'] : undefined;
+    // Absent (or null) means every story; present must be a list of ids.
+    // Anything else used to reach source.run as-is, where a string matched
+    // by substring.
+    let storyIds: string[] | undefined;
+    if (raw !== undefined && raw !== null) {
+      if (!Array.isArray(raw) || !raw.every((s): s is string => typeof s === 'string'))
+        return json(res, 400, { error: 'storyIds must be an array of strings' });
+      storyIds = raw;
+    }
     // Deliberately not awaited: a run takes seconds and the client polls
     // /progress. Holding the request open would just time out.
-    void source.run(body?.storyIds).catch(() => {});
+    void source.run(storyIds).catch(() => {});
     return json(res, 202, { started: true });
   }
 
@@ -148,19 +164,21 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
-async function readJson<T>(req: IncomingMessage): Promise<T | null> {
+async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
+    // Buffers unless someone called setEncoding on the request; nobody does.
+    if (!Buffer.isBuffer(chunk)) return null;
     size += chunk.length;
     // A review API has no business accepting large bodies; refuse rather
     // than buffering whatever arrives.
     if (size > 1_000_000) return null;
-    chunks.push(chunk as Buffer);
+    chunks.push(chunk);
   }
   if (chunks.length === 0) return null;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as T;
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     return null;
   }

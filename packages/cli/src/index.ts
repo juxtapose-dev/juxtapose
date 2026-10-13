@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
 import { EXIT } from './exit-codes.js';
+import { isRecord } from './guards.js';
 import { BROWSER_HELP } from './commands/browser-help.js';
 
 const USAGE = `
@@ -103,30 +104,36 @@ async function main(argv: string[]): Promise<number> {
     },
   });
 
+  // strict: false (unknown flags pass through) makes parseArgs type every
+  // value `string | boolean`, since `--json=yes` is legal there. Each command
+  // declares the flag types the usage documents; this one cast is where that
+  // claim is made, instead of one per command.
+  const flags = values as never;
+
   switch (command) {
     case 'init': {
       const { initCommand } = await import('./commands/init.js');
-      return initCommand(values as never);
+      return initCommand(flags);
     }
     case 'run': {
       const { runCommand } = await import('./commands/run.js');
-      return runCommand(values as never);
+      return runCommand(flags);
     }
     case 'approve': {
       const { approveCommand } = await import('./commands/approve.js');
-      return approveCommand(values as never);
+      return approveCommand(flags);
     }
     case 'check': {
       const { checkCommand } = await import('./commands/check.js');
-      return checkCommand(values as never);
+      return checkCommand(flags);
     }
     case 'handoff': {
       const { handoffCommand } = await import('./commands/handoff.js');
-      return handoffCommand(positionals[0], values as never);
+      return handoffCommand(positionals[0], flags);
     }
     case 'snap': {
       const { snapCommand } = await import('./commands/snap.js');
-      return snapCommand(positionals, values as never);
+      return snapCommand(positionals, flags);
     }
     case 'browser': {
       const { browserCommand } = await import('./commands/browser.js');
@@ -134,11 +141,11 @@ async function main(argv: string[]): Promise<number> {
     }
     case 'diff': {
       const { diffCommand } = await import('./commands/diff.js');
-      return diffCommand(positionals[0], positionals[1], values as never);
+      return diffCommand(positionals[0], positionals[1], flags);
     }
     case 'mcp': {
       const { mcpCommand } = await import('./commands/mcp.js');
-      return mcpCommand(values as never, selfVersion());
+      return mcpCommand(flags, selfVersion());
     }
     default:
       process.stderr.write(
@@ -188,14 +195,19 @@ function suggest(command: string): string {
   return best && best.d <= 2 ? ` Did you mean '${best.c}'?` : '';
 }
 
+/** A package.json's version; '(unknown)' when it has none (it always does). */
+function packageVersion(pkg: unknown): string {
+  return isRecord(pkg) && typeof pkg['version'] === 'string'
+    ? pkg['version']
+    : '(unknown)';
+}
+
 function selfVersion(): string {
   // Our own package.json is not reachable through the exports map, so read it
   // relative to this file — dist/index.js sits one level below it.
-  return (
-    JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
-      version: string;
-    }
-  ).version;
+  return packageVersion(
+    JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')),
+  );
 }
 
 /**
@@ -218,8 +230,8 @@ function versions(): string {
 
   for (const name of names) {
     try {
-      const pkg = require(`${name}/package.json`) as { version: string };
-      lines.push(`${name.padEnd(30)} ${pkg.version}`);
+      const pkg: unknown = require(`${name}/package.json`);
+      lines.push(`${name.padEnd(30)} ${packageVersion(pkg)}`);
     } catch {
       // Absent is normal — the adapters are optional peers.
       lines.push(`${name.padEnd(30)} (not installed)`);

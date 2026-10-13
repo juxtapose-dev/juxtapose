@@ -235,9 +235,11 @@ function defaultConfig(ctx: {
   buildDir?: string;
   projectRoot: string;
 }): ProjectConfig {
-  const config: ProjectConfig = {
-    platform: ctx.platform.name as ProjectConfig['platform'],
-  };
+  const name = ctx.platform.name;
+  // Platform.name is any string; the config accepts the three jux ships.
+  if (name !== 'storybook' && name !== 'ladle' && name !== 'urls')
+    throw new Error(`jux init: platform '${name}' cannot be written to the config`);
+  const config: ProjectConfig = { platform: name };
   if (ctx.buildDir) {
     config.buildDir = path.relative(ctx.projectRoot, ctx.buildDir) || '.';
   }
