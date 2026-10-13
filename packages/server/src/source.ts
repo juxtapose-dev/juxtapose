@@ -1,7 +1,7 @@
 // A ReviewSource backed by run artifacts on disk plus a live capture pool.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import {
   approveCapture,
@@ -26,6 +26,7 @@ import {
   platformStoryId,
   prepareCaptures,
   selectByStoryId,
+  VariantConfigError,
   type RunReport,
   type StoryManifest,
 } from '@juxtapose/core';
@@ -69,7 +70,12 @@ export function watchTargets(
 
 export class RunDirSource implements ReviewSource {
   private report: RunReport | null = null;
-  private storyCache: StoryManifest[] | null = null;
+  /** In flight or settled: concurrent callers share one discovery. */
+  private storyCache: Promise<StoryManifest[]> | null = null;
+  private indexCache: Promise<StoryManifest[]> | null = null;
+  /** A variant config error, kept until the stories or the config file
+   *  change: retrying it on every poll would relaunch discovery each time. */
+  private configError: { error: VariantConfigError; configStamp: string } | null = null;
   private readonly affectedCache = new Map<string, string[]>();
   private browser: Browser | null = null;
 
@@ -129,16 +135,47 @@ export class RunDirSource implements ReviewSource {
    * expanded. Keyed by capture key, like everything the run writes.
    */
   async stories(): Promise<StoryManifest[]> {
-    if (this.storyCache) return this.storyCache;
-    const enumerated = await this.opts.platform.enumerate({
-      projectRoot: this.opts.projectRoot,
-      origin: this.opts.baseUrl,
-    });
+    if (this.configError) {
+      if (this.configError.configStamp === configStamp(this.opts.projectRoot))
+        throw this.configError.error;
+      this.configError = null;
+    }
+    this.storyCache ??= this.loadStories();
+    const pending = this.storyCache;
+    try {
+      return await pending;
+    } catch (err) {
+      // Not cached as a result: the next call retries, unless the error is
+      // the user's config, which only an edit can fix.
+      if (this.storyCache === pending) this.storyCache = null;
+      if (err instanceof VariantConfigError)
+        this.configError = {
+          error: err,
+          configStamp: configStamp(this.opts.projectRoot),
+        };
+      throw err;
+    }
+  }
+
+  /** The platform's own stories, without discovery: enough for a title or a
+   *  source path, and never starts a browser. */
+  private indexStories(): Promise<StoryManifest[]> {
+    this.indexCache ??= this.opts.platform
+      .enumerate({ projectRoot: this.opts.projectRoot, origin: this.opts.baseUrl })
+      .catch((err: unknown) => {
+        this.indexCache = null;
+        throw err;
+      });
+    return this.indexCache;
+  }
+
+  private async loadStories(): Promise<StoryManifest[]> {
+    const enumerated = await this.indexStories();
     const projectVariants = this.opts.config.variants;
     // Discovery needs a page, so it only runs for a platform that has it; the
     // browser it starts is the one the next capture would start anyway.
-    this.storyCache = this.opts.platform.discoverParams
-      ? await prepareCaptures(enumerated, {
+    return this.opts.platform.discoverParams
+      ? prepareCaptures(enumerated, {
           platform: this.opts.platform,
           browser: await this.ensureBrowser(),
           baseUrl: this.opts.baseUrl,
@@ -147,12 +184,14 @@ export class RunDirSource implements ReviewSource {
           onWarning: (m) => process.stderr.write(`juxtapose: ${m}\n`),
         })
       : expandVariants(enumerated, projectVariants);
-    return this.storyCache;
   }
 
   /** Drop the cached story index — the workbench told us it changed. */
   flushStories(): void {
     this.storyCache = null;
+    this.indexCache = null;
+    // A story edit may be the fix for a variant declaration error.
+    this.configError = null;
     // Component paths may have moved, so the answers keyed off them are stale
     // too. Cheap to rebuild; wrong to keep.
     this.affectedCache.clear();
@@ -223,9 +262,12 @@ export class RunDirSource implements ReviewSource {
     const result = report?.results.find((r) => r.storyId === storyId);
     if (!result) return null;
 
-    // The source is the story's; a variant has no file of its own.
+    // The source is the story's; a variant has no file of its own. The index
+    // has the title and path, and the result says what the variant set, so
+    // no discovery (and no browser) is needed for a prompt.
     const baseId = result.baseStoryId ?? storyId;
-    const story = (await this.stories()).find((s) => s.storyId === baseId);
+    const story = (await this.indexStories()).find((s) => s.storyId === baseId);
+    const variant = handoffVariant(result);
     const images = path.join(this.opts.runDir, 'images');
     const safe = encodeStoryId(storyId);
 
@@ -251,7 +293,7 @@ export class RunDirSource implements ReviewSource {
           result.status === 'fail' ? path.join(images, `${safe}-diff.webp`) : undefined,
       },
       projectRoot: this.opts.projectRoot,
-      ...(handoffVariant(result) ? { variant: handoffVariant(result) } : {}),
+      ...(variant ? { variant } : {}),
     });
   }
 
@@ -421,3 +463,18 @@ export function mergeReports(previous: RunReport | null, fresh: RunReport): RunR
 }
 
 /** The same hash the manifest stores, so a match means "already approved". */
+
+/** Modification times of every file a project config can come from. A
+ *  changed stamp means the user edited it, so a cached config error is
+ *  worth retrying. */
+function configStamp(projectRoot: string): string {
+  return ['juxtapose.config.json', '.juxtaposerc.json', 'package.json']
+    .map((name) => {
+      try {
+        return String(statSync(path.join(projectRoot, name)).mtimeMs);
+      } catch {
+        return '-';
+      }
+    })
+    .join('|');
+}
