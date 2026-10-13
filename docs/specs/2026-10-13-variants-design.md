@@ -1,6 +1,6 @@
 # Per-story capture variants
 
-- Status: draft for review
+- Status: approved 2026-10-13
 - Issue: #22. #23 (interaction states) and #111 (sharding) build on it.
 - Prior art: storycap `variants` with `extends`, from the 2026-10-13 storycap and
   storycapture comparison.
@@ -185,10 +185,8 @@ These are fixed here or filed separately:
 - **MCP:** `run` with a base id returns every variant, and `approve` with a
   base id approves them all.
 
-## Open questions
+## Decisions (2026-10-13)
 
-1. Should project-wide variants apply to the URL platform? Proposed: yes,
-   consistently.
-2. Should the default capture be optional (`default: false`) for stories that
-   only make sense at mobile size? Proposed: not in v1; `skip` covers the
-   whole story.
+1. Project-wide variants apply to the URL platform too, for consistency.
+2. A story's default capture can't be turned off in v1. `skip` covers the
+   whole story; `default: false` can come later if it's needed.
