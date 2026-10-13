@@ -133,6 +133,20 @@ test('a password input is kept but its value is never recorded', () => {
   expect(JSON.stringify(snap())).not.toContain('hunter3');
 });
 
+test('autocomplete secrets are kept but their value is never recorded', () => {
+  const json = JSON.stringify(snap());
+  expect(json).not.toContain('OTP-SECRET'); // one-time-code
+  expect(json).not.toContain('CARD-SECRET'); // "billing CC-Number": any cc- token
+  expect(json).not.toContain('NEWPW-SECRET'); // new-password
+  expect(find((e) => e.text === 'USER-VISIBLE')).toBeDefined(); // username is not secret
+  const inputs = snap().elements.filter((e) => e.tag === 'input');
+  expect(inputs).toHaveLength(7);
+});
+
+test('a data: src records the scheme, not a payload fragment', () => {
+  expect(find((e) => e.id === 'inline-img')!.src).toBe('data:');
+});
+
 test('rects are rounded to 0.01px', () => {
   for (const e of snap().elements) {
     for (const v of Object.values(e.rect)) expect(Math.round(v * 100) / 100).toBe(v);

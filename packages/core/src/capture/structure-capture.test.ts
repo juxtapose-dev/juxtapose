@@ -53,7 +53,11 @@ test('a CDP failure yields undefined, never a throw', async () => {
 });
 
 test('masks are marked via locators, then unmarked by attribute', async () => {
-  const { page, calls } = fakePage({});
+  const { page, calls } = fakePage({
+    // calls 1-2 mark (one match each), 3-4 verify, 5 unmarks
+    evaluateAll: async (_sel, call) =>
+      call <= 2 ? 1 : call <= 4 ? { total: 1, marked: 1 } : undefined,
+  });
   await captureStructure(page, viewport, ['.clock', 'text=Now']);
   const marks = calls.filter((c) => c.args[0] === MASK_ATTR);
   expect(marks.map((c) => c.sel)).toEqual([
@@ -104,4 +108,24 @@ test('a failing verification yields undefined', async () => {
     },
   });
   await expect(captureStructure(page, viewport, ['.secret'])).resolves.toBeUndefined();
+});
+
+test('a match that lost its mark and its selector match yields undefined', async () => {
+  // Two elements marked; by verification one has dropped out of the selector
+  // (and its mark), so `every` over the survivors alone would pass vacuously.
+  const { page } = fakePage({
+    evaluateAll: async (_sel, call) =>
+      call === 1 ? 2 : call === 2 ? { total: 1, marked: 1 } : undefined,
+  });
+  await expect(captureStructure(page, viewport, ['.secret'])).resolves.toBeUndefined();
+});
+
+test('every marked match still marked and matching yields a snapshot', async () => {
+  const { page } = fakePage({
+    evaluateAll: async (_sel, call) =>
+      call === 1 ? 2 : call === 2 ? { total: 2, marked: 2 } : undefined,
+  });
+  await expect(captureStructure(page, viewport, ['.secret'])).resolves.toMatchObject({
+    schema: 'juxtapose.structure/v1',
+  });
 });

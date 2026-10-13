@@ -14,8 +14,6 @@ import type { Platform } from '../platform.js';
 import type { StoryManifest, UrlEntry } from '../types.js';
 
 export function createUrlPlatform(urls: UrlEntry[]): Platform {
-  // Ids are baseline keys. A Map would silently keep the last duplicate and
-  // two pages would share one baseline, so reject them up front.
   const notHttp = (u: UrlEntry): Error =>
     new Error(`jux: url '${u.url}' for id '${u.id}' must be http(s)`);
   const isHttp = (url: URL): boolean =>

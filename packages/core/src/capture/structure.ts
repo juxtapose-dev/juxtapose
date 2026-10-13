@@ -338,9 +338,7 @@ export function normalizeStructure(
         if (!isPseudo) delete styles.content;
         const pseudoText = isPseudo ? parseContent(values[contentIdx]) : '';
         // Sidecars are committed to git: never record a secret field's value.
-        const secret =
-          tag === 'input' &&
-          ['password', 'hidden'].includes((a.type ?? '').toLowerCase());
+        const secret = tag === 'input' && isSecretInput(a);
         const typed = secret ? undefined : inputValue.get(i);
         const text = collapse(pseudoText || typed || ownText.get(i) || '');
         const role = a.role ?? implicitRole(tag, a);
@@ -383,6 +381,22 @@ export function normalizeStructure(
   return snapshot;
 }
 
+/** Autofill tokens that name a secret: a typed OTP, password or card number
+ *  in a `type=text` field is as sensitive as one in `type=password`. */
+const SECRET_AUTOCOMPLETE = new Set([
+  'one-time-code',
+  'current-password',
+  'new-password',
+]);
+
+function isSecretInput(a: Record<string, string>): boolean {
+  if (['password', 'hidden'].includes((a.type ?? '').toLowerCase())) return true;
+  return (a.autocomplete ?? '')
+    .toLowerCase()
+    .split(/\s+/)
+    .some((t) => SECRET_AUTOCOMPLETE.has(t) || t.startsWith('cc-'));
+}
+
 function implicitRole(tag: string, a: Record<string, string>): string | undefined {
   if (tag === 'a') return a.href !== undefined ? 'link' : undefined;
   if (tag === 'input') {
@@ -400,6 +414,9 @@ function implicitRole(tag: string, a: Record<string, string>): string | undefine
  *  every run (`jux run` serves on port 0) and between machines, so recording
  *  it would make the same page hash differently each time. */
 function fileName(u: string): string {
+  // A data: URI's "filename" is a slice of its payload: opaque, and as long as
+  // the payload happens to be between slashes.
+  if (/^data:/i.test(u.trim())) return 'data:';
   return u.split(/[?#]/)[0].split('/').pop() ?? '';
 }
 
@@ -500,11 +517,18 @@ export async function captureStructure(
       }, MASK_ATTR)
       .catch(() => {});
 
+  // How many elements each selector marked. Verification re-resolves the
+  // selector, so an element that lost both its mark and its match would drop
+  // out of the re-resolved list and `every` would pass on the survivors
+  // (probe c: SECRET-C recorded). Comparing counts closes that.
+  const markedCounts: number[] = [];
   try {
     for (const sel of mask) {
-      await page.locator(sel).evaluateAll((els, attr) => {
+      const n = await page.locator(sel).evaluateAll((els, attr) => {
         for (const el of els) el.setAttribute(attr, '1');
+        return els.length;
       }, MASK_ATTR);
+      markedCounts.push(typeof n === 'number' ? n : 0);
     }
   } catch {
     if (mask.length) await unmark();
@@ -519,10 +543,20 @@ export async function captureStructure(
         includeDOMRects: true,
         includePaintOrder: true,
       })) as unknown as CdpSnapshot;
-      for (const sel of mask) {
-        const intact = await page
-          .locator(sel)
-          .evaluateAll((els, attr) => els.every((e) => e.hasAttribute(attr)), MASK_ATTR);
+      for (const [k, sel] of mask.entries()) {
+        const v = (await page.locator(sel).evaluateAll(
+          (els, attr) => ({
+            total: els.length,
+            marked: els.filter((e) => e.hasAttribute(attr)).length,
+          }),
+          MASK_ATTR,
+        )) as { total: number; marked: number } | undefined;
+        // Every current match still marked, and none of the marked ones gone.
+        const intact =
+          typeof v === 'object' &&
+          v !== null &&
+          v.marked === v.total &&
+          v.marked >= markedCounts[k];
         if (!intact) return undefined;
       }
       return normalizeStructure(raw, viewport);
