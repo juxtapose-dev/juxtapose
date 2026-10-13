@@ -188,7 +188,7 @@ const IMPLICIT_ROLES: Record<string, string> = {
   iframe: 'document',
 };
 
-const round = (n: number) => Math.round(n * 100) / 100;
+export const round = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Turn a raw CDP snapshot into a StructureSnapshot.
