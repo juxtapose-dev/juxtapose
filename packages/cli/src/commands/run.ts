@@ -1,6 +1,6 @@
 // `jux run` — capture, compare, report.
 
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   buildComment,
@@ -157,6 +157,15 @@ export async function runCommand(
     });
 
     if (!ctx.json) io.err('\r' + ' '.repeat(70) + '\r');
+
+    // A cancelled run (jux mcp) captured only part of the selection. Writing
+    // its report would make it the "last run" that check, handoff and approve
+    // read, so a cancellation would silently replace the real one.
+    if (signal?.aborted) {
+      await rm(runDir, { recursive: true, force: true });
+      io.err('jux run: cancelled; no report written\n');
+      return EXIT.failure;
+    }
 
     await writeFile(
       path.join(runDir, 'report.json'),

@@ -19,6 +19,7 @@ import { acquireBrowser, MAX_CROPS, type Browser } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
 import { captureIo, type Session } from '../io.js';
 import { latestRunDir } from '../run-dir.js';
+import { MAX_VIEWPORT_SIDE } from './snap.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 
@@ -73,7 +74,10 @@ export const TOOLS: Tool[] = [
         },
         viewport: {
           type: 'object',
-          properties: { width: { type: 'integer' }, height: { type: 'integer' } },
+          properties: {
+            width: { type: 'integer', minimum: 1, maximum: MAX_VIEWPORT_SIDE },
+            height: { type: 'integer', minimum: 1, maximum: MAX_VIEWPORT_SIDE },
+          },
           required: ['width', 'height'],
         },
         waitFor: { type: 'string', description: 'CSS selector to wait for' },
@@ -186,8 +190,6 @@ const strings = (args: Args, key: string): string[] | undefined => {
 export class McpServer {
   private browser: Promise<Browser> | null = null;
   private readonly project: string;
-  /** The running call's; calls are serialized, so there is one at a time. */
-  private signal: AbortSignal | undefined;
 
   constructor(private readonly flags: McpFlags = {}) {
     // Real path, so the containment check below compares like with like on a
@@ -205,6 +207,9 @@ export class McpServer {
   private lend = async (): Promise<Browser> => {
     const current = this.browser ? await this.browser.catch(() => null) : null;
     if (current?.isConnected()) return current;
+    // Dead but not closed: close() still reaps a private launch's process and
+    // deletes its temp profile, which a crash leaves behind.
+    if (current) await current.close().catch(() => {});
     const next = acquireBrowser({
       chrome: this.flags.chrome,
       noDaemon: this.flags['no-daemon'] === true,
@@ -224,27 +229,29 @@ export class McpServer {
   }
 
   async call(name: string, args: Args, signal?: AbortSignal): Promise<ToolResult> {
-    this.signal = signal;
     try {
       switch (name) {
         case 'snap':
-          return await this.snap(args);
+          return await this.snap(args, signal);
         case 'diff':
-          return await this.diff(args);
+          return await this.diff(args, signal);
         case 'run':
-          return await this.run(args);
+          return await this.run(args, signal);
         case 'check':
-          return await this.invoke(async (s) =>
-            (await import('./check.js')).checkCommand(this.common(), s),
+          return await this.invoke(
+            async (s) => (await import('./check.js')).checkCommand(this.common(), s),
+            signal,
           );
         case 'handoff': {
           const story = str(args, 'story', true)!;
-          return await this.invoke(async (s) =>
-            (await import('./handoff.js')).handoffCommand(story, this.common(), s),
+          return await this.invoke(
+            async (s) =>
+              (await import('./handoff.js')).handoffCommand(story, this.common(), s),
+            signal,
           );
         }
         case 'approve':
-          return await this.approve(args);
+          return await this.approve(args, signal);
       }
     } catch (err) {
       return errorResult(err instanceof Error ? err.message : String(err));
@@ -278,7 +285,7 @@ export class McpServer {
     return real;
   }
 
-  private async snap(args: Args): Promise<ToolResult> {
+  private async snap(args: Args, signal?: AbortSignal): Promise<ToolResult> {
     const url = str(args, 'url');
     const as = str(args, 'as');
     const urls = strings(args, 'urls');
@@ -294,38 +301,35 @@ export class McpServer {
     let viewport: string | undefined;
     if (args.viewport !== undefined) {
       const v = args.viewport as { width?: unknown; height?: unknown } | null;
-      if (
-        !v ||
-        !Number.isInteger(v.width) ||
-        !Number.isInteger(v.height) ||
-        (v.width as number) < 1 ||
-        (v.height as number) < 1
-      )
-        throw new ArgError("'viewport' must be {width, height}, integers above 0");
+      // Shape only; snapCommand owns the range, so the CLI and the tool agree.
+      if (!v || typeof v.width !== 'number' || typeof v.height !== 'number')
+        throw new ArgError("'viewport' must be {width, height}");
       viewport = `${v.width as number}x${v.height as number}`;
     }
     const waitFor = str(args, 'waitFor');
     const mask = strings(args, 'mask');
     const project = await this.projectArg(args);
     const { snapCommand } = await import('./snap.js');
-    return this.invoke((s) =>
-      snapCommand(
-        url ? [url] : urls!,
-        {
-          json: true,
-          project,
-          ...(as ? { as } : {}),
-          ...(asPrefix ? { 'as-prefix': asPrefix } : {}),
-          ...(viewport ? { viewport } : {}),
-          ...(waitFor ? { 'wait-for': waitFor } : {}),
-          ...(mask ? { mask } : {}),
-        },
-        { ...s, browser: this.lend },
-      ),
+    return this.invoke(
+      (s) =>
+        snapCommand(
+          url ? [url] : urls!,
+          {
+            json: true,
+            project,
+            ...(as ? { as } : {}),
+            ...(asPrefix ? { 'as-prefix': asPrefix } : {}),
+            ...(viewport ? { viewport } : {}),
+            ...(waitFor ? { 'wait-for': waitFor } : {}),
+            ...(mask ? { mask } : {}),
+          },
+          { ...s, browser: this.lend },
+        ),
+      signal,
     );
   }
 
-  private async diff(args: Args): Promise<ToolResult> {
+  private async diff(args: Args, signal?: AbortSignal): Promise<ToolResult> {
     // Names only. The CLI also takes `.webp` paths, which would let a tool
     // call read (and decode, and crop) any image on the machine.
     const a = snapRef(args, 'a');
@@ -334,43 +338,48 @@ export class McpServer {
     const prefix = bool(args, 'prefix') === true;
     const project = await this.projectArg(args);
     const { diffCommand } = await import('./diff.js');
-    const result = await this.invoke((s) =>
-      diffCommand(a, b, { json: true, project, crops, prefix }, s),
+    const result = await this.invoke(
+      (s) => diffCommand(a, b, { json: true, project, crops, prefix }, s),
+      signal,
     );
     if (crops && !result.isError)
       result.content.push(...(await cropImages(result, project)));
     return result;
   }
 
-  private async run(args: Args): Promise<ToolResult> {
+  private async run(args: Args, signal?: AbortSignal): Promise<ToolResult> {
     const all = bool(args, 'all');
     const since = str(args, 'since');
     const stories = strings(args, 'stories');
     const { runCommand } = await import('./run.js');
-    return this.invoke((s) =>
-      runCommand(
-        {
-          ...this.common(),
-          ...(all ? { all } : {}),
-          ...(since ? { since } : {}),
-          ...(stories?.length ? { story: stories } : {}),
-        },
-        { ...s, browser: this.lend },
-      ),
+    return this.invoke(
+      (s) =>
+        runCommand(
+          {
+            ...this.common(),
+            ...(all ? { all } : {}),
+            ...(since ? { since } : {}),
+            ...(stories?.length ? { story: stories } : {}),
+          },
+          { ...s, browser: this.lend },
+        ),
+      signal,
     );
   }
 
   /** Explicit ids only, each one a result in the last run: an approval that
    *  matches nothing would otherwise report "nothing to approve" and look
    *  like success to an agent that mistyped an id. */
-  private async approve(args: Args): Promise<ToolResult> {
+  private async approve(args: Args, signal?: AbortSignal): Promise<ToolResult> {
     const stories = strings(args, 'stories');
     if (!stories?.length)
       throw new ArgError(
         "'stories' is required: a non-empty array of exact story ids from the last run. There is no 'all'.",
       );
+    // Resolved once: validation and approval must read the same run even if
+    // another process writes a newer one in between.
     const runDir = await latestRunDir(this.project);
-    if (!runDir) return errorResult('jux: no run found. Call run first.');
+    if (!runDir) return errorResult('jux: no run found. Call the run tool first.');
     const report = JSON.parse(
       await readFile(path.join(runDir, 'report.json'), 'utf8'),
     ) as { results: Array<{ storyId: string }> };
@@ -381,35 +390,47 @@ export class McpServer {
         `jux: not in the last run: ${unknown.join(', ')}. Pass exact story ids from the run result; nothing was approved.`,
       );
     const { approveCommand } = await import('./approve.js');
-    return this.invoke((s) => approveCommand({ ...this.common(), story: stories }, s));
+    return this.invoke(
+      (s) => approveCommand({ ...this.common(), run: runDir, story: stories }, s),
+      signal,
+    );
   }
 
   /** Run a command with captured output and map its exit code. 2 (usage) and
    *  3 (environment) are errors; so is any non-zero exit with nothing on
    *  stdout, which is how the older commands report "no run found". A 1 with
    *  a result (changes found, stories need review) is an answer, not an error. */
-  private async invoke(fn: (s: Session) => Promise<number>): Promise<ToolResult> {
+  private async invoke(
+    fn: (s: Session) => Promise<number>,
+    signal: AbortSignal | undefined,
+  ): Promise<ToolResult> {
     const io = captureIo();
-    const code = await fn({ io, ...(this.signal ? { signal: this.signal } : {}) });
+    const code = await fn({ io, ...(signal ? { signal } : {}) });
     const out = io.stdout().trim();
-    const err = io.stderr().trim();
+    const err = toolWording(io.stderr().trim());
     const isError = code >= EXIT.usage || (code !== EXIT.clean && out === '');
     const content: Content[] = [];
     if (isError && err) content.push({ type: 'text', text: err });
     if (out) content.push({ type: 'text', text: out });
     if (!isError && err) content.push({ type: 'text', text: err });
-    if (content.length === 0) content.push({ type: 'text', text: `exit ${code}` });
+    if (content.length === 0)
+      content.push({
+        type: 'text',
+        text: `jux: the command printed nothing (exit ${code})`,
+      });
     return { content, isError };
   }
 }
 
-const SNAP_NAME = /^[a-z0-9][a-z0-9-]*$/;
-
+/** A diff side: a snap name, never a path. Anything path-like is refused;
+ *  the rest goes to diffCommand, which normalizes it with the same snapName()
+ *  snap applied to `as`, so `as: "Before"` and `a: "Before"` meet at `before`. */
 function snapRef(args: Args, key: string): string {
-  const v = str(args, key, true)!;
-  if (!SNAP_NAME.test(v))
+  const v = args[key];
+  if (typeof v !== 'string') throw new ArgError(`'${key}' is required`);
+  if (v === '' || /[/\\\0]/.test(v) || v.includes('..') || /\.webp$/i.test(v))
     throw new ArgError(
-      `'${key}' must be a snap name (a-z, 0-9 and '-'), such as the 'name' a snap result returned; got '${v}'`,
+      `'${key}' must be a snap name, such as the 'name' a snap result returned, not a path; got '${v}'`,
     );
   return v;
 }
@@ -420,8 +441,30 @@ function isInside(child: string, dir: string, orEqual = false): boolean {
   return child.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
 }
 
+/** CLI hints name shell commands; an MCP client may have no shell, so error
+ *  text names the tool to call instead. Applied to tool output only. */
+const TOOL_WORDING: Array<[RegExp, string]> = [
+  [/Run `jux run` first\./g, 'Call the run tool first.'],
+  [
+    /--crops takes one pair at a time\..*$/gm,
+    'crops takes one pair at a time. Call diff with prefix first, then diff with a single pair and crops: true.',
+  ],
+  [
+    /--viewport must be WxH, each 1 to (\d+), got '[^']*'\..*$/gm,
+    "'viewport' width and height must each be 1 to $1.",
+  ],
+  [
+    /Run `jux snap <url>(?:…)? --as(?:-prefix)? ([^`]+)` first\./g,
+    'Call snap with that name ($1) first.',
+  ],
+];
+
+export function toolWording(text: string): string {
+  return TOOL_WORDING.reduce((t, [re, to]) => t.replace(re, to), text);
+}
+
 function errorResult(message: string): ToolResult {
-  return { content: [{ type: 'text', text: message }], isError: true };
+  return { content: [{ type: 'text', text: toolWording(message) }], isError: true };
 }
 
 /** The crop strips `diff --crops` wrote, as image blocks, at most MAX_CROPS
@@ -601,20 +644,15 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
     const controller = new AbortController();
     pending.set(id, controller);
     const { signal } = controller;
-    const aborted = new Promise<null>((r) =>
-      signal.addEventListener('abort', () => r(null), { once: true }),
-    );
     queue = queue.then(async () => {
       // Cancelled while queued: never starts.
       if (signal.aborted) return;
       try {
-        // A cancelled call frees the queue at once. The work may still finish
-        // in the background (only run stops early), but its reply is dropped,
-        // as the cancellation spec requires.
-        const reply = await Promise.race([
-          handleMessage(server, msg, version, signal),
-          aborted,
-        ]);
+        // A cancelled running call keeps the queue until it settles: only run
+        // can stop early (no new stories), and leftover snap or diff work must
+        // not overlap the next call on the shared browser or snaps dir. Its
+        // reply is dropped, as the cancellation spec requires.
+        const reply = await handleMessage(server, msg, version, signal);
         if (reply && !signal.aborted) send(reply);
       } catch (err) {
         if (!signal.aborted)

@@ -42,7 +42,12 @@ export async function approveCommand(
   }
 
   if (candidates.length === 0) {
-    if (!ctx.json) io.out('jux: nothing to approve\n');
+    // JSON callers always get an answer, not empty output.
+    io.out(
+      ctx.json
+        ? JSON.stringify({ approved: [], failed: [] }) + '\n'
+        : 'jux: nothing to approve\n',
+    );
     return 0;
   }
 

@@ -2,8 +2,13 @@
 // newline-delimited JSON-RPC on stdio, the way an MCP client does it.
 // Needs `pnpm build` first (CI builds before testing).
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import {
+  execFileSync,
+  spawn,
+  type ChildProcessWithoutNullStreams,
+} from 'node:child_process';
+import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -220,8 +225,11 @@ describe('jux mcp confinement', () => {
       'a.webp',
       '../x',
       'x/y',
-      'Before',
-      '-x',
+      'x\\y',
+      'a\u0000b',
+      '..',
+      'X.WEBP',
+      '',
     ]) {
       for (const prefix of [false, true]) {
         const r = await c.call('diff', { a: ref, b: 'after', prefix });
@@ -266,6 +274,14 @@ describe('jux mcp lifecycle', () => {
   let project: string;
   beforeAll(() => {
     project = mkdtempSync(path.join(tmpdir(), 'jux-mcp-life-'));
+    // A urls project, so check gets past workbench detection to "no run".
+    writeFileSync(
+      path.join(project, 'juxtapose.config.json'),
+      JSON.stringify({
+        platform: 'urls',
+        urls: [{ id: 'x', url: 'http://127.0.0.1:1/' }],
+      }),
+    );
   });
   afterAll(() => rmSync(project, { recursive: true, force: true }));
 
@@ -319,7 +335,29 @@ describe('jux mcp lifecycle', () => {
       viewport: { width: 10001, height: 100 },
     });
     expect(r.isError).toBe(true);
-    expect(text(r)).toMatch(/each 1 to 10000/);
+    expect(text(r)).toMatch(/'viewport' width and height must each be 1 to 10000\./);
+    const zero = await c.call('snap', {
+      url: 'http://127.0.0.1:1/',
+      as: 'x',
+      viewport: { width: 0, height: 100 },
+    });
+    expect(zero.isError).toBe(true);
+    expect(text(zero)).toMatch(/'viewport' width and height must each be 1 to 10000/);
+    await c.close();
+  });
+
+  test('error text names tools, not shell commands', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    const check = await c.call('check', {});
+    expect(check.isError).toBe(true);
+    expect(text(check)).toMatch(/Call the run tool first\./);
+    const crops = await c.call('diff', { a: 'x', b: 'y', prefix: true, crops: true });
+    expect(crops.isError).toBe(true);
+    expect(text(crops)).toMatch(
+      /Call diff with prefix first, then diff with a single pair and crops: true\./,
+    );
+    for (const r of [check, crops]) expect(text(r)).not.toMatch(/`jux /);
     await c.close();
   });
 });
@@ -330,11 +368,22 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
   let base: string;
   // The page changes between snaps the way an edit would.
   let edited = false;
+  let lateSentAt = 0;
   beforeAll(async () => {
     project = mkdtempSync(path.join(tmpdir(), 'jux-mcp-page-'));
     server = createServer((req, res) => {
       // Never answers: a call stuck on it is one to cancel or interrupt.
       if (req.url?.startsWith('/slow')) return;
+      // Answers after a delay, and records when: a call blocked on it settles
+      // no earlier than that.
+      if (req.url?.startsWith('/late')) {
+        setTimeout(() => {
+          lateSentAt = Date.now();
+          res.writeHead(200, { 'content-type': 'text/html' });
+          res.end('<!doctype html><p>late</p>');
+        }, 1500);
+        return;
+      }
       res.writeHead(200, { 'content-type': 'text/html' });
       res.end(
         `<!doctype html><body style="margin:0;font:16px sans-serif">
@@ -380,6 +429,17 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     expect(verdict.deltaCount).toBeGreaterThan(0);
     expect(verdict.summary).toMatch(/Save/);
 
+    // Names normalize as snap's `as` does: "BEFORE" is the snap `before`.
+    const upper = await c.call('diff', { a: 'BEFORE', b: 'After' });
+    expect(upper.isError).toBe(false);
+    // Same verdict; only escalate.command echoes the names as typed.
+    const { escalate: _e1, ...upperRest } = JSON.parse(text(upper)) as Record<
+      string,
+      unknown
+    >;
+    const { escalate: _e2, ...rest } = verdict as unknown as Record<string, unknown>;
+    expect(upperRest).toEqual(rest);
+
     const same = await c.call('diff', { a: 'after', b: 'after' });
     expect(JSON.parse(text(same))).toMatchObject({ classification: 'identical' });
 
@@ -402,19 +462,18 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     expectOnlyProtocol(c.lines);
   }, 60_000);
 
-  test('notifications/cancelled: a queued call never runs, a running one is not answered and frees the queue', async () => {
+  test('notifications/cancelled: a queued call never runs; a running one is not answered and holds the queue until it settles', async () => {
     const c = new Client(project);
     await handshake(c);
-    const slowId = c.peekId();
+    await c.call('snap', { url: base, as: 'warm' });
+    const lateId = c.peekId();
     void c.request('tools/call', {
       name: 'snap',
-      arguments: { url: `${base}slow`, as: 'slow' },
+      arguments: { url: `${base}late`, as: 'late' },
     });
     const queuedId = c.peekId();
-    void c.request('tools/call', {
-      name: 'diff',
-      arguments: { a: 'before', b: 'never' },
-    });
+    void c.request('tools/call', { name: 'diff', arguments: { a: 'warm', b: 'never' } });
+    await new Promise((r) => setTimeout(r, 200));
     c.send({
       jsonrpc: '2.0',
       method: 'notifications/cancelled',
@@ -423,19 +482,21 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     c.send({
       jsonrpc: '2.0',
       method: 'notifications/cancelled',
-      params: { requestId: slowId },
+      params: { requestId: lateId },
     });
-    // Answered quickly although the slow snap is still loading.
-    const t0 = Date.now();
-    // Any answer will do (this pair does not exist): it proves the queue moved.
+    // Queued behind the cancelled snap: it must not start until that snap's
+    // page has answered and the capture settled.
     const next = await c.call('diff', { a: 'nope', b: 'nope-too' });
-    expect(Date.now() - t0).toBeLessThan(5000);
+    const answeredAt = Date.now();
     expect(text(next)).toMatch(/no snap named 'nope'/);
+    expect(lateSentAt).toBeGreaterThan(0);
+    expect(answeredAt).toBeGreaterThanOrEqual(lateSentAt);
     const ids = c.lines.map((l) => (JSON.parse(l) as Rpc).id);
-    expect(ids).not.toContain(slowId);
+    expect(ids).not.toContain(lateId);
     expect(ids).not.toContain(queuedId);
-    c.child.kill('SIGTERM');
-    expect(await c.exited).toBe(143);
+    // The cancelled snap ran to completion before the next call: its file exists.
+    expect(existsSync(path.join(project, '.juxtapose', 'snaps', 'late.webp'))).toBe(true);
+    expect(await c.close()).toBe(0);
   }, 30_000);
 
   test('SIGTERM during a capture exits promptly without answering it', async () => {
@@ -455,4 +516,80 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(c.lines.map((l) => (JSON.parse(l) as Rpc).id)).not.toContain(slowId);
   }, 30_000);
+
+  test('a crashed private browser is closed (profile removed) and replaced', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    await c.call('snap', { url: base, as: 'crash-1' });
+    const chromePid = () =>
+      execFileSync('pgrep', ['-P', String(c.child.pid)], { encoding: 'utf8' })
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map(Number);
+    const [pid] = chromePid();
+    expect(pid).toBeGreaterThan(0);
+    const args = execFileSync('ps', ['-o', 'args=', '-p', String(pid)], {
+      encoding: 'utf8',
+    });
+    const profile = /--user-data-dir=(\S+)/.exec(args)?.[1];
+    expect(profile && existsSync(profile)).toBe(true);
+    process.kill(pid, 'SIGKILL');
+    await new Promise((r) => setTimeout(r, 300));
+    const again = await c.call('snap', { url: base, as: 'crash-2' });
+    expect(again.isError).toBe(false);
+    expect(existsSync(profile!)).toBe(false);
+    expect(chromePid()).not.toContain(pid);
+    expect(await c.close()).toBe(0);
+  }, 30_000);
+
+  test('run, approve and a cancelled run that leaves the last run in place', async () => {
+    const runProject = mkdtempSync(path.join(tmpdir(), 'jux-mcp-run-'));
+    const config = (urls: Array<{ id: string; url: string }>) =>
+      writeFileSync(
+        path.join(runProject, 'juxtapose.config.json'),
+        JSON.stringify({ platform: 'urls', urls }),
+      );
+    const pages = [
+      { id: 'home', url: base },
+      { id: 'other', url: `${base}?other` },
+    ];
+    config(pages);
+    const c = new Client(runProject);
+    try {
+      await handshake(c);
+      const first = await c.call('run', { all: true });
+      expect(first.isError).toBe(false);
+      const report = JSON.parse(text(first)) as {
+        runId: string;
+        summary: { new: number };
+      };
+      expect(report.summary.new).toBe(2);
+
+      // Every requested id is reported, as JSON; unknown ids are refused.
+      const approved = await c.call('approve', { stories: ['home'] });
+      expect(approved.isError).toBe(false);
+      expect(JSON.parse(text(approved))).toEqual({ approved: ['home'], failed: [] });
+      const unknown = await c.call('approve', { stories: ['home', 'nope'] });
+      expect(unknown.isError).toBe(true);
+      expect(text(unknown)).toMatch(/not in the last run: nope/);
+
+      // Cancel a run mid-capture: no report, so check still reads the first run.
+      config([...pages, { id: 'late', url: `${base}late` }]);
+      const runId = c.peekId();
+      void c.request('tools/call', { name: 'run', arguments: { all: true } });
+      await new Promise((r) => setTimeout(r, 300));
+      c.send({
+        jsonrpc: '2.0',
+        method: 'notifications/cancelled',
+        params: { requestId: runId },
+      });
+      const check = await c.call('check', {});
+      expect(JSON.parse(text(check))).toMatchObject({ runId: report.runId });
+      expect(c.lines.map((l) => (JSON.parse(l) as Rpc).id)).not.toContain(runId);
+      expect(await c.close()).toBe(0);
+    } finally {
+      rmSync(runProject, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

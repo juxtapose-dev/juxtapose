@@ -142,9 +142,11 @@ Compares two snaps. Same result as `jux diff --json`.
 | `crops`   | boolean | Also render the changed regions. One pair at a time.      |
 | `project` | string  | Project directory: the server's `--project` or inside it. |
 
-`a` and `b` are snap names only: lowercase letters, digits and hyphens,
-starting with a letter or digit. Use the `name` that `snap` returned. Unlike
-`jux diff`, the tool does not accept `.webp` paths.
+`a` and `b` are snap names, not paths. The server normalizes them the same way
+`snap` normalizes `as` and `asPrefix`, so a snap taken with `as: "Before"` is
+found with `a: "Before"` or `a: "before"`. Unlike `jux diff`, the tool rejects a
+reference that looks like a path: one that is empty, contains `/`, `\`, `..`
+or a NUL character, or ends in `.webp`.
 
 Result:
 
@@ -196,13 +198,17 @@ as `jux approve --story <id> --json`: `{ approved, failed }`.
 | `stories` | string[] | Exact story ids from the last run. Required. |
 
 There is no "all". The server rejects an empty list, and any id that is not in
-the last run, without approving anything.
+the last run, without approving anything. Otherwise every requested id appears
+in the result, in `approved` or in `failed` with a reason. The server checks
+the ids and approves them against the same run.
 
 ## Errors
 
 A tool result has `isError: true` when the command could not do what you asked:
 a usage error or an environment failure (`jux` exit code 2 or 3), or a missing
-run. The text is the command's own message, which names the fix. Results that
+run. The text is the command's own message, which names the fix. Where the
+command's message suggests a `jux` shell command, the server names the tool to
+call instead. Results that
 need attention, such as a `diff` with changes or a `check` with blocking
 stories, are not errors.
 
@@ -235,6 +241,8 @@ The server runs tool calls one at a time, in the order it receives them,
 because they share the browser and the snaps directory.
 
 When you cancel a call with `notifications/cancelled`, the server does not
-answer it. A call that has not started never runs. A call that is running no
-longer holds up the calls behind it: `run` stops starting new stories, and
-other tools finish in the background and their result is discarded.
+answer it. A call that has not started never runs. A call that is running
+finishes before the next call starts, so the two never share the browser or
+the snaps directory, and its result is discarded. A cancelled `run` stops
+starting new stories and writes no report, so `check`, `handoff` and `approve`
+keep reading the previous run.
