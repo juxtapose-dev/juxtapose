@@ -9,13 +9,46 @@
 
 import { useState, useEffect } from 'react';
 
+/**
+ * Whether the page asks for a dark scheme.
+ *
+ * Exists for juxtapose's `dark` capture variants, which emulate
+ * `prefers-color-scheme: dark`. Read through matchMedia rather than a CSS
+ * media query because these components style inline; the light branch keeps
+ * every value it had, so light captures are unchanged byte for byte.
+ */
+const usePrefersDark = () => {
+  const query = '(prefers-color-scheme: dark)';
+  const [dark, setDark] = useState(
+    () => typeof window !== 'undefined' && !!window.matchMedia?.(query).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia?.(query);
+    if (!mq) return undefined;
+    const onChange = () => setDark(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return dark;
+};
+
 export const Button = ({ label = 'Button', variant = 'primary', size = 'md' }) => {
-  const palette = {
-    primary: { bg: '#2563eb', fg: '#ffffff' },
-    secondary: { bg: '#64748b', fg: '#ffffff' },
-    danger: { bg: '#dc2626', fg: '#ffffff' },
-    ghost: { bg: 'transparent', fg: '#2563eb' },
-  }[variant];
+  const dark = usePrefersDark();
+  const palette = (
+    dark
+      ? {
+          primary: { bg: '#3b82f6', fg: '#0b1120' },
+          secondary: { bg: '#94a3b8', fg: '#0b1120' },
+          danger: { bg: '#f87171', fg: '#0b1120' },
+          ghost: { bg: 'transparent', fg: '#93c5fd' },
+        }
+      : {
+          primary: { bg: '#2563eb', fg: '#ffffff' },
+          secondary: { bg: '#64748b', fg: '#ffffff' },
+          danger: { bg: '#dc2626', fg: '#ffffff' },
+          ghost: { bg: 'transparent', fg: '#2563eb' },
+        }
+  )[variant];
 
   const sizing = {
     sm: { padding: '6px 12px', fontSize: 14 },
@@ -28,7 +61,7 @@ export const Button = ({ label = 'Button', variant = 'primary', size = 'md' }) =
       style={{
         ...sizing,
         fontFamily: 'system-ui, sans-serif',
-        border: variant === 'ghost' ? '1px solid #2563eb' : 'none',
+        border: variant === 'ghost' ? `1px solid ${palette.fg}` : 'none',
         borderRadius: 6,
         color: palette.fg,
         background: palette.bg,
@@ -40,39 +73,59 @@ export const Button = ({ label = 'Button', variant = 'primary', size = 'md' }) =
   );
 };
 
-export const Card = ({ title = 'Card', body = 'Some body copy.', badge }) => (
-  <div
-    style={{
-      width: 280,
-      padding: 20,
-      fontFamily: 'system-ui, sans-serif',
-      border: '1px solid #e2e8f0',
-      borderRadius: 10,
-      background: '#ffffff',
-    }}
-  >
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <h3 style={{ margin: 0, fontSize: 17, color: '#0f172a' }}>{title}</h3>
-      {badge && (
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            padding: '2px 8px',
-            borderRadius: 999,
-            background: '#dbeafe',
-            color: '#1d4ed8',
-          }}
-        >
-          {badge}
-        </span>
-      )}
+const CARD_LIGHT = {
+  border: '#e2e8f0',
+  bg: '#ffffff',
+  title: '#0f172a',
+  body: '#475569',
+  badgeBg: '#dbeafe',
+  badgeFg: '#1d4ed8',
+};
+const CARD_DARK = {
+  border: '#334155',
+  bg: '#0f172a',
+  title: '#f1f5f9',
+  body: '#cbd5e1',
+  badgeBg: '#1e3a8a',
+  badgeFg: '#bfdbfe',
+};
+
+export const Card = ({ title = 'Card', body = 'Some body copy.', badge }) => {
+  const c = usePrefersDark() ? CARD_DARK : CARD_LIGHT;
+  return (
+    <div
+      style={{
+        width: 280,
+        padding: 20,
+        fontFamily: 'system-ui, sans-serif',
+        border: `1px solid ${c.border}`,
+        borderRadius: 10,
+        background: c.bg,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 17, color: c.title }}>{title}</h3>
+        {badge && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              padding: '2px 8px',
+              borderRadius: 999,
+              background: c.badgeBg,
+              color: c.badgeFg,
+            }}
+          >
+            {badge}
+          </span>
+        )}
+      </div>
+      <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5, color: c.body }}>
+        {body}
+      </p>
     </div>
-    <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5, color: '#475569' }}>
-      {body}
-    </p>
-  </div>
-);
+  );
+};
 
 /**
  * A continuously animating spinner.
