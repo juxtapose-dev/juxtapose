@@ -100,6 +100,21 @@ describe('resolveAffected', () => {
     expect(r.stories).toHaveLength(2);
   });
 
+  it.each([
+    'juxtapose.config.json',
+    '.juxtaposerc.json',
+    'examples/storybook/juxtapose.config.json',
+  ])('escalates to a full run when the juxtapose config %s changes', async (file) => {
+    // Project-wide variants live there: a new one changes every story's
+    // capture set, and the bundler graph never names the file.
+    const r = await resolveAffected(stories, 'HEAD~1', {
+      ...opts(),
+      changedFiles: ['src/Card.stories.tsx', file],
+    });
+    expect(r.reason).toBe('config-changed');
+    expect(r.stories).toHaveLength(2);
+  });
+
   it('escalates to a full run when a lockfile changes', async () => {
     const r = await resolveAffected(stories, 'HEAD~1', {
       ...opts(),

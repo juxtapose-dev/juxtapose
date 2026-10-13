@@ -91,6 +91,17 @@ export function isTsconfigChange(file: string): boolean {
   return !file.includes('/') && /^tsconfig(\..+)?\.json$/.test(file);
 }
 
+/** A juxtapose config file: it can declare project-wide variants (and
+ *  viewport, thresholds) that change every story's captures, and no bundler
+ *  graph names it. Matched at any depth, unlike a lockfile: changed paths are
+ *  repository-relative, and a project in a subdirectory keeps its config
+ *  there. A nested match is at worst a full run, which is the safe direction.
+ *  `package.json#juxtapose` is already covered as a dependency change. */
+export function isJuxtaposeConfigChange(file: string): boolean {
+  const base = file.split('/').pop() ?? file;
+  return base === 'juxtapose.config.json' || base === '.juxtaposerc.json';
+}
+
 /** Anything under a platform config dir (`.storybook`, `.ladle`) reaches
  *  every story. */
 export function isConfigChange(file: string, configDirs: string[]): boolean {
@@ -115,6 +126,7 @@ export async function resolveAffected(
   for (const file of changed) {
     if (isLockfileChange(file)) return { stories, reason: 'dependency-changed' };
     if (isTsconfigChange(file)) return { stories, reason: 'config-changed' };
+    if (isJuxtaposeConfigChange(file)) return { stories, reason: 'config-changed' };
     if (isConfigChange(file, opts.configDirs))
       return { stories, reason: 'config-changed' };
   }
