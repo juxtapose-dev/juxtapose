@@ -20,7 +20,7 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
-import { lstat, readFile, rm, stat } from 'node:fs/promises';
+import { lstat, readdir, readFile, rm, stat } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -80,6 +80,13 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 2000;
  * defect 13), so the first probe gets 500 ms, not the whole 2 s.
  */
 const PROBE_TIMEOUT_MS = 500;
+/**
+ * `status`, `start` and `stop` have no capture waiting on them, so they give
+ * a live daemon the whole capture budget to answer: at 500 ms a supervisor
+ * busy parsing tens of MB of screenshot frames read as "not running", and
+ * `start` then reported that it could not start (PR #102 re-review N4).
+ */
+const STATUS_PROBE_TIMEOUT_MS = DEFAULT_CONNECT_TIMEOUT_MS;
 /** How much longer than the budget a live lock holder is waited on. */
 const HOLDER_GRACE_MS = 3000;
 /**
@@ -181,6 +188,10 @@ const RELATIVE_IMPORT = /(?:\bfrom|\bimport)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g
  * .js entry does not exist).
  */
 export function buildIdentity(entry: string): string {
+  return buildClosure(entry).hash;
+}
+
+function buildClosure(entry: string): { hash: string; files: string[] } {
   const hash = createHash('sha256');
   const seen = new Set<string>();
   const queue = [path.resolve(entry)];
@@ -199,25 +210,53 @@ export function buildIdentity(entry: string): string {
     for (const m of src.matchAll(RELATIVE_IMPORT))
       queue.push(path.resolve(path.dirname(file), m[1]!));
   }
-  return hash.digest('hex').slice(0, 16);
+  return { hash: hash.digest('hex').slice(0, 16), files: [...seen] };
 }
+
+const PACKAGE_JSON = fileURLToPath(new URL('../../../package.json', import.meta.url));
 
 function packageVersion(): string {
   try {
-    const pkg = JSON.parse(
-      readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
-    ) as { version?: unknown };
+    const pkg = JSON.parse(readFileSync(PACKAGE_JSON, 'utf8')) as { version?: unknown };
     return typeof pkg.version === 'string' ? pkg.version : '';
   } catch {
     return '';
   }
 }
 
-let juxIdentityCache: string | undefined;
+/** Size and mtime of each file, '-' for a missing one: what a rebuild or upgrade changes. */
+function filesStamp(files: string[]): string {
+  return files
+    .map((f) => {
+      try {
+        const st = statSync(f);
+        return `${f}:${st.size}:${st.mtimeMs}`;
+      } catch {
+        return `${f}:-`;
+      }
+    })
+    .join('\n');
+}
 
-/** `<@juxtapose/core version>+<build hash of the supervisor entry>`, computed once. */
-export function juxIdentity(): string {
-  return (juxIdentityCache ??= `${packageVersion()}+${buildIdentity(DEFAULT_ENTRY)}`);
+const identityCache = new Map<string, { files: string[]; stamp: string; id: string }>();
+
+/**
+ * `<@juxtapose/core version>+<build hash of the supervisor entry>`. Cached
+ * per process, but rechecked by stat on every call (about ten files): a
+ * Storybook addon or review server that stays up across a `pnpm build` kept
+ * the old key while spawning the new supervisor-main from disk, so it never
+ * shared a daemon with the CLI and ran a mixed build (PR #102 re-review N5).
+ */
+export function juxIdentity(entry: string = DEFAULT_ENTRY): string {
+  const hit = identityCache.get(entry);
+  if (hit && filesStamp(hit.files) === hit.stamp) return hit.id;
+  const closure = buildClosure(entry);
+  const files = [PACKAGE_JSON, ...closure.files];
+  // Stamped before hashing would miss a write landing between the two; after
+  // is safe: a write after the stamp changes it, and the next call rehashes.
+  const id = `${packageVersion()}+${closure.hash}`;
+  identityCache.set(entry, { files, stamp: filesStamp(files), id });
+  return id;
 }
 
 /**
@@ -231,9 +270,10 @@ export function daemonKeyFor(
   opts: Pick<WarmOptions, 'executablePath' | 'args' | 'env'>,
   jux: string = juxIdentity(),
 ): string {
+  const binary = path.resolve(opts.executablePath);
   return daemonKey({
-    binary: opts.executablePath,
-    binaryId: binaryIdentity(opts.executablePath),
+    binary,
+    binaryId: binaryIdentity(binary),
     version: CHROME_VERSION,
     args: chromeArgs({ userDataDir: PROFILE_PLACEHOLDER, args: opts.args }),
     env: opts.env ?? process.env,
@@ -243,8 +283,20 @@ export function daemonKeyFor(
 
 const keyFor = (opts: StatusOptions): string => daemonKeyFor(opts);
 
-function pathsFor(opts: StatusOptions): DaemonPaths {
-  return daemonPaths(opts.stateDir, keyFor(opts));
+/**
+ * `stateDir` and `executablePath` made absolute before anything is keyed or
+ * spawned: the supervisor runs with its cwd in the state dir, so a relative
+ * `stateDir` made it bind `<stateDir>/<stateDir>/browser/<key>.sock` while
+ * the client looked in `<stateDir>/browser`. Every run fell back to a private
+ * launch, waited out the lock grace, and left an orphan supervisor (PR #102
+ * re-review N2).
+ */
+function absolute<T extends { stateDir: string; executablePath: string }>(opts: T): T {
+  return {
+    ...opts,
+    stateDir: path.resolve(opts.stateDir),
+    executablePath: path.resolve(opts.executablePath),
+  };
 }
 
 /**
@@ -496,7 +548,11 @@ export async function clearStaleState(paths: DaemonPaths, s: DaemonState): Promi
     await rm(paths.socket, { force: true });
 }
 
-async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
+async function connectOrSpawn(
+  given: WarmOptions,
+  probeMs = PROBE_TIMEOUT_MS,
+): Promise<Outcome> {
+  const opts = absolute(given);
   const env = opts.env ?? process.env;
   const key = keyFor(opts);
   const paths = daemonPaths(opts.stateDir, key);
@@ -514,13 +570,13 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
       // remove a live process's files.
       return { why: `state file names another daemon (pid ${existing.pid})` };
     } else {
-      const p = await probe(paths, PROBE_TIMEOUT_MS);
+      const p = await probe(paths, probeMs);
       if (p.kind === 'ok') return wrap(p);
       if (p.kind === 'refused') return { why: `daemon refused: ${p.reason}` };
       if (p.kind === 'timeout') {
         if (!(await wedged(existing, paths, key, opts.readCommand)))
           return {
-            why: `daemon pid ${existing.pid} did not answer in ${PROBE_TIMEOUT_MS} ms`,
+            why: `daemon pid ${existing.pid} did not answer in ${probeMs} ms`,
           };
         await killWedged(existing.pid);
       }
@@ -538,10 +594,7 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
       const s = await readState(paths);
       if (s && s.socket === paths.socket && usable(s, key, opts) && pidAlive(s.pid)) {
         const remaining = start + budget - Date.now();
-        const p = await probe(
-          paths,
-          Math.min(PROBE_TIMEOUT_MS, Math.max(100, remaining)),
-        );
+        const p = await probe(paths, Math.min(probeMs, Math.max(100, remaining)));
         if (p.kind === 'ok') return wrap(p);
         if (p.kind === 'refused') return { why: `daemon refused: ${p.reason}` };
       }
@@ -659,7 +712,12 @@ export async function startDaemon(
 ): Promise<{ state: DaemonState } | { error: string }> {
   let outcome: Outcome;
   try {
-    outcome = await connectOrSpawn({ connectTimeoutMs: START_TIMEOUT_MS, ...opts });
+    // A live daemon busy with another run gets the status budget to answer,
+    // not the capture path's 500 ms: `start` has nothing else to do.
+    outcome = await connectOrSpawn(
+      { connectTimeoutMs: START_TIMEOUT_MS, ...opts },
+      STATUS_PROBE_TIMEOUT_MS,
+    );
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }
@@ -670,47 +728,111 @@ export async function startDaemon(
 }
 
 /**
- * The running daemon for this fingerprint, or null. Running means it answered
- * a hello on our socket, not that its pid is alive: after a reboot the pid
- * can belong to anything, and `start` used to report "already running" for a
- * daemon that did not exist. A dead daemon's files are cleared.
+ * `s` if the daemon it describes is alive, else null (and a dead one's files
+ * cleared). Alive means it answered a hello on our socket, not that its pid
+ * is alive: after a reboot the pid can belong to anything, and `start` used
+ * to report "already running" for a daemon that did not exist. A hello that
+ * times out still counts when the pid is verifiably our supervisor-main for
+ * this key: a busy daemon is running. With `refusedIsLive`, so does a daemon
+ * that refuses our hello: one from a jux with another Chrome pin is still a
+ * live process to list.
  */
-export async function daemonStatus(opts: StatusOptions): Promise<DaemonState | null> {
-  const key = keyFor(opts);
-  const paths = daemonPaths(opts.stateDir, key);
-  const s = await readState(paths);
-  if (!s) return null;
+async function liveState(
+  paths: DaemonPaths,
+  s: DaemonState,
+  read: CommandReader | undefined,
+  refusedIsLive = false,
+): Promise<DaemonState | null> {
   if (!pidAlive(s.pid) || s.socket !== paths.socket) {
     await clearStaleState(paths, s);
     return null;
   }
-  if (s.key !== key) return null;
-  const p = await probe(paths, PROBE_TIMEOUT_MS);
+  const p = await probe(paths, STATUS_PROBE_TIMEOUT_MS);
   if (p.kind === 'ok') {
     p.connection.close();
     return s;
   }
   // Nothing listens: the pid was reused. A timeout or refusal is a live
-  // listener we cannot use; its files are not ours to remove.
-  if (p.kind === 'dead') await clearStaleState(paths, s);
-  return null;
+  // listener; its files are not ours to remove.
+  if (p.kind === 'dead') {
+    await clearStaleState(paths, s);
+    return null;
+  }
+  if (p.kind === 'refused' && !refusedIsLive) return null;
+  return (await ownership(s.pid, s.key, read)) === 'ours' ? s : null;
+}
+
+/** The running daemon for this fingerprint, or null. A dead daemon's files are cleared. */
+export async function daemonStatus(given: StatusOptions): Promise<DaemonState | null> {
+  const opts = absolute(given);
+  const key = keyFor(opts);
+  const paths = daemonPaths(opts.stateDir, key);
+  const s = await readState(paths);
+  if (!s || s.key !== key) {
+    if (s && (!pidAlive(s.pid) || s.socket !== paths.socket))
+      await clearStaleState(paths, s);
+    return null;
+  }
+  return liveState(paths, s, opts.readCommand);
+}
+
+type ListOptions = Pick<WarmOptions, 'stateDir' | 'readCommand'>;
+
+/**
+ * Every state file under `<stateDir>/browser`, whatever key wrote it: the key
+ * covers the jux build and the binary's size and mtime, so each upgrade,
+ * rebuild or Chrome update leaves the previous daemon under a key the current
+ * jux no longer computes (PR #102 re-review N3). A file whose content names
+ * another key is skipped, never touched.
+ */
+async function stateFiles(
+  stateDir: string,
+): Promise<{ paths: DaemonPaths; state: DaemonState }[]> {
+  const dir = path.join(path.resolve(stateDir), 'browser');
+  const names = await readdir(dir).catch(() => [] as string[]);
+  const out: { paths: DaemonPaths; state: DaemonState }[] = [];
+  for (const name of names.sort()) {
+    if (!name.endsWith('.json') || name.startsWith('.')) continue;
+    const key = name.slice(0, -'.json'.length);
+    let paths: DaemonPaths;
+    try {
+      paths = daemonPaths(path.resolve(stateDir), key);
+    } catch {
+      continue;
+    }
+    const state = await readState(paths).catch(() => null);
+    if (state && state.key === key) out.push({ paths, state });
+  }
+  return out;
+}
+
+/** Every live daemon in `stateDir`, whichever key; dead ones' files are cleared on the way. */
+export async function listDaemons(opts: ListOptions): Promise<DaemonState[]> {
+  const found = await Promise.all(
+    (await stateFiles(opts.stateDir)).map(({ paths, state }) =>
+      liveState(paths, state, opts.readCommand, true),
+    ),
+  );
+  return found.filter((s): s is DaemonState => s !== null);
 }
 
 /**
- * What `stopDaemon` did: `none` (nothing running, or the state named a pid
- * that is not ours and nothing listened on its socket), `stopped`, or
- * `unverified` (a live pid we could not confirm as ours: nothing is signalled
- * or removed).
+ * What stopping one daemon did: `none` (nothing running, or the state named a
+ * pid that is not ours and nothing listened on its socket), `stopped` (its
+ * pid is gone), `unverified` (a live pid we could not confirm as ours:
+ * nothing is signalled or removed), or `running` (ours, signalled, and still
+ * alive after 2 s).
  */
 export type StopResult =
   | { outcome: 'none' | 'stopped' }
-  | { outcome: 'unverified'; pid: number; reason: string };
+  | { outcome: 'unverified' | 'running'; pid: number; reason: string };
 
-/** SIGTERM the supervisor (it closes Chrome and clears its state). */
-export async function stopDaemon(opts: StatusOptions): Promise<StopResult> {
-  const paths = pathsFor(opts);
-  const s = await readState(paths);
-  if (!s) return { outcome: 'none' };
+/** SIGTERM the supervisor `s` describes (it closes Chrome and clears its state). */
+async function stopOne(
+  paths: DaemonPaths,
+  s: DaemonState,
+  read: CommandReader | undefined,
+): Promise<StopResult> {
   if (!pidAlive(s.pid)) {
     await clearStaleState(paths, s);
     return { outcome: 'none' };
@@ -718,7 +840,7 @@ export async function stopDaemon(opts: StatusOptions): Promise<StopResult> {
   // An in-process supervisor (tests) shares our pid: signalling it would kill us.
   if (s.pid === process.pid) return { outcome: 'none' };
   // A reused pid is somebody else's process: signal only our supervisor-main.
-  const who = await ownership(s.pid, s.key, opts.readCommand);
+  const who = await ownership(s.pid, s.key, read);
   if (who === 'unknown')
     return {
       outcome: 'unverified',
@@ -732,7 +854,7 @@ export async function stopDaemon(opts: StatusOptions): Promise<StopResult> {
     // proves the pid was reused.
     const p =
       s.socket === paths.socket
-        ? await probe(paths, PROBE_TIMEOUT_MS)
+        ? await probe(paths, STATUS_PROBE_TIMEOUT_MS)
         : ({ kind: 'dead' } as Probe);
     if (p.kind === 'ok') p.connection.close();
     if (p.kind !== 'dead')
@@ -750,9 +872,41 @@ export async function stopDaemon(opts: StatusOptions): Promise<StopResult> {
     // already gone
   }
   for (let i = 0; i < 40 && pidAlive(s.pid); i++) await sleep(50);
-  // The supervisor clears its own files on the way out. If it is still
-  // closing Chrome, they are still its; once it is gone, only its own are
-  // removed, never a successor's.
-  if (!pidAlive(s.pid)) await clearStaleState(paths, s);
+  // A stopped (SIGSTOP) supervisor keeps its SIGTERM pending and is still
+  // there after the wait; reporting it stopped told scripts a lie.
+  if (pidAlive(s.pid))
+    return {
+      outcome: 'running',
+      pid: s.pid,
+      reason: 'it was signalled but had not exited after 2 s',
+    };
+  // Gone: only its own files are removed, never a successor's.
+  await clearStaleState(paths, s);
   return { outcome: 'stopped' };
+}
+
+/** Stop the daemon for this fingerprint only. */
+export async function stopDaemon(given: StatusOptions): Promise<StopResult> {
+  const opts = absolute(given);
+  const paths = daemonPaths(opts.stateDir, keyFor(opts));
+  const s = await readState(paths);
+  if (!s) return { outcome: 'none' };
+  return stopOne(paths, s, opts.readCommand);
+}
+
+/** One daemon `stopAllDaemons` found, and what stopping it did. */
+export type DaemonStop = { key: string; pid: number } & StopResult;
+
+/**
+ * Stop every daemon in `stateDir`, whichever key it runs under, each through
+ * the same verification as `stopDaemon`. Entries whose outcome is `none`
+ * (stale files, reused pids) are cleared and left out.
+ */
+export async function stopAllDaemons(opts: ListOptions): Promise<DaemonStop[]> {
+  const out: DaemonStop[] = [];
+  for (const { paths, state } of await stateFiles(opts.stateDir)) {
+    const r = await stopOne(paths, state, opts.readCommand);
+    if (r.outcome !== 'none') out.push({ key: state.key, pid: state.pid, ...r });
+  }
+  return out;
 }

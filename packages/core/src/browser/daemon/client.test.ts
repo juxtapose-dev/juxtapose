@@ -23,7 +23,10 @@ import {
   daemonIdleMinutes,
   daemonKeyFor,
   daemonStatus,
+  juxIdentity,
+  listDaemons,
   spawnSupervisor,
+  stopAllDaemons,
   stopDaemon,
   type CommandReader,
   type SpawnArgs,
@@ -140,6 +143,21 @@ describe('daemon key', () => {
       expect(buildIdentity(entry)).toBe(a);
       await writeFile(path.join(dir, 'leaf.js'), 'export const x = 2;\n');
       expect(buildIdentity(entry)).not.toBe(a);
+    }));
+});
+
+describe('juxIdentity', () => {
+  it('follows a rebuild of the supervisor closure within one process', () =>
+    withCache(async (dir) => {
+      // A Storybook addon or review server stays up across `pnpm build`; it
+      // must key the supervisor it spawns from disk, not the one it loaded.
+      const entry = path.join(dir, 'supervisor-main.js');
+      await writeFile(entry, "import './dep.js';\n");
+      await writeFile(path.join(dir, 'dep.js'), 'export const x = 1;\n');
+      const a = juxIdentity(entry);
+      expect(juxIdentity(entry)).toBe(a);
+      await writeFile(path.join(dir, 'dep.js'), 'export const x = 22;\n');
+      expect(juxIdentity(entry)).not.toBe(a);
     }));
 });
 
@@ -651,6 +669,38 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       }
     }));
 
+  it('a relative state dir and binary are made absolute before keying and spawning', () =>
+    withCache(async (cache) => {
+      // The supervisor runs with its cwd in the state dir: a relative one
+      // nested itself (<dir>/<dir>/browser), every run fell back, and each
+      // left an orphan supervisor (PR #102 re-review N2).
+      const spawned: SpawnArgs[] = [];
+      const d = inProcessDaemon();
+      const spawnDaemon = (a: SpawnArgs) => {
+        spawned.push(a);
+        d.spawnDaemon(a);
+      };
+      const rel = {
+        executablePath: path.relative(process.cwd(), chrome!.path),
+        stateDir: path.relative(process.cwd(), cache),
+        spawnDaemon,
+      };
+      try {
+        const a = await connectWarmBrowser(rel);
+        const b = await connectWarmBrowser(rel);
+        expect(a.warm && b.warm).toBe(true);
+        expect(spawned).toHaveLength(1);
+        expect(spawned[0]!.stateDir).toBe(cache);
+        expect(spawned[0]!.executablePath).toBe(chrome!.path);
+        expect(spawned[0]!.key).toBe(keyOf());
+        expect(await daemonStatus(rel)).not.toBeNull();
+        await a.browser.close();
+        await b.browser.close();
+      } finally {
+        await d.stop();
+      }
+    }));
+
   it.skipIf(!built)(
     'a supervisor still starting keeps the spawn lock: a later client waits for it instead of spawning another',
     () =>
@@ -883,6 +933,150 @@ describe('process verification and stop', () => {
         await server.close();
       }
     }));
+
+  it(
+    'a pid still alive after SIGTERM is "running", not "stopped"; its files stay',
+    () =>
+      withCache(async (cache) => {
+        // The supervisor handles SIGTERM, so while it is stopped (SIGSTOP) or
+        // still closing Chrome the signal does not end it; `stop --json` used to
+        // say stopped:true anyway. A child that handles SIGTERM and stays stands in.
+        const paths = daemonPaths(cache, key);
+        await ensureDaemonDirs(paths);
+        const child = spawn(
+          process.execPath,
+          ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
+          { stdio: 'ignore' },
+        );
+        await sleep(300); // its handler is installed before the signal lands
+        await writeState(paths, {
+          pid: child.pid!,
+          socket: paths.socket,
+          binary: '/fake/chrome',
+          version: CHROME_VERSION,
+          key,
+          startedAt: new Date().toISOString(),
+          idleMinutes: 10,
+        });
+        try {
+          const r = await stopDaemon(
+            opts(cache, async () => `node /x/supervisor-main.js {"key":"${key}"}`),
+          );
+          expect(r).toMatchObject({ outcome: 'running', pid: child.pid });
+          expect(pidAlive(child.pid!)).toBe(true);
+          expect(await readState(paths)).not.toBeNull();
+        } finally {
+          child.kill('SIGKILL');
+        }
+      }),
+    10_000,
+  );
+
+  it('a live daemon slow to answer hello is running, not gone (status waits 2 s)', () =>
+    withLiveState(async (cache, paths, pid) => {
+      // Accepts and answers hello after 800 ms: past the old 500 ms probe.
+      const server = net.createServer((sock) => {
+        sock.once('data', () =>
+          setTimeout(() => {
+            sock.write(
+              JSON.stringify({ method: 'jux.ready', params: { product: 'x' } }) + '\0',
+            );
+          }, 800),
+        );
+      });
+      await new Promise<void>((r) => server.listen(paths.socket, r));
+      await chmod(paths.socket, 0o600);
+      try {
+        expect((await daemonStatus(opts(cache, async () => null)))?.pid).toBe(pid);
+      } finally {
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    }));
+
+  it(
+    'a live daemon that never answers is running only if its pid is verifiably ours',
+    () =>
+      withLiveState(async (cache, paths, pid) => {
+        const socks: net.Socket[] = [];
+        const server = net.createServer((c) => socks.push(c));
+        await new Promise<void>((r) => server.listen(paths.socket, r));
+        await chmod(paths.socket, 0o600);
+        try {
+          expect(await daemonStatus(opts(cache, async () => null))).toBeNull();
+          const ours = async () => `node /x/supervisor-main.js {"key":"${key}"}`;
+          expect((await daemonStatus(opts(cache, ours)))?.pid).toBe(pid);
+          expect(await readState(paths)).not.toBeNull();
+        } finally {
+          for (const c of socks) c.destroy();
+          await new Promise<void>((r) => server.close(() => r()));
+        }
+      }),
+    10_000,
+  );
+
+  it(
+    'list and stop-all reach a daemon under an older key; an unverified one is left alone',
+    () =>
+      withCache(async (cache) => {
+        // After an upgrade or rebuild the key changes, and `stop` computed only
+        // the new one: the old daemon ran until it idled out.
+        const plant = async (k: string) => {
+          const paths = daemonPaths(cache, k);
+          await ensureDaemonDirs(paths);
+          const child = spawn('sleep', ['60'], { stdio: 'ignore' });
+          await writeState(paths, {
+            pid: child.pid!,
+            socket: paths.socket,
+            binary: '/old/chrome',
+            version: 'old',
+            key: k,
+            startedAt: new Date().toISOString(),
+            idleMinutes: 10,
+          });
+          const socks: net.Socket[] = [];
+          const server = net.createServer((c) => socks.push(c));
+          await new Promise<void>((r) => server.listen(paths.socket, r));
+          await chmod(paths.socket, 0o600);
+          return {
+            child,
+            paths,
+            close: async () => {
+              child.kill('SIGKILL');
+              for (const c of socks) c.destroy();
+              await new Promise<void>((r) => server.close(() => r()));
+            },
+          };
+        };
+        const old = await plant('0ldk3y0ldk3y0ldk');
+        const odd = await plant('0dd0dd0dd0dd0dd0');
+        const read: CommandReader = async (pid) =>
+          pid === old.child.pid
+            ? `node /x/supervisor-main.js {"key":"${'0ldk3y0ldk3y0ldk'}"}`
+            : null;
+        try {
+          const listed = await listDaemons({ stateDir: cache, readCommand: read });
+          expect(listed.map((s) => s.pid)).toEqual([old.child.pid]);
+          const r = await stopAllDaemons({ stateDir: cache, readCommand: read });
+          expect(r).toEqual([
+            {
+              key: '0dd0dd0dd0dd0dd0',
+              pid: odd.child.pid,
+              outcome: 'unverified',
+              reason: expect.any(String),
+            },
+            { key: '0ldk3y0ldk3y0ldk', pid: old.child.pid, outcome: 'stopped' },
+          ]);
+          expect(pidAlive(old.child.pid!)).toBe(false);
+          expect(await readState(old.paths)).toBeNull();
+          expect(pidAlive(odd.child.pid!)).toBe(true);
+          expect(await readState(odd.paths)).not.toBeNull();
+        } finally {
+          await old.close();
+          await odd.close();
+        }
+      }),
+    15_000,
+  );
 
   it('the default reader reads this process via /proc, else ps, and says "" for a dead pid', async () => {
     const { defaultReadCommand } = await import('./client.js');
