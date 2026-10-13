@@ -46,12 +46,81 @@ export function describeDelta(d: Delta): string {
   }
 }
 
+/** The deltas as indented display lines for a human, grouped by element:
+ *  the element's content changes (four-side longhands collapsed), then its
+ *  resize and move on one line. Groups run causes first — content, added and
+ *  removed; then shifts; then moves; then resizes, so an ancestor's
+ *  consequential `resized` comes last. */
+export function describeDeltas(deltas: Delta[]): string[] {
+  interface Group {
+    rank: number;
+    el?: string;
+    content: ContentDelta[];
+    resized?: string;
+    moved?: string;
+    solo?: string;
+  }
+  const groups: Group[] = [];
+  const byEl = new Map<string, Group>();
+  const of = (el: string): Group => {
+    let g = byEl.get(el);
+    if (!g) {
+      g = { rank: 4, el, content: [] };
+      byEl.set(el, g);
+      groups.push(g);
+    }
+    return g;
+  };
+  for (const d of deltas) {
+    if (d.kind === 'added' || d.kind === 'removed' || d.kind === 'shift') {
+      groups.push({
+        rank: d.kind === 'shift' ? 1 : 0,
+        content: [],
+        solo: describeDelta(d),
+      });
+    } else {
+      const g = of(d.el);
+      if (d.kind === 'moved') {
+        g.moved = `moved ${direction(d.dx, d.dy)}`;
+        g.rank = Math.min(g.rank, 2);
+      } else if (d.kind === 'resized') {
+        g.resized = `resized ${extent(d.dw, d.dh)}`;
+        g.rank = Math.min(g.rank, 3);
+      } else {
+        g.content.push(d);
+        g.rank = 0;
+      }
+    }
+  }
+  const lines: string[] = [];
+  const ordered = groups
+    .map((g, i) => ({ g, i }))
+    .sort((a, b) => a.g.rank - b.g.rank || a.i - b.i);
+  for (const { g } of ordered) {
+    if (g.solo !== undefined) {
+      lines.push(`  ${g.solo}`);
+      continue;
+    }
+    const effects = [g.resized, g.moved].filter((x): x is string => x !== undefined);
+    const own = [
+      ...shorthand(g.content, ' → ').map((p) => p.text),
+      ...(effects.length ? [effects.join(', ')] : []),
+    ];
+    if (own.length === 1) lines.push(`  ${g.el} ${own[0]}`);
+    else {
+      lines.push(`  ${g.el}`);
+      for (const l of own) lines.push(`    ${l}`);
+    }
+  }
+  return lines;
+}
+
 type ContentDelta = Extract<Delta, { kind: 'text' | 'style' | 'attr' }>;
 
 /** `prop from→to`, without the element. */
-function change(d: ContentDelta): string {
-  if (d.kind === 'text') return `text "${trim(d.from)}"→"${trim(d.to)}"`;
-  return `${changedName(d)} ${value(d.from)}→${value(d.to)}`;
+function change(d: ContentDelta, arrow = '→'): string {
+  if (d.kind === 'text') return `text "${trim(d.from)}"${arrow}"${trim(d.to)}"`;
+  return `${changedName(d)} ${value(d.from)}${arrow}${value(d.to)}`;
 }
 
 const changedName = (d: ContentDelta) =>
@@ -252,7 +321,7 @@ const BOXES: ReadonlyArray<readonly [string, readonly string[]]> = [
 /** One element's changes as `prop from→to` strings; when all four longhands
  *  of a box changed, they read as the shorthand (`padding 8px 12px→12px
  *  16px`), placed where the first of them was. */
-function shorthand(changes: ContentDelta[]): Part[] {
+function shorthand(changes: ContentDelta[], arrow = '→'): Part[] {
   const style = new Map<string, Extract<Delta, { kind: 'style' }>>();
   for (const c of changes) if (c.kind === 'style') style.set(c.prop, c);
   const collapsed = new Map<string, Part>(); // first longhand seen → clause
@@ -265,7 +334,7 @@ function shorthand(changes: ContentDelta[]): Part[] {
     if (first?.kind !== 'style') continue;
     collapsed.set(first.prop, {
       name,
-      text: `${name} ${value(boxValue(four.map((d) => d.from)))}→${value(boxValue(four.map((d) => d.to)))}`,
+      text: `${name} ${value(boxValue(four.map((d) => d.from)))}${arrow}${value(boxValue(four.map((d) => d.to)))}`,
       consumed: 4,
     });
     for (const p of sides) absorbed.add(p);
@@ -275,7 +344,7 @@ function shorthand(changes: ContentDelta[]): Part[] {
     const box = c.kind === 'style' ? collapsed.get(c.prop) : undefined;
     if (box) out.push(box);
     else if (c.kind !== 'style' || !absorbed.has(c.prop))
-      out.push({ name: changedName(c), text: change(c), consumed: 1 });
+      out.push({ name: changedName(c), text: change(c, arrow), consumed: 1 });
   }
   return out;
 }

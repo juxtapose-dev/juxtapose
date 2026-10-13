@@ -38,6 +38,7 @@ const snap = (op, name, env) =>
 await snap('noop', 'before');
 await snap('noop', 'same');
 await snap('color', 'after');
+await snap('padding', 'padded');
 await snap('color', 'bare', { JUXTAPOSE_NO_STRUCTURE: '1' });
 
 const same = await jux(['diff', 'before', 'same', '--json']);
@@ -92,8 +93,18 @@ check(again.out === noBrowser.out, 'JSON is byte-identical across runs');
 const human = await jux(['diff', 'before', 'after']);
 check(
   /style-only \(color\)/.test(human.out) &&
-    /- button\[name="Save"\] color/.test(human.out),
+    /^  button\[name="Save"\] color /m.test(human.out),
   'human output leads with the summary and lists deltas',
+);
+
+// Causes first: the padding change leads, not the `main resized` it caused.
+const padded = await jux(['diff', 'before', 'padded']);
+const body = padded.out.split('\n').slice(2).filter(Boolean);
+check(
+  body[0].trim() === 'button[name="Save"]' &&
+    body[1].trim().startsWith('padding ') &&
+    /^next: jux diff before padded --crops/m.test(padded.out),
+  'human output lists the cause first and ends with next:',
 );
 
 const bare = await jux(['diff', 'before', 'bare', '--json']);
@@ -142,6 +153,46 @@ const badimg = await jux(['diff', 'before', 'badimg', '--json']);
 check(
   badimg.code === 3 && /jux diff: failed/.test(badimg.err),
   'an undecodable image exits 3',
+);
+
+// An unexpected throw is exit 3 with a hint; JUX_DEBUG adds the stack.
+// `handoff` with no workbench throws; the top-level handler reports it.
+const dir = path.join(project, '.juxtapose/snaps');
+writeFileSync(path.join(dir, 'x.webp'), 'x');
+const crash = await exec('node', [cli, 'handoff', 'x', '--project', project], {
+  encoding: 'utf8',
+}).then(
+  (r) => ({ code: 0, err: r.stderr }),
+  (e) => ({ code: e.code, err: e.stderr }),
+);
+const crashDebug = await exec('node', [cli, 'handoff', 'x', '--project', project], {
+  encoding: 'utf8',
+  env: { ...process.env, JUX_DEBUG: '1' },
+}).then(
+  (r) => ({ code: 0, err: r.stderr }),
+  (e) => ({ code: e.code, err: e.stderr }),
+);
+check(
+  crash.code === 3 &&
+    /JUX_DEBUG=1/.test(crash.err) &&
+    !/\n\s+at /.test(crash.err) &&
+    /\n\s+at /.test(crashDebug.err),
+  'an unexpected throw exits 3 with a hint; JUX_DEBUG=1 adds the stack',
+);
+
+const typo = await exec('node', [cli, 'dif']).then(
+  () => ({ code: 0, err: '' }),
+  (e) => ({ code: e.code, err: e.stderr }),
+);
+check(
+  typo.code === 2 && /Did you mean 'diff'\?/.test(typo.err),
+  'an unknown command exits 2 and suggests the near match',
+);
+
+const noFile = await jux(['diff', path.join(dir, 'ghost.webp'), 'before']);
+check(
+  noFile.code === 2 && /no file at .*ghost\.webp/.test(noFile.err),
+  'a missing .webp path says no file at <path>',
 );
 
 server.close();

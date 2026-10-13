@@ -7,21 +7,18 @@ import path from 'node:path';
 import {
   compareSnaps,
   decodeStructure,
-  describeDelta,
+  describeDeltas,
   type SnapSide,
   type StructuralVerdict,
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
 import { snapName } from '../snap-name.js';
+import { snapsDir } from '../snaps-dir.js';
 
 export interface DiffFlags {
   json?: boolean;
   project?: string;
   crops?: boolean;
-}
-
-export function snapsDir(project?: string): string {
-  return path.join(path.resolve(project ?? process.cwd()), '.juxtapose', 'snaps');
 }
 
 export type ReadSnap =
@@ -34,6 +31,8 @@ export type ReadSnap =
  *  not decode is a tool failure: it is not something the agent can reason
  *  around, so it is reported as one rather than silently dropped. */
 export async function readSnap(dir: string, ref: string): Promise<ReadSnap> {
+  // An explicit .webp path is deliberately unconfined: it is the user's own
+  // argument on their own machine, not a name derived into a snaps/ path.
   const image = ref.endsWith('.webp')
     ? path.resolve(ref)
     : path.join(dir, `${snapName(ref, ref)}.webp`);
@@ -51,11 +50,15 @@ export async function readSnap(dir: string, ref: string): Promise<ReadSnap> {
 
 export function formatVerdict(v: StructuralVerdict): string {
   const lines = [v.summary];
-  for (const d of v.deltas) lines.push(`  - ${describeDelta(d)}`);
-  if (v.deltaCount > v.deltas.length)
-    lines.push(`  …and ${v.deltaCount - v.deltas.length} more`);
-  if (v.flags.length) lines.push(`flags: ${v.flags.join(', ')}`);
-  if (v.classification !== 'identical') lines.push(`pixels: ${v.escalate.command}`);
+  if (v.deltas.length > 0) {
+    lines.push('', ...describeDeltas(v.deltas));
+    // The JSON is capped by the same size budget, so it cannot list the rest.
+    if (v.deltaCount > v.deltas.length)
+      lines.push(`  …and ${v.deltaCount - v.deltas.length} more`);
+  }
+  if (v.flags.length) lines.push('', `flags: ${v.flags.join(', ')}`);
+  if (v.classification !== 'identical')
+    lines.push('', `next: ${v.escalate.command}  (opens the pixels)`);
   return lines.join('\n') + '\n';
 }
 
@@ -103,7 +106,9 @@ async function loadSides(
   ] as const) {
     if (r.kind === 'missing') {
       process.stderr.write(
-        `jux diff: no snap named '${ref}' in ${dir}. Run \`jux snap <url> --as ${ref}\` first.\n`,
+        ref.endsWith('.webp')
+          ? `jux diff: no file at ${r.image}. Check the path, or take it with \`jux snap <url> --as <name>\`.\n`
+          : `jux diff: no snap named '${ref}' in ${dir}. Run \`jux snap <url> --as ${ref}\` first.\n`,
       );
       return { code: EXIT.usage };
     }

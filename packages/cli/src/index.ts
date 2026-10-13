@@ -126,9 +126,36 @@ async function main(argv: string[]): Promise<number> {
       return diffCommand(positionals[0], positionals[1], values as never);
     }
     default:
-      process.stderr.write(`jux: unknown command '${command}'\n${USAGE}`);
-      return 2;
+      process.stderr.write(
+        `jux: unknown command '${command}'.${suggest(command)} Run \`jux --help\`.\n`,
+      );
+      return EXIT.usage;
   }
+}
+
+const COMMANDS = ['init', 'run', 'approve', 'check', 'handoff', 'snap', 'diff'];
+
+function distance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++)
+      row[j] = Math.min(
+        prev[j] + 1,
+        row[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    prev = row;
+  }
+  return prev[b.length];
+}
+
+/** " Did you mean 'diff'?" when a command is within edit distance 2. */
+function suggest(command: string): string {
+  const best = COMMANDS.map((c) => ({ c, d: distance(command, c) })).sort(
+    (x, y) => x.d - y.d,
+  )[0];
+  return best.d <= 2 ? ` Did you mean '${best.c}'?` : '';
 }
 
 /**
@@ -172,7 +199,11 @@ main(process.argv.slice(2))
   .then((code) => process.exit(code))
   .catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`jux: ${message}\n`);
+    process.stderr.write(
+      `jux: ${message}\nunexpected failure; re-run with JUX_DEBUG=1 for the stack trace, or report it at https://github.com/juxtapose-dev/juxtapose/issues\n`,
+    );
+    if (process.env.JUX_DEBUG && err instanceof Error && err.stack)
+      process.stderr.write(`${err.stack}\n`);
     // An unhandled throw is a tool failure, not "needs review".
     process.exit(EXIT.failure);
   });

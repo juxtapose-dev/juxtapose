@@ -12,7 +12,7 @@ import {
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
 import { snapName } from '../snap-name.js';
-import { snapsDir } from './diff.js';
+import { snapsDir } from '../snaps-dir.js';
 
 export interface SnapFlags {
   json?: boolean;
@@ -66,7 +66,7 @@ export async function snapCommand(
     });
   } catch (err) {
     process.stderr.write(
-      `jux snap: could not capture ${url}: ${(err as Error).message}. Check the server is running, then retry.\n`,
+      `jux snap: could not capture ${url}: ${(err as Error).message}${captureHint((err as Error).message)}\n`,
     );
     return EXIT.failure;
   }
@@ -107,4 +107,18 @@ export async function snapCommand(
       : `jux: snapped ${url} → ${name} (${out.elements} elements, ${out.durationMs} ms)\n`,
   );
   return EXIT.clean;
+}
+
+/** The next step depends on what broke: a missing browser and a down server
+ *  need different commands. Anything else shows its message alone. */
+function captureHint(message: string): string {
+  if (/Executable doesn't exist|Cannot find (package|module) 'playwright/i.test(message))
+    return '. Install the browser with `npx playwright install chromium`, then retry.';
+  if (
+    /ERR_CONNECTION_REFUSED|ECONNREFUSED|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE/.test(
+      message,
+    )
+  )
+    return '. Check the server is running and the URL is right, then retry.';
+  return '';
 }
