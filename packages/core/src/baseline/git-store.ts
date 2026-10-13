@@ -46,6 +46,10 @@ export class GitBaselineStore implements BaselineStore {
     return path.join(this.imageDir, `${encodeStoryId(storyId)}.structure.json.gz`);
   }
 
+  locate(storyId: string): string {
+    return this.imagePath(storyId);
+  }
+
   async putStructure(storyId: string, gz: Buffer): Promise<void> {
     await mkdir(this.imageDir, { recursive: true });
     await writeFile(this.structurePath(storyId), gz);

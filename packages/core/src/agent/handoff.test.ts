@@ -19,12 +19,46 @@ const base: HandoffPayload = {
   projectRoot: '/repo',
 };
 
+const fixture = JSON.parse(
+  readFileSync(
+    path.join(import.meta.dirname, '../diff/__fixtures__/structural-corpus.json'),
+    'utf8',
+  ),
+) as {
+  cases: Record<
+    string,
+    {
+      structure: StructureSnapshot;
+      pixels: {
+        mismatchPixels: number;
+        changedRegions: ChangedRegion[];
+        dimensionMismatch: boolean;
+      };
+    }
+  >;
+};
+
 describe('buildHandoffPrompt', () => {
   it('leads with structured data, not images', () => {
     const out = buildHandoffPrompt(base);
     // The whole efficiency argument: data first, images as a fallback.
-    expect(out.indexOf('What changed')).toBeLessThan(out.indexOf('Images'));
-    expect(out).toContain('inspect only if the data above is insufficient');
+    expect(out.indexOf('What changed')).toBeLessThan(out.indexOf('If still unsure'));
+    expect(out).toContain('## If still unsure');
+  });
+
+  it('ends with the crops command before the image paths', () => {
+    const out = buildHandoffPrompt({
+      ...base,
+      cropsCommand: "jux diff '/repo/.juxtapose/baselines/b.webp' /repo/c.webp --crops",
+    });
+    const footer = out.slice(out.indexOf('## If still unsure'));
+    expect(footer).toContain(
+      "`jux diff '/repo/.juxtapose/baselines/b.webp' /repo/c.webp --crops`",
+    );
+    expect(footer.indexOf('--crops')).toBeLessThan(footer.indexOf('- baseline:'));
+    const bare = buildHandoffPrompt(base);
+    expect(bare).toContain('## If still unsure');
+    expect(bare).not.toContain('--crops');
   });
 
   it('includes the exact mismatch figures', () => {
@@ -85,6 +119,53 @@ describe('buildHandoffPrompt', () => {
     const out = buildHandoffPrompt({ ...base, changedRegions: many });
     expect(out).toContain('and 38 more');
   });
+
+  it('leads with the cause when the run traced one', () => {
+    const v = structuralDiff({
+      baseline: fixture.cases.noop.structure,
+      current: fixture.cases.color.structure,
+      imagesIdentical: false,
+      pixels: fixture.cases.color.pixels,
+      escalate: { command: 'jux handoff x' },
+      cause: {
+        kind: 'in-closure',
+        files: [
+          { path: 'src/tokens.css', distance: 2 },
+          { path: 'src/Button.tsx', distance: 1 },
+        ],
+      },
+    });
+    const out = buildHandoffPrompt({ ...base, structural: v });
+    expect(out.indexOf('## Why')).toBeLessThan(
+      out.indexOf('## What changed (structure)'),
+    );
+    expect(out).toContain('`src/tokens.css` (2 imports away)');
+    expect(out).toContain('`src/Button.tsx` (1 import away)');
+    const none = buildHandoffPrompt({
+      ...base,
+      structural: { ...v, cause: { kind: 'none-in-closure', files: [] } },
+    });
+    expect(none).toContain(
+      "No changed file appears in this story's traced imports. The cause is likely outside your diff",
+    );
+    const unknown = buildHandoffPrompt({
+      ...base,
+      structural: { ...v, cause: { kind: 'unknown', files: [] } },
+    });
+    // Ruling 10: the handoff says why it cannot say; the CLI list stays quiet.
+    expect(unknown).toContain('## Why');
+    expect(unknown).toContain(
+      "Cause unknown: this build doesn't expose every changed file's place in the story's imports, so nothing can be inferred from it.",
+    );
+    // The cause does not depend on structure: with no baseline sidecar the
+    // structure section is replaced by a "re-approve" note, and `## Why` stays.
+    const noStructure = buildHandoffPrompt({
+      ...base,
+      structural: { ...v, deltas: [], flags: ['no-baseline-structure'] },
+    });
+    expect(noStructure).toContain('## Why');
+    expect(noStructure).toContain('No structure snapshot for the baseline');
+  });
 });
 
 describe('describeRegion', () => {
@@ -115,24 +196,6 @@ describe('describeRegion', () => {
     );
   });
 
-  const fixture = JSON.parse(
-    readFileSync(
-      path.join(import.meta.dirname, '../diff/__fixtures__/structural-corpus.json'),
-      'utf8',
-    ),
-  ) as {
-    cases: Record<
-      string,
-      {
-        structure: StructureSnapshot;
-        pixels: {
-          mismatchPixels: number;
-          changedRegions: ChangedRegion[];
-          dimensionMismatch: boolean;
-        };
-      }
-    >;
-  };
   const verdictFor = (name: string) =>
     structuralDiff({
       baseline: fixture.cases.noop.structure,
@@ -148,7 +211,7 @@ describe('describeRegion', () => {
     expect(out.indexOf(structural.summary)).toBeLessThan(out.indexOf('mismatchPercent'));
     expect(out).toContain('  button[name="Save"]\n    text "Save" → "Save changes"');
     expect(out).toContain('Flags: text-changed');
-    expect(out.indexOf('Flags:')).toBeLessThan(out.indexOf('## Images'));
+    expect(out.indexOf('Flags:')).toBeLessThan(out.indexOf('## If still unsure'));
   });
 
   it('tells the agent to compare the deltas with what it intended, and when to look at pixels', () => {
@@ -181,6 +244,63 @@ describe('describeRegion', () => {
     expect(out).not.toContain('## What changed (structure)');
     expect(out).not.toContain('Part of the pixel change');
     expect(out).toContain('## What changed');
+  });
+
+  // Review: a sub-threshold background change came with "Under 0.1% —
+  // consistent with sub-pixel antialiasing noise. Usually safe to approve"
+  // beside a real background-color delta.
+  it('a tiny pixel count with structural deltas does not call it noise', () => {
+    const structural = verdictFor('background');
+    expect(structural.deltaCount).toBeGreaterThan(0);
+    const out = buildHandoffPrompt({ ...base, mismatchPercent: 0, structural });
+    const assessment = out.slice(
+      out.indexOf('## Assessment'),
+      out.indexOf('## What to do'),
+    );
+    expect(assessment).toContain(
+      `Pixels are below tolerance, but structure records ${structural.deltaCount} delta(s); judge those, not the pixel count.`,
+    );
+    expect(out).not.toContain('antialiasing');
+    expect(out).not.toContain('Usually safe to approve');
+    // No deltas: the noise hint stands.
+    const drift = buildHandoffPrompt({
+      ...base,
+      mismatchPercent: 0.02,
+      structural: { ...structural, deltas: [], deltaCount: 0 },
+    });
+    expect(drift).toContain('sub-pixel antialiasing');
+  });
+
+  it('a partial in-closure cause says other imports could not be traced, and does not blame the file', () => {
+    const structural = {
+      ...verdictFor('color'),
+      cause: {
+        kind: 'in-closure' as const,
+        files: [{ path: 'stories/Button.stories.jsx', distance: 0 }],
+        partial: true as const,
+      },
+    };
+    const out = buildHandoffPrompt({
+      ...base,
+      componentPath: '/repo/stories/Button.stories.jsx',
+      structural,
+    });
+    expect(out).toContain(
+      'Changed files this story imports, nearest first: `stories/Button.stories.jsx` (the story file itself); other imports could not be traced.',
+    );
+    const todo = out.slice(out.indexOf('## What to do'));
+    expect(todo).toContain('not necessarily the cause');
+    // A full trace keeps the plain wording and steps.
+    const full = buildHandoffPrompt({
+      ...base,
+      structural: {
+        ...structural,
+        cause: { kind: 'in-closure', files: structural.cause.files },
+      },
+    });
+    expect(full).toContain('(the story file itself).');
+    expect(full).not.toContain('could not be traced');
+    expect(full).not.toContain('not necessarily the cause');
   });
 
   it('with deltas, advises approving by the real command', () => {

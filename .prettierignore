@@ -5,3 +5,4 @@ examples/*/storybook-static/
 examples/*/build/
 examples/*/.juxtapose/
 **/juxtapose.manifest.json
+.superpowers/

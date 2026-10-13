@@ -49,7 +49,10 @@ try {
 
   const lengths = [];
   for (const [i, op] of OPERATORS.entries()) {
-    const out = await jux(['diff', 'base', `op-${slugs.get(urls[i])}`]);
+    const baseline = op.against
+      ? `op-${slugs.get(`${server.url}/op/${op.against}`)}`
+      : 'base';
+    const out = await jux(['diff', baseline, `op-${slugs.get(urls[i])}`]);
     let v;
     try {
       v = JSON.parse(out);

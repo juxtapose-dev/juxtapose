@@ -1,0 +1,11 @@
+{
+  "name": "juxtapose",
+  "displayName": "Juxtapose",
+  "version": "0.1.0",
+  "description": "Verify a UI edit by structure, not screenshots: jux snap before and after, jux diff for the tier-0 verdict, crops only when the verdict cannot explain the pixels.",
+  "author": { "name": "Magic Factory LLC" },
+  "homepage": "https://github.com/juxtapose-dev/juxtapose",
+  "repository": "https://github.com/juxtapose-dev/juxtapose",
+  "license": "MIT",
+  "keywords": ["visual-regression", "ui", "verification", "agent"]
+}

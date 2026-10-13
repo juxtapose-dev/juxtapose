@@ -25,9 +25,12 @@ export type {
   StyleTag,
   Flag,
   StructuralVerdict,
+  Cause,
+  CauseKind,
   DiffStatus,
   DiffResult,
   RunReport,
+  RunGroup,
   ApprovalMeta,
   BaselineEntry,
   BaselineManifest,
@@ -62,10 +65,17 @@ export {
   type RunStructure,
 } from './baseline/approve.js';
 // Structural diff: two sidecars + a pixel diff → the tier-0 verdict.
-export { structuralDiff, type StructuralDiffInput } from './diff/structural.js';
+export {
+  structuralDiff,
+  structuralDiffWithCoverage,
+  type StructuralDiffInput,
+} from './diff/structural.js';
 export { compareSnaps, type SnapSide, type SnapComparison } from './diff/compare.js';
+// Tier-3 crops: two images + regions → side-by-side PNG strips, no browser.
+export { renderCrops, MAX_CROPS, MAX_CROP_SIDE, type Crop } from './diff/crops.js';
 export { describeDelta, describeDeltas } from './diff/structural/summary.js';
 export { compareCodeUnits } from './diff/structural/deltas.js';
+export { shellQuote } from './shell-quote.js';
 
 // Driving a run.
 export {
@@ -74,6 +84,7 @@ export {
   type RunOptions,
   type RunArtifact,
 } from './run/run.js';
+export { computeGroups } from './run/groups.js';
 
 // Per-phase timings, so a slow run can say which phase was slow.
 export { phases, formatPhases, type Phases } from './run/phases.js';
@@ -89,12 +100,25 @@ export { deterministicLaunchOptions, type LaunchOptions } from './capture/launch
 export {
   resolveAffected,
   resolveAffectedFromPaths,
+  gitIsCommit,
   type AffectedOptions,
   type AffectedResult,
 } from './analysis/affected.js';
+// Cause: the story's import closure intersected with the changed files.
+export {
+  buildCauseIndex,
+  prepareCause,
+  type CauseIndex,
+  type CauseSources,
+  type ChangedFile,
+} from './analysis/cause.js';
 
 // Reporting on one.
-export { buildHandoffPrompt, type HandoffPayload } from './agent/handoff.js';
+export {
+  buildHandoffPrompt,
+  describeCause,
+  type HandoffPayload,
+} from './agent/handoff.js';
 export { buildComment, type CommentOptions } from './report/comment.js';
 export { buildHtmlReport, type HtmlReportOptions } from './report/html.js';
 export { formatPercent } from './report/format.js';

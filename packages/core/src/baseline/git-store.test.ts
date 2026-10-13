@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test } from 'vitest';
-import { GitBaselineStore } from './git-store.js';
+import { GitBaselineStore, encodeStoryId } from './git-store.js';
 
 const meta = { commit: 'abc', approvedBy: 't', approvedAt: '2026-10-12T00:00:00Z' };
 
@@ -45,4 +45,21 @@ test('putting an image without a sidecar drops the previous sidecar', async () =
   await store.putStructure('a', Buffer.from('gz'));
   await store.put('a', Buffer.from('img2'), meta);
   expect(await store.getStructure('a')).toBeNull();
+});
+
+test('locate names the baseline image path, present or not', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jux-store-'));
+  const store = new GitBaselineStore({ projectRoot: root });
+  const where = store.locate('Components/Button--primary');
+  expect(where).toBe(
+    path.join(
+      root,
+      '.juxtapose/baselines',
+      `${encodeStoryId('Components/Button--primary')}.webp`,
+    ),
+  );
+  await store.put('Components/Button--primary', Buffer.from('img'), meta);
+  expect(await readFile(where)).toEqual(Buffer.from('img'));
+  const custom = new GitBaselineStore({ projectRoot: root, dir: 'shots' });
+  expect(custom.locate('x')).toBe(path.join(root, 'shots', 'x.webp'));
 });

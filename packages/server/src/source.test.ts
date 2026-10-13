@@ -2,12 +2,15 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { RunDirSource, watchTargets } from './source.js';
+import { RunDirSource, mergeReports, watchTargets } from './source.js';
 import {
   encodeStoryId,
   encodeStructure,
   GitBaselineStore,
+  type DiffResult,
   type Platform,
+  type RunReport,
+  type StructuralVerdict,
   type ProjectConfig,
   type StoryManifest,
   type StoryParams,
@@ -85,5 +88,45 @@ describe('RunDirSource.approve', () => {
     expect((await store.readManifest()).baselines['a--b'].structureHash).toBe(
       'e'.repeat(64),
     );
+  });
+});
+
+describe('mergeReports', () => {
+  const verdict = {
+    signature: 's',
+    change: 'c',
+    summary: 'c',
+    deltaCount: 1,
+  } as StructuralVerdict;
+  const fail = (storyId: string): DiffResult => ({
+    storyId,
+    status: 'fail',
+    mismatchPixels: 1,
+    mismatchPercent: 1,
+    changedRegions: [],
+    durationMs: 1,
+    structural: verdict,
+  });
+  const report = (results: DiffResult[]): RunReport =>
+    ({
+      results,
+      summary: { pass: 0, fail: 0, new: 0, stale: 0, skip: 0 },
+      totalCount: results.length,
+    }) as unknown as RunReport;
+
+  it('regroups over the merged results, in code-unit order', () => {
+    const merged = mergeReports(report([fail('a'), fail('Z')]), report([fail('b')]));
+    expect(merged.results.map((r) => r.storyId)).toEqual(['Z', 'a', 'b']);
+    expect(merged.groups?.map((g) => g.storyIds)).toEqual([['Z', 'a', 'b']]);
+  });
+
+  it('drops groups that no longer hold', () => {
+    const stale = {
+      ...report([fail('b')]),
+      groups: [{ signature: 's', summary: 'x', storyIds: ['a', 'b'] }],
+    };
+    expect(mergeReports(report([]), stale).groups).toBeUndefined();
+    const other = { ...fail('a'), structural: { ...verdict, signature: 'other' } };
+    expect('groups' in mergeReports(report([other]), stale)).toBe(false);
   });
 });

@@ -11,10 +11,12 @@ import {
   MAX_DELTAS,
   MAX_VERDICT,
   structuralDiff,
+  structuralDiffWithCoverage,
   type StructuralDiffInput,
 } from './structural.js';
 
 interface Case {
+  against: string;
   structure: StructureSnapshot;
   imagesIdentical: boolean;
   pixels: {
@@ -40,7 +42,7 @@ const { OPERATORS, checkVerdict } =
 const ESC = { command: 'jux diff noop x --crops' };
 const verdict = (name: string, over: Partial<StructuralDiffInput> = {}) =>
   structuralDiff({
-    baseline: fixture.cases.noop.structure,
+    baseline: fixture.cases[fixture.cases[name].against].structure,
     current: fixture.cases[name].structure,
     imagesIdentical: fixture.cases[name].imagesIdentical,
     pixels: fixture.cases[name].pixels,
@@ -275,6 +277,7 @@ test('the verdict JSON is byte-identical across calls and has a fixed key order'
     'classification',
     'styleTags',
     'summary',
+    'change',
     'deltas',
     'deltaCount',
     'coverage',
@@ -555,4 +558,160 @@ test('5,000-element tree pair (50 parents × 100 children, LCS path) diffs well 
     `structuralDiff ${a.elements.length}×${b.elements.length} tree (${PARENTS}×${CHILDREN + 1}): ${ms.toFixed(1)} ms (target < 50)`,
   );
   expect(ms).toBeLessThan(250);
+});
+
+test('cause sits between flags and signature, and is absent when not given', () => {
+  const cause = {
+    kind: 'in-closure' as const,
+    files: [{ path: 'src/Button.tsx', distance: 1 }],
+  };
+  expect(Object.keys(verdict('color', { cause }))).toEqual([
+    'schema',
+    'classification',
+    'styleTags',
+    'summary',
+    'change',
+    'deltas',
+    'deltaCount',
+    'coverage',
+    'explained',
+    'unexplainedRegions',
+    'flags',
+    'cause',
+    'signature',
+    'escalate',
+  ]);
+  expect(verdict('color', { cause }).cause).toEqual(cause);
+  expect('cause' in verdict('color')).toBe(false);
+  // the signature is about the change, not about which files caused it
+  expect(verdict('color', { cause }).signature).toBe(verdict('color').signature);
+});
+
+// Review Focus 5
+test('cause fits the budget for any input: ≤5 files, paths ≤80 chars keeping the tail', () => {
+  const deep = (k: number) =>
+    `packages/${'very-long-workspace-name/'.repeat(10)}src/components/${k}/Button.tsx`;
+  const cause = {
+    kind: 'in-closure' as const,
+    files: Array.from({ length: 200 }, (_, k) => ({ path: deep(k), distance: k })),
+  };
+  const v = verdict('padding', { cause });
+  expect(v.cause?.files).toHaveLength(5);
+  for (const f of v.cause!.files) {
+    expect(f.path.length).toBeLessThanOrEqual(80);
+    expect(f.path).toMatch(/^…/);
+    expect(f.path).toMatch(/\/Button\.tsx$/);
+  }
+  expect(JSON.stringify(v).length).toBeLessThanOrEqual(1500);
+  expect(v.deltas.length).toBeGreaterThan(0);
+  expect(JSON.stringify(verdict('padding', { cause }))).toBe(JSON.stringify(v));
+  // `partial` rides along and the budget still holds.
+  const vp = verdict('padding', { cause: { ...cause, partial: true } });
+  expect(vp.cause?.partial).toBe(true);
+  expect(Object.keys(vp.cause!)).toEqual(['kind', 'files', 'partial']);
+  expect(JSON.stringify(vp).length).toBeLessThanOrEqual(MAX_VERDICT);
+  expect('partial' in v.cause!).toBe(false);
+});
+
+// A clip that lands between the halves of a surrogate pair would leave a
+// lone surrogate, which is not valid UTF-8 and breaks a JSON consumer.
+test('cause paths are clipped on code point boundaries', () => {
+  for (const pad of ['', 'x']) {
+    const p = `src/${pad}${'😀'.repeat(60)}.tsx`;
+    const v = verdict('padding', {
+      cause: { kind: 'in-closure', files: [{ path: p, distance: 1 }] },
+    });
+    const clipped = v.cause!.files[0].path;
+    expect(clipped.length).toBeLessThanOrEqual(80);
+    expect(clipped.isWellFormed()).toBe(true);
+    expect(clipped).toMatch(/^…😀+\.tsx$/u);
+  }
+});
+
+test('change states the shared change without per-page labels, and only when there are facts', () => {
+  const v = structuralDiff({
+    baseline: fixture.cases.noop.structure,
+    current: fixture.cases.color.structure,
+    imagesIdentical: false,
+    pixels: fixture.cases.color.pixels,
+    escalate: { command: 'x' },
+  });
+  expect(v.change).toBe('style-only (color): button color #ffffff→#fef08a');
+  expect(v.change!.length).toBeLessThanOrEqual(160);
+  expect(Object.keys(v).slice(0, 5)).toEqual([
+    'schema',
+    'classification',
+    'styleTags',
+    'summary',
+    'change',
+  ]);
+  const none = structuralDiff({
+    baseline: fixture.cases.noop.structure,
+    current: fixture.cases.noop.structure,
+    imagesIdentical: true,
+    pixels: fixture.cases.noop.pixels,
+    escalate: { command: 'x' },
+  });
+  expect('change' in none).toBe(false);
+});
+
+test('structuralDiffWithCoverage returns every unexplained region, even the ones the budget drops from the verdict', () => {
+  const a = fixture.cases.noop.structure;
+  const b = structuredClone(a);
+  for (const e of b.elements) {
+    e.styles = {
+      ...e.styles,
+      opacity: '0.5',
+      transform: 'matrix(1, 0, 0, 1, 1, 0)',
+      'box-shadow': 'rgb(0, 0, 0) 0px 1px 2px 0px',
+    };
+  }
+  const regions = Array.from({ length: 40 }, (_, k) => ({
+    x: 16 + k * 10,
+    y: 440,
+    width: 8,
+    height: 8,
+  }));
+  const input: StructuralDiffInput = {
+    baseline: a,
+    current: b,
+    imagesIdentical: false,
+    pixels: { changedRegions: regions, dimensionMismatch: false },
+    escalate: ESC,
+  };
+  const { verdict, unexplainedRegions } = structuralDiffWithCoverage(input);
+  expect(unexplainedRegions).toEqual(regions);
+  expect(verdict.unexplainedRegions.length).toBeLessThan(regions.length);
+  expect(JSON.stringify(verdict).length).toBeLessThanOrEqual(MAX_VERDICT);
+  expect(structuralDiff(input)).toEqual(verdict);
+});
+
+// `--crops` on a sub-threshold change has no marked region to crop. The
+// changed elements are the next best thing: a whole-frame strip at 64%
+// cannot show a background-color change on one button.
+test('elementRegions: each delta element’s rects, unioned per element, rounded outward, in delta order', () => {
+  const run = (name: string) =>
+    structuralDiffWithCoverage({
+      baseline: fixture.cases[fixture.cases[name].against].structure,
+      current: fixture.cases[name].structure,
+      imagesIdentical: fixture.cases[name].imagesIdentical,
+      pixels: fixture.cases[name].pixels,
+      escalate: ESC,
+    });
+  // background: one style delta on the button (16,69 65.38×44).
+  expect(run('background').elementRegions).toEqual([
+    { x: 16, y: 69, width: 66, height: 44 },
+  ]);
+  // padding: deltas run main resized, then the button's five, then a shift
+  // and the logo. The button's five give it one region (old 16,69 65.38×44 ∪
+  // new 16,65 73.38×52), and the shift's rows do not swell it.
+  const padding = run('padding');
+  expect(padding.verdict.deltas.map((d) => d.kind)[0]).toBe('resized');
+  expect(padding.elementRegions.slice(0, 2)).toEqual([
+    { x: 16, y: 16, width: 608, height: 370 },
+    { x: 16, y: 65, width: 74, height: 52 },
+  ]);
+  const keys = padding.elementRegions.map((r) => JSON.stringify(r));
+  expect(new Set(keys).size).toBe(keys.length);
+  expect(run('noop').elementRegions).toEqual([]);
 });

@@ -5,6 +5,10 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import {
   buildComment,
+  describeCause,
+  gitIsCommit,
+  prepareCause,
+  type DiffResult,
   buildHtmlReport,
   postComment,
   resolveArtifactUrl,
@@ -32,8 +36,22 @@ import {
   type CommonFlags,
 } from '../context.js';
 import { serveStatic } from '../serve-static.js';
+import { EXIT } from '../exit-codes.js';
+
+const MAX_GROUPS_SHOWN = 10;
 
 export async function runCommand(flags: CommonFlags): Promise<number> {
+  // Checked first: a mistyped ref used to fall through to `git-unavailable`,
+  // capture everything, and give every story an unexplained `unknown` cause.
+  if (
+    flags.since !== undefined &&
+    !gitIsCommit(flags.since, path.resolve(flags.project ?? process.cwd()))
+  ) {
+    process.stderr.write(
+      `jux run: --since '${flags.since}' is not a commit. Try \`--since main\` or \`--since HEAD~1\`.\n`,
+    );
+    return EXIT.usage;
+  }
   const ctx = await resolveContext(flags);
   const log = (msg: string) => {
     if (!ctx.json) process.stderr.write(msg + '\n');
@@ -68,6 +86,17 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
     `jux: ${selection.stories.length}/${stories.length} stories to capture (${selection.reason})`,
   );
 
+  // Only with --since is there a changed-file set to trace. Lazy: the index
+  // reads git and the manifest on the first failing story, never on a green run.
+  const cause = flags.since
+    ? prepareCause({
+        projectRoot: ctx.projectRoot,
+        buildDir: ctx.buildDir,
+        sinceCommit: flags.since,
+        configDirs: [...ctx.platform.configDirs],
+      })
+    : undefined;
+
   if (selection.stories.length === 0) {
     const empty = emptyReport(ctx.projectRoot, stories.length);
     await emit(ctx.json, empty, ctx.projectRoot, p);
@@ -99,6 +128,7 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
         ? createAncestryCheck(ctx.projectRoot)
         : alwaysAncestor,
       phases: p,
+      ...(cause ? { cause } : {}),
       runId,
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
@@ -273,9 +303,25 @@ async function emit(
             ? ` ${r.error}`
             : '';
       process.stdout.write(`  ${r.status.padEnd(6)} ${r.storyId}${detail}\n`);
+      for (const line of explain(r)) process.stdout.write(`         ${line}\n`);
     }
     if (needsReview.length > 20) {
       process.stdout.write(`  …and ${needsReview.length - 20} more\n`);
+    }
+    // Bounded like the review list: 500 groups would be 1,000 lines. The
+    // report has them all.
+    if (report.groups?.length) {
+      const n = report.groups.length;
+      process.stdout.write(
+        `\n  ${n} change${n === 1 ? '' : 's'} shared by several stories:\n`,
+      );
+      for (const g of report.groups.slice(0, MAX_GROUPS_SHOWN)) {
+        const ids = g.storyIds.slice(0, 5).join(', ');
+        const more = g.storyIds.length > 5 ? `, …${g.storyIds.length - 5} more` : '';
+        process.stdout.write(`  ${g.summary}\n    ${ids}${more}\n`);
+      }
+      if (n > MAX_GROUPS_SHOWN)
+        process.stdout.write(`  …and ${n - MAX_GROUPS_SHOWN} more (see report.json)\n`);
     }
     process.stdout.write(`\n  report: ${path.join(runDir, 'report.json')}\n`);
     process.stdout.write(`  approve all: jux approve --all\n`);
@@ -302,4 +348,16 @@ function emptyReport(projectRoot: string, totalCount: number): RunReport {
     durationMs: 0,
     startedAt: new Date().toISOString(),
   };
+}
+
+/** What an agent reads first under a failing story: the cause (the same
+ *  sentence the handoff prints), then the structural summary. One line
+ *  each; the handoff has the rest. An `unknown` cause is left to the
+ *  handoff: under every story of a Storybook build it would be noise. */
+function explain(r: DiffResult): string[] {
+  const v = r.structural;
+  if (!v) return [];
+  const why =
+    v.cause && v.cause.kind !== 'unknown' ? [`cause: ${describeCause(v.cause)}`] : [];
+  return [...why, v.summary];
 }

@@ -8,7 +8,13 @@
 // Pure function. No I/O, no clipboard — string in, string out, so it is
 // trivially testable and callable from both the CLI and a server.
 
-import type { ChangedRegion, DiffStatus, StructuralVerdict, Viewport } from '../types.js';
+import type {
+  Cause,
+  ChangedRegion,
+  DiffStatus,
+  StructuralVerdict,
+  Viewport,
+} from '../types.js';
 import { describeDeltas } from '../diff/structural/summary.js';
 
 export interface HandoffPayload {
@@ -25,6 +31,8 @@ export interface HandoffPayload {
   diffDataPath?: string;
   /** Tier-0 verdict from the run, when the capture had structure. */
   structural?: StructuralVerdict;
+  /** `jux diff <baseline.webp> <current.webp> --crops`, when both files exist. */
+  cropsCommand?: string;
   images: {
     baseline?: string;
     current?: string;
@@ -82,6 +90,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
           ? 'current'
           : undefined
       : undefined;
+  if (v?.cause) lines.push('## Why', '', describeCause(v.cause), '');
   if (v && missing) {
     lines.push(
       missing === 'baseline'
@@ -156,15 +165,20 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
 
   lines.push('## Assessment');
   lines.push('');
-  lines.push(magnitudeHint(p.mismatchPercent));
+  lines.push(magnitudeHint(p.mismatchPercent, p.structural?.deltaCount ?? 0));
   lines.push('');
 
   lines.push(...actions(p, { approveVerb: 'accept the new rendering' }));
 
-  if (p.images.baseline || p.images.current || p.images.diff) {
-    lines.push('');
-    lines.push('## Images (inspect only if the data above is insufficient)');
-    lines.push('');
+  if (p.cropsCommand || p.images.baseline || p.images.current || p.images.diff) {
+    lines.push('', '## If still unsure', '');
+    if (p.cropsCommand) {
+      lines.push(
+        `Side-by-side crops of each changed region, unexplained first — run \`${p.cropsCommand}\` and open the files it lists.`,
+        '',
+      );
+    }
+    lines.push('Full images, last resort:');
     if (p.images.baseline) lines.push(`- baseline: \`${p.images.baseline}\``);
     if (p.images.current) lines.push(`- current: \`${p.images.current}\``);
     if (p.images.diff) lines.push(`- diff overlay: \`${p.images.diff}\``);
@@ -183,6 +197,15 @@ const MAX_REGIONS = 12;
 
 function actions(p: HandoffPayload, opts: { approveVerb: string }): string[] {
   const out = ['## What to do', ''];
+  // A partial trace names the changed files it could see; the one that
+  // changed the pixels may be one it could not. Pointing the agent at the
+  // listed file sent it to the story's label edit for a bundled token change.
+  if (p.structural?.cause?.partial) {
+    out.push(
+      'The files under "Why" changed and are imported, but are not necessarily the cause: other imports could not be traced. Check every file changed since the base, not only those.',
+      '',
+    );
+  }
 
   if (p.componentPath) {
     out.push(
@@ -228,14 +251,37 @@ export function describeRegion(r: ChangedRegion, viewport: Viewport): string {
   return `(${r.x}, ${r.y}) ${r.width}×${r.height}px — ${vertical}-${horizontal}, ${round(areaPct)}% of viewport`;
 }
 
+/** The one wording of a cause, shared by the handoff and the CLI's review
+ *  list (which skips `unknown`). One or two sentences, no heading. */
+export function describeCause(c: Cause): string {
+  const away = (d: number) =>
+    d === 0 ? 'the story file itself' : `${d} import${d === 1 ? '' : 's'} away`;
+  switch (c.kind) {
+    case 'in-closure':
+      return `Changed files this story imports, nearest first: ${c.files
+        .map((f) => `\`${f.path}\` (${away(f.distance)})`)
+        .join(', ')}${c.partial ? '; other imports could not be traced' : ''}.`;
+    case 'config':
+      return `A change that reaches every story: ${c.files.map((f) => `\`${f.path}\``).join(', ')}. Expect other stories to fail the same way; the run's \`groups\` lists which.`;
+    case 'none-in-closure':
+      return "No changed file appears in this story's traced imports. The cause is likely outside your diff: a dependency, an asset, the environment, or render drift.";
+    case 'unknown':
+      return "Cause unknown: this build doesn't expose every changed file's place in the story's imports, so nothing can be inferred from it.";
+  }
+}
+
 /**
  * Calibrate the agent's suspicion to the size of the change.
  *
  * Without this, agents treat a 0.02% antialiasing shift and a 40% layout
  * collapse as equally alarming.
  */
-function magnitudeHint(pct: number): string {
+function magnitudeHint(pct: number, deltaCount: number): string {
   if (pct < 0.1) {
+    // A sub-threshold colour change marks no pixels at all; calling it
+    // antialiasing noise beside a real delta argued with the section above.
+    if (deltaCount > 0)
+      return `Pixels are below tolerance, but structure records ${deltaCount} delta(s); judge those, not the pixel count.`;
     return 'Under 0.1% — consistent with sub-pixel antialiasing noise. Usually safe to approve, but confirm the changed regions are not on meaningful content.';
   }
   if (pct < 1) {

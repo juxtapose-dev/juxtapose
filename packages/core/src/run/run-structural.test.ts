@@ -72,6 +72,11 @@ function store(
       version: 1,
       baselines: {
         s: { ...meta, hash: 'not-the-current-hash', structureHash: BASE.structureHash },
+        "it's a story": {
+          ...meta,
+          hash: 'not-the-current-hash',
+          structureHash: BASE.structureHash,
+        },
         'no-current': { ...meta, hash: 'nope' },
         // hash equals the captured bytes: this story passes
         green: {
@@ -98,7 +103,11 @@ function store(
   };
 }
 
-const run = (s: BaselineStore, storyId = 's') =>
+const run = (
+  s: BaselineStore,
+  storyId = 's',
+  extra: Partial<Parameters<typeof runCapture>[0]> = {},
+) =>
   runCapture({
     browser: {} as Browser,
     platform: { name: 'x' } as never,
@@ -109,6 +118,7 @@ const run = (s: BaselineStore, storyId = 's') =>
     runId: 'r',
     branch: 'b',
     commitSha: 'c',
+    ...extra,
   });
 
 test('a failing story with sidecars on both sides carries a verdict', async () => {
@@ -117,6 +127,15 @@ test('a failing story with sidecars on both sides carries a verdict', async () =
   expect(r.results[0].structural?.classification).toBe('style-only');
   // In run mode the next command is the handoff for this story.
   expect(r.results[0].structural?.escalate.command).toBe('jux handoff s');
+});
+
+// Every printed command is pasteable: an id with a space or a quote is
+// shell-quoted like the CLI's own hints.
+test('the handoff escalate command shell-quotes the story id', async () => {
+  const r = await run(store('ok'), "it's a story");
+  expect(r.results[0].structural?.escalate.command).toBe(
+    "jux handoff 'it'\\''s a story'",
+  );
 });
 
 // Verification 5: a green story never reads a sidecar.
@@ -179,4 +198,74 @@ test('a dimension mismatch carries the error and still a verdict', async () => {
   } finally {
     dims.on = false;
   }
+});
+
+test('with a cause index, a failing verdict carries the cause', async () => {
+  const cause = {
+    kind: 'in-closure' as const,
+    files: [{ path: 'src/x.ts', distance: 1 }],
+  };
+  const causeFor = vi.fn(async () => cause);
+  const r = await run(store('ok'), 's', { cause: { causeFor } });
+  expect(r.results[0].structural?.cause).toEqual(cause);
+  expect(causeFor).toHaveBeenCalledWith('');
+});
+
+// Verification 5: the index is never consulted for a passing story.
+test('a passing story never asks the cause index', async () => {
+  const causeFor = vi.fn(async () => ({ kind: 'unknown' as const, files: [] }));
+  const r = await run(store('ok'), 'green', { cause: { causeFor } });
+  expect(r.results[0].status).toBe('pass');
+  expect(causeFor).not.toHaveBeenCalled();
+});
+
+test('a cause index that throws leaves the verdict without a cause, run intact', async () => {
+  const causeFor = vi.fn(async () => {
+    throw new Error('git exploded');
+  });
+  const r = await run(store('ok'), 's', { cause: { causeFor } });
+  expect(r.results[0].status).toBe('fail');
+  expect(r.results[0].structural?.classification).toBe('style-only');
+  expect(r.results[0].structural?.cause).toBeUndefined();
+});
+
+test('two failing stories with the same change are one group on the report', async () => {
+  const s = store('ok');
+  // The store's manifest only knows 's'; a second id with the same baseline
+  // row is enough, since the stub pool yields the same current capture.
+  const manifest = await s.readManifest();
+  s.readManifest = async () => ({
+    ...manifest,
+    baselines: { ...manifest.baselines, s2: manifest.baselines.s },
+  });
+  const r = await runCapture({
+    browser: {} as Browser,
+    platform: { name: 'x' } as never,
+    store: s,
+    baseUrl: 'about:blank',
+    stories: ['s2', 's'].map((storyId) => ({
+      storyId,
+      title: 't',
+      name: 'n',
+      componentPath: '',
+      params: {},
+    })),
+    totalCount: 2,
+    runId: 'r',
+    branch: 'b',
+    commitSha: 'c',
+  });
+  expect(r.results.map((x) => x.storyId)).toEqual(['s', 's2']);
+  expect(r.groups).toEqual([
+    {
+      signature: r.results[0].structural!.signature,
+      summary: `${r.results[0].structural!.change} — 2 stories`,
+      storyIds: ['s', 's2'],
+    },
+  ]);
+});
+
+test('a run with no shared signature has no groups key', async () => {
+  const r = await run(store('ok'));
+  expect('groups' in r).toBe(false);
 });

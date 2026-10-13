@@ -156,6 +156,29 @@ export type Flag =
    *  fold are invisible to both pixels and structure. */
   | 'below-fold';
 
+export type CauseKind =
+  /** At least one changed file is in the story's import closure. */
+  | 'in-closure'
+  /** A changed file reaches every story: a root lockfile or a platform config dir. */
+  | 'config'
+  /** The closure was traced and no changed file is in it: the strongest
+   *  "this is not your code" the tool can give, especially beside render-drift. */
+  | 'none-in-closure'
+  /** No --since, no manifest, git failed, or the story is not in the graph. */
+  | 'unknown';
+
+/** Why this story changed: the cheap link only (story → import closure →
+ *  changed files). Matched CSS rules and source lines are later rows. */
+export interface Cause {
+  kind: CauseKind;
+  /** At most 5, nearest first; posix paths relative to the project root. */
+  files: Array<{ path: string; distance: number }>;
+  /** `in-closure` only: the closure was not fully traced (a bundled chunk
+   *  with no src, or a changed file the manifest never names), so the cause
+   *  may be a file not listed. Absent, never false, when the trace was full. */
+  partial?: true;
+}
+
 /** Tier-0: what changed, in a few hundred characters, with whether it
  *  explains every changed pixel. The whole output of `jux diff`. */
 export interface StructuralVerdict {
@@ -165,9 +188,17 @@ export interface StructuralVerdict {
   styleTags: StyleTag[];
   /** Templated, deterministic, ≤ 300 chars. */
   summary: string;
+  /** The change with every element reduced to role|tag and no per-story
+   *  tail, ≤ 160 chars: what stories sharing a `signature` have in common.
+   *  Absent when there are no deltas. */
+  change?: string;
   /** At most 20, and only the prefix that keeps the whole verdict within
    *  1,500 chars; `deltaCount` is the total. */
   deltas: Delta[];
+  /** Counted after suppression: a child that only followed its parent's
+   *  move or resize, and a style inherited from where it originated, are not
+   *  deltas, nor is an added/removed element hidden by the other side's
+   *  truncation; a shift run counts once. */
   deltaCount: number;
   /** Fraction of changed-region area intersecting some delta's element. */
   coverage: number;
@@ -176,8 +207,11 @@ export interface StructuralVerdict {
   /** The prefix that fits the 1,500-char verdict; `coverage` covers all. */
   unexplainedRegions: ChangedRegion[];
   flags: Flag[];
+  /** Present only in `jux run --since`; absent from `jux diff`. */
+  cause?: Cause;
   /** sha256 over the classification and the delta set with elements
-   *  abstracted to role|tag, so two pages with the same change share one. */
+   *  abstracted to role|tag, so two pages with the same change share one.
+   *  Over the same post-suppression facts `deltaCount` counts. */
   signature: string;
   /** The exact command for tier-3 pixels. */
   escalate: { command: string };
@@ -207,6 +241,18 @@ export interface DiffResult {
   durationMs: number;
 }
 
+/** One change seen on several stories: the same signature on ≥2 failing
+ *  results. Listing them is what turns 40 handoffs into one decision;
+ *  approving by group is a later row. */
+export interface RunGroup {
+  signature: string;
+  /** The shared change, as `<change> — N stories`: the verdict's `change`
+   *  (elements as role|tag), not one page's labelled summary. */
+  summary: string;
+  /** ≥ 2, code-unit sorted. */
+  storyIds: string[];
+}
+
 export interface RunReport {
   runId: string;
   branch: string;
@@ -219,6 +265,8 @@ export interface RunReport {
   totalCount: number;
   results: DiffResult[];
   summary: Record<DiffStatus, number>;
+  /** Present when at least one signature is shared by ≥2 failing stories. */
+  groups?: RunGroup[];
   durationMs: number;
   startedAt: string;
 }
@@ -312,4 +360,7 @@ export interface BaselineStore {
   /** Optional: stores that can hold the gzipped structure sidecar. */
   putStructure?(storyId: string, gz: Buffer): Promise<void>;
   getStructure?(storyId: string): Promise<Buffer | null>;
+  /** Optional: where the baseline image lives on disk, for stores that keep
+   *  one. The handoff hands it to `jux diff … --crops`. */
+  locate?(storyId: string): string | undefined;
 }

@@ -130,15 +130,116 @@ check(
   'one argument is usage (2) with the next command',
 );
 
-// The verdict's own `next:` command must work: until crops exist it names
-// the two images and succeeds.
-const crops = await jux(['diff', 'before', 'after', '--crops']);
+// --crops is the real tier-3 now: strips on disk, paths listed, exit as diff.
+const { existsSync, readFileSync } = await import('node:fs');
+const crops = await jux(['diff', 'before', 'after', '--crops', '--json'], {
+  PLAYWRIGHT_BROWSERS_PATH: '/nonexistent',
+  NODE_OPTIONS: `--import ${probe}`,
+});
+const vc = JSON.parse(crops.out || '{}');
+const cropFile = vc.crops?.[0]?.file;
+const cropAbs = cropFile && path.join(project, ...cropFile.split('/'));
 check(
-  crops.code === 0 &&
-    /^open these to compare; crops arrive in a later release\n {2}\S*before\.webp\n {2}\S*after\.webp\n$/.test(
-      crops.out,
-    ),
-  '--crops names both images to open and exits 0',
+  crops.code === 1 &&
+    vc.schema === 'juxtapose.crops/v1' &&
+    vc.verdict?.classification === 'style-only' &&
+    vc.dir === '.juxtapose/crops/before~vs~after' &&
+    vc.crops.length >= 1 &&
+    cropFile.startsWith('.juxtapose/crops/before~vs~after/crop-1.png') &&
+    !cropFile.includes('\\') &&
+    existsSync(cropAbs) &&
+    readFileSync(cropAbs).subarray(1, 4).toString('latin1') === 'PNG' &&
+    vc.crops.every((c) => c.width <= 512 * 2 + 4 && c.height <= 512) &&
+    Object.keys(vc.crops[0]).join() === 'file,region,box,scale,width,height,explained',
+  '--crops writes PNG strips, lists relative paths, exits 1, loads no playwright',
+);
+const cropsHuman = await jux(['diff', 'before', 'after', '--crops']);
+check(
+  /^style-only \(color\)/.test(cropsHuman.out) &&
+    /crops \(baseline \| current\), unexplained first:\n {2}\S.*crop-1\.png {2}\(\d+×\d+ at \d+,\d+, \d+×\)/.test(
+      cropsHuman.out,
+    ) &&
+    !/^next:/m.test(cropsHuman.out),
+  '--crops human output: verdict, then absolute crop paths, no next:',
+);
+// A fresh call empties the dir: a stale crop from a bigger diff cannot linger.
+writeFileSync(path.join(project, '.juxtapose/crops/before~vs~after/crop-9.png'), 'stale');
+await jux(['diff', 'before', 'after', '--crops']);
+check(
+  !existsSync(path.join(project, '.juxtapose/crops/before~vs~after/crop-9.png')) &&
+    readFileSync(path.join(project, '.juxtapose/crops/.gitignore'), 'utf8') === '*\n',
+  '--crops empties the pair dir first and the crops dir self-ignores',
+);
+const cropsSame = await jux(['diff', 'before', 'same', '--crops', '--json']);
+check(
+  cropsSame.code === 0 &&
+    JSON.parse(cropsSame.out).dir === null &&
+    !existsSync(path.join(project, '.juxtapose/crops/before~vs~same')),
+  'identical snaps: --crops exits 0 and writes nothing',
+);
+// Reusing one pair name: crops from the different run must not outlive an
+// identical re-run (removing is not writing).
+await snap('color', 'flip');
+await jux(['diff', 'before', 'flip', '--crops']);
+const flipDir = path.join(project, '.juxtapose/crops/before~vs~flip');
+const hadCrops = existsSync(path.join(flipDir, 'crop-1.png'));
+await snap('noop', 'flip');
+const flipSame = await jux(['diff', 'before', 'flip', '--crops']);
+check(
+  hadCrops && flipSame.code === 0 && !existsSync(flipDir),
+  'an identical re-run of a pair removes its earlier crops',
+);
+// Review Focus 4: a sub-threshold change marks no region; the agent still gets pixels.
+await snap('background', 'bg');
+const cropsSub = await jux(['diff', 'before', 'bg', '--crops', '--json']);
+const vsub = JSON.parse(cropsSub.out);
+// A 64% whole-frame strip cannot show a colour change, and it was labelled
+// `explained: false` / "unexplained" beside `explained: "full"`. The crop is
+// the changed element: the button's rect, rounded outward, from the sidecar.
+const { gunzipSync } = await import('node:zlib');
+const bgStructure = JSON.parse(
+  gunzipSync(readFileSync(path.join(project, '.juxtapose/snaps/bg.structure.json.gz'))),
+);
+const btn = bgStructure.elements.find((e) => e.tag === 'button').rect;
+const btnRegion = {
+  x: Math.floor(btn.x),
+  y: Math.floor(btn.y),
+  width: Math.ceil(btn.x + btn.w) - Math.floor(btn.x),
+  height: Math.ceil(btn.y + btn.h) - Math.floor(btn.y),
+};
+check(
+  cropsSub.code === 1 &&
+    vsub.verdict.flags.includes('sub-threshold') &&
+    vsub.verdict.explained === 'full' &&
+    vsub.crops.length === 1 &&
+    JSON.stringify(vsub.crops[0].region) === JSON.stringify(btnRegion) &&
+    vsub.crops[0].box.width < bgStructure.viewport.width / 2 &&
+    vsub.crops[0].explained === true,
+  'a sub-threshold change crops the changed element, explained as the verdict says',
+);
+const cropsSubHuman = await jux(['diff', 'before', 'bg', '--crops']);
+check(
+  /below the pixel tolerance/.test(cropsSubHuman.out) &&
+    !/unexplained$/m.test(cropsSubHuman.out),
+  'sub-threshold human crops: no "unexplained" tag on an explained change',
+);
+// Review Focus 2: different sizes crop the overlap.
+await jux(['snap', `${server.url}/op/noop`, '--as', 'small', '--viewport', '320x240']);
+const cropsDim = await jux(['diff', 'before', 'small', '--crops', '--json']);
+const vdim = JSON.parse(cropsDim.out);
+check(
+  cropsDim.code === 1 &&
+    vdim.verdict.classification === 'dimension-change' &&
+    vdim.crops.length === 1 &&
+    vdim.crops[0].explained === (vdim.verdict.explained === 'full') &&
+    vdim.crops[0].box.width === 320 &&
+    vdim.crops[0].box.height === 240,
+  'a dimension change crops the overlapping frame',
+);
+const cropsPrefix = await jux(['diff', '--prefix', 'p1', 'p2', '--crops']);
+check(
+  cropsPrefix.code === 2 && /one pair at a time/.test(cropsPrefix.err),
+  '--crops with --prefix is usage (2) naming the per-page command',
 );
 
 // A name that needs quoting is quoted in the command a hint prints.
@@ -324,6 +425,41 @@ check(
     JSON.stringify(vp2.errors) === '[{"slug":"x","code":"pair-undecodable","file":null}]',
   'an undecodable pair neither side owns is pair-undecodable with file null',
 );
+
+// `jux run --since` checks its ref before anything else: a typo used to
+// fall through to git-unavailable and a full run, and cause said `unknown`
+// for every story with no hint why.
+const sinceMsg = (ref) =>
+  `jux run: --since '${ref}' is not a commit. Try \`--since main\` or \`--since HEAD~1\`.\n`;
+const badRef = await jux(['run', '--since', 'no-such-ref']);
+check(
+  badRef.code === 2 && badRef.err === sinceMsg('no-such-ref'),
+  'run --since with an unknown ref is usage (2) with a hint',
+);
+const dashRef = await jux(['run', '--since=--output=x']);
+check(
+  dashRef.code === 2 && dashRef.err === sinceMsg('--output=x'),
+  'run --since with a leading dash is refused, never handed to git as an option',
+);
+const repo = mkdtempSync(path.join(tmpdir(), 'jux-since-'));
+const git = (...args) =>
+  exec('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo });
+await git('init', '-q');
+await git('commit', '-q', '--allow-empty', '-m', 'one');
+let goodRef;
+try {
+  await exec('node', [cli, 'run', '--since', 'HEAD', '--project', repo], {
+    encoding: 'utf8',
+  });
+  goodRef = { code: 0, err: '' };
+} catch (e) {
+  goodRef = { code: e.code, err: e.stderr };
+}
+check(
+  goodRef.code !== 2 && !goodRef.err.includes('is not a commit'),
+  'run --since with a real commit passes the check',
+);
+rmSync(repo, { recursive: true, force: true });
 
 server.close();
 rmSync(project, { recursive: true, force: true });

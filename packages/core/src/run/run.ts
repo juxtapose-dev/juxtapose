@@ -24,6 +24,8 @@ import { capturePool } from '../capture/pool.js';
 import { resolveStatus, toDiffStatus, type AncestryCheck } from '../baseline/status.js';
 import { decodeStructure } from '../capture/structure.js';
 import { structuralDiff } from '../diff/structural.js';
+import { compareCodeUnits } from '../diff/structural/deltas.js';
+import { computeGroups } from './groups.js';
 import {
   diffImages,
   type DiffOutput,
@@ -31,6 +33,8 @@ import {
   resolveMinDiffPercent,
 } from '../diff/diff.js';
 import { phases, type Phases } from './phases.js';
+import type { CauseIndex } from '../analysis/cause.js';
+import { shellQuote } from '../shell-quote.js';
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
@@ -54,6 +58,8 @@ export interface RunOptions {
   /** Collects per-phase wall time. Pass one to fold in phases the caller timed
    *  itself (enumerate, affected, launch); omit and one is made internally. */
   phases?: Phases;
+  /** From `jux run --since`: consulted only for a story that failed. */
+  cause?: CauseIndex;
 }
 
 export interface RunArtifact {
@@ -117,10 +123,18 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     results.push(await judge(outcome.snapshot, outcome.story, manifest, opts, p));
   }
 
-  // Diffing happens inside the loop, so subtract it to leave capture alone.
-  p.add('capture', Date.now() - captureStarted - (p.timings.diff ?? 0));
+  // Diffing and cause tracing happen inside the loop; subtract both to
+  // leave capture alone.
+  p.add(
+    'capture',
+    Date.now() - captureStarted - (p.timings.diff ?? 0) - (p.timings.cause ?? 0),
+  );
 
   const summary = tally(results);
+  // Code-unit order: the report is byte-stable across machines, and
+  // localeCompare is not.
+  results.sort((a, b) => compareCodeUnits(a.storyId, b.storyId));
+  const groups = computeGroups(results);
 
   return {
     runId: opts.runId,
@@ -132,8 +146,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     env: captureEnv(opts.browser),
     capturedCount: opts.stories.length,
     totalCount: opts.totalCount,
-    results: results.sort((a, b) => a.storyId.localeCompare(b.storyId)),
+    results,
     summary,
+    ...(groups.length > 0 ? { groups } : {}),
     durationMs: Date.now() - started,
     startedAt: startedAt.toISOString(),
   };
@@ -214,7 +229,7 @@ async function judge(
   // baseline sidecar is read only here, so a green run never touches one. A
   // manifest hash is not a file: read the store, and treat anything
   // unreadable as absent. This code runs only on a hash mismatch.
-  const structural = await tryStructural(opts.store, story.storyId, snapshot, diff);
+  const structural = await tryStructural(opts, story, snapshot, diff, p);
 
   return {
     ...base,
@@ -240,22 +255,33 @@ async function readBaselineStructure(
 }
 
 /** Structure explains a failure, never decides one, so nothing in here may
- *  fail the story: a missing, corrupt or malformed sidecar, or a bug in the
- *  diff, yields no verdict and the pixel result stands. */
+ *  fail the story: a missing, corrupt or malformed sidecar, a cause index
+ *  that throws, or a bug in the diff, yields no verdict (or one without a
+ *  cause) and the pixel result stands. */
 async function tryStructural(
-  store: BaselineStore,
-  storyId: string,
+  opts: RunOptions,
+  story: StoryManifest,
   snapshot: Snapshot,
   pixels: Pick<DiffOutput, 'changedRegions' | 'dimensionMismatch'>,
+  p: Phases,
 ): Promise<StructuralVerdict | undefined> {
   if (!snapshot.structure) return undefined;
+  let cause: Awaited<ReturnType<CauseIndex['causeFor']>> | undefined;
+  if (opts.cause) {
+    try {
+      cause = await p.time('cause', () => opts.cause!.causeFor(story.componentPath));
+    } catch {
+      cause = undefined;
+    }
+  }
   try {
     return structuralDiff({
-      baseline: await readBaselineStructure(store, storyId),
+      baseline: await readBaselineStructure(opts.store, story.storyId),
       current: snapshot.structure,
       imagesIdentical: false,
       pixels,
-      escalate: { command: `jux handoff ${storyId}` },
+      escalate: { command: `jux handoff ${shellQuote(story.storyId)}` },
+      ...(cause ? { cause } : {}),
     });
   } catch {
     return undefined;

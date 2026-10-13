@@ -2,6 +2,7 @@
 //
 // Writes to stdout so it pipes: `jux handoff foo--bar | claude -p`.
 
+import { existsSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -9,6 +10,7 @@ import {
   encodeStoryId,
   type RunReport,
   type HandoffPayload,
+  shellQuote,
 } from '@juxtapose/core';
 import { resolveContext, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
@@ -82,6 +84,24 @@ export async function handoffCommand(
     ) + '\n',
   );
 
+  // The baseline lives in the store, not the run dir (jux run writes only
+  // what it captured); the old `-baseline.webp` run-dir path never existed.
+  let baselineImage: string | undefined;
+  try {
+    baselineImage = ctx.store.locate?.(storyId);
+  } catch {
+    // A store that cannot say just means no crops command.
+  }
+  const currentImage = path.join(images, `${safe}-current.webp`);
+  const haveBaseline = baselineImage !== undefined && existsSync(baselineImage);
+  const cropsCommand =
+    result.status === 'fail' &&
+    baselineImage !== undefined &&
+    haveBaseline &&
+    existsSync(currentImage)
+      ? `jux diff ${shellQuote(baselineImage)} ${shellQuote(currentImage)} --crops --project ${shellQuote(ctx.projectRoot)}`
+      : undefined;
+
   const payload: HandoffPayload = {
     storyId,
     storyTitle: story ? `${story.title} — ${story.name}` : storyId,
@@ -93,9 +113,10 @@ export async function handoffCommand(
     componentPath: story?.componentPath ?? '',
     diffDataPath,
     ...(result.structural ? { structural: result.structural } : {}),
+    ...(cropsCommand ? { cropsCommand } : {}),
     images: {
-      baseline: path.join(images, `${safe}-baseline.webp`),
-      current: path.join(images, `${safe}-current.webp`),
+      baseline: haveBaseline ? baselineImage : undefined,
+      current: currentImage,
       diff: result.status === 'fail' ? path.join(images, `${safe}-diff.webp`) : undefined,
     },
     projectRoot: ctx.projectRoot,
