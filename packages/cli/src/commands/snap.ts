@@ -17,7 +17,11 @@ import {
   snapPages,
   type Browser,
   type CaptureEnv,
+  type CaptureFlag,
+  type SettleReport,
   type SnapPageResult,
+  checkProjectSettle,
+  VariantConfigError,
   type Viewport,
   shellQuote,
 } from '@juxtapose/core';
@@ -27,8 +31,11 @@ import { prefixSlugs, snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 import { firstSymlink, symlinkRefusal, writeFresh } from '../symlink-guard.js';
 import { stdio, type Session } from '../io.js';
+import { loadConfig } from '../context.js';
+import { settleFlagArgs, settleFromFlags, type SettleFlags } from '../settle-flags.js';
 
-export interface SnapFlags {
+export interface SnapFlags extends SettleFlags {
+  delay?: string;
   json?: boolean;
   project?: string;
   as?: string;
@@ -52,6 +59,9 @@ interface Written {
   structureHash: string | null;
   elements: number;
   durationMs: number;
+  /** Present only when the settle wait hit its cap. */
+  flags?: CaptureFlag[];
+  settle?: SettleReport;
 }
 
 export async function snapCommand(
@@ -96,6 +106,32 @@ export async function snapCommand(
       return EXIT.usage;
     }
     viewport = { width: Number(m[1]), height: Number(m[2]) };
+  }
+
+  const call = settleFromFlags(flags, 'jux snap');
+  if ('error' in call) {
+    io.err(`${call.error}\n`);
+    return EXIT.usage;
+  }
+  let delay: number | undefined;
+  if (flags.delay !== undefined) {
+    delay = /^\d+$/.test(flags.delay) ? Number(flags.delay) : NaN;
+    if (!Number.isSafeInteger(delay)) {
+      io.err(
+        `jux snap: --delay must be a whole number of ms, got '${flags.delay}'. Prefer --wait-for <selector>; a delay costs the same on every snap.\n`,
+      );
+      return EXIT.usage;
+    }
+  }
+  // The project config's settle options sit under the flags. A bad one is
+  // a usage error, as it is for `jux run`.
+  const config = await loadConfig(path.resolve(flags.project ?? process.cwd()));
+  try {
+    checkProjectSettle(config);
+  } catch (err) {
+    if (!(err instanceof VariantConfigError)) throw err;
+    io.err(`${err.message}\n`);
+    return EXIT.usage;
   }
 
   const prefix = flags['as-prefix']
@@ -161,9 +197,19 @@ export async function snapCommand(
       urls,
       browser,
       ...(viewport ? { viewport } : {}),
+      // A snap has no story: the flags are the story layer, over the config.
       params: {
         ...(flags['wait-for'] ? { waitForSelector: flags['wait-for'] } : {}),
         ...(flags.mask?.length ? { mask: flags.mask } : {}),
+        ...(delay !== undefined ? { delay } : {}),
+        ...(call.settle ? { settle: call.settle } : {}),
+      },
+      projectSettle: {
+        ...(config.settle ? { settle: config.settle } : {}),
+        ...(config.waitForSelector !== undefined
+          ? { waitForSelector: config.waitForSelector }
+          : {}),
+        ...(config.delay !== undefined ? { delay: config.delay } : {}),
       },
     });
   } catch (err) {
@@ -225,6 +271,11 @@ export async function snapCommand(
       io.out(
         `jux: snapped ${r.url} → ${r.name} (${r.elements} elements, ${r.durationMs} ms)\n`,
       );
+      if (r.settle) {
+        io.out(
+          `  settle-timeout: captured at the ${r.settle.timeoutMs} ms cap; pending: ${r.settle.pending.join('; ')}\n`,
+        );
+      }
     }
     if (urls.length > 1 || failed) {
       io.out(
@@ -249,6 +300,8 @@ function retryCommand(url: string, name: string, flags: SnapFlags): string {
   if (flags.viewport) parts.push('--viewport', shellQuote(flags.viewport));
   if (flags['wait-for']) parts.push('--wait-for', shellQuote(flags['wait-for']));
   for (const m of flags.mask ?? []) parts.push('--mask', shellQuote(m));
+  if (flags.delay !== undefined) parts.push('--delay', shellQuote(flags.delay));
+  parts.push(...settleFlagArgs(flags));
   if (flags.project) parts.push('--project', shellQuote(flags.project));
   return parts.join(' ');
 }
@@ -348,6 +401,9 @@ export async function writeSnap(
     structureHash: s?.structureHash ?? null,
     elements: s?.elements.length ?? 0,
     durationMs: snapshot.durationMs,
+    ...(snapshot.settle
+      ? { flags: ['settle-timeout' as const], settle: snapshot.settle }
+      : {}),
   };
 }
 

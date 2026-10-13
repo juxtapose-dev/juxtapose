@@ -9,8 +9,9 @@ import type { BaselineStore, Platform, ProjectConfig } from '@juxtapose/core';
 import { GitBaselineStore, createUrlPlatform } from '@juxtapose/core';
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 import { LadlePlatform } from '@juxtapose/adapter-ladle';
+import type { SettleFlags } from './settle-flags.js';
 
-export interface CommonFlags {
+export interface CommonFlags extends SettleFlags {
   json?: boolean;
   project?: string;
   'build-dir'?: string;

@@ -85,6 +85,7 @@ export async function handoffCommand(
         viewport,
         changedRegions: result.changedRegions,
         structural: result.structural,
+        ...(result.settle ? { settle: result.settle } : {}),
       },
       null,
       2,
@@ -129,6 +130,7 @@ export async function handoffCommand(
     },
     projectRoot: ctx.projectRoot,
     ...(variant ? { variant } : {}),
+    ...(result.settle ? { settle: result.settle } : {}),
   };
 
   io.out(buildHandoffPrompt(payload) + '\n');

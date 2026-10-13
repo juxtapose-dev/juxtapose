@@ -39,6 +39,16 @@ Common options
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
 
+Settle options (snap, run; over the story's and the config's settle)
+  --settle-timeout <ms>          cap on the wait for the page to finish, 1-60000 (default 1500); a
+                                 capture at the cap is flagged settle-timeout with what was pending
+  --settle-ready                 also wait for the page to call window.__juxtapose.ready()
+  --settle-ignore <pattern>      never wait for matching requests (repeatable)
+  --settle-require <pattern>     wait until a matching request completes (repeatable)
+                                 pattern: [type:<ResourceType>] [<glob>]; a glob starting with /
+                                 matches the path, e.g. '/api/feed' or 'type:Fetch **/poll*'
+  --delay <ms>                   snap: fixed extra wait after settling; last resort
+
 ${BROWSER_HELP}
 diff
   <a>, <b>                       snap names (from --as), or paths to .webp files
@@ -97,6 +107,11 @@ async function main(argv: string[]): Promise<number> {
       prefix: { type: 'boolean', default: false },
       viewport: { type: 'string' },
       'wait-for': { type: 'string' },
+      delay: { type: 'string' },
+      'settle-timeout': { type: 'string' },
+      'settle-ready': { type: 'boolean', default: false },
+      'settle-ignore': { type: 'string', multiple: true },
+      'settle-require': { type: 'string', multiple: true },
       mask: { type: 'string', multiple: true },
       crops: { type: 'boolean', default: false },
       chrome: { type: 'string' },

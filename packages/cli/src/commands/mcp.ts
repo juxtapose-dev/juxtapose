@@ -18,7 +18,15 @@ import { availableParallelism } from 'node:os';
 import { readFile, realpath } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
-import { acquireBrowser, MAX_CROPS, parseRunReport, type Browser } from '@juxtapose/core';
+import {
+  acquireBrowser,
+  checkSettle,
+  MAX_CROPS,
+  MAX_SETTLE_TIMEOUT_MS,
+  parseRunReport,
+  type Browser,
+} from '@juxtapose/core';
+import type { SettleFlags } from '../settle-flags.js';
 import { EXIT } from '../exit-codes.js';
 import { isRecord } from '../guards.js';
 import { loadConfig } from '../context.js';
@@ -112,6 +120,39 @@ const PROJECT = {
   description: 'Project dir (default: the server --project)',
 };
 
+// The config's `settle` shape, so an agent writes the same object it would
+// put in juxtapose.config.json. Over the story's and the project's.
+const SETTLE = {
+  type: 'object',
+  description:
+    'Settle options for this call. A capture at the cap is flagged settle-timeout with `settle.pending`',
+  properties: {
+    timeout: {
+      type: 'integer',
+      minimum: 1,
+      maximum: MAX_SETTLE_TIMEOUT_MS,
+      description: 'Cap on the wait, ms (default 1500)',
+    },
+    ready: { type: 'boolean', description: 'Wait for window.__juxtapose.ready()' },
+    network: {
+      type: 'object',
+      properties: {
+        ignore: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'URL patterns never waited for, e.g. "/api/poll" or "type:Fetch **/ws*"',
+        },
+        require: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'URL patterns that must complete before capture',
+        },
+      },
+    },
+  },
+};
+
 export const TOOLS: Tool[] = [
   {
     name: 'snap',
@@ -136,6 +177,12 @@ export const TOOLS: Tool[] = [
           required: ['width', 'height'],
         },
         waitFor: { type: 'string', description: 'CSS selector to wait for' },
+        delay: {
+          type: 'integer',
+          minimum: 0,
+          description: 'Fixed extra wait, ms; last resort',
+        },
+        settle: SETTLE,
         mask: {
           type: 'array',
           items: { type: 'string' },
@@ -176,6 +223,7 @@ export const TOOLS: Tool[] = [
           description:
             'Story ids: a story id captures it with all its variants, a capture key (id__variant) just that capture',
         },
+        settle: SETTLE,
       },
     },
   },
@@ -234,6 +282,26 @@ const str = (args: Args, key: string, required = false): string | undefined => {
     throw new ArgError(`'${key}' must be a non-empty string`);
   return v;
 };
+
+/** The `settle` argument as the CLI flags that carry it, checked like the
+ *  config's own (the error names the argument). */
+function settleArg(args: Args): SettleFlags {
+  let settle;
+  try {
+    settle = checkSettle(args['settle'] ?? undefined, "'settle'");
+  } catch (e) {
+    throw new ArgError((e as Error).message.replace(/^jux: /, ''));
+  }
+  if (!settle) return {};
+  return {
+    ...(settle.timeout !== undefined ? { 'settle-timeout': String(settle.timeout) } : {}),
+    ...(settle.ready === true ? { 'settle-ready': true } : {}),
+    ...(settle.network?.ignore?.length ? { 'settle-ignore': settle.network.ignore } : {}),
+    ...(settle.network?.require?.length
+      ? { 'settle-require': settle.network.require }
+      : {}),
+  };
+}
 
 const bool = (args: Args, key: string): boolean | undefined => {
   const v = args[key];
@@ -494,6 +562,14 @@ export class McpServer {
     }
     const waitFor = str(args, 'waitFor');
     const mask = strings(args, 'mask');
+    const settle = settleArg(args);
+    const delay = args['delay'];
+    if (
+      delay !== undefined &&
+      delay !== null &&
+      !(Number.isSafeInteger(delay) && (delay as number) >= 0)
+    )
+      throw new ArgError("'delay' must be a whole number of ms, 0 or more");
     const project = await this.projectArg(args);
     // The names snapCommand will write: `as`, or every `<asPrefix>-<slug>`
     // plus `<asPrefix>.set.json`, normalized by the same snapName.
@@ -519,6 +595,8 @@ export class McpServer {
                 ...(viewport ? { viewport } : {}),
                 ...(waitFor ? { 'wait-for': waitFor } : {}),
                 ...(mask ? { mask } : {}),
+                ...(typeof delay === 'number' ? { delay: String(delay) } : {}),
+                ...settle,
               },
               { ...s, browser: this.lend },
             ),
@@ -573,6 +651,7 @@ export class McpServer {
     const all = bool(args, 'all');
     const since = str(args, 'since');
     const stories = strings(args, 'stories');
+    const settle = settleArg(args);
     return {
       locks: EXCLUSIVE,
       exec: async (signal) => {
@@ -585,6 +664,7 @@ export class McpServer {
                 ...(all ? { all } : {}),
                 ...(since ? { since } : {}),
                 ...(stories?.length ? { story: stories } : {}),
+                ...settle,
               },
               { ...s, browser: this.lend },
             ),
