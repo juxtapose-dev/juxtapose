@@ -20,6 +20,7 @@ import {
   fetchHandoff,
   fetchProgress,
   imageUrl,
+  isSubThreshold,
   needsReview,
   startRun,
   adjacentStory,
@@ -70,11 +71,16 @@ const Note = styled.span(({ theme }) => ({
   fontStyle: 'italic',
 }));
 
+// Letters, not digits. Storybook binds bare 1, 2 and 3 to "focus sidebar",
+// "focus preview" and "focus panel", and its handler runs first: pressing 2
+// for Slider moved focus into the preview iframe, after which every panel
+// shortcut (j, a, the other modes) went to the story instead. None of these
+// letters has an unmodified Storybook binding.
 const MODES: { id: ViewMode; label: string; key: string }[] = [
-  { id: 'sxs', label: 'Side by side', key: '1' },
-  { id: 'slider', label: 'Slider', key: '2' },
-  { id: 'onion', label: 'Onion', key: '3' },
-  { id: 'flicker', label: 'Flicker', key: '4' },
+  { id: 'sxs', label: 'Side by side', key: 's' },
+  { id: 'slider', label: 'Slider', key: 'w' },
+  { id: 'onion', label: 'Onion', key: 'o' },
+  { id: 'flicker', label: 'Flicker', key: 'f' },
 ];
 
 export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) => {
@@ -140,6 +146,8 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   // they are byte-identical and `new` has no baseline at all, so in both cases
   // the comparison modes would be comparing something against nothing.
   const hasComparison = result?.status === 'fail';
+
+  const subThreshold = isSubThreshold(result);
 
   // Approving is only meaningful when there is something to accept: a changed
   // capture, a first baseline, or a re-anchor after a stale one. For a passing
@@ -211,10 +219,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     d: () => setShowDiff((v) => !v),
     u: () => setUnfocus((v) => !v),
     z: () => setLoupe((v) => !v),
-    '1': () => setMode('sxs'),
-    '2': () => setMode('slider'),
-    '3': () => setMode('onion'),
-    '4': () => setMode('flicker'),
+    ...Object.fromEntries(MODES.map((m) => [m.key, () => setMode(m.id)])),
   });
 
   if (!report) {
@@ -311,7 +316,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                     ))}
                   </ModeGroup>
 
-                  {mode === 'sxs' && (
+                  {mode === 'sxs' && !subThreshold && (
                     <>
                       <Button
                         size="small"
@@ -347,9 +352,14 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
 
               <Spacer />
 
-              {result.status === 'fail' && (
-                <Muted>{formatPercent(result.mismatchPercent)} changed</Muted>
-              )}
+              {result.status === 'fail' &&
+                (subThreshold ? (
+                  <Muted title="The bytes differ from the baseline, but every pixel is within the diff's colour tolerance, so the overlay has nothing to mark.">
+                    Too subtle for the diff overlay. Try Flicker (f)
+                  </Muted>
+                ) : (
+                  <Muted>{formatPercent(result.mismatchPercent)} changed</Muted>
+                ))}
               {canApprove &&
                 (isApproved ? (
                   <Badge status="positive">Approved</Badge>
@@ -381,7 +391,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               }
               currentUrl={imageUrl('current', result.storyId, version)}
               diffUrl={
-                result.status === 'fail'
+                result.status === 'fail' && !subThreshold
                   ? imageUrl('diff', result.storyId, version)
                   : null
               }

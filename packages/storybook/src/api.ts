@@ -103,6 +103,24 @@ export function imageUrl(
   return `${API}/image/${kind}/${encodeURIComponent(storyId)}?v=${version}`;
 }
 
+/**
+ * A failure the diff overlay cannot show.
+ *
+ * Pass/fail is a byte hash, but the overlay comes from pixelmatch, which
+ * tolerates small colour deltas. A brand colour nudge (#2563eb -> #1d4ed8 on
+ * the example Button) fails the hash yet marks zero pixels. The panel used to
+ * show "0% changed" beside an Approve button for it, which presents the change
+ * a reviewer most needs to see as no change at all. A dimension change is not
+ * this case: it reports 100%.
+ */
+export function isSubThreshold(result: DiffResult | undefined): boolean {
+  return (
+    result?.status === 'fail' &&
+    result.mismatchPixels === 0 &&
+    result.mismatchPercent === 0
+  );
+}
+
 /** Stories needing review, in report order. */
 export function needsReview(report: RunReport | null, approved: string[]): DiffResult[] {
   if (!report) return [];
