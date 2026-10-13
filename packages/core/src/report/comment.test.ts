@@ -372,3 +372,19 @@ describe('buildComment', () => {
     );
   });
 });
+
+describe('sub-threshold changes', () => {
+  it('does not print 0% for a hash failure the pixel diff could not mark', () => {
+    // #2563eb -> #1d4ed8 fails the hash but sits inside pixelmatch's tolerance.
+    const body = buildComment({ report: report([result('button--large', 'fail')]) });
+    expect(body).toContain('**subtle**, diff marks no pixels');
+    expect(body).not.toContain('**0%**');
+  });
+
+  it('still reports a crashed capture as its error, not as subtle', () => {
+    const body = buildComment({
+      report: report([result('a', 'fail', 0, 'capture timed out')]),
+    });
+    expect(body).not.toContain('subtle');
+  });
+});

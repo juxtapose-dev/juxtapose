@@ -15,7 +15,7 @@
 //    camo. So the text has to carry everything and link out for pixels.
 
 import type { DiffResult, RunReport, Viewport } from '../types.js';
-import { formatPercent } from './format.js';
+import { formatPercent, isSubThreshold } from './format.js';
 
 /**
  * Invisible marker identifying our own comment.
@@ -317,7 +317,7 @@ function guidance(rows: DiffResult[]): string[] {
       'makes approval a reviewable diff.',
   );
   paras.push(
-    'Prefer a UI? Start the run from the **Juxtapose** panel in Storybook to approve, ' +
+    'Prefer a UI? Start the run from the **Visual** panel in Storybook to approve, ' +
       'diff, and copy agent prompts without leaving the browser.',
   );
 
@@ -353,7 +353,13 @@ function detail(r: DiffResult): string {
   // Reachable only after a byte-exact hash match (baseline/status.ts), so this
   // is a guarantee rather than a guess.
   if (r.status === 'stale') return 'pixels identical';
-  const parts = [`**${formatPercent(r.mismatchPercent)}**`];
+  // A sub-tolerance colour change has no percentage worth printing: "0%" in
+  // a table of changes reads as "nothing changed".
+  const parts = [
+    isSubThreshold(r)
+      ? '**subtle**, diff marks no pixels'
+      : `**${formatPercent(r.mismatchPercent)}**`,
+  ];
   const where = regionHint(r);
   if (where) parts.push(where);
   return parts.join(' · ');
