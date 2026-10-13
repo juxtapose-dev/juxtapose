@@ -156,7 +156,22 @@ export const Compare: React.FC<CompareProps> = ({
               alt="current"
               style={unfocus && diffUrl ? { filter: UNFOCUS } : undefined}
             />
-            {showDiff && diffUrl && <Layer src={diffUrl} alt="" />}
+            {/*
+              Multiplied at 0.4, not stacked. pixelmatch writes the whole frame
+              into its output (unchanged pixels as a faded copy of the
+              baseline), so at full opacity the overlay replaced Current and
+              the reviewer only ever saw a red silhouette. Compared on the
+              example Button at 1, 0.6 and 0.4: below about 0.5 the current
+              label stays readable and the changed edges still read as red.
+            */}
+            {showDiff && diffUrl && (
+              <Layer
+                src={diffUrl}
+                alt=""
+                opacity={0.4}
+                style={{ mixBlendMode: 'multiply' }}
+              />
+            )}
           </Frame>,
         )}
       </div>

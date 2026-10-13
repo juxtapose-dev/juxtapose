@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { adjacentStory, needsReview, imageUrl } from './api.js';
+import { adjacentStory, needsReview, imageUrl, isSubThreshold } from './api.js';
 import type { RunReport, DiffResult, DiffStatus } from '@juxtapose/core';
 
 const result = (storyId: string, status: DiffStatus): DiffResult => ({
@@ -85,5 +85,23 @@ describe('imageUrl', () => {
     expect(url).toContain(encodeURIComponent('group/a--b'));
     expect(url).toContain('v=7');
     expect(url).not.toContain('group/a--b?');
+  });
+});
+
+describe('isSubThreshold', () => {
+  it('flags a hash failure whose diff marked no pixels', () => {
+    expect(isSubThreshold(result('a', 'fail'))).toBe(true);
+  });
+
+  it('does not flag a failure the overlay can show, or a dimension change', () => {
+    expect(
+      isSubThreshold({ ...result('a', 'fail'), mismatchPixels: 9, mismatchPercent: 0.2 }),
+    ).toBe(false);
+    expect(isSubThreshold({ ...result('a', 'fail'), mismatchPercent: 100 })).toBe(false);
+  });
+
+  it('does not flag stories that did not fail', () => {
+    expect(isSubThreshold(result('a', 'new'))).toBe(false);
+    expect(isSubThreshold(undefined)).toBe(false);
   });
 });
