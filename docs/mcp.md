@@ -20,10 +20,11 @@ on the warm browser:
 - **Warm browser off** (`--no-daemon`, `JUX_NO_DAEMON=1`, CI, or Windows): the
   server launches a private browser and closes it when the session ends.
 
-The session ends when the client closes stdin. The server finishes the call in
-progress, then exits with code 0. On `SIGTERM` or `SIGINT`, the server stops
-reading input, drops the call in progress without answering it, closes the
-browser, and exits with code 143 or 130. A second signal exits immediately.
+The session ends when the client closes stdin. The server finishes every call
+in progress, answers each one, then exits with code 0. On `SIGTERM` or
+`SIGINT`, the server stops reading input, drops every call in progress without
+answering it, closes the browser, and exits with code 143 or 130. A second
+signal exits immediately.
 
 ## Requirements
 
@@ -237,12 +238,46 @@ stdin and stdout. It implements `initialize`, `notifications/initialized`,
 responses from the client, because it sends no requests. It writes only
 protocol messages to stdout. Logs go to stderr.
 
-The server runs tool calls one at a time, in the order it receives them,
-because they share the browser and the snaps directory.
+## Concurrency
+
+Agents often call several tools in one turn. The server runs calls at the same
+time when they touch different files, and makes the rest take turns. Replies
+can arrive in a different order from the requests; match them by `id`.
+
+Before a call starts, the server works out everything it reads and writes, and
+waits until it can have all of it at once:
+
+| Tool               | Reads                                                             | Writes                                 |
+| ------------------ | ----------------------------------------------------------------- | -------------------------------------- |
+| `snap`             |                                                                   | the `as` snap, or every `<asPrefix>-*` |
+| `diff`             | the `a` and `b` snaps, or every `<a>-*` and `<b>-*` with `prefix` | with `crops`, that pair's crops        |
+| `check`, `handoff` | the last run                                                      |                                        |
+| `run`, `approve`   | everything                                                        | everything                             |
+
+Two calls overlap only when neither writes what the other reads or writes:
+
+- `snap` calls with different names run in parallel. Two `snap` calls with the
+  same name run one after the other. A prefix covers every name that starts
+  with it and a `-`: `asPrefix: "before"` and `as: "before-home"` take turns.
+- At most 4 `snap` calls capture at once. Each one uses its own browser
+  context, so parallel snaps share no cookies, storage or page. A snap taken in
+  parallel is byte-identical to the same snap taken alone.
+- A `diff` waits for any `snap` that writes one of its sides, and a `snap`
+  waits for any `diff` reading the name it writes.
+- `run` and `approve` run alone: they wait for every call before them, and
+  every later call waits for them.
+- Snaps and diffs in different `project` directories never wait for each
+  other. `run` and `approve` still wait for everything.
+
+Calls that must take turns start in the order the server receives them. A call
+that is waiting holds back every later call that conflicts with it, so a `run`
+behind a stream of `snap` calls still gets its turn. A call that conflicts
+with nothing before it starts at once, even if it arrived after a call that is
+waiting.
 
 When you cancel a call with `notifications/cancelled`, the server does not
 answer it. A call that has not started never runs. A call that is running
-finishes before the next call starts, so the two never share the browser or
-the snaps directory, and its result is discarded. A cancelled `run` stops
-starting new stories and writes no report, so `check`, `handoff` and `approve`
-keep reading the previous run.
+finishes, and keeps what it reads and writes until it does, so a later call on
+the same snaps still waits for it. Its result is discarded. A cancelled `run`
+stops starting new stories and writes no report, so `check`, `handoff` and
+`approve` keep reading the previous run.

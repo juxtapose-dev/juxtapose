@@ -7,10 +7,12 @@ import {
   spawn,
   type ChildProcessWithoutNullStreams,
 } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -20,6 +22,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
+import { gunzipSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { cropImages } from './mcp.js';
 import { MAX_CROPS, resolveChrome } from '@juxtapose/core';
@@ -369,6 +372,7 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
   // The page changes between snaps the way an edit would.
   let edited = false;
   let lateSentAt = 0;
+  const pageHits: Array<{ path: string; at: number }> = [];
   beforeAll(async () => {
     project = mkdtempSync(path.join(tmpdir(), 'jux-mcp-page-'));
     server = createServer((req, res) => {
@@ -382,6 +386,24 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
           res.writeHead(200, { 'content-type': 'text/html' });
           res.end('<!doctype html><p>late</p>');
         }, 1500);
+        return;
+      }
+      // Four distinct pages for the parallel-vs-serial determinism check:
+      // text, rounded corners, a gradient and a shadow, the antialiased edges
+      // where a shared or contended renderer would first show.
+      const page = /^\/p\/(\d)$/.exec(req.url ?? '');
+      if (page) {
+        pageHits.push({ path: req.url!, at: Date.now() });
+        const n = Number(page[1]);
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.end(
+          `<!doctype html><body style="margin:0;padding:16px;font:15px sans-serif">
+<h2 style="margin:0 0 8px">Page ${n}</h2>
+<div style="width:${120 + n * 20}px;height:60px;border-radius:${6 * n}px;background:linear-gradient(${n * 40}deg,#36c,#c63);box-shadow:0 2px ${n * 3}px rgba(0,0,0,.4)"></div>
+<p style="transform:rotate(${n}deg)">${'Lorem ipsum dolor sit amet. '.repeat(n * 3)}</p>
+<input value="field ${n}"> <button>Go ${n}</button>
+</body>`,
+        );
         return;
       }
       res.writeHead(200, { 'content-type': 'text/html' });
@@ -462,7 +484,7 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     expectOnlyProtocol(c.lines);
   }, 60_000);
 
-  test('notifications/cancelled: a queued call never runs; a running one is not answered and holds the queue until it settles', async () => {
+  test('notifications/cancelled: a queued call never runs; a running one is not answered and holds its locks until it settles', async () => {
     const c = new Client(project);
     await handshake(c);
     await c.call('snap', { url: base, as: 'warm' });
@@ -471,8 +493,9 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
       name: 'snap',
       arguments: { url: `${base}late`, as: 'late' },
     });
+    // Reads `late`, so it queues behind the snap writing it.
     const queuedId = c.peekId();
-    void c.request('tools/call', { name: 'diff', arguments: { a: 'warm', b: 'never' } });
+    void c.request('tools/call', { name: 'diff', arguments: { a: 'late', b: 'warm' } });
     await new Promise((r) => setTimeout(r, 200));
     c.send({
       jsonrpc: '2.0',
@@ -484,9 +507,9 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
       method: 'notifications/cancelled',
       params: { requestId: lateId },
     });
-    // Queued behind the cancelled snap: it must not start until that snap's
-    // page has answered and the capture settled.
-    const next = await c.call('diff', { a: 'nope', b: 'nope-too' });
+    // Reads `late` too: it must not start until the cancelled snap's page has
+    // answered and the capture settled.
+    const next = await c.call('diff', { a: 'nope', b: 'late' });
     const answeredAt = Date.now();
     expect(text(next)).toMatch(/no snap named 'nope'/);
     expect(lateSentAt).toBeGreaterThan(0);
@@ -494,7 +517,7 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     const ids = c.lines.map((l) => (JSON.parse(l) as Rpc).id);
     expect(ids).not.toContain(lateId);
     expect(ids).not.toContain(queuedId);
-    // The cancelled snap ran to completion before the next call: its file exists.
+    // The cancelled snap ran to completion before the next call on its name.
     expect(existsSync(path.join(project, '.juxtapose', 'snaps', 'late.webp'))).toBe(true);
     expect(await c.close()).toBe(0);
   }, 30_000);
@@ -536,12 +559,68 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     expect(profile && existsSync(profile)).toBe(true);
     process.kill(pid, 'SIGKILL');
     await new Promise((r) => setTimeout(r, 300));
-    const again = await c.call('snap', { url: base, as: 'crash-2' });
-    expect(again.isError).toBe(false);
+    // Two snaps find the dead browser at once: they must share one
+    // replacement, not launch one each and leak all but the last.
+    const again = await Promise.all([
+      c.call('snap', { url: base, as: 'crash-2' }),
+      c.call('snap', { url: base, as: 'crash-3' }),
+    ]);
+    expect(again.map((r) => r.isError)).toEqual([false, false]);
     expect(existsSync(profile!)).toBe(false);
     expect(chromePid()).not.toContain(pid);
+    expect(chromePid()).toHaveLength(1);
     expect(await c.close()).toBe(0);
   }, 30_000);
+
+  test('4 snaps in parallel are byte-identical to the same 4 taken one at a time', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    const pages = [1, 2, 3, 4].map((n) => `${base}p/${n}`);
+    const viewport = { width: 480, height: 320 };
+    // Warm the browser first, so neither pass pays the launch.
+    await c.call('snap', { url: base, as: 'warm', viewport });
+
+    pageHits.length = 0;
+    const sent = Date.now();
+    const replies: number[] = [];
+    const par = await Promise.all(
+      pages.map((url, i) =>
+        c.call('snap', { url, as: `par-${i + 1}`, viewport }).then((r) => {
+          replies.push(Date.now());
+          return r;
+        }),
+      ),
+    );
+    expect(par.map((r) => r.isError)).toEqual([false, false, false, false]);
+    // They really overlapped: every page was requested before any snap answered.
+    expect(pageHits).toHaveLength(4);
+    expect(Math.max(...pageHits.map((h) => h.at))).toBeLessThan(Math.min(...replies));
+    expect(Math.min(...pageHits.map((h) => h.at))).toBeGreaterThanOrEqual(sent);
+
+    for (const [i, url] of pages.entries()) {
+      const r = await c.call('snap', { url, as: `ser-${i + 1}`, viewport });
+      expect(r.isError).toBe(false);
+    }
+    expect(await c.close()).toBe(0);
+
+    const snaps = path.join(project, '.juxtapose', 'snaps');
+    const sha = (f: string) =>
+      createHash('sha256')
+        .update(readFileSync(path.join(snaps, f)))
+        .digest('hex');
+    const structure = (f: string) =>
+      gunzipSync(readFileSync(path.join(snaps, f))).toString('utf8');
+    const hashes = new Set<string>();
+    for (const n of [1, 2, 3, 4]) {
+      expect(sha(`par-${n}.webp`), `page ${n} pixels`).toBe(sha(`ser-${n}.webp`));
+      expect(structure(`par-${n}.structure.json.gz`), `page ${n} structure`).toBe(
+        structure(`ser-${n}.structure.json.gz`),
+      );
+      hashes.add(sha(`ser-${n}.webp`));
+    }
+    // Four different pages, so a mix-up between parallel calls cannot hide.
+    expect(hashes.size).toBe(4);
+  }, 60_000);
 
   test('run, approve and a cancelled run that leaves the last run in place', async () => {
     const runProject = mkdtempSync(path.join(tmpdir(), 'jux-mcp-run-'));
