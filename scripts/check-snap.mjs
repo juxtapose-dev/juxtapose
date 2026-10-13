@@ -156,15 +156,15 @@ check(
 
 const dup = await run([
   `http://127.0.0.1:${port}/ok`,
-  `http://127.0.0.1:${port}/ok#again`,
+  `http://127.0.0.1:${port}/ok/`,
   '--as-prefix',
   'dup',
 ]);
 check(
   dup.code === 2 &&
     /would both be saved as 'dup-/.test(dup.out) &&
-    /\/ok#again/.test(dup.out) &&
-    /--as-prefix/.test(dup.out) &&
+    /\/ok\//.test(dup.out) &&
+    /trailing slash/.test(dup.out) &&
     !readdirSync(path.join(project, '.juxtapose/snaps')).some((f) => f.startsWith('dup')),
   'urls that slug to one name are refused (2) naming both, before any capture',
 );
@@ -181,10 +181,16 @@ const mixed = await run([
 const mixedHuman = await run(
   [
     `http://127.0.0.1:${port}/ok`,
-    `http://127.0.0.1:${port}/missing`,
+    `http://127.0.0.1:${port}/missing?a=1&b=2`,
     `http://127.0.0.1:${port}/ok-two`,
     '--as-prefix',
     'mixed',
+    '--viewport',
+    '390x844',
+    '--mask',
+    '.x',
+    '--mask',
+    '[data-a="it\'s"]',
   ],
   {},
   false,
@@ -196,7 +202,9 @@ check(
     existsSync(jx.snaps[0].image) &&
     /HTTP 404/.test(jx.snaps[1].error) &&
     /2 of 3 pages written; 1 failed/.test(mixedHuman.out) &&
-    /retry: jux snap .*\/missing --as mixed-missing/.test(mixedHuman.out) &&
+    mixedHuman.out.includes(
+      `retry: jux snap 'http://127.0.0.1:${port}/missing?a=1&b=2' --as mixed-missing-a-1-b-2 --viewport 390x844 --mask .x --mask '[data-a="it'\\''s"]'`,
+    ) &&
     existsSync(jx.snaps[2].image),
   'a failing page in a set exits 3, is reported with its error, and the others are written',
 );

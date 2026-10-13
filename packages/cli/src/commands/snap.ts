@@ -108,7 +108,7 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
     const prior = seen.get(name);
     if (prior) {
       process.stderr.write(
-        `jux snap: '${prior}' and '${url}' would both be saved as '${name}'. Give them distinct paths, or snap them in separate commands with different --as-prefix values.\n`,
+        `jux snap: '${prior}' and '${url}' would both be saved as '${name}'. They differ only by a trailing slash or punctuation, which names do not keep. Snap them one at a time with \`jux snap <url> --as <name>\`.\n`,
       );
       return EXIT.usage;
     }
@@ -187,13 +187,35 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
       );
     }
     for (const url of failedUrls) {
-      process.stdout.write(`retry: jux snap ${url} --as ${nameOf(url)}\n`);
+      process.stdout.write(`retry: ${retryCommand(url, nameOf(url), flags)}\n`);
     }
   }
   return failed > 0 ? EXIT.failure : EXIT.clean;
 }
 
-/** Remove `<prefix>-*` snaps (image and sidecar) from a previous run. */
+const SHELL_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+/** Single-quote a value for a POSIX shell unless it is plainly safe. */
+function shellQuote(v: string): string {
+  return SHELL_SAFE.test(v) ? v : `'${v.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * The command that re-takes one failed page exactly as it was asked for:
+ * every capture flag is repeated. It uses `--as <full name>`, not
+ * `--as-prefix`, because a prefixed run clears the prefix's other snaps and
+ * the retry must only touch this page.
+ */
+function retryCommand(url: string, name: string, flags: SnapFlags): string {
+  const parts = ['jux', 'snap', shellQuote(url), '--as', shellQuote(name)];
+  if (flags.viewport) parts.push('--viewport', shellQuote(flags.viewport));
+  if (flags['wait-for']) parts.push('--wait-for', shellQuote(flags['wait-for']));
+  for (const m of flags.mask ?? []) parts.push('--mask', shellQuote(m));
+  if (flags.project) parts.push('--project', shellQuote(flags.project));
+  return parts.join(' ');
+}
+
+/** Remove `<prefix>-* snaps (image and sidecar) from a previous run. */
 async function clearPrefix(dir: string, prefix: string): Promise<void> {
   for (const f of await readdir(dir)) {
     if (f.startsWith(`${prefix}-`) && /\.(webp|structure\.json\.gz)$/.test(f))

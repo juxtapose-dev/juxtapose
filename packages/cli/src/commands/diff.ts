@@ -39,6 +39,14 @@ export async function readSnap(dir: string, ref: string): Promise<ReadSnap> {
     : path.join(dir, `${snapName(ref, ref)}.webp`);
   const bytes = await readFile(image).catch(() => null);
   if (!bytes) return { kind: 'missing', image };
+  // Cheap magic-number check so a truncated or foreign file is attributed to
+  // the side it came from; the decoder's own error cannot say which side.
+  if (
+    bytes.length < 12 ||
+    bytes.toString('latin1', 0, 4) !== 'RIFF' ||
+    bytes.toString('latin1', 8, 12) !== 'WEBP'
+  )
+    return { kind: 'corrupt', file: image, error: 'not a WebP image' };
   const sidecar = image.replace(/\.webp$/, '.structure.json.gz');
   const gz = await readFile(sidecar).catch(() => null);
   if (!gz) return { kind: 'ok', side: { image: bytes } };
@@ -99,7 +107,9 @@ async function loadSides(
   dir: string,
   a: string,
   b: string,
-): Promise<{ sides: [SnapSide, SnapSide] } | { code: number; message: string }> {
+): Promise<
+  { sides: [SnapSide, SnapSide] } | { code: number; message: string; failure: SetFailure }
+> {
   const [ra, rb] = await Promise.all([readSnap(dir, a), readSnap(dir, b)]);
   for (const [ref, r] of [
     [a, ra],
@@ -108,6 +118,7 @@ async function loadSides(
     if (r.kind === 'missing') {
       return {
         code: EXIT.usage,
+        failure: { code: 'snap-missing', file: path.relative(dir, r.image) },
         message: ref.endsWith('.webp')
           ? `jux diff: no file at ${r.image}. Check the path, or take it with \`jux snap <url> --as <name>\`.\n`
           : `jux diff: no snap named '${ref}' in ${dir}. Run \`jux snap <url> --as ${ref}\` first.\n`,
@@ -116,6 +127,10 @@ async function loadSides(
     if (r.kind === 'corrupt') {
       return {
         code: EXIT.failure,
+        failure: {
+          code: r.file.endsWith('.webp') ? 'image-undecodable' : 'sidecar-undecodable',
+          file: path.relative(dir, r.file),
+        },
         message: `jux diff: cannot read ${r.file} (${r.error}). Delete it or re-take the snap with \`jux snap <url> --as ${ref}\`.\n`,
       };
     }
@@ -176,11 +191,24 @@ interface PageVerdict {
   verdict: StructuralVerdict;
 }
 
-interface PageError {
+/** Stable, machine-readable reasons a pair could not be compared. No OS error
+ *  text ever reaches the JSON: it varies by platform and leaks paths. */
+type SetFailureCode = 'snap-missing' | 'sidecar-undecodable' | 'image-undecodable';
+
+interface SetFailure {
+  code: SetFailureCode;
+  /** Relative to the snaps dir. */
+  file: string;
+}
+
+/** `errors[]` entry in `juxtapose.verdict-set/v1`. */
+interface PageError extends SetFailure {
   slug: string;
-  a: string;
-  b: string;
-  error: string;
+}
+
+/** What the human output adds: the full message, never serialized. */
+interface PageFailure extends PageError {
+  message: string;
 }
 
 async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<number> {
@@ -204,13 +232,17 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
     return EXIT.usage;
   }
   const pages: PageVerdict[] = [];
-  const errors: PageError[] = [];
+  const failures: PageFailure[] = [];
   for (const p of pairs) {
     // One unreadable pair must not hide the verdicts of the others.
     try {
       const loaded = await loadSides(dir, p.a, p.b);
       if ('code' in loaded) {
-        errors.push({ ...p, error: loaded.message.trim() });
+        failures.push({
+          slug: p.slug,
+          ...loaded.failure,
+          message: loaded.message.trim(),
+        });
         continue;
       }
       const [sa, sb] = loaded.sides;
@@ -219,9 +251,13 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
       });
       pages.push({ ...p, verdict });
     } catch (err) {
-      errors.push({
-        ...p,
-        error: `jux diff: failed: ${err instanceof Error ? err.message : String(err)}. Re-take both with \`jux snap <url> --as ${p.a}\` / \`--as ${p.b}\`.`,
+      // The magic-number check already caught foreign files, so this is a
+      // decoder failure the error cannot pin to a side: name both images.
+      failures.push({
+        slug: p.slug,
+        code: 'image-undecodable',
+        file: `${p.a}.webp, ${p.b}.webp`,
+        message: `jux diff: failed: ${err instanceof Error ? err.message : String(err)}. Re-take both with \`jux snap <url> --as ${p.a}\` / \`--as ${p.b}\`.`,
       });
     }
   }
@@ -229,7 +265,7 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
     identical: pages.filter((p) => p.verdict.classification === 'identical').length,
     different: pages.filter((p) => p.verdict.classification !== 'identical').length,
     missing: missing.length,
-    errored: errors.length,
+    errored: failures.length,
   };
   process.stdout.write(
     flags.json
@@ -237,10 +273,10 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
           schema: 'juxtapose.verdict-set/v1',
           pages,
           missing,
-          errors,
+          errors: failures.map(({ slug, code, file }) => ({ slug, code, file })),
           summary,
         }) + '\n'
-      : formatPrefixSet(pages, missing, errors, summary, pa, pb),
+      : formatPrefixSet(pages, missing, failures, summary, pa, pb),
   );
   if (summary.errored > 0) return EXIT.failure;
   return summary.different === 0 && summary.missing === 0 ? EXIT.clean : EXIT.review;
@@ -250,7 +286,7 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
 function formatPrefixSet(
   pages: PageVerdict[],
   missing: PrefixPairing['missing'],
-  errors: PageError[],
+  errors: PageFailure[],
   summary: { identical: number; different: number; missing: number; errored: number },
   pa: string,
   pb: string,
@@ -273,7 +309,7 @@ function formatPrefixSet(
   }
   for (const p of pages.filter((x) => x.verdict.classification === 'identical'))
     out.push(`${p.slug}: ${p.verdict.summary}`);
-  for (const e of errors) out.push(`${e.slug}: ${e.error}`);
+  for (const e of errors) out.push(`${e.slug}: ${e.message}`);
   // A slug that is path-based changes when the page's host or path does, so
   // that is the usual reason one side has no snap for it.
   for (const m of missing)

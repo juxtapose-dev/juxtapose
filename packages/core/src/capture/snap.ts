@@ -112,8 +112,10 @@ export async function snapPages(
  * are blocked at context creation, since clearing cannot stop one that has
  * already intercepted the next navigation.
  *
- * The origin comes from the requested URL, not the page: after a failed load
- * the page is an error page with an opaque origin. Best effort: nothing here
+ * The origin comes from the requested URL, not only the page: after a failed
+ * load the page is an error page with an opaque origin. The page's final URL
+ * is cleared too, for redirects. Covers IndexedDB, Cache Storage, service
+ * workers and local storage. Best effort: nothing here
  * may fail a capture that already succeeded.
  */
 async function resetBetweenPages(
@@ -124,12 +126,22 @@ async function resetBetweenPages(
   await context.clearCookies().catch(() => {});
   const cdp = await context.newCDPSession(page).catch(() => null);
   if (!cdp) return;
-  await cdp
-    .send('Storage.clearDataForOrigin', {
-      origin: new URL(requestedUrl).origin,
-      storageTypes: 'all',
-    })
-    .catch(() => {});
+  // A redirect lands on another origin (a login host, a canonical port) that
+  // holds state of its own.
+  const origins = new Set<string>();
+  for (const u of [requestedUrl, page.url()]) {
+    try {
+      const o = new URL(u);
+      if (o.protocol === 'http:' || o.protocol === 'https:') origins.add(o.origin);
+    } catch {
+      // about:blank, chrome-error:// — no origin to clear.
+    }
+  }
+  for (const origin of origins) {
+    await cdp
+      .send('Storage.clearDataForOrigin', { origin, storageTypes: 'all' })
+      .catch(() => {});
+  }
   await cdp.detach().catch(() => {});
 }
 

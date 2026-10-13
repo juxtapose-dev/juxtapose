@@ -3948,6 +3948,22 @@ The verdict never decides pass/fail — the pixel hash does. It explains a
 failure so an agent can compare the deltas with what it meant to change.
 `jux run` attaches the same object to each failing story as
 `results[].structural`, and `jux handoff` leads with it.
+
+### The page set (`juxtapose.verdict-set/v1`)
+
+`jux diff --prefix before after --json` pairs `before-<slug>` with
+`after-<slug>` and prints one object. Slugs are path-based (path, query and
+fragment), so the pairing survives a dev-server port change.
+
+| field     | meaning                                                                                                                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pages`   | `{ slug, a, b, verdict }` per paired page, sorted by slug; `verdict` is a `juxtapose.verdict/v1`                                                                                                        |
+| `missing` | `{ slug, have, want }` for a slug present under only one prefix: `want` is the snap name to take                                                                                                        |
+| `errors`  | `{ slug, code, file }` for a pair that could not be compared. `code` is `snap-missing`, `sidecar-undecodable` or `image-undecodable`; `file` is relative to the snaps dir. Never contains OS error text |
+| `summary` | `{ identical, different, missing, errored }`                                                                                                                                                            |
+
+Exit precedence: 3 (any `errors` entry) beats 1 (any `different` or `missing`)
+beats 0. One bad pair does not stop the others from being verdicted.
 ````
 
 Replace the `<PASTE: …>` block with the real output. It is not optional and it is not to be typed by hand.

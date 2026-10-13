@@ -53,8 +53,12 @@ diff
   <a>, <b>                       snap names (from --as), or paths to .webp files
   --prefix                       pair <a>-<slug> with <b>-<slug> and verdict every page
   --json                         the verdict as juxtapose.verdict/v1 JSON (byte-stable)
-  --prefix output is juxtapose.verdict-set/v1: one verdict per page plus the unpaired
+  --prefix output is juxtapose.verdict-set/v1: pages[] (a verdict each), missing[] (unpaired
+    slugs), errors[] ({slug, code, file}; code is snap-missing | sidecar-undecodable |
+    image-undecodable, file relative to the snaps dir) and summary {identical, different,
+    missing, errored}; one bad pair never hides the others
   exit 0 identical · 1 different or unpaired · 2 usage · 3 could not read an input
+  (with --prefix, 3 beats 1 beats 0: any errored pair makes the exit 3)
 snap exit: 0 all written · 2 usage · 3 browser or any page failed (the rest are still written)
 
 The agent loop, no workbench needed:

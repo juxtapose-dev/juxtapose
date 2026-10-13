@@ -31,6 +31,11 @@ describe('prefixSlugs', () => {
     expect([...b.values()]).toEqual([...a.values()]);
   });
 
+  test('hash routes keep their fragment, so a hash-routed SPA pairs and does not collide', () => {
+    const s = prefixSlugs(['http://h.test/#/a', 'http://h.test/#/b']);
+    expect([...s.values()]).toEqual(['a', 'b']);
+  });
+
   test('query keeps otherwise identical paths apart', () => {
     const s = prefixSlugs(['http://h.test/ok', 'http://h.test/ok?page=2']);
     expect(new Set(s.values()).size).toBe(2);

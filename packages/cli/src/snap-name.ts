@@ -22,14 +22,18 @@ const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
  * slug is path + query (`index` for `/`). Across origins the host stays so
  * `a.test/x` and `b.test/x` do not collide; its port is dropped only for
  * loopback hosts, where the port is an accident of the machine rather than an
- * identity. A fragment is never part of the key.
+ * identity. The fragment is kept (path + query + fragment), because hash-routed
+ * SPAs put the route there (`/#/a`, `/#/b`); the `#` becomes a separator.
  */
 export function prefixSlugs(urls: string[]): Map<string, string> {
   const parsed = urls.map((u) => new URL(u));
   const oneOrigin = new Set(parsed.map((u) => u.origin)).size === 1;
   const slugs = new Map<string, string>();
   for (const [i, u] of parsed.entries()) {
-    const path = u.pathname === '/' && !u.search ? 'index' : `${u.pathname}${u.search}`;
+    const path =
+      u.pathname === '/' && !u.search && !u.hash
+        ? 'index'
+        : `${u.pathname}${u.search}${u.hash}`;
     const host = LOOPBACK.has(u.hostname) ? u.hostname : u.host;
     slugs.set(
       urls[i],

@@ -151,7 +151,7 @@ check(
 writeFileSync(path.join(snaps, 'badimg.webp'), 'not an image');
 const badimg = await jux(['diff', 'before', 'badimg', '--json']);
 check(
-  badimg.code === 3 && /jux diff: failed/.test(badimg.err),
+  badimg.code === 3 && /cannot read .*badimg\.webp/.test(badimg.err),
   'an undecodable image exits 3',
 );
 
@@ -290,7 +290,11 @@ check(
   partial.code === 3 &&
     vq.pages.length === 1 &&
     vq.errors.length === 1 &&
-    vq.errors[0].slug === 'op-padding',
+    vq.errors[0].slug === 'op-padding' &&
+    vq.errors[0].code === 'sidecar-undecodable' &&
+    vq.errors[0].file === 'pb-op-padding.structure.json.gz' &&
+    Object.keys(vq.errors[0]).join() === 'slug,code,file' &&
+    vq.summary.errored === 1,
   'one unreadable pair is an error entry, the rest still verdict, exit 3',
 );
 
