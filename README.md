@@ -589,9 +589,22 @@ Storybook itself. Installing the addon pulls the adapter in.
 
 ## Status
 
-Early, but usable. The capture, diff and approve loop is verified end to end on
-Storybook (React and Vue) and Ladle, the addon gives you the review UI in
-place, and CI gets PR comments and a self-contained HTML report.
+Early, but usable. Verified end to end on Storybook (React and Vue) and Ladle:
+
+- **Capture** runs on juxtapose's own Chrome DevTools Protocol driver and a
+  pinned Chrome for Testing build — no Playwright. Captures are byte-identical
+  to the earlier Playwright pipeline, so existing baselines stay valid.
+- **Review**: the Storybook addon gives you the review UI in place; CI gets PR
+  comments and a self-contained HTML report.
+- **Agents**: `jux snap` / `jux diff` give a structural verdict (what element,
+  which property, old → new) in a few hundred characters; `jux run --since`
+  adds the likely cause and groups stories that share one change; `--crops`
+  shows the pixels only when structure can't explain them. A Claude Code skill
+  ships in `plugins/claude-code/`.
+
+In progress: a warm browser daemon so repeat snaps skip the browser launch, and
+event-driven settling that captures as soon as a page is idle instead of after
+a fixed wait.
 
 Hosted baseline storage is the main gap. `storage.kind` accepts `"s3"`, but the
 CLI throws on it today — git is the only implemented backend, and `"fs"` is that
