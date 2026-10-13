@@ -146,6 +146,9 @@ export type Flag =
   | 'text-changed'
   | 'large-reflow'
   | 'unexplained-pixels'
+  /** The images differ but the pixel diff marked nothing: the change is below
+   *  its tolerance, and the structural deltas are the change. */
+  | 'sub-threshold'
   | 'structure-truncated'
   | 'no-baseline-structure'
   | 'no-current-structure'

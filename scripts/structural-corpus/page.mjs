@@ -60,7 +60,9 @@ export const OPERATORS = [
   {
     name: 'background',
     page: { css: '.save { background: rgb(29, 78, 216); }' },
-    expect: style('background-color', 'color'),
+    // The bytes differ but pixelmatch marks 0 pixels: the realistic
+    // sub-threshold change, where structure is the only explanation.
+    expect: { ...style('background-color', 'color'), flags: ['sub-threshold'] },
   },
   {
     name: 'padding',

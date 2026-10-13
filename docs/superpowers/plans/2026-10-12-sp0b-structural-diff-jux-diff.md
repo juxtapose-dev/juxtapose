@@ -3932,17 +3932,17 @@ is real output from the mutation corpus (`scripts/structural-corpus.mjs`),
 <PASTE: the exact stdout of `jux diff base op-… --json` for the `color` operator from Step 3, pretty-printed with `node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(0,"utf8")),null,2))'`>
 ```
 
-| field                | meaning                                                                                                                                                               |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `classification`     | `identical`, `render-drift`, `dimension-change`, `element-added`, `element-removed`, `reflow`, `geometry`, `text-only`, `style-only`, `attr-only`, `mixed`, `unknown` |
-| `styleTags`          | for `style-only`/`mixed`: `color`, `typography`, `spacing`, `border`, `effects`                                                                                       |
-| `summary`            | templated, ≤ 300 chars                                                                                                                                                |
-| `deltas`             | at most 20 typed facts (`text`, `style`, `attr`, `added`, `removed`, `moved`, `resized`, `shift`); `deltaCount` is the total                                          |
-| `coverage`           | fraction of changed-region area touching a delta's element; `explained` is `full` (≥ 0.98), `partial` (≥ 0.5) or `none`                                               |
-| `unexplainedRegions` | changed regions no delta accounts for: canvas, image content, or rendering drift                                                                                      |
-| `flags`              | `element-removed`, `text-changed`, `large-reflow`, `unexplained-pixels`, `structure-truncated`, `no-baseline-structure`, `no-current-structure`, `below-fold`         |
-| `signature`          | sha256 of the deltas with elements abstracted to role/tag — the same change on two pages shares one                                                                   |
-| `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run                                                          |
+| field                | meaning                                                                                                                                                                                                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `classification`     | `identical` (byte-identical images, no deltas — never just "0 changed pixels"), `render-drift`, `dimension-change`, `element-added`, `element-removed`, `reflow`, `geometry`, `text-only`, `style-only`, `attr-only`, `mixed`, `unknown`                        |
+| `styleTags`          | for `style-only`/`mixed`: `color`, `typography`, `spacing`, `border`, `effects`                                                                                                                                                                                 |
+| `summary`            | templated, ≤ 300 chars                                                                                                                                                                                                                                          |
+| `deltas`             | at most 20 typed facts (`text`, `style`, `attr`, `added`, `removed`, `moved`, `resized`, `shift`); `deltaCount` is the total                                                                                                                                    |
+| `coverage`           | fraction of changed-region area touching a delta's element; `explained` is `full` (≥ 0.98), `partial` (≥ 0.5) or `none`                                                                                                                                         |
+| `unexplainedRegions` | changed regions no delta accounts for: canvas, image content, or rendering drift                                                                                                                                                                                |
+| `flags`              | `element-removed`, `text-changed`, `large-reflow`, `unexplained-pixels`, `sub-threshold` (the images differ but the pixel diff marked nothing; the deltas are the change), `structure-truncated`, `no-baseline-structure`, `no-current-structure`, `below-fold` |
+| `signature`          | sha256 of the deltas with elements abstracted to role/tag — the same change on two pages shares one                                                                                                                                                             |
+| `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run                                                                                                                                                    |
 
 The verdict never decides pass/fail — the pixel hash does. It explains a
 failure so an agent can compare the deltas with what it meant to change.

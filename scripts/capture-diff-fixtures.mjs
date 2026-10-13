@@ -48,6 +48,9 @@ try {
       await diffImages(base.image, captured[op.name].image);
     cases[op.name] = {
       structure: captured[op.name].structure,
+      // Byte equality, the pass/fail authority — not "0 mismatch pixels":
+      // `background` changes the bytes while pixelmatch marks nothing.
+      imagesIdentical: base.image.equals(captured[op.name].image),
       pixels: { mismatchPixels, mismatchPercent, changedRegions, dimensionMismatch },
     };
   }

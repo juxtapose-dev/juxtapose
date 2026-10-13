@@ -61,6 +61,9 @@ export {
   readRunStructure,
   type RunStructure,
 } from './baseline/approve.js';
+// Structural diff: two sidecars + a pixel diff → the tier-0 verdict.
+export { structuralDiff, type StructuralDiffInput } from './diff/structural.js';
+export { describeDelta } from './diff/structural/summary.js';
 
 // Driving a run.
 export {

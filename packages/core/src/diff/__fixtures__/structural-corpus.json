@@ -183,6 +183,7 @@
           }
         ]
       },
+      "imagesIdentical": true,
       "pixels": {
         "mismatchPixels": 0,
         "mismatchPercent": 0,
@@ -372,6 +373,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 134,
         "mismatchPercent": 0.043619791666666664,
@@ -561,6 +563,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 0,
         "mismatchPercent": 0,
@@ -750,6 +753,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 3918,
         "mismatchPercent": 1.275390625,
@@ -949,6 +953,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 6882,
         "mismatchPercent": 2.240234375,
@@ -1148,6 +1153,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 2946,
         "mismatchPercent": 0.958984375,
@@ -1346,6 +1352,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 162,
         "mismatchPercent": 0.052734375,
@@ -1540,6 +1547,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 5951,
         "mismatchPercent": 1.9371744791666665,
@@ -1742,6 +1750,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 802,
         "mismatchPercent": 0.2610677083333333,
@@ -1934,6 +1943,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 114,
         "mismatchPercent": 0.037109375,
@@ -2128,6 +2138,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 376,
         "mismatchPercent": 0.12239583333333334,
@@ -2318,6 +2329,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 621,
         "mismatchPercent": 0.20214843749999997,
@@ -2508,6 +2520,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 2492,
         "mismatchPercent": 0.8111979166666666,
@@ -2697,6 +2710,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 3212,
         "mismatchPercent": 1.0455729166666667,
@@ -2869,6 +2883,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 9514,
         "mismatchPercent": 3.0970052083333335,
@@ -3075,6 +3090,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 13407,
         "mismatchPercent": 4.3642578125,
@@ -3274,6 +3290,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 968,
         "mismatchPercent": 0.31510416666666663,
@@ -3463,6 +3480,7 @@
           }
         ]
       },
+      "imagesIdentical": false,
       "pixels": {
         "mismatchPixels": 4800,
         "mismatchPercent": 1.5625,
