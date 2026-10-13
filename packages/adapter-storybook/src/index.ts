@@ -249,6 +249,46 @@ export class StorybookPlatform implements Platform {
       .catch(() => undefined);
   }
 
+  /**
+   * Every story's `parameters.juxtapose`, read once from the preview before
+   * capture: index.json never carries it, so this is what lets a story's own
+   * `variants` expand and its `skip` or `viewport` apply from the first
+   * frame. `extract()` after `cacheAllCSFFiles()` is the preview's own
+   * whole-store export (Chromatic reads the same); verified on Storybook 8.6
+   * and 10.6. ~60 ms on the example's 17 stories.
+   */
+  async discoverParams(page: Page, baseUrl: string): Promise<Map<string, StoryParams>> {
+    await page.goto(this.previewUrl(baseUrl));
+    const extracted = await page.evaluate(async () => {
+      const w = window as unknown as {
+        __STORYBOOK_PREVIEW__?: {
+          storyStoreValue?: { cacheAllCSFFiles?: () => Promise<void> };
+          extract?: (o: {
+            includeDocsOnly: boolean;
+          }) => Promise<Record<string, { parameters?: { juxtapose?: unknown } }>>;
+        };
+      };
+      // The preview initializes asynchronously after load: wait for its store.
+      for (let i = 0; i < 400; i++) {
+        if (w.__STORYBOOK_PREVIEW__?.storyStoreValue) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      const preview = w.__STORYBOOK_PREVIEW__;
+      if (!preview?.storyStoreValue || typeof preview.extract !== 'function')
+        throw new Error('no Storybook preview store on the page');
+      await preview.storyStoreValue.cacheAllCSFFiles?.();
+      const all = await preview.extract({ includeDocsOnly: false });
+      const out: Record<string, unknown> = {};
+      for (const [id, entry] of Object.entries(all)) {
+        const params = entry?.parameters?.juxtapose;
+        if (params && typeof params === 'object' && !Array.isArray(params))
+          out[id] = params;
+      }
+      return out;
+    });
+    return new Map(Object.entries(extracted as Record<string, StoryParams>));
+  }
+
   /** Directories whose changes invalidate every story. */
   readonly configDirs = ['.storybook'];
   // .svelte is included for addon-svelte-csf, which is how most Svelte
