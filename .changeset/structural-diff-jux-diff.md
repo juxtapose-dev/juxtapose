@@ -1,7 +1,6 @@
 ---
 '@juxtapose/core': minor
 '@juxtapose/cli': minor
-'@juxtapose/storybook': minor
 ---
 
 Structural diff and `jux diff`: two structure sidecars plus the pixel diff
