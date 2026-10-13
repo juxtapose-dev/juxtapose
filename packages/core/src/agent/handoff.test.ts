@@ -153,17 +153,38 @@ describe('describeRegion', () => {
 
   it('tells the agent to compare the deltas with what it intended, and when to look at pixels', () => {
     const out = buildHandoffPrompt({ ...base, structural: verdictFor('color') });
-    expect(out).toMatch(/compare .*against what you intended/i);
-    expect(out).not.toContain('not fully explained');
+    expect(out).toContain('Check these deltas against the change you intended');
+    expect(out).not.toContain('Part of the pixel change');
     const canvas = verdictFor('canvas'); // unknown, unexplained-pixels
     expect(canvas.explained).toBe('none');
     const partial = buildHandoffPrompt({ ...base, structural: canvas });
-    expect(partial).toContain('not fully explained');
+    expect(partial).toContain('Part of the pixel change has no matching');
   });
 
   it('without a verdict the prompt is unchanged in shape', () => {
     const out = buildHandoffPrompt(base);
     expect(out).not.toContain('## What changed (structure)');
     expect(out).toContain('## What changed');
+  });
+
+  it('a verdict with no baseline snapshot says so in one line, with no empty section', () => {
+    const structural = structuralDiff({
+      baseline: undefined,
+      current: fixture.cases.color.structure,
+      imagesIdentical: false,
+      pixels: fixture.cases.color.pixels,
+      escalate: { command: 'jux handoff x' },
+    });
+    expect(structural.flags).toContain('no-baseline-structure');
+    const out = buildHandoffPrompt({ ...base, structural });
+    expect(out).toContain('No structure snapshot for the baseline (approved before');
+    expect(out).not.toContain('## What changed (structure)');
+    expect(out).not.toContain('Part of the pixel change');
+    expect(out).toContain('## What changed');
+  });
+
+  it('with deltas, advises approving by the real command', () => {
+    const out = buildHandoffPrompt({ ...base, structural: verdictFor('color') });
+    expect(out).toContain('`jux approve --story components-button--primary`');
   });
 });

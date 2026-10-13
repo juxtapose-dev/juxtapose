@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { expect, test, vi } from 'vitest';
 import type { Browser } from 'playwright';
 import { encodeStructure } from '../capture/structure.js';
@@ -8,6 +9,7 @@ import type { BaselineStore, ChangedRegion, StructureSnapshot } from '../types.j
 import { runCapture } from './run.js';
 
 // Drive runCapture with a stubbed pool: we test the judge, not the browser.
+const dims = vi.hoisted(() => ({ on: false }));
 vi.mock('../capture/pool.js', () => ({
   capturePool: (stories: Array<{ storyId: string }>) =>
     (async function* () {
@@ -42,7 +44,7 @@ const BASE = fixture.cases.noop.structure;
 const CUR = fixture.cases.color.structure;
 vi.mock('../diff/diff.js', async (orig) => ({
   ...(await orig<typeof import('../diff/diff.js')>()),
-  diffImages: async () => fixture.cases.color.pixels,
+  diffImages: async () => ({ ...fixture.cases.color.pixels, dimensionMismatch: dims.on }),
 }));
 
 function current(storyId: string) {
@@ -57,7 +59,9 @@ function current(storyId: string) {
 }
 
 const meta = { commit: 'c', approvedBy: 'a', approvedAt: 't' };
-function store(sidecar: 'ok' | 'missing' | 'corrupt' | 'unsupported'): BaselineStore & {
+function store(
+  sidecar: 'ok' | 'missing' | 'corrupt' | 'unsupported' | 'malformed',
+): BaselineStore & {
   getStructure?: ReturnType<typeof vi.fn>;
 } {
   const base: BaselineStore = {
@@ -85,9 +89,11 @@ function store(sidecar: 'ok' | 'missing' | 'corrupt' | 'unsupported'): BaselineS
     getStructure: vi.fn(async () =>
       sidecar === 'ok'
         ? encodeStructure(BASE)
-        : sidecar === 'corrupt'
-          ? Buffer.from('zzz')
-          : null,
+        : sidecar === 'malformed'
+          ? gzipSync(Buffer.from('{"structureHash":"x","elements":42}'))
+          : sidecar === 'corrupt'
+            ? Buffer.from('zzz')
+            : null,
     ),
   };
 }
@@ -140,4 +146,37 @@ test('a store without getStructure still produces a verdict flagged no-baseline-
 test('no current structure → no structural at all', async () => {
   const r = await run(store('ok'), 'no-current');
   expect(r.results[0].structural).toBeUndefined();
+});
+
+test('a malformed decoded baseline never fails the run: still fail, no structural', async () => {
+  const r = await run(store('malformed'));
+  expect(r.results[0].status).toBe('fail');
+  expect(r.results[0].structural).toBeUndefined();
+  expect(r.results[0].mismatchPixels).toBeGreaterThan(0);
+});
+
+test('a store whose getStructure throws never fails the run', async () => {
+  const s = store('ok');
+  s.getStructure!.mockRejectedValue(new Error('disk'));
+  const r = await run(s);
+  expect(r.results[0].status).toBe('fail');
+  expect(r.results[0].structural?.flags).toContain('no-baseline-structure');
+});
+
+test('a baseline missing from the store has no structural', async () => {
+  const s = { ...store('ok'), get: async () => null };
+  const r = await run(s);
+  expect(r.results[0].error).toBe('baseline missing from store');
+  expect(r.results[0].structural).toBeUndefined();
+});
+
+test('a dimension mismatch carries the error and still a verdict', async () => {
+  dims.on = true;
+  try {
+    const r = await run(store('ok'));
+    expect(r.results[0].error).toBe('viewport size changed since baseline');
+    expect(r.results[0].structural).toBeDefined();
+  } finally {
+    dims.on = false;
+  }
 });

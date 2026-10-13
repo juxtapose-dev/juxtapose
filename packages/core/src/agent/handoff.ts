@@ -71,8 +71,25 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     lines.push(`Read \`${p.diffDataPath}\` for the full machine-readable diff.`, '');
   }
 
-  if (p.structural) {
-    const v = p.structural;
+  const v = p.structural;
+  // Missing data is not a verdict: with no snapshot on one side and nothing
+  // to list, a structure section would be empty and misleading.
+  const missing =
+    v && v.deltas.length === 0
+      ? v.flags.includes('no-baseline-structure')
+        ? 'baseline'
+        : v.flags.includes('no-current-structure')
+          ? 'current'
+          : undefined
+      : undefined;
+  if (v && missing) {
+    lines.push(
+      missing === 'baseline'
+        ? 'No structure snapshot for the baseline (approved before juxtapose recorded structure). Re-approve after this change to get structural diffs next time.'
+        : 'No structure snapshot for the current capture (structure capture failed or was unavailable). Re-run the capture to get structural diffs.',
+      '',
+    );
+  } else if (v) {
     lines.push('## What changed (structure)');
     lines.push('');
     lines.push(v.summary);
@@ -85,26 +102,26 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
         );
       }
       lines.push('');
+      lines.push(
+        'Check these deltas against the change you intended. If they are all intended,',
+        `the change is expected: approve it (\`jux approve --story ${p.storyId}\`). If any`,
+        'delta is one you did not intend, fix that before approving.',
+      );
     }
     if (v.flags.length > 0) {
-      lines.push(`Flags: ${v.flags.join(', ')}`);
-      lines.push('');
+      lines.push('', `Flags: ${v.flags.join(', ')}`);
     }
-    lines.push(
-      'Compare these deltas against what you intended to change. If every delta is',
-      'one you meant, this is the change you made.',
-    );
     if (v.explained !== 'full') {
       lines.push(
-        `The pixels are not fully explained (coverage ${v.coverage}): something changed`,
-        'that the DOM and styles do not account for (canvas, image content, or',
-        'rendering drift). Inspect the images below before deciding.',
+        '',
+        'Part of the pixel change has no matching DOM or style delta (canvas, images, or',
+        'rendering). Look at the diff image for those regions.',
       );
     }
     lines.push('');
   }
 
-  lines.push(p.structural ? '## Pixels' : '## What changed');
+  lines.push(v && !missing ? '## Pixels' : '## What changed');
   lines.push('');
   lines.push('```json');
   lines.push(
