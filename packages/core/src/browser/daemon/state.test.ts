@@ -9,6 +9,7 @@ import {
   chmod,
   symlink,
   readdir,
+  rename,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -20,6 +21,7 @@ import {
   clearState,
   acquireLock,
   pidAlive,
+  daemonSupported,
 } from './state.js';
 
 const fp = {
@@ -61,6 +63,17 @@ describe('daemon state', () => {
     expect(daemonKey({ ...fp, env: { ...fp.env, LANG: 'de_DE.UTF-8' } })).not.toBe(k);
     expect(daemonKey({ ...fp, env: { ...fp.env, LC_ALL: 'C' } })).not.toBe(k);
     expect(daemonKey({ ...fp, args: ['--foo'] })).not.toBe(k);
+    for (const name of [
+      'FONTCONFIG_FILE',
+      'FONTCONFIG_PATH',
+      'FONTCONFIG_SYSROOT',
+      'XDG_DATA_HOME',
+      'XDG_DATA_DIRS',
+      'LC_CTYPE',
+      'LC_MESSAGES',
+      'LANGUAGE',
+    ])
+      expect(daemonKey({ ...fp, env: { ...fp.env, [name]: '/x' } })).not.toBe(k);
     // Unrelated variables do not fork daemons.
     expect(daemonKey({ ...fp, env: { ...fp.env, PATH: '/x' } })).toBe(k);
   });
@@ -124,4 +137,94 @@ describe('daemon state', () => {
     expect(pidAlive(process.pid)).toBe(true);
     expect(pidAlive(2 ** 22 - 1)).toBe(false);
   });
+
+  it('no daemon on win32: named pipes cannot be ACLed from Node', () => {
+    expect(daemonSupported('win32')).toBe(false);
+    expect(daemonSupported('linux')).toBe(true);
+    expect(daemonSupported('darwin')).toBe(true);
+    expect(() => daemonPaths('C:\\cache', 'abc', { platform: 'win32' })).toThrow(
+      /not supported on win32/,
+    );
+  });
+  it('a long cache dir falls back to a short private socket dir; too long throws', () =>
+    withCache(async (_p, cache) => {
+      const long = path.join(cache, 'x'.repeat(120));
+      const short = await mkdtemp(path.join(tmpdir(), 'jux-s-'));
+      try {
+        const p = daemonPaths(long, 'abc', { shortBase: short, uid: 7 });
+        expect(Buffer.byteLength(p.socket)).toBeLessThanOrEqual(100);
+        expect(p.socket).toBe(path.join(short, 'jux-7', 'abc.sock'));
+        expect(p.state.startsWith(long)).toBe(true);
+        if (process.platform !== 'win32') {
+          await writeState(p, state);
+          expect((await stat(path.dirname(p.socket))).mode & 0o777).toBe(0o700);
+        }
+        expect(() =>
+          daemonPaths(long, 'abc', { shortBase: path.join(short, 'y'.repeat(120)) }),
+        ).toThrow(/JUX_CACHE_DIR.*--no-daemon/s);
+      } finally {
+        await rm(short, { recursive: true, force: true });
+      }
+    }));
+  it.skipIf(process.platform === 'win32')(
+    'a dir swapped between the check and the rename is refused',
+    () =>
+      withCache(async (paths, cache) => {
+        await expect(
+          writeState(paths, state, {
+            afterTempOpen: async () => {
+              await rename(paths.dir, path.join(cache, 'moved'));
+              await mkdir(paths.dir, { mode: 0o700 });
+            },
+          }),
+        ).rejects.toThrow(/changed/);
+        expect(await readdir(paths.dir)).toEqual([]);
+      }),
+  );
+  it('readState rejects a record with any missing or mistyped field', () =>
+    withCache(async (paths) => {
+      await mkdir(paths.dir, { recursive: true, mode: 0o700 });
+      for (const bad of [
+        { ...state, pid: '1' },
+        { ...state, socket: 3 },
+        { ...state, binary: undefined },
+        { ...state, version: null },
+        { ...state, key: 1 },
+        { ...state, startedAt: {} },
+        { ...state, idleMinutes: 'x' },
+        null,
+        [],
+      ]) {
+        await writeFile(paths.state, JSON.stringify(bad));
+        expect(await readState(paths)).toBeNull();
+      }
+    }));
+  it('writeState sweeps stray temp files of dead pids only', () =>
+    withCache(async (paths) => {
+      await mkdir(paths.dir, { recursive: true, mode: 0o700 });
+      const dead = path.join(paths.dir, `abc.json.${2 ** 22 - 1}.tmp`);
+      const live = path.join(paths.dir, `abc.json.${process.ppid}.tmp`);
+      await writeFile(dead, 'x');
+      await writeFile(live, 'x');
+      await writeState(paths, state);
+      await expect(stat(dead)).rejects.toThrow();
+      expect((await stat(live)).isFile()).toBe(true);
+    }));
+  it('concurrent reclaimers of a stale lock yield exactly one holder', () =>
+    withCache(async (paths) => {
+      const first = await acquireLock(paths);
+      expect(first).not.toBeNull();
+      const old = new Date(Date.now() - 31_000);
+      await utimes(paths.lock, old, old);
+      const got = await Promise.all(Array.from({ length: 8 }, () => acquireLock(paths)));
+      expect(got.filter((r) => r !== null)).toHaveLength(1);
+      expect((await readdir(paths.dir)).filter((f) => f.includes('.stale.'))).toEqual([]);
+    }));
+  it('release does not remove a lock another process holds', () =>
+    withCache(async (paths) => {
+      const release = await acquireLock(paths);
+      await writeFile(paths.lock, String(process.pid + 1));
+      await release!();
+      expect((await stat(paths.lock)).isFile()).toBe(true);
+    }));
 });
