@@ -33,6 +33,10 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
+      # npm trusted publishing (OIDC) needs npm >= 11.5.1; Node 22 ships npm 10,
+      # which never exchanges the OIDC token and PUTs anonymously (E404). The
+      # first CI publish, 2026-10-13, failed exactly that way.
+      - run: npm install -g npm@11
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
