@@ -294,7 +294,7 @@ export function normalizeStructure(
     }
 
     if (row === undefined) return; // display:none (or no box): drop the subtree
-    const values = layout.styles[row].map((s) => str(s) ?? '');
+    const values = layout.styles[row].map((s) => urlsToFileNames(str(s) ?? ''));
     if (values[visibilityIdx] === 'hidden' || values[visibilityIdx] === 'collapse') {
       // hidden boxes can still contain visible descendants (visibility: visible)
       for (const c of children.get(i) ?? []) visit(c, path, keptParent);
@@ -360,7 +360,7 @@ export function normalizeStructure(
         if (role) el.role = role;
         if (name) el.name = name.slice(0, 80);
         if (text) el.text = text.slice(0, 200);
-        if (a.src !== undefined) el.src = a.src.split(/[?#]/)[0].split('/').pop();
+        if (a.src !== undefined) el.src = fileName(a.src);
         elements.push(el);
         effective.push(eff);
         me = elements.length - 1;
@@ -394,6 +394,25 @@ function implicitRole(tag: string, a: Record<string, string>): string | undefine
         : 'textbox';
   }
   return IMPLICIT_ROLES[tag];
+}
+
+/** The filename of a URL: no origin, path, query or hash. The origin changes
+ *  every run (`jux run` serves on port 0) and between machines, so recording
+ *  it would make the same page hash differently each time. */
+function fileName(u: string): string {
+  return u.split(/[?#]/)[0].split('/').pop() ?? '';
+}
+
+/** Computed values serialize url() tokens absolute: probe2 recorded
+ *  `url("http://127.0.0.1:41001/bg.png")` vs `...:41002/bg.png` for one page
+ *  on two ports, and two different structureHashes. Keep only the filename. */
+function urlsToFileNames(v: string): string {
+  if (!v.includes('url(')) return v;
+  return v.replace(
+    /url\((?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)]*))\)/g,
+    (_m, dq?: string, sq?: string, bare?: string) =>
+      `url(${JSON.stringify(fileName((dq ?? sq ?? bare ?? '').trim()))})`,
+  );
 }
 
 const collapse = (s: string) => s.replace(/\s+/g, ' ').trim();

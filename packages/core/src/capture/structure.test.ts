@@ -149,6 +149,21 @@ test('hash is stable and changes with content', () => {
   );
 });
 
+test('url() in a style records the filename only', () => {
+  expect(find((e) => e.id === 'bg')!.styles['background-image']).toBe('url("bg.png")');
+});
+
+test('hash does not depend on the origin a url() was served from', () => {
+  // `jux run` serves on port 0, so every run has a different origin.
+  const raw = structuredClone(fixture.raw);
+  const i = raw.strings.indexOf('url("http://127.0.0.1:9/assets/bg.png?v=3#frag")');
+  expect(i).toBeGreaterThanOrEqual(0);
+  raw.strings[i] = 'url("http://localhost:51234/other/path/bg.png?v=9")';
+  expect(normalizeStructure(raw, fixture.viewport).structureHash).toBe(
+    snap().structureHash,
+  );
+});
+
 test('records the document content height, taller than the viewport', () => {
   expect(snap().contentHeight).toBe(fixture.raw.documents[0].contentHeight);
   expect(snap().contentHeight).toBeGreaterThan(fixture.viewport.height);
