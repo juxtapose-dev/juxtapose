@@ -170,45 +170,58 @@ nothing; the deltas are the change.
 
 ### Several pages at once
 
-One browser launch, one snap per page, then one verdict per page:
+One browser launch, one snap per page, then one verdict per page. Below, the
+corpus server plays the edit: before it, `/op/color` and `/op/padding` serve
+the unchanged page.
 
 ```bash
-jux snap $URL/op/home $URL/op/settings --as-prefix before
+jux snap $URL/op/noop $URL/op/color $URL/op/padding --as-prefix before
 # …edit code…
-jux snap $URL/op/home $URL/op/settings --as-prefix after
+jux snap $URL/op/noop $URL/op/color $URL/op/padding --as-prefix after
 jux diff --prefix before after
 ```
 
 ```
-2 pages: 1 changed, 1 identical
+3 pages: 2 changed, 1 identical
 
-op-settings: style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure explains the changed region.
+op-color: style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure explains the changed region.
 
   button[name="Save"] color #ffffff → #fef08a
 
-next: jux diff before-op-settings after-op-settings --crops  (opens the pixels)
+next: jux diff before-op-color after-op-color --crops  (opens the pixels)
 
-op-home: identical: images byte-identical, no structural change.
+op-padding: style-only (spacing): button[name="Save"] padding 8px 12px→12px 16px; 6 elements after button[name="Save"] moved down 4px; main resized height +4px (+3 more). Structure explains all 9 changed regions.
+
+  button[name="Save"]
+    padding 8px 12px → 12px 16px
+    resized +8×+8px, moved up 4px
+  6 elements after button[name="Save"] moved down 4px
+  img[name="Logo"] moved right 8px
+  main resized height +4px
+
+next: jux diff before-op-padding after-op-padding --crops  (opens the pixels)
+
+op-noop: identical: images byte-identical, no structural change.
 ```
 
 `--json` prints the page set (`juxtapose.verdict-set/v1`, below).
 
 ### The verdict (`juxtapose.verdict/v1`)
 
-| field                | meaning                                                                                                                                                                                                                                                                                                              |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema`             | `juxtapose.verdict/v1`                                                                                                                                                                                                                                                                                               |
-| `classification`     | `identical` (byte-identical images and no deltas — never just "0 changed pixels"; if the pixels contradict the caller's `imagesIdentical`, the pixels win), `render-drift`, `dimension-change`, `element-added`, `element-removed`, `reflow`, `geometry`, `text-only`, `style-only`, `attr-only`, `mixed`, `unknown` |
-| `styleTags`          | for `style-only`/`mixed`: `color`, `typography`, `spacing`, `border`, `effects`                                                                                                                                                                                                                                      |
-| `summary`            | templated, ≤ 300 chars                                                                                                                                                                                                                                                                                               |
-| `deltas`             | at most 20 typed facts (`text`, `style`, `attr`, `added`, `removed`, `moved`, `resized`, `shift`), and only the prefix that keeps the verdict ≤ 1,500 chars (labels ≤ 60, values ≤ 200)                                                                                                                              |
-| `deltaCount`         | total deltas found, including any not listed                                                                                                                                                                                                                                                                         |
-| `coverage`           | fraction of changed-region area touching a delta's element                                                                                                                                                                                                                                                           |
-| `explained`          | `full` (coverage ≥ 0.98), `partial` (≥ 0.5) or `none`                                                                                                                                                                                                                                                                |
-| `unexplainedRegions` | changed regions no delta accounts for: canvas, image content, or rendering drift (the prefix that fits the 1,500-char budget; `coverage` covers all)                                                                                                                                                                 |
-| `flags`              | `element-removed`, `text-changed`, `large-reflow`, `unexplained-pixels`, `sub-threshold` (the images differ but the pixel diff marked nothing; the deltas are the change), `structure-truncated`, `no-baseline-structure`, `no-current-structure`, `below-fold`                                                      |
-| `signature`          | sha256 of the classification and the deltas with elements abstracted to role/tag — the same change on two pages shares one                                                                                                                                                                                           |
-| `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run. `--crops` is not implemented yet; it prints the two image paths to open instead                                                                                                                        |
+| field                | meaning                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`             | `juxtapose.verdict/v1`                                                                                                                                                                                                                                                                                                                                  |
+| `classification`     | `identical` (byte-identical images and no deltas — never just "0 changed pixels"; if the pixels contradict the caller's `imagesIdentical`, the pixels win), `render-drift`, `dimension-change`, `element-added`, `element-removed`, `reflow`, `geometry`, `text-only`, `style-only`, `attr-only`, `mixed`, `unknown`                                    |
+| `styleTags`          | for `style-only`/`mixed`: `color`, `typography`, `spacing`, `border`, `effects`                                                                                                                                                                                                                                                                         |
+| `summary`            | templated, ≤ 300 chars                                                                                                                                                                                                                                                                                                                                  |
+| `deltas`             | at most 20 typed facts (`text`, `style`, `attr`, `added`, `removed`, `moved`, `resized`, `shift`), and only the prefix that keeps the verdict ≤ 1,500 chars (labels ≤ 60, values ≤ 200)                                                                                                                                                                 |
+| `deltaCount`         | total deltas found, including any not listed                                                                                                                                                                                                                                                                                                            |
+| `coverage`           | fraction of changed-region area touching a delta's element                                                                                                                                                                                                                                                                                              |
+| `explained`          | `full` (coverage ≥ 0.98), `partial` (≥ 0.5) or `none`                                                                                                                                                                                                                                                                                                   |
+| `unexplainedRegions` | changed regions no delta accounts for: canvas, image content, or rendering drift (the prefix that fits the 1,500-char budget; `coverage` covers all)                                                                                                                                                                                                    |
+| `flags`              | `element-removed`, `text-changed`, `large-reflow`, `unexplained-pixels`, `sub-threshold` (the images differ but the pixel diff marked nothing; the deltas are the change), `structure-truncated`, `no-baseline-structure`, `no-current-structure`, `below-fold`                                                                                         |
+| `signature`          | sha256 of the classification and the deltas with elements abstracted to role/tag — the same change on two pages shares one                                                                                                                                                                                                                              |
+| `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run. `--crops` is not implemented yet; it prints the two image paths to open and exits 0. Arguments are shell-quoted when needed, and a `.webp` path argument appears verbatim, so a verdict for two absolute paths names this machine's paths |
 
 The verdict never decides pass/fail — the pixel hash does. It explains a
 failure so an agent can compare the deltas with what it meant to change.
@@ -221,13 +234,13 @@ failure so an agent can compare the deltas with what it meant to change.
 `after-<slug>`. Slugs are path-based (path, query and fragment), so the
 pairing survives a dev-server port change.
 
-| field     | meaning                                                                                                                                                                                                 |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schema`  | `juxtapose.verdict-set/v1`                                                                                                                                                                              |
-| `pages`   | `{ slug, a, b, verdict }` per paired page, sorted by slug; `verdict` is a `juxtapose.verdict/v1`                                                                                                        |
-| `missing` | `{ slug, have, want }` for a slug present under only one prefix: `want` is the snap name to take                                                                                                        |
-| `errors`  | `{ slug, code, file }` for a pair that could not be compared. `code` is `snap-missing`, `sidecar-undecodable` or `image-undecodable`; `file` is relative to the snaps dir. Never contains OS error text |
-| `summary` | `{ identical, different, missing, errored }`                                                                                                                                                            |
+| field     | meaning                                                                                                                                                                                                                                                                                                                                                                    |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`  | `juxtapose.verdict-set/v1`                                                                                                                                                                                                                                                                                                                                                 |
+| `pages`   | `{ slug, a, b, verdict }` per paired page, sorted by slug; `verdict` is a `juxtapose.verdict/v1`                                                                                                                                                                                                                                                                           |
+| `missing` | `{ slug, have, want }` for a slug present under only one prefix: `want` is the snap name to take                                                                                                                                                                                                                                                                           |
+| `errors`  | `{ slug, code, file }` for a pair that could not be compared. `code` is `snap-missing`, `sidecar-undecodable`, `image-undecodable` or `pair-undecodable` (both images look like WebP but one will not decode, and the decoder cannot say which); `file` is the snap file's basename (the same on every OS), or `null` for `pair-undecodable`. Never contains OS error text |
+| `summary` | `{ identical, different, missing, errored }`                                                                                                                                                                                                                                                                                                                               |
 
 ### Exit codes
 
