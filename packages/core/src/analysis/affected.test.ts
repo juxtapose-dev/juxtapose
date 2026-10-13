@@ -120,6 +120,20 @@ describe('resolveAffected', () => {
     expect(r.stories).toHaveLength(2);
   });
 
+  it('captures everything for stories with no componentPath (urls platform)', async () => {
+    // Even with a Vite manifest present, '' can never match the graph.
+    const urlStories = [story('home', ''), story('settings', '')].map((s) => ({
+      ...s,
+      componentPath: '',
+    }));
+    const r = await resolveAffected(urlStories, 'HEAD~1', {
+      ...opts(),
+      changedFiles: ['src/shared.ts'],
+    });
+    expect(r.reason).toBe('no-match-fallback');
+    expect(r.stories).toHaveLength(2);
+  });
+
   it('escalates when no bundler manifest is available', async () => {
     const r = await resolveAffected(stories, 'HEAD~1', {
       projectRoot: root,

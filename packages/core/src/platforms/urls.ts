@@ -19,6 +19,13 @@ export function createUrlPlatform(urls: UrlEntry[]): Platform {
   const byId = new Map<string, UrlEntry>();
   for (const u of urls) {
     if (!u.id) throw new Error('jux: url entry has an empty id');
+    // file:, javascript:, data: would let whoever controls the config (a fork
+    // PR in CI) publish local file contents in the image and structure sidecar.
+    // It also turns the typo 'localhost:3000/x' (scheme "localhost:") into an
+    // error instead of a confusing navigation failure.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(u.url) && !/^https?:/i.test(u.url)) {
+      throw new Error(`jux: url '${u.url}' for id '${u.id}' must be http(s)`);
+    }
     if (byId.has(u.id)) throw new Error(`jux: duplicate url id '${u.id}'`);
     byId.set(u.id, u);
   }

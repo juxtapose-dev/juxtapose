@@ -37,6 +37,13 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     if (!ctx.json) process.stdout.write(msg + '\n');
   };
 
+  if (ctx.platform.name === 'urls') {
+    process.stderr.write(
+      "jux: init doesn't apply to platform 'urls'; list pages under `urls` in your config and run `jux run`.\n",
+    );
+    return 2;
+  }
+
   const configPath = path.join(ctx.projectRoot, CONFIG_NAME);
   const alreadyConfigured = existsSync(configPath);
 

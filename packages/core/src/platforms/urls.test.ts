@@ -60,3 +60,14 @@ test('a duplicate id is rejected at construction', () => {
 test('an empty id is rejected at construction', () => {
   expect(() => createUrlPlatform([{ id: '', url: '/a' }])).toThrow(/empty id/);
 });
+
+test.each(['file:///etc/passwd', 'javascript:alert(1)', 'localhost:3000/x'])(
+  'rejects non-http(s) url %s at construction',
+  (url) => {
+    expect(() => createUrlPlatform([{ id: 'x', url }])).toThrow(/must be http\(s\)/);
+  },
+);
+
+test('scheme check is case-insensitive', () => {
+  expect(() => createUrlPlatform([{ id: 'x', url: 'HTTPS://x' }])).not.toThrow();
+});
