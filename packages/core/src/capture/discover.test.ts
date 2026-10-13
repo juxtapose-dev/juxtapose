@@ -121,3 +121,63 @@ describe('prepareCaptures', () => {
     expect(browser.closed).toBe(0);
   });
 });
+
+describe('discovery cache', () => {
+  it('reuses discovered params for an unchanged key, rediscovers when it changes', async () => {
+    const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const dir = mkdtempSync(path.join(tmpdir(), 'jux-discover-cache-'));
+    try {
+      let key = 'k1';
+      let calls = 0;
+      const p: Platform = {
+        ...platform(async () => {
+          calls++;
+          return new Map([['a', { variants: { dark: { colorScheme: 'dark' } } }]]);
+        }),
+        discoveryKey: async () => key,
+      };
+      const cache = { dir, target: { projectRoot: dir, buildDir: dir } };
+      const run = () => prepareCaptures([story('a')], { ...opts(p), cache });
+      const first = await run();
+      const browser = fakeBrowser();
+      const second = await prepareCaptures([story('a')], { ...opts(p, browser), cache });
+      expect(second).toEqual(first);
+      expect(calls).toBe(1);
+      // A hit opens no page at all.
+      expect(browser.closed).toBe(0);
+      key = 'k2';
+      await run();
+      expect(calls).toBe(2);
+      // A corrupt cache is a miss, not an error.
+      writeFileSync(path.join(dir, 'discovered-params.json'), '{not json');
+      expect((await run()).map((s) => s.storyId)).toEqual(['a', 'a__dark']);
+      expect(calls).toBe(3);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a failed discovery is not cached', async () => {
+    const { mkdtempSync, rmSync, existsSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = await import('node:path');
+    const dir = mkdtempSync(path.join(tmpdir(), 'jux-discover-fail-'));
+    try {
+      const p: Platform = {
+        ...platform(async () => {
+          throw new Error('boom');
+        }),
+        discoveryKey: async () => 'k',
+      };
+      await prepareCaptures([story('a')], {
+        ...opts(p),
+        cache: { dir, target: { projectRoot: dir } },
+      });
+      expect(existsSync(path.join(dir, 'discovered-params.json'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

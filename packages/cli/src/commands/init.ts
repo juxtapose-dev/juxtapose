@@ -131,6 +131,16 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
         viewport: ctx.config.viewport ?? DEFAULT_VIEWPORT,
         ...(ctx.config.variants ? { projectVariants: ctx.config.variants } : {}),
         onWarning: (m) => process.stderr.write(`${m}\n`),
+        // Beside the runs, so it is ignored wherever runs are; an unchanged
+        // static build skips the preview load.
+        cache: {
+          dir: path.join(ctx.projectRoot, '.juxtapose', 'runs', '.cache'),
+          target: {
+            projectRoot: ctx.projectRoot,
+            ...(ctx.buildDir ? { buildDir: ctx.buildDir } : {}),
+            ...(ctx.origin ? { origin: ctx.origin } : {}),
+          },
+        },
       });
     } catch (err) {
       if (!(err instanceof VariantConfigError)) throw err;

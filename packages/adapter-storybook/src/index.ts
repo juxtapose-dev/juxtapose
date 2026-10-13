@@ -4,6 +4,7 @@
 // against @juxtapose/core's Platform interface and nothing here leaks upward,
 // the seam holds.
 
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { navigateToStory } from '@juxtapose/core';
@@ -287,6 +288,24 @@ export class StorybookPlatform implements Platform {
       return out;
     });
     return new Map(Object.entries(extracted as Record<string, StoryParams>));
+  }
+
+  /**
+   * index.json plus iframe.html of a static build. iframe.html names the
+   * preview's entry chunks by content hash, and Rollup's hashes change with
+   * any module they import, so an edited story's parameters change it. A dev
+   * server (`origin`) is never cached: its stories change under it.
+   */
+  async discoveryKey(target: EnumerateTarget): Promise<string | undefined> {
+    if (target.origin || !target.buildDir) return undefined;
+    const hash = createHash('sha256');
+    for (const name of ['index.json', 'iframe.html']) {
+      hash
+        .update(name)
+        .update('\0')
+        .update(await readFile(path.join(target.buildDir, name)));
+    }
+    return hash.digest('hex');
   }
 
   /** Directories whose changes invalidate every story. */
