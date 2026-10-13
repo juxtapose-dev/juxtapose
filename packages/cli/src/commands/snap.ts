@@ -10,7 +10,9 @@ import {
   type SnapResult,
   type Viewport,
 } from '@juxtapose/core';
+import { EXIT } from '../exit-codes.js';
 import { snapName } from '../snap-name.js';
+import { snapsDir } from './diff.js';
 
 export interface SnapFlags {
   json?: boolean;
@@ -26,8 +28,16 @@ export async function snapCommand(
   flags: SnapFlags,
 ): Promise<number> {
   if (!url) {
-    process.stderr.write('jux snap: missing <url>\n');
-    return 2;
+    process.stderr.write(
+      'jux snap: missing <url>. Try `jux snap http://localhost:5173 --as before`.\n',
+    );
+    return EXIT.usage;
+  }
+  if (!/^https?:\/\//i.test(url)) {
+    process.stderr.write(
+      `jux snap: '${url}' is not an http(s) URL. Serve the page (e.g. \`vite\`) and run \`jux snap http://localhost:<port>/ --as <name>\`.\n`,
+    );
+    return EXIT.usage;
   }
   let viewport: Viewport | undefined;
   if (flags.viewport) {
@@ -36,9 +46,9 @@ export async function snapCommand(
     // "could not capture" for what is a usage error.
     if (!m || Number(m[1]) === 0 || Number(m[2]) === 0) {
       process.stderr.write(
-        `jux snap: --viewport must be WxH, both above 0, got '${flags.viewport}'\n`,
+        `jux snap: --viewport must be WxH, both above 0, got '${flags.viewport}'. Try --viewport 1280x800.\n`,
       );
-      return 2;
+      return EXIT.usage;
     }
     viewport = { width: Number(m[1]), height: Number(m[2]) };
   }
@@ -56,22 +66,18 @@ export async function snapCommand(
     });
   } catch (err) {
     process.stderr.write(
-      `jux snap: could not capture ${url}: ${(err as Error).message}\n`,
+      `jux snap: could not capture ${url}: ${(err as Error).message}. Check the server is running, then retry.\n`,
     );
-    return 1;
+    return EXIT.failure;
   }
   if (result.status !== null && (result.status < 200 || result.status >= 300)) {
     process.stderr.write(
-      `jux snap: ${url} returned HTTP ${result.status}; nothing written\n`,
+      `jux snap: ${url} returned HTTP ${result.status}; nothing written. Fix the route or URL, then retry.\n`,
     );
-    return 1;
+    return EXIT.failure;
   }
 
-  const dir = path.join(
-    path.resolve(flags.project ?? process.cwd()),
-    '.juxtapose',
-    'snaps',
-  );
+  const dir = snapsDir(flags.project);
   await mkdir(dir, { recursive: true });
   // Self-ignoring: snaps are scratch, never baselines.
   await writeFile(path.join(dir, '.gitignore'), '*\n');
@@ -100,5 +106,5 @@ export async function snapCommand(
       ? JSON.stringify(out) + '\n'
       : `jux: snapped ${url} → ${name} (${out.elements} elements, ${out.durationMs} ms)\n`,
   );
-  return 0;
+  return EXIT.clean;
 }

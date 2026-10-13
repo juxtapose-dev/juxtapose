@@ -7,12 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
-import { initCommand } from './commands/init.js';
-import { runCommand } from './commands/run.js';
-import { approveCommand } from './commands/approve.js';
-import { checkCommand } from './commands/check.js';
-import { handoffCommand } from './commands/handoff.js';
-import { snapCommand } from './commands/snap.js';
+import { EXIT } from './exit-codes.js';
 
 const USAGE = `
 jux — visual regression testing for component workbenches
@@ -24,6 +19,7 @@ Usage
   jux check [options]            exit non-zero if anything needs review
   jux handoff <storyId>          print an agent prompt for one failing story
   jux snap <url> [options]       capture one page: pixels + structure, no workbench
+  jux diff <a> <b> [--json]      what changed between two snaps: tier-0 verdict, no browser
   jux --version                  print installed package versions
 
 Common options
@@ -50,6 +46,16 @@ snap
   --viewport <WxH>               default 1280x800
   --wait-for <selector>          wait for this selector before capture
   --mask <selector>              cover before capture (repeatable)
+
+diff
+  <a>, <b>                       snap names (from --as), or paths to .webp files
+  --json                         the verdict as juxtapose.verdict/v1 JSON (byte-stable)
+  exit 0 identical · 1 different · 2 usage · 3 could not read an input
+
+The agent loop, no workbench needed:
+  jux snap http://localhost:5173/settings --as before
+  # …edit code…
+  jux snap http://localhost:5173/settings --as after && jux diff before after --json
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -86,22 +92,39 @@ async function main(argv: string[]): Promise<number> {
       viewport: { type: 'string' },
       'wait-for': { type: 'string' },
       mask: { type: 'string', multiple: true },
+      crops: { type: 'boolean', default: false },
     },
   });
 
   switch (command) {
-    case 'init':
+    case 'init': {
+      const { initCommand } = await import('./commands/init.js');
       return initCommand(values as never);
-    case 'run':
+    }
+    case 'run': {
+      const { runCommand } = await import('./commands/run.js');
       return runCommand(values as never);
-    case 'approve':
+    }
+    case 'approve': {
+      const { approveCommand } = await import('./commands/approve.js');
       return approveCommand(values as never);
-    case 'check':
+    }
+    case 'check': {
+      const { checkCommand } = await import('./commands/check.js');
       return checkCommand(values as never);
-    case 'handoff':
+    }
+    case 'handoff': {
+      const { handoffCommand } = await import('./commands/handoff.js');
       return handoffCommand(positionals[0], values as never);
-    case 'snap':
+    }
+    case 'snap': {
+      const { snapCommand } = await import('./commands/snap.js');
       return snapCommand(positionals[0], values as never);
+    }
+    case 'diff': {
+      const { diffCommand } = await import('./commands/diff.js');
+      return diffCommand(positionals[0], positionals[1], values as never);
+    }
     default:
       process.stderr.write(`jux: unknown command '${command}'\n${USAGE}`);
       return 2;
@@ -150,5 +173,6 @@ main(process.argv.slice(2))
   .catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`jux: ${message}\n`);
-    process.exit(1);
+    // An unhandled throw is a tool failure, not "needs review".
+    process.exit(EXIT.failure);
   });

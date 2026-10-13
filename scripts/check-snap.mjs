@@ -1,5 +1,5 @@
 // End-to-end check for `jux snap`: a good page writes files and a structure;
-// a 404 and an unreachable host exit 1 and write nothing; a re-snap without
+// a 404 and an unreachable host exit 3 and write nothing; a re-snap without
 // structure removes the old sidecar; a zero viewport is a usage error.
 // Run after `pnpm build`: node scripts/check-snap.mjs
 import { createServer } from 'node:http';
@@ -76,8 +76,8 @@ check(vp0.code === 2, 'a zero viewport dimension is a usage error (exit 2)');
 
 const missing = await run([`http://127.0.0.1:${port}/missing`, '--as', 'missing']);
 check(
-  missing.code === 1 && /HTTP 404/.test(missing.out),
-  '404 exits 1 naming the status',
+  missing.code === 3 && /HTTP 404/.test(missing.out),
+  '404 exits 3 naming the status',
 );
 check(
   !readdirSync(path.join(project, '.juxtapose/snaps')).some((f) =>
@@ -87,15 +87,15 @@ check(
 );
 
 const down = await run(['http://127.0.0.1:1/', '--as', 'down']);
-check(down.code === 1 && /could not capture/.test(down.out), 'unreachable host exits 1');
+check(down.code === 3 && /could not capture/.test(down.out), 'unreachable host exits 3');
 
 const file = await run(['file:///etc/passwd', '--as', 'file']);
 check(
-  file.code === 1 &&
+  file.code === 2 &&
     !readdirSync(path.join(project, '.juxtapose/snaps')).some((f) =>
       f.startsWith('file'),
     ),
-  'file: url exits 1 and writes nothing',
+  'file: url is a usage error (2) and writes nothing',
 );
 
 server.close();

@@ -63,6 +63,7 @@ export {
 } from './baseline/approve.js';
 // Structural diff: two sidecars + a pixel diff → the tier-0 verdict.
 export { structuralDiff, type StructuralDiffInput } from './diff/structural.js';
+export { compareSnaps, type SnapSide, type SnapComparison } from './diff/compare.js';
 export { describeDelta } from './diff/structural/summary.js';
 
 // Driving a run.
