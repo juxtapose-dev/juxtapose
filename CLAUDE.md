@@ -55,6 +55,12 @@ frame-wide. The hash survives that (encoding is deterministic), but the diff
 fills with compression noise and the changed-region map degenerates to the whole
 viewport. For flat UI renders lossless is usually smaller anyway.
 
+**The warm-browser daemon must stay byte-identical to a fresh launch.**
+`check:determinism` runs both ways: the default is a fresh launch per run
+(`JUX_NO_DAEMON=1`), and `env -u CI pnpm check:determinism --daemon` captures
+through the daemon and fails if it never started. Run both after touching
+`browser/`.
+
 ## Verify against a real build, not just unit tests
 
 Every significant bug in this repo so far was invisible to unit tests and

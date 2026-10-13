@@ -25,6 +25,7 @@ export {
 export {
   resolveChrome,
   juxCacheDir,
+  juxStateDir,
   chromeInstallDir,
   chromeBinaryPath,
   msPlaywrightBinaryPath,

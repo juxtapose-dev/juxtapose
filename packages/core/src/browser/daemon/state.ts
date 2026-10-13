@@ -101,13 +101,13 @@ export function daemonKey(fp: Fingerprint): string {
 }
 
 export function daemonPaths(
-  cacheDir: string,
+  stateDir: string,
   key: string,
   opts: { platform?: NodeJS.Platform; uid?: number; shortBase?: string } = {},
 ): DaemonPaths {
   if (!daemonSupported(opts.platform ?? process.platform))
     throw new Error(`jux: the warm browser daemon is not supported on win32`);
-  const dir = path.join(cacheDir, 'browser');
+  const dir = path.join(stateDir, 'browser');
   let socketDir = dir;
   let socket = path.join(dir, `${key}.sock`);
   if (Buffer.byteLength(socket) > MAX_SOCKET_BYTES) {
@@ -115,7 +115,7 @@ export function daemonPaths(
     socket = path.join(socketDir, `${key}.sock`);
     if (Buffer.byteLength(socket) > MAX_SOCKET_BYTES)
       throw new Error(
-        `jux: no socket path under ${MAX_SOCKET_BYTES} bytes (cache dir ${cacheDir}). Set JUX_CACHE_DIR to a shorter path, or pass --no-daemon.`,
+        `jux: no socket path under ${MAX_SOCKET_BYTES} bytes (state dir ${stateDir}). Set JUX_STATE_DIR to a shorter path, or pass --no-daemon.`,
       );
   }
   return {

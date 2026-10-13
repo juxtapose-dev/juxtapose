@@ -13,6 +13,8 @@ import { OPERATORS, checkVerdict } from './structural-corpus/page.mjs';
 import { startCorpusServer } from './structural-corpus/server.mjs';
 
 const exec = promisify(execFile);
+// Fresh launches: a local run must not leave a warm browser idling for 10 minutes.
+process.env.JUX_NO_DAEMON = '1';
 const cli = path.resolve(import.meta.dirname, '../packages/cli/dist/index.js');
 // The CLI's own slug function, so this script cannot drift from how `jux
 // snap` names files.

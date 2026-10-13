@@ -161,7 +161,7 @@ describe('daemon state', () => {
         }
         expect(() =>
           daemonPaths(long, 'abc', { shortBase: path.join(short, 'y'.repeat(120)) }),
-        ).toThrow(/JUX_CACHE_DIR.*--no-daemon/s);
+        ).toThrow(/JUX_STATE_DIR.*--no-daemon/s);
       } finally {
         await rm(short, { recursive: true, force: true });
       }

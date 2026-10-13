@@ -112,15 +112,18 @@ export { acquireBrowser, type AcquireOptions } from './browser/acquire.js';
 export {
   connectWarmBrowser,
   daemonEnabled,
+  daemonIdleMinutes,
   daemonStatus,
   stopDaemon,
   CI_ENV_VARS,
   type WarmOptions,
   type SpawnArgs,
 } from './browser/daemon/client.js';
+export { daemonSupported, type DaemonState } from './browser/daemon/state.js';
 export {
   resolveChrome,
   juxCacheDir,
+  juxStateDir,
   noBrowserMessage,
   NO_BROWSER_MESSAGE,
   type ChromeSource,

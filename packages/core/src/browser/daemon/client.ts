@@ -43,7 +43,7 @@ import {
 export interface SpawnArgs {
   executablePath: string;
   args: string[];
-  cacheDir: string;
+  stateDir: string;
   key: string;
   idleMinutes: number;
 }
@@ -51,7 +51,7 @@ export interface SpawnArgs {
 export interface WarmOptions {
   executablePath: string;
   args?: string[];
-  cacheDir: string;
+  stateDir: string;
   /** The caller's environment: the key is computed from it and the daemon runs with it. */
   env?: NodeJS.ProcessEnv;
   idleMinutes?: number;
@@ -110,7 +110,13 @@ export function daemonEnabled(env: NodeJS.ProcessEnv, flagNoDaemon = false): boo
   return !CI_ENV_VARS.some((v) => truthy(env[v]));
 }
 
-type StatusOptions = Pick<WarmOptions, 'executablePath' | 'cacheDir' | 'args' | 'env'>;
+/** JUX_BROWSER_IDLE_MINUTES when it is a positive number, else the default (undefined). */
+export function daemonIdleMinutes(env: NodeJS.ProcessEnv): number | undefined {
+  const n = Number(env.JUX_BROWSER_IDLE_MINUTES);
+  return n > 0 ? n : undefined;
+}
+
+type StatusOptions = Pick<WarmOptions, 'executablePath' | 'stateDir' | 'args' | 'env'>;
 
 function keyFor(opts: StatusOptions): string {
   return daemonKey({
@@ -122,7 +128,7 @@ function keyFor(opts: StatusOptions): string {
 }
 
 function pathsFor(opts: StatusOptions): DaemonPaths {
-  return daemonPaths(opts.cacheDir, keyFor(opts));
+  return daemonPaths(opts.stateDir, keyFor(opts));
 }
 
 /**
@@ -291,7 +297,7 @@ async function killWedged(pid: number): Promise<void> {
 async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
   const env = opts.env ?? process.env;
   const key = keyFor(opts);
-  const paths = daemonPaths(opts.cacheDir, key);
+  const paths = daemonPaths(opts.stateDir, key);
   const start = Date.now();
   const budget = opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
 
@@ -342,7 +348,7 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
           const args: SpawnArgs = {
             executablePath: opts.executablePath,
             args: opts.args ?? [],
-            cacheDir: opts.cacheDir,
+            stateDir: opts.stateDir,
             key,
             idleMinutes: opts.idleMinutes ?? DEFAULT_IDLE_MINUTES,
           };

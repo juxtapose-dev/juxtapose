@@ -24,6 +24,8 @@ export interface CommonFlags {
   comment?: boolean;
   html?: boolean;
   chrome?: string;
+  /** `--no-daemon`: same as JUX_NO_DAEMON=1. */
+  'no-daemon'?: boolean;
 }
 
 export interface Context {

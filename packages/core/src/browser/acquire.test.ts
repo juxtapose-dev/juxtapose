@@ -24,6 +24,36 @@ describe.skipIf(!chrome)('acquireBrowser', () => {
     });
     await b.close();
   });
+  it('asks the daemon in JUX_STATE_DIR, which moves apart from the cache', async () => {
+    if (process.platform === 'win32') return;
+    const env: NodeJS.ProcessEnv = {
+      ...base,
+      JUX_STATE_DIR: '/tmp/s',
+      JUX_CACHE_DIR: '/tmp/c',
+    };
+    for (const v of [
+      'CI',
+      'GITHUB_ACTIONS',
+      'BUILD_ID',
+      'JENKINS_URL',
+      'TEAMCITY_VERSION',
+      'BUILDKITE',
+      'GITLAB_CI',
+      'TF_BUILD',
+      'CODEBUILD_BUILD_ID',
+      'JUX_NO_DAEMON',
+    ])
+      delete env[v];
+    let seen: string | undefined;
+    await acquireBrowser({
+      env,
+      connectWarm: (o) => {
+        seen = o.stateDir;
+        throw new Error('seam');
+      },
+    }).catch(() => undefined);
+    expect(seen).toBe('/tmp/s');
+  });
   it('outside CI it asks the warm daemon first', async () => {
     const env = { ...base };
     for (const v of [

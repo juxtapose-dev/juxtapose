@@ -24,14 +24,20 @@ affected.
 | `jux approve --all` | promote the last run's captures to baselines          |
 | `jux check`         | exit non-zero if anything still needs review — for CI |
 | `jux handoff <id>`  | print an agent-ready prompt for one failing story     |
-| `jux browser`       | `install`, `status` or `path` for the pinned browser  |
+| `jux browser`       | `install`, `status`, `path`, `start` or `stop`        |
 
 All commands accept `--json`.
 
 The browser is `chrome-headless-shell` 151.0.7922.34, installed once by
 `jux browser install` (an existing Playwright cache of the same build is
 reused; `JUX_CHROME=<path>` or `--chrome <path>` uses your own). Mask and
-`--wait-for` selectors are CSS. See the
+`--wait-for` selectors are CSS.
+
+Outside CI, `jux snap`, `jux run` and `jux init` keep one browser warm in the
+background between invocations (idle exit after 10 minutes; byte-identical
+captures). `--no-daemon` or `JUX_NO_DAEMON=1` turns it off for a command; it is
+also off in CI and on Windows. `jux browser start|stop|status` manage it, and
+`JUX_STATE_DIR` moves its socket and state apart from `JUX_CACHE_DIR`. See the
 [main README](https://github.com/juxtapose-dev/juxtapose#browser) for details.
 
 Reviewing diffs inside Storybook? Add

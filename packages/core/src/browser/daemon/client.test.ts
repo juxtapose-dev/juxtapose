@@ -86,7 +86,7 @@ function inProcessDaemon() {
       startSupervisor({
         executablePath: a.executablePath,
         args: a.args,
-        paths: daemonPaths(a.cacheDir, a.key),
+        paths: daemonPaths(a.stateDir, a.key),
         key: a.key,
         idleMinutes: a.idleMinutes,
       }).catch(() => null),
@@ -170,7 +170,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
         const t0 = Date.now();
         const { browser, warm } = await connectWarmBrowser({
           executablePath: chrome!.path,
-          cacheDir: cache,
+          stateDir: cache,
           spawnDaemon: d.spawnDaemon,
         });
         expect(Date.now() - t0).toBeLessThan(2500);
@@ -178,12 +178,12 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
         expect(d.count()).toBe(1);
         expect(browser.version()).toBe(CHROME_VERSION);
         expect(
-          (await daemonStatus({ executablePath: chrome!.path, cacheDir: cache }))?.pid,
+          (await daemonStatus({ executablePath: chrome!.path, stateDir: cache }))?.pid,
         ).toBe(process.pid);
         await browser.close(); // closes this client's connection only
         const second = await connectWarmBrowser({
           executablePath: chrome!.path,
-          cacheDir: cache,
+          stateDir: cache,
           spawnDaemon: d.spawnDaemon,
         });
         expect(d.count()).toBe(1); // reused
@@ -193,7 +193,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
         await d.stop();
       }
       expect(
-        await daemonStatus({ executablePath: chrome!.path, cacheDir: cache }),
+        await daemonStatus({ executablePath: chrome!.path, stateDir: cache }),
       ).toBeNull();
     }));
 
@@ -205,7 +205,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
           [1, 2, 3].map(() =>
             connectWarmBrowser({
               executablePath: chrome!.path,
-              cacheDir: cache,
+              stateDir: cache,
               spawnDaemon: d.spawnDaemon,
             }),
           ),
@@ -222,7 +222,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
     withCache(async (cache) => {
       const { browser, warm } = await connectWarmBrowser({
         executablePath: chrome!.path,
-        cacheDir: cache,
+        stateDir: cache,
         spawnDaemon: () => {
           throw new Error('no fork here');
         },
@@ -244,7 +244,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       try {
         const pending = connectWarmBrowser({
           executablePath: chrome!.path,
-          cacheDir: cache,
+          stateDir: cache,
           spawnDaemon: d.spawnDaemon,
           connectTimeoutMs: 200,
         });
@@ -253,7 +253,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
         d.spawnDaemon({
           executablePath: chrome!.path,
           args: [],
-          cacheDir: cache,
+          stateDir: cache,
           key,
           idleMinutes: 10,
         });
@@ -278,7 +278,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
           const t0 = Date.now();
           const { browser, warm } = await connectWarmBrowser({
             executablePath: chrome!.path,
-            cacheDir: cache,
+            stateDir: cache,
             spawnDaemon: d.spawnDaemon,
             connectTimeoutMs: 200,
           });
@@ -307,7 +307,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       try {
         const { browser, warm } = await connectWarmBrowser({
           executablePath: chrome!.path,
-          cacheDir: cache,
+          stateDir: cache,
           spawnDaemon: d.spawnDaemon,
         });
         expect(connect.mock.calls.some((c) => c[0] === evil)).toBe(false);
@@ -333,7 +333,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       try {
         const { browser, warm } = await connectWarmBrowser({
           executablePath: chrome!.path,
-          cacheDir: cache,
+          stateDir: cache,
           env: { ...process.env, JUX_DEBUG: '1' },
           spawnDaemon: d.spawnDaemon,
           connectTimeoutMs: 300,
@@ -360,7 +360,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       try {
         const { browser, warm } = await connectWarmBrowser({
           executablePath: chrome!.path,
-          cacheDir: cache,
+          stateDir: cache,
           spawnDaemon: d.spawnDaemon,
           connectTimeoutMs: 300,
         });
@@ -383,7 +383,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
           {
             executablePath: chrome!.path,
             args: [],
-            cacheDir: cache,
+            stateDir: cache,
             key,
             idleMinutes: 10,
           },
@@ -406,7 +406,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
           // Fresh heartbeat: maybe just busy. Never killed; this run goes private.
           const kept = await connectWarmBrowser({
             executablePath: chrome!.path,
-            cacheDir: cache,
+            stateDir: cache,
             spawnDaemon: d.spawnDaemon,
           });
           expect(kept.warm).toBe(false);
@@ -419,7 +419,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
           await utimes(paths.state, old, old);
           const { browser, warm } = await connectWarmBrowser({
             executablePath: chrome!.path,
-            cacheDir: cache,
+            stateDir: cache,
             spawnDaemon: d.spawnDaemon,
           });
           expect(warm).toBe(true);
@@ -443,7 +443,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
     () =>
       withCache(async (cache) => {
         const env = { ...process.env, TZ: 'Pacific/Honolulu' };
-        const opts = { executablePath: chrome!.path, cacheDir: cache, env };
+        const opts = { executablePath: chrome!.path, stateDir: cache, env };
         try {
           const { browser, warm } = await connectWarmBrowser({
             ...opts,
@@ -470,13 +470,13 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       try {
         const a = await connectWarmBrowser({
           executablePath: chrome!.path,
-          cacheDir: cache,
+          stateDir: cache,
           env: { ...process.env, TZ: 'UTC' },
           spawnDaemon: d.spawnDaemon,
         });
         const b = await connectWarmBrowser({
           executablePath: chrome!.path,
-          cacheDir: cache,
+          stateDir: cache,
           env: { ...process.env, TZ: 'Asia/Tokyo' },
           spawnDaemon: d.spawnDaemon,
         });
@@ -495,7 +495,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       try {
         const { browser, warm } = await connectWarmBrowser({
           executablePath: chrome!.path,
-          cacheDir: cache,
+          stateDir: cache,
           spawnDaemon: d.spawnDaemon,
         });
         expect(warm).toBe(true);

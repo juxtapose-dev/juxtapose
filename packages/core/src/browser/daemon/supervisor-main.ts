@@ -1,7 +1,7 @@
 // packages/core/src/browser/daemon/supervisor-main.ts
 //
 // Entry for the detached daemon: `node supervisor-main.js '<json>'`, json =
-// { executablePath, args, cacheDir, key, idleMinutes }. The launcher (Task 13)
+// { executablePath, args, stateDir, key, idleMinutes }. The launcher (Task 13)
 // detaches stdio; this process lives until it is idle, SIGTERM/SIGINT (`jux
 // browser stop`), or the browser dies, and on each of those closes Chrome,
 // removes the profile, clears the state and unlinks the socket.
@@ -15,7 +15,7 @@ import { daemonPaths } from './state.js';
 interface MainArgs {
   executablePath: string;
   args: string[];
-  cacheDir: string;
+  stateDir: string;
   key: string;
   idleMinutes: number;
 }
@@ -26,7 +26,7 @@ function parseArgs(raw: string | undefined): MainArgs {
     typeof a.executablePath !== 'string' ||
     !Array.isArray(a.args) ||
     !a.args.every((x) => typeof x === 'string') ||
-    typeof a.cacheDir !== 'string' ||
+    typeof a.stateDir !== 'string' ||
     typeof a.key !== 'string' ||
     typeof a.idleMinutes !== 'number' ||
     !(a.idleMinutes > 0)
@@ -40,7 +40,7 @@ try {
   const sup = await startSupervisor({
     executablePath: args.executablePath,
     args: args.args,
-    paths: daemonPaths(args.cacheDir, args.key),
+    paths: daemonPaths(args.stateDir, args.key),
     key: args.key,
     idleMinutes: args.idleMinutes,
     onExit: () => process.exit(0),

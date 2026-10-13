@@ -662,7 +662,7 @@ describe.skipIf(!chrome)('supervisor-main (the detached process)', () => {
     expect(built, `missing ${builtMain}: run pnpm build before pnpm test`).toBe(true);
   });
 
-  const start = (cacheDir: string, key: string) =>
+  const start = (stateDir: string, key: string) =>
     spawn(
       process.execPath,
       [
@@ -670,7 +670,7 @@ describe.skipIf(!chrome)('supervisor-main (the detached process)', () => {
         JSON.stringify({
           executablePath: chrome!.path,
           args: [],
-          cacheDir,
+          stateDir,
           key,
           idleMinutes: 10,
         }),
@@ -691,9 +691,9 @@ describe.skipIf(!chrome)('supervisor-main (the detached process)', () => {
     'SIGTERM closes Chrome, removes its profile, clears the state and the socket; a second daemon exits 0',
     () =>
       withPaths(async (paths) => {
-        const cacheDir = path.dirname(paths.dir);
+        const stateDir = path.dirname(paths.dir);
         const key = path.basename(paths.state, '.json');
-        const child = start(cacheDir, key);
+        const child = start(stateDir, key);
         const exited = exitOf(child);
         try {
           let s = null;
@@ -711,7 +711,7 @@ describe.skipIf(!chrome)('supervisor-main (the detached process)', () => {
           expect(outcome).toBe('ready');
 
           // Ruling 21: the loser of a start race leaves quietly.
-          const loser = start(cacheDir, key);
+          const loser = start(stateDir, key);
           expect(await exitOf(loser)).toEqual({ code: 0, signal: null });
           expect((await readState(paths))?.pid).toBe(child.pid);
 

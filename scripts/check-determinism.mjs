@@ -13,7 +13,10 @@
 // Usage: node scripts/check-determinism.mjs [--daemon] <exampleDir> [runs]
 //
 // Without --daemon every run is a fresh launch (JUX_NO_DAEMON=1): that is the
-// cold path CI takes, and a local check leaves no warm browser idling.
+// cold path CI takes, and a local check leaves no warm browser idling. With
+// --daemon (run it as `env -u CI pnpm check:determinism --daemon`; any CI
+// variable turns the daemon off) the first run starts the warm browser, the
+// script requires it to be up, and the later runs capture through it.
 
 import { execFile } from 'node:child_process';
 import { readFile, readdir } from 'node:fs/promises';
@@ -28,7 +31,7 @@ const run = promisify(execFile);
 
 const argv = process.argv.slice(2);
 const daemon = argv.includes('--daemon');
-const positional = argv.filter((a) => a !== '--daemon');
+const positional = argv.filter((a) => a !== '--daemon' && a !== '--');
 const exampleDir = path.resolve(positional[0] ?? 'examples/storybook');
 const runs = Number(positional[1] ?? 3);
 const env = daemon ? process.env : { ...process.env, JUX_NO_DAEMON: '1' };
@@ -49,6 +52,17 @@ for (let i = 1; i <= runs; i++) {
     // report is what we care about, not the status code.
     if (!err.stdout && !err.stderr) throw err;
   });
+
+  // A --daemon check that silently fell back to private launches would prove
+  // nothing about the warm path.
+  if (daemon && i === 1) {
+    const { stdout } = await run('node', [cli, 'browser', 'status', '--json'], {
+      cwd: exampleDir,
+      env,
+    });
+    if (!JSON.parse(stdout).daemon?.pid)
+      fail('expected the warm browser to be running after run 1');
+  }
 
   const runDir = await latestRun(exampleDir);
   if (!runDir) fail('no run directory produced');

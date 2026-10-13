@@ -5,10 +5,10 @@
 // else, so no caller changes when the policy does (Ruling 3).
 
 import { Browser } from './browser.js';
-import { connectWarmBrowser, daemonEnabled } from './daemon/client.js';
+import { connectWarmBrowser, daemonEnabled, daemonIdleMinutes } from './daemon/client.js';
 import { daemonSupported } from './daemon/state.js';
 import type { SpawnFn } from './launch.js';
-import { juxCacheDir, noBrowserMessage, resolveChrome } from './resolve.js';
+import { juxStateDir, noBrowserMessage, resolveChrome } from './resolve.js';
 
 export interface AcquireOptions {
   /** `--chrome <path>`; wins over JUX_CHROME and the caches. */
@@ -29,13 +29,11 @@ export async function acquireBrowser(opts: AcquireOptions = {}): Promise<Browser
   // Ruling 22: no daemon on Windows; CI and the opt-outs get PR 1's path exactly.
   if (!daemonSupported() || !daemonEnabled(env, opts.noDaemon))
     return Browser.launch({ executablePath: resolved.path, spawn: opts.spawn });
-  const idle = Number(env.JUX_BROWSER_IDLE_MINUTES);
-  const idleMinutes = idle > 0 ? idle : undefined;
   const { browser } = await (opts.connectWarm ?? connectWarmBrowser)({
     executablePath: resolved.path,
-    cacheDir: juxCacheDir({ env }),
+    stateDir: juxStateDir({ env }),
     env,
-    idleMinutes,
+    idleMinutes: daemonIdleMinutes(env),
   });
   return browser;
 }

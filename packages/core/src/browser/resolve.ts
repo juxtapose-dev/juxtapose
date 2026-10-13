@@ -78,6 +78,18 @@ export function juxCacheDir(opts: ResolveOptions = {}): string {
   return p.join(osCacheDir(platform, env, opts.homedir ?? osHomedir()), 'jux');
 }
 
+/**
+ * Where the warm-browser daemon keeps its socket, state and lock. Defaults to
+ * the cache dir (so existing setups do not move); JUX_STATE_DIR moves it alone,
+ * e.g. to a short path when the cache dir is too long for a unix socket.
+ */
+export function juxStateDir(opts: ResolveOptions = {}): string {
+  const env = opts.env ?? process.env;
+  if (env.JUX_STATE_DIR)
+    return pathFor(opts.platform ?? process.platform).resolve(env.JUX_STATE_DIR);
+  return juxCacheDir(opts);
+}
+
 /** A cache dir with a drive letter or backslashes is a Windows path. */
 const platformOfCacheDir = (cacheDir: string): NodeJS.Platform =>
   /^[A-Za-z]:|\\/.test(cacheDir) ? 'win32' : 'linux';
