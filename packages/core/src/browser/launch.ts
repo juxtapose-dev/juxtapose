@@ -9,7 +9,7 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { rmSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromeArgs } from '../capture/launch.js';
@@ -30,6 +30,13 @@ const GRACEFUL_CLOSE_MS = 2000;
 const TERM_GRACE_MS = 1000;
 /** After SIGKILL the exit event is imminent; bound the wait so close() cannot hang. */
 const KILL_WAIT_MS = 2000;
+/** Chrome answers Browser.getVersion in ~80 ms; this only bounds a wedged binary. */
+const HANDSHAKE_TIMEOUT_MS = 30_000;
+/** How long a failed launch waits for the exit event and the last of stderr. */
+const FAILURE_WAIT_MS = 2000;
+const STDERR_DRAIN_MS = 300;
+/** A profile of a dead owner is only swept once it is this old. */
+const STALE_PROFILE_MS = 10 * 60_000;
 
 interface Live {
   proc: ChildProcess;
@@ -52,22 +59,72 @@ export function terminateAll(): void {
         // already gone
       }
     }
-    rmSync(l.userDataDir, { recursive: true, force: true });
+    try {
+      rmSync(l.userDataDir, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      // best effort: the stale-profile sweep gets it on a later launch
+    }
   }
   live.clear();
 }
 
+const signalHandlers = new Map<'SIGINT' | 'SIGTERM', () => void>();
+
 function installExitHandlers(): void {
-  if (handlersInstalled) return;
-  handlersInstalled = true;
-  process.on('exit', terminateAll);
-  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(sig, () => {
-      terminateAll();
-      // Re-raise so the exit status says "killed by signal", as it would have.
-      process.kill(process.pid, sig);
-    });
+  if (!handlersInstalled) {
+    handlersInstalled = true;
+    process.on('exit', terminateAll);
   }
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    if (signalHandlers.has(sig)) continue;
+    const handler = () => {
+      // Detach first: re-raising with our listener attached would loop forever.
+      process.removeListener(sig, handler);
+      signalHandlers.delete(sig);
+      terminateAll();
+      // Only when nobody else listens is dying the right response; a host with
+      // its own handler (a CLI that prints "interrupted") decides for itself.
+      if (process.listenerCount(sig) === 0) process.kill(process.pid, sig);
+    };
+    signalHandlers.set(sig, handler);
+    process.on(sig, handler);
+  }
+}
+
+const PROFILE_PREFIX = 'jux-chrome-';
+
+/**
+ * Remove profiles left by a jux that was SIGKILLed or lost power: named
+ * `jux-chrome-<pid>-…`, owner pid dead, untouched for 10 minutes. Anything
+ * else in the directory is not ours to touch.
+ */
+export async function sweepStaleProfiles(dir: string = tmpdir()): Promise<void> {
+  try {
+    for (const name of await readdir(dir)) {
+      const m = /^jux-chrome-(\d+)-/.exec(name);
+      if (!m) continue;
+      try {
+        process.kill(Number(m[1]), 0);
+        continue; // owner alive (EPERM also lands here via the throw below)
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ESRCH') continue;
+      }
+      const full = path.join(dir, name);
+      try {
+        if (Date.now() - (await stat(full)).mtimeMs < STALE_PROFILE_MS) continue;
+        await rm(full, { recursive: true, force: true, maxRetries: 3 });
+      } catch {
+        // raced with another sweeper, or unreadable: leave it
+      }
+    }
+  } catch {
+    // no readable tmpdir: nothing to sweep
+  }
+}
+
+async function sweepThenMkdtemp(): Promise<string> {
+  await sweepStaleProfiles();
+  return mkdtemp(path.join(tmpdir(), `${PROFILE_PREFIX}${process.pid}-`));
 }
 
 export async function launchChrome(opts: {
@@ -75,9 +132,11 @@ export async function launchChrome(opts: {
   args?: string[];
   headless?: boolean;
   spawn?: SpawnFn;
+  /** Test seam: how long to wait for Browser.getVersion before giving up. */
+  handshakeTimeoutMs?: number;
 }): Promise<LaunchedChrome> {
   const spawn = opts.spawn ?? nodeSpawn;
-  const userDataDir = await mkdtemp(path.join(tmpdir(), 'jux-chrome-'));
+  const userDataDir = await sweepThenMkdtemp();
   const args = chromeArgs({ userDataDir, args: opts.args, headless: opts.headless });
   let proc: ChildProcess;
   try {
@@ -105,7 +164,7 @@ export async function launchChrome(opts: {
   // One promise for "the process is gone", resolved never rejected, so an
   // exit after a successful launch is not an unhandled rejection.
   const exited = new Promise<{ code: number | null; error?: Error }>((resolve) => {
-    proc.once('error', (error) => resolve({ code: null, error }));
+    proc.on('error', (error) => resolve({ code: null, error }));
     proc.once('exit', (code) => resolve({ code }));
   });
   void exited.then(() => {
@@ -120,17 +179,38 @@ export async function launchChrome(opts: {
   const connection = new CdpConnection(transport);
   void exited.then(() => transport.close());
 
-  // Race the handshake against an early exit (bad binary, missing .so).
+  let stderrClosed = !proc.stderr;
+  proc.stderr?.once('close', () => (stderrClosed = true));
+
+  // Race the handshake against an early exit (bad binary, missing .so) and a
+  // wedged binary. Any failure ends in one place that kills, waits, cleans up
+  // and explains.
+  const timeoutMs = opts.handshakeTimeoutMs ?? HANDSHAKE_TIMEOUT_MS;
+  let timer: NodeJS.Timeout | undefined;
   const outcome = await Promise.race([
-    connection.send('Browser.getVersion').then(() => 'ready' as const),
-    exited.then((e) => e),
+    connection.send('Browser.getVersion').then(
+      () => 'ready' as const,
+      () => 'closed' as const,
+    ),
+    exited.then(() => 'closed' as const),
+    new Promise<'timeout'>((r) => (timer = setTimeout(() => r('timeout'), timeoutMs))),
   ]);
+  clearTimeout(timer);
   if (outcome !== 'ready') {
+    if (outcome === 'timeout' && !entry.gone) proc.kill('SIGKILL');
+    const result = await Promise.race([exited, sleep(FAILURE_WAIT_MS)]);
+    if (!entry.gone) proc.kill('SIGKILL');
+    if (!stderrClosed) await sleep(STDERR_DRAIN_MS);
+    connection.close();
     live.delete(entry);
-    await rm(userDataDir, { recursive: true, force: true });
-    const why = outcome.error
-      ? describeSpawnError(outcome.error, opts.executablePath)
-      : `the browser at ${opts.executablePath} exited with code ${outcome.code} before it was ready.${describeStderr(stderr)}`;
+    await rm(userDataDir, { recursive: true, force: true, maxRetries: 3 });
+    const exe = opts.executablePath;
+    const why =
+      outcome === 'timeout'
+        ? `the browser at ${exe} did not answer within ${timeoutMs} ms and was killed. Reinstall it with \`npx -p @juxtapose/cli jux browser install\`, or point JUX_CHROME at a working Chrome.`
+        : result?.error
+          ? describeSpawnError(result.error, exe)
+          : `the browser at ${exe} exited with code ${result?.code ?? 'unknown'} before it was ready.${describeStderr(stderr)}`;
     throw new Error(`jux: could not launch the browser: ${why}`);
   }
 

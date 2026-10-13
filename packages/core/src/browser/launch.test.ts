@@ -1,12 +1,28 @@
 // packages/core/src/browser/launch.test.ts
 import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn as childSpawn } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+  chmodSync,
+  readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PassThrough, Writable } from 'node:stream';
 import { spawn as realSpawn } from 'node:child_process';
-import { launchChrome, terminateAll, type SpawnFn } from './launch.js';
+import {
+  launchChrome,
+  sweepStaleProfiles,
+  terminateAll,
+  type SpawnFn,
+} from './launch.js';
 import { TargetClosedError } from './cdp.js';
 import { chromeForTests } from './__tests__/helpers.js';
 
@@ -164,5 +180,194 @@ describe('launchChrome with an injected spawn', () => {
     terminateAll();
     void b1;
     void b2;
+  });
+});
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const fakeChrome = path.join(here, '__tests__/fake-chrome.mjs');
+const builtLaunch = path.join(here, '../../dist/browser/launch.js');
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+describe('real signals', () => {
+  /** Run signal-host.mjs, wait for READY, send `sig`, report how it ended. */
+  async function run(sig: NodeJS.Signals, mode = '') {
+    const child = childSpawn(
+      process.execPath,
+      [path.join(here, '__tests__/signal-host.mjs'), mode],
+      {
+        stdio: ['ignore', 'pipe', 'inherit'],
+      },
+    );
+    let out = '';
+    const ready = new Promise<[number, string]>((resolve, reject) => {
+      child.stdout.on('data', (d: Buffer) => {
+        out += d.toString();
+        const m = /READY (\d+) (\S+)/.exec(out);
+        if (m) resolve([Number(m[1]), m[2]!]);
+      });
+      child.once('exit', () => reject(new Error(`host exited before READY: ${out}`)));
+    });
+    const [chromePid, profile] = await ready;
+    expect(alive(chromePid)).toBe(true);
+    expect(existsSync(profile)).toBe(true);
+    const t0 = Date.now();
+    const ended = new Promise<{ code: number | null; signal: string | null }>((resolve) =>
+      child.once('exit', (code, signal) => resolve({ code, signal })),
+    );
+    child.kill(sig);
+    const how = await Promise.race([
+      ended,
+      new Promise<never>((_, rej) =>
+        setTimeout(() => {
+          child.kill('SIGKILL');
+          rej(new Error(`host did not exit within 2s of ${sig}`));
+        }, 2000),
+      ),
+    ]);
+    await new Promise((r) => setTimeout(r, 200));
+    return { how, ms: Date.now() - t0, chromePid, profile, out };
+  }
+
+  const built = existsSync(builtLaunch);
+  for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+    it.skipIf(!built)(
+      `${sig} ends the host by that signal and takes chrome and its profile`,
+      async () => {
+        const r = await run(sig);
+        expect(r.how.signal).toBe(sig);
+        expect(alive(r.chromePid)).toBe(false);
+        expect(existsSync(r.profile)).toBe(false);
+      },
+      10_000,
+    );
+  }
+  it.skipIf(!built)(
+    'a host SIGTERM handler runs exactly once and is not re-raised over',
+    async () => {
+      const r = await run('SIGTERM', 'host-handler');
+      expect(r.out.match(/HOST/g)).toHaveLength(1);
+      expect(r.how).toEqual({ code: 0, signal: null });
+      expect(alive(r.chromePid)).toBe(false);
+      expect(existsSync(r.profile)).toBe(false);
+    },
+    10_000,
+  );
+});
+
+describe('failed launches clean up and explain', () => {
+  const tmpScript = (body: string) => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'jux-fakebin-'));
+    const file = path.join(dir, 'chrome');
+    writeFileSync(file, `#!/bin/sh\n${body}\n`);
+    chmodSync(file, 0o755);
+    return { dir, file };
+  };
+  const profiles = () =>
+    new Set(
+      readdirSync(tmpdir()).filter((n) => n.startsWith(`jux-chrome-${process.pid}-`)),
+    );
+
+  it('a binary that exits at once gives its exit code, and leaves no profile', async () => {
+    const before = profiles();
+    const err = await launchChrome({ executablePath: '/usr/bin/false' }).catch(
+      (e: Error) => e,
+    );
+    expect((err as Error).message).toMatch(/exited with code 1 before it was ready/);
+    expect(profiles()).toEqual(before);
+  });
+
+  it('a missing shared library is named with the apt line', async () => {
+    const { dir, file } = tmpScript(
+      'echo "$0: error while loading shared libraries: libnss3.so: cannot open shared object file" >&2; exit 127',
+    );
+    try {
+      const before = profiles();
+      const err = await launchChrome({ executablePath: file }).catch((e: Error) => e);
+      expect((err as Error).message).toMatch(/code 127/);
+      expect((err as Error).message).toMatch(/libnss3\.so/);
+      expect((err as Error).message).toMatch(/apt-get install/);
+      expect(profiles()).toEqual(before);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a handshake that never answers is killed, cleaned up, and explained', async () => {
+    const before = profiles();
+    process.env.JUX_FAKE_CHROME = 'hang';
+    let pid = 0;
+    const spy: SpawnFn = ((...a: Parameters<SpawnFn>) => {
+      const p = (childSpawn as unknown as SpawnFn)(...a);
+      pid = p.pid!;
+      return p;
+    }) as SpawnFn;
+    try {
+      const err = await launchChrome({
+        executablePath: fakeChrome,
+        handshakeTimeoutMs: 200,
+        spawn: spy,
+      }).catch((e: Error) => e);
+      expect((err as Error).message).toMatch(/did not answer within 200 ms/);
+      expect((err as Error).message).toMatch(/jux browser install|JUX_CHROME/);
+      await new Promise((r) => setTimeout(r, 100));
+      expect(alive(pid)).toBe(false);
+      expect(profiles()).toEqual(before);
+    } finally {
+      delete process.env.JUX_FAKE_CHROME;
+    }
+  });
+
+  it('a spawn that throws synchronously leaves no profile', async () => {
+    const before = profiles();
+    const boom: SpawnFn = (() => {
+      throw new Error('spawn blew up');
+    }) as unknown as SpawnFn;
+    await expect(launchChrome({ executablePath: 'x', spawn: boom })).rejects.toThrow(
+      /spawn blew up/,
+    );
+    expect(profiles()).toEqual(before);
+  });
+
+  it('the ENOENT failure removes its profile', async () => {
+    const before = profiles();
+    await launchChrome({ executablePath: '/nonexistent/chrome' }).catch(() => {});
+    expect(profiles()).toEqual(before);
+  });
+});
+
+describe('stale profile sweep', () => {
+  it('removes old profiles of dead pids and nothing else', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'jux-sweep-'));
+    const dead = await new Promise<number>((resolve) => {
+      const c = childSpawn(process.execPath, ['-e', '']);
+      c.once('exit', () => resolve(c.pid!));
+    });
+    const mk = (name: string, ageMin: number) => {
+      const d = path.join(root, name);
+      mkdirSync(d);
+      const t = new Date(Date.now() - ageMin * 60_000);
+      utimesSync(d, t, t);
+      return d;
+    };
+    const staleDead = mk(`jux-chrome-${dead}-abc123`, 30);
+    const youngDead = mk(`jux-chrome-${dead}-young1`, 1);
+    const oldLive = mk(`jux-chrome-${process.pid}-live12`, 30);
+    const legacy = mk('jux-chrome-LEGACY', 30);
+    const other = mk('something-else', 30);
+    try {
+      await sweepStaleProfiles(root);
+      expect(existsSync(staleDead)).toBe(false);
+      for (const kept of [youngDead, oldLive, legacy, other])
+        expect(existsSync(kept)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

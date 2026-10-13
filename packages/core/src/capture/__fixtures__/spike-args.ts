@@ -1,5 +1,4 @@
-// Generated from the byte-identity spike (args.mjs launchArgs('/U', 'pipe')): the
-// exact Chrome command line proven byte-identical to Playwright. Do not edit by hand.
+// Snapshot of args.mjs launchArgs('/U','pipe'), verified equal on 2026-10-13.
 export const SPIKE_ARGS: readonly string[] = [
   '--disable-field-trial-config',
   '--disable-background-networking',
