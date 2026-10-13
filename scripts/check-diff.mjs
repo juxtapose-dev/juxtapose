@@ -13,7 +13,7 @@ import { startCorpusServer } from './structural-corpus/server.mjs';
 
 const exec = promisify(execFile);
 const cli = path.resolve(import.meta.dirname, '../packages/cli/dist/index.js');
-const probe = path.resolve(import.meta.dirname, 'structural-corpus/no-playwright.mjs');
+const probe = path.resolve(import.meta.dirname, 'structural-corpus/no-browser.mjs');
 const project = mkdtempSync(path.join(tmpdir(), 'jux-diff-'));
 const server = await startCorpusServer();
 let failed = 0;
@@ -47,19 +47,20 @@ check(
   'identical snaps exit 0',
 );
 
-// No browser, and no browser DRIVER: the probe makes loading playwright a
+// No browser, and no browser launcher: the probe makes loading the Chrome launcher a
 // crash (exit 3), so exit 1 here proves the import never happened.
 const noBrowser = await jux(['diff', 'before', 'after', '--json'], {
+  JUX_CACHE_DIR: '/nonexistent',
   PLAYWRIGHT_BROWSERS_PATH: '/nonexistent',
   NODE_OPTIONS: `--import ${probe}`,
 });
-check(noBrowser.code === 1, 'different snaps exit 1 without loading playwright');
+check(noBrowser.code === 1, 'different snaps exit 1 without launching a browser');
 const probeWorks = await jux(['snap', `${server.url}/op/noop`, '--as', 'probe'], {
   NODE_OPTIONS: `--import ${probe}`,
 });
 check(
-  probeWorks.code === 3 && /no-playwright probe/.test(probeWorks.err),
-  'the probe itself fires for a command that does load playwright',
+  probeWorks.code === 3 && /no-browser probe/.test(probeWorks.err),
+  'the probe itself fires for a command that does launch a browser',
 );
 
 // Paths work as well as names.
@@ -133,6 +134,7 @@ check(
 // --crops is the real tier-3 now: strips on disk, paths listed, exit as diff.
 const { existsSync, readFileSync } = await import('node:fs');
 const crops = await jux(['diff', 'before', 'after', '--crops', '--json'], {
+  JUX_CACHE_DIR: '/nonexistent',
   PLAYWRIGHT_BROWSERS_PATH: '/nonexistent',
   NODE_OPTIONS: `--import ${probe}`,
 });
@@ -151,7 +153,7 @@ check(
     readFileSync(cropAbs).subarray(1, 4).toString('latin1') === 'PNG' &&
     vc.crops.every((c) => c.width <= 512 * 2 + 4 && c.height <= 512) &&
     Object.keys(vc.crops[0]).join() === 'file,region,box,scale,width,height,explained',
-  '--crops writes PNG strips, lists relative paths, exits 1, loads no playwright',
+  '--crops writes PNG strips, lists relative paths, exits 1, launches no browser',
 );
 const cropsHuman = await jux(['diff', 'before', 'after', '--crops']);
 check(

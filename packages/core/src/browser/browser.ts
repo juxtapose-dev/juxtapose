@@ -7,7 +7,7 @@
 
 import type { Viewport } from '../types.js';
 import { CdpConnection } from './cdp.js';
-import { launchChrome, type SpawnFn } from './launch.js';
+import type { SpawnFn } from './launch.js';
 import { CdpPage, type Page } from './page.js';
 
 /**
@@ -100,6 +100,10 @@ export class Browser {
     args?: string[];
     spawn?: SpawnFn;
   }): Promise<Browser> {
+    // Lazy: the launcher is the only module that spawns Chrome, and `jux diff`
+    // (which imports core for its pixel code) must never load it. The
+    // no-browser probe in scripts/check-diff.mjs holds that line.
+    const { launchChrome } = await import('./launch.js');
     const launched = await launchChrome(opts);
     try {
       const { product } = await launched.connection.send<{ product: string }>(
