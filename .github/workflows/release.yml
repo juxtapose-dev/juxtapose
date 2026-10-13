@@ -63,4 +63,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # No NODE_AUTH_TOKEN: auth is the OIDC token above. Each package
           # needs a trusted publisher on npmjs.com naming this workflow.
-          NPM_CONFIG_PROVENANCE: 'true'
+          # The registry rejects provenance from a private repo (E422
+          # "Unsupported GitHub Actions source repository visibility",
+          # 2026-10-13), so attest only once the repo is public.
+          NPM_CONFIG_PROVENANCE: ${{ github.event.repository.private && 'false' || 'true' }}
