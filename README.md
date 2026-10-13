@@ -76,18 +76,171 @@ set it chose and why; `--all` forces a full run.
 
 ## Commands
 
-| command                    | what it does                                          |
-| -------------------------- | ----------------------------------------------------- |
-| `jux init`                 | set up config and capture the first baselines         |
-| `jux run`                  | capture affected stories and compare to baselines     |
-| `jux run --all`            | capture everything, skipping change analysis          |
-| `jux approve --all`        | promote the last run's captures to baselines          |
-| `jux approve --story <id>` | approve one story                                     |
-| `jux check`                | exit non-zero if anything still needs review — for CI |
-| `jux handoff <id>`         | print an agent-ready prompt for one failing story     |
+| command                       | what it does                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| `jux init`                    | set up config and capture the first baselines                                    |
+| `jux run`                     | capture affected stories and compare to baselines                                |
+| `jux run --all`               | capture everything, skipping change analysis                                     |
+| `jux approve --all`           | promote the last run's captures to baselines                                     |
+| `jux approve --story <id>`    | approve one story                                                                |
+| `jux check`                   | exit non-zero if anything still needs review — for CI                            |
+| `jux handoff <id>`            | print an agent-ready prompt for one failing story                                |
+| `jux snap <url>… --as <name>` | capture a page (or several with `--as-prefix`): pixels + structure, no workbench |
+| `jux diff <a> <b> --json`     | tier-0 verdict: what changed between two snaps, no browser                       |
 
 All commands accept `--json` for machine-readable output. `jux run` exits
 non-zero when any story fails, is new, or has a stale baseline.
+
+## Agent loop: snap → edit → snap → diff
+
+Pixels say _where_ something changed. The verdict says _what_: which element,
+which property, old → new, and whether that explains every changed pixel.
+
+```bash
+jux snap http://localhost:5173/settings --as before
+# …edit code…
+jux snap http://localhost:5173/settings --as after
+jux diff before after
+```
+
+Exit 0 means identical, 1 means different, 2 is a usage error, 3 means the
+tool or environment failed (no browser, an input that will not read) — never
+approve on a 3. `jux diff` does not launch a browser. The outputs below are
+real, from the mutation corpus (`scripts/structural-corpus.mjs`): one page, one
+CSS property changed per variant.
+
+Human form:
+
+```
+style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure explains the changed region.
+
+  button[name="Save"] color #ffffff → #fef08a
+
+next: jux diff before after-color --crops  (opens the pixels)
+```
+
+With `--json`, the same verdict as one object, byte-identical for the same
+inputs:
+
+```json
+{
+  "schema": "juxtapose.verdict/v1",
+  "classification": "style-only",
+  "styleTags": ["color"],
+  "summary": "style-only (color): button[name=\"Save\"] color #ffffff→#fef08a. Structure explains the changed region.",
+  "deltas": [
+    {
+      "kind": "style",
+      "el": "button[name=\"Save\"]",
+      "prop": "color",
+      "from": "rgb(255, 255, 255)",
+      "to": "rgb(254, 240, 138)"
+    }
+  ],
+  "deltaCount": 1,
+  "coverage": 1,
+  "explained": "full",
+  "unexplainedRegions": [],
+  "flags": [],
+  "signature": "4ea08e7155e04f1e8e213dacfcc01e7aa2292ab257df85a8840def0d566632d4",
+  "escalate": {
+    "command": "jux diff before after-color --crops"
+  }
+}
+```
+
+### Why structure: a change the pixel diff cannot see
+
+A `background-color` change from `#2563eb` to `#1d4ed8` is under the pixel
+diff's tolerance: the images differ, but nothing is marked. The verdict still
+names the property:
+
+```
+style-only (color): button[name="Save"] background-color #2563eb→#1d4ed8. Pixel diff below tolerance; structure explains it.
+
+  button[name="Save"] background-color #2563eb → #1d4ed8
+
+flags: sub-threshold
+
+next: jux diff before after-bg --crops  (opens the pixels)
+```
+
+`flags: sub-threshold` is how you know the pixels alone would have told you
+nothing; the deltas are the change.
+
+### Several pages at once
+
+One browser launch, one snap per page, then one verdict per page:
+
+```bash
+jux snap $URL/op/home $URL/op/settings --as-prefix before
+# …edit code…
+jux snap $URL/op/home $URL/op/settings --as-prefix after
+jux diff --prefix before after
+```
+
+```
+2 pages: 1 changed, 1 identical
+
+op-settings: style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure explains the changed region.
+
+  button[name="Save"] color #ffffff → #fef08a
+
+next: jux diff before-op-settings after-op-settings --crops  (opens the pixels)
+
+op-home: identical: images byte-identical, no structural change.
+```
+
+`--json` prints the page set (`juxtapose.verdict-set/v1`, below).
+
+### The verdict (`juxtapose.verdict/v1`)
+
+| field                | meaning                                                                                                                                                                                                                                                                                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`             | `juxtapose.verdict/v1`                                                                                                                                                                                                                                                                                               |
+| `classification`     | `identical` (byte-identical images and no deltas — never just "0 changed pixels"; if the pixels contradict the caller's `imagesIdentical`, the pixels win), `render-drift`, `dimension-change`, `element-added`, `element-removed`, `reflow`, `geometry`, `text-only`, `style-only`, `attr-only`, `mixed`, `unknown` |
+| `styleTags`          | for `style-only`/`mixed`: `color`, `typography`, `spacing`, `border`, `effects`                                                                                                                                                                                                                                      |
+| `summary`            | templated, ≤ 300 chars                                                                                                                                                                                                                                                                                               |
+| `deltas`             | at most 20 typed facts (`text`, `style`, `attr`, `added`, `removed`, `moved`, `resized`, `shift`), and only the prefix that keeps the verdict ≤ 1,500 chars (labels ≤ 60, values ≤ 200)                                                                                                                              |
+| `deltaCount`         | total deltas found, including any not listed                                                                                                                                                                                                                                                                         |
+| `coverage`           | fraction of changed-region area touching a delta's element                                                                                                                                                                                                                                                           |
+| `explained`          | `full` (coverage ≥ 0.98), `partial` (≥ 0.5) or `none`                                                                                                                                                                                                                                                                |
+| `unexplainedRegions` | changed regions no delta accounts for: canvas, image content, or rendering drift (the prefix that fits the 1,500-char budget; `coverage` covers all)                                                                                                                                                                 |
+| `flags`              | `element-removed`, `text-changed`, `large-reflow`, `unexplained-pixels`, `sub-threshold` (the images differ but the pixel diff marked nothing; the deltas are the change), `structure-truncated`, `no-baseline-structure`, `no-current-structure`, `below-fold`                                                      |
+| `signature`          | sha256 of the classification and the deltas with elements abstracted to role/tag — the same change on two pages shares one                                                                                                                                                                                           |
+| `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run. `--crops` is not implemented yet; it prints the two image paths to open instead                                                                                                                        |
+
+The verdict never decides pass/fail — the pixel hash does. It explains a
+failure so an agent can compare the deltas with what it meant to change.
+`jux run` attaches the same object to each failing story as
+`results[].structural`, and `jux handoff` leads with it.
+
+### The page set (`juxtapose.verdict-set/v1`)
+
+`jux diff --prefix before after --json` pairs `before-<slug>` with
+`after-<slug>`. Slugs are path-based (path, query and fragment), so the
+pairing survives a dev-server port change.
+
+| field     | meaning                                                                                                                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema`  | `juxtapose.verdict-set/v1`                                                                                                                                                                              |
+| `pages`   | `{ slug, a, b, verdict }` per paired page, sorted by slug; `verdict` is a `juxtapose.verdict/v1`                                                                                                        |
+| `missing` | `{ slug, have, want }` for a slug present under only one prefix: `want` is the snap name to take                                                                                                        |
+| `errors`  | `{ slug, code, file }` for a pair that could not be compared. `code` is `snap-missing`, `sidecar-undecodable` or `image-undecodable`; `file` is relative to the snaps dir. Never contains OS error text |
+| `summary` | `{ identical, different, missing, errored }`                                                                                                                                                            |
+
+### Exit codes
+
+| code | meaning                                                                               |
+| ---- | ------------------------------------------------------------------------------------- |
+| 0    | identical                                                                             |
+| 1    | different (for a page set: any page `different` or `missing`)                         |
+| 2    | usage error: bad flags, a snap name collision, an input that cannot be a snap         |
+| 3    | the tool or environment failed: no browser, an unreadable input, any `errors[]` entry |
+
+For a page set, 3 beats 1 beats 0. One bad pair does not stop the others from
+being verdicted. An unexpected crash prints one line and exits 3; set
+`JUX_DEBUG=1` to also print the stack trace.
 
 ## In CI
 
