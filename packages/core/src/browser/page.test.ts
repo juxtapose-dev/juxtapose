@@ -2,8 +2,9 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import sharp from 'sharp';
 import { Browser, type BrowserContext } from './browser.js';
-import { TimeoutError, type Page } from './page.js';
-import { SendTimeoutError } from './cdp.js';
+import { CdpPage, PageCrashedError, TimeoutError, type Page } from './page.js';
+import { CdpConnection, SendTimeoutError, TargetClosedError } from './cdp.js';
+import type { Transport } from './transport.js';
 import { launchChrome, type LaunchedChrome } from './launch.js';
 import { chromeForTests } from './__tests__/helpers.js';
 
@@ -29,6 +30,8 @@ const PAGES: Record<string, string> = {
   '/worker':
     '<!doctype html><body><script>const w=new Worker(URL.createObjectURL(new Blob(["postMessage(6*7)"],{type:"text/javascript"})));window.__fromWorker=new Promise((r)=>{w.onmessage=(e)=>r(e.data)})</script></body>',
   '/hang': '', // never answered
+  // Commits at once; its load waits forever on an image nobody answers.
+  '/stuck-load': '<!doctype html><body><img src="/hang"></body>',
 };
 
 beforeAll(async () => {
@@ -75,7 +78,52 @@ async function withPage(
   }
 }
 
+/** Resolves once the main frame has committed `url` (load may still be pending). */
+async function committed(page: Page, url: string): Promise<void> {
+  for (let i = 0; i < 200 && page.url() !== url; i++)
+    await new Promise((r) => setTimeout(r, 10));
+  expect(page.url()).toBe(url);
+}
+
+/** Expect `p` to reject within `ms`; returns the error. */
+async function rejectsWithin(p: Promise<unknown>, ms: number): Promise<unknown> {
+  const t0 = performance.now();
+  const err = await p.then(
+    () => new Error('resolved'),
+    (e: unknown) => e,
+  );
+  expect(performance.now() - t0).toBeLessThan(ms);
+  expect(err).not.toEqual(new Error('resolved'));
+  return err;
+}
+
 describe.skipIf(!chrome)('CdpPage', () => {
+  it('url() keeps the fragment', () =>
+    withPage(async (page) => {
+      await page.goto(`${base}/plain#frag`);
+      expect(page.url()).toBe(`${base}/plain#frag`);
+    }));
+  it('closing the context rejects a committed goto and in-flight evaluate within 1 s', () =>
+    withPage(async (page, ctx) => {
+      const url = `${base}/stuck-load`;
+      const nav = page.goto(url, { timeout: 20_000 });
+      await committed(page, url);
+      const ev = page.evaluate('new Promise(() => {})', undefined, { timeout: 20_000 });
+      void ctx.close();
+      expect(await rejectsWithin(nav, 1000)).toBeInstanceOf(TargetClosedError);
+      expect(await rejectsWithin(ev, 1000)).toBeInstanceOf(TargetClosedError);
+    }));
+  it('a renderer crash rejects in-flight evaluate and goto within 1 s', () =>
+    withPage(async (page) => {
+      const url = `${base}/stuck-load`;
+      const nav = page.goto(url, { timeout: 20_000 });
+      await committed(page, url);
+      const ev = page.evaluate('new Promise(() => {})', undefined, { timeout: 20_000 });
+      void page.send('Page.crash').catch(() => {});
+      expect(await rejectsWithin(ev, 1000)).toBeInstanceOf(PageCrashedError);
+      expect(await rejectsWithin(nav, 1000)).toBeInstanceOf(PageCrashedError);
+      await expect(page.evaluate('1')).rejects.toBeInstanceOf(PageCrashedError);
+    }));
   it('goto waits for load, evaluate round-trips JSON, url() is the final url', () =>
     withPage(async (page) => {
       await page.goto(`${base}/plain`, { waitUntil: 'load' });
@@ -260,6 +308,7 @@ describe.skipIf(!chrome)('Browser over a borrowed connection', () => {
 
   it('closing a context (and a timed-out goto) leaves no listeners or pending sends behind', async () => {
     const before = launched.connection.handlerKeyCount;
+    const beforeTotal = launched.connection.handlerCount;
     const ctx = await borrowed.newContext({ viewport: { width: 300, height: 200 } });
     const page = await ctx.newPage();
     page.onMainResponse(() => {});
@@ -269,13 +318,112 @@ describe.skipIf(!chrome)('Browser over a borrowed connection', () => {
     );
     await ctx.close();
     expect(launched.connection.handlerKeyCount).toBe(before);
+    expect(launched.connection.handlerCount).toBe(beforeTotal);
     expect(launched.connection.pendingCount).toBe(0);
     await expect(page.evaluate('1')).rejects.toThrow(/closed/);
+  });
+
+  it('every listener goes with its page: the handler total returns to baseline', async () => {
+    const before = launched.connection.handlerCount;
+    const ctx = await borrowed.newContext({ viewport: { width: 300, height: 200 } });
+    for (let i = 0; i < 3; i++) {
+      const page = await ctx.newPage();
+      page.onMainResponse(() => {});
+      await page.goto(`${base}/plain`);
+    }
+    expect(launched.connection.handlerCount).toBeGreaterThan(before);
+    await ctx.close();
+    expect(launched.connection.handlerCount).toBe(before);
   });
 
   it('isConnected() turns false once the browser is gone', async () => {
     expect(borrowed.isConnected()).toBe(true);
     await borrowed.close();
     expect(borrowed.isConnected()).toBe(false);
+  });
+});
+
+describe.skipIf(!chrome)('browser death', () => {
+  it('killing chrome rejects a committed goto and in-flight evaluate within 1 s', async () => {
+    const launched = await launchChrome({ executablePath: chrome!.path });
+    const b = Browser.fromConnection(launched.connection, {
+      version: 'HeadlessChrome/1.0.0.0',
+      close: launched.close,
+    });
+    try {
+      const ctx = await b.newContext({ viewport: { width: 300, height: 200 } });
+      const page = await ctx.newPage();
+      const url = `${base}/stuck-load`;
+      const nav = page.goto(url, { timeout: 20_000 });
+      await committed(page, url);
+      const ev = page.evaluate('new Promise(() => {})', undefined, { timeout: 20_000 });
+      process.kill(launched.pid, 'SIGKILL');
+      expect(await rejectsWithin(nav, 1000)).toBeInstanceOf(TargetClosedError);
+      expect(await rejectsWithin(ev, 1000)).toBeInstanceOf(TargetClosedError);
+      expect(b.isConnected()).toBe(false);
+    } finally {
+      await b.close();
+    }
+  });
+});
+
+/** Answers every command with {} unless `answer` says otherwise; events on demand. */
+class FakeChrome implements Transport {
+  onMessage: ((message: string) => void) | null = null;
+  onClose: ((reason?: string) => void) | null = null;
+  answer: (m: { id: number; method: string }) => object | undefined = () => ({});
+  send(message: string): void {
+    const m = JSON.parse(message) as { id: number; method: string };
+    const result = this.answer(m);
+    if (result) this.reply(m.id, result);
+  }
+  reply(id: number, result: object): void {
+    this.onMessage?.(JSON.stringify({ id, result }));
+  }
+  event(method: string, params: object, sessionId?: string): void {
+    this.onMessage?.(JSON.stringify({ method, params, sessionId }));
+  }
+  close(): void {
+    this.onClose?.('closed');
+  }
+}
+
+describe('CdpPage.goto (fake browser)', () => {
+  it("a stale load from the previous document does not end goto; the new document's load does", async () => {
+    const fake = new FakeChrome();
+    const conn = new CdpConnection(fake);
+    const page = await CdpPage.create(conn, 'T', 'S', {
+      viewport: { width: 300, height: 200 },
+      blockServiceWorkers: false,
+      os: 'linux',
+    });
+    const staleLoad = () =>
+      fake.event(
+        'Page.lifecycleEvent',
+        { name: 'load', frameId: 'T', loaderId: 'OLD' },
+        'S',
+      );
+    fake.answer = (m) => {
+      if (m.method === 'Page.navigate') {
+        staleLoad(); // before the reply
+        fake.reply(m.id, { frameId: 'T', loaderId: 'NEW' });
+        setTimeout(staleLoad, 10); // and after goto has seen the reply
+        return undefined;
+      }
+      if (m.method === 'Page.getFrameTree')
+        return { frameTree: { frame: { url: 'http://x/next' } } };
+      return {};
+    };
+    let done = false;
+    const nav = page.goto('http://x/next', { timeout: 2000 }).then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(done).toBe(false);
+    fake.event(
+      'Page.lifecycleEvent',
+      { name: 'load', frameId: 'T', loaderId: 'NEW' },
+      'S',
+    );
+    await nav;
+    expect(page.url()).toBe('http://x/next');
   });
 });

@@ -18,6 +18,14 @@ export class TimeoutError extends Error {
   }
 }
 
+/** The renderer died (OOM, Page.crash, a GPU fault); the page cannot be used again. */
+export class PageCrashedError extends Error {
+  constructor() {
+    super('jux: the page crashed (its renderer process is gone)');
+    this.name = 'PageCrashedError';
+  }
+}
+
 export interface Page {
   goto(url: string, opts?: { waitUntil?: 'load'; timeout?: number }): Promise<void>;
   url(): string;
@@ -271,6 +279,15 @@ const SELECTOR_VISIBLE = `function (selector) {
   return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
 }`;
 
+interface FrameInfo {
+  url: string;
+  urlFragment?: string;
+  parentId?: string;
+}
+
+/** CDP's Frame.url excludes the fragment; Playwright's page.url() includes it. */
+const frameUrl = (f: FrameInfo) => f.url + (f.urlFragment ?? '');
+
 function serialize(arg: unknown): string {
   return arg === undefined ? 'undefined' : JSON.stringify(arg);
 }
@@ -279,7 +296,16 @@ export class CdpPage implements Page {
   private currentUrl = 'about:blank';
   private viewport: Viewport;
   private closed = false;
-  private crashed = false;
+  /**
+   * Why the page is unusable, once it is. `goneP` rejects with it at that
+   * moment and every send, evaluate and goto races it, so work already in
+   * flight fails at once: Chrome never answers a command on a crashed or
+   * detached session, and a committed navigation whose `load` never comes
+   * would otherwise hold a pool worker for its full timeout.
+   */
+  private goneError: Error | null = null;
+  private rejectGone!: (e: Error) => void;
+  private readonly goneP: Promise<never>;
   /** Every connection listener this page holds; dispose() removes them all. */
   private readonly offs: (() => void)[] = [];
 
@@ -290,12 +316,14 @@ export class CdpPage implements Page {
     viewport: Viewport,
   ) {
     this.viewport = viewport;
+    this.goneP = new Promise<never>((_, reject) => (this.rejectGone = reject));
+    this.goneP.catch(() => {}); // nobody racing it is not an unhandled rejection
     this.offs.push(
       connection.on(
         'Page.frameNavigated',
         (p) => {
-          const f = (p as { frame: { url: string; parentId?: string } }).frame;
-          if (!f.parentId) this.currentUrl = f.url;
+          const f = (p as { frame: FrameInfo }).frame;
+          if (!f.parentId) this.currentUrl = frameUrl(f);
         },
         sessionId,
       ),
@@ -313,16 +341,17 @@ export class CdpPage implements Page {
       ),
       connection.on(
         'Inspector.targetCrashed',
-        () => {
-          this.crashed = true;
-        },
+        () => this.fail(new PageCrashedError()),
         sessionId,
       ),
       // Browser-session event: the target closed under us (context disposed,
-      // window.close(), browser gone). Drop our listeners with it.
+      // window.close()). Drop our listeners with it.
       connection.on('Target.detachedFromTarget', (p) => {
-        if ((p as { sessionId?: string }).sessionId === this.sessionId) this.dispose();
+        if ((p as { sessionId?: string }).sessionId !== this.sessionId) return;
+        this.fail(new TargetClosedError('target closed'));
+        this.dispose();
       }),
+      connection.onClosed((e) => this.fail(e)),
     );
   }
 
@@ -364,9 +393,8 @@ export class CdpPage implements Page {
   }
 
   send<T = unknown>(method: string, params: object = {}): Promise<T> {
-    const gone = this.gone(method);
-    if (gone) return Promise.reject(gone);
-    return this.connection.send<T>(method, params, this.sessionId);
+    if (this.goneError) return Promise.reject(this.goneError);
+    return this.guard(this.connection.send<T>(method, params, this.sessionId));
   }
 
   url(): string {
@@ -374,6 +402,7 @@ export class CdpPage implements Page {
   }
 
   onMainResponse(handler: (status: number) => void): () => void {
+    if (this.closed) return () => {};
     const off = this.connection.on(
       'Network.responseReceived',
       (p) => {
@@ -428,8 +457,7 @@ export class CdpPage implements Page {
       );
     });
     const navigated = (async () => {
-      const gone = this.gone('Page.navigate');
-      if (gone) throw gone;
+      if (this.goneError) throw this.goneError;
       // The send's own cap sits past the goto timeout so the TimeoutError
       // naming the url is the one the caller sees.
       const res = await this.connection.send<{ loaderId?: string; errorText?: string }>(
@@ -448,16 +476,16 @@ export class CdpPage implements Page {
       await loaded;
     })();
     try {
-      await Promise.race([navigated, expired]);
+      await Promise.race([navigated, expired, this.goneP]);
     } finally {
       clearTimeout(timer);
       off();
       navigated.catch(() => {}); // the loser of the race is not an unhandled rejection
     }
-    const { frameTree } = await this.send<{ frameTree: { frame: { url: string } } }>(
+    const { frameTree } = await this.send<{ frameTree: { frame: FrameInfo } }>(
       'Page.getFrameTree',
     );
-    this.currentUrl = frameTree.frame.url;
+    this.currentUrl = frameUrl(frameTree.frame);
   }
 
   async evaluate<R, A = undefined>(
@@ -467,16 +495,17 @@ export class CdpPage implements Page {
   ): Promise<R> {
     const expression =
       typeof fn === 'string' ? fn : `(${fn.toString()})(${serialize(arg)})`;
-    const gone = this.gone('Runtime.evaluate');
-    if (gone) throw gone;
-    const r = await this.connection.send<{
-      result: { value?: R };
-      exceptionDetails?: { text: string; exception?: { description?: string } };
-    }>(
-      'Runtime.evaluate',
-      { expression, awaitPromise: true, returnByValue: true },
-      this.sessionId,
-      { timeout: opts.timeout ?? DEFAULT_TIMEOUT_MS },
+    if (this.goneError) throw this.goneError;
+    const r = await this.guard(
+      this.connection.send<{
+        result: { value?: R };
+        exceptionDetails?: { text: string; exception?: { description?: string } };
+      }>(
+        'Runtime.evaluate',
+        { expression, awaitPromise: true, returnByValue: true },
+        this.sessionId,
+        { timeout: opts.timeout ?? DEFAULT_TIMEOUT_MS },
+      ),
     );
     if (r.exceptionDetails) {
       throw new Error(
@@ -615,12 +644,20 @@ export class CdpPage implements Page {
   dispose(): void {
     if (this.closed) return;
     this.closed = true;
+    this.fail(new TargetClosedError('page closed'));
     for (const off of this.offs.splice(0)) off();
   }
 
-  private gone(method: string): Error | null {
-    if (this.closed) return new TargetClosedError('page closed', method);
-    if (this.crashed) return new TargetClosedError('renderer crashed', method);
-    return null;
+  /** First cause wins: a crash followed by the context closing still reports the crash. */
+  private fail(e: Error): void {
+    if (this.goneError) return;
+    this.goneError = e;
+    this.rejectGone(e);
+  }
+
+  /** `p`, unless the page goes first. */
+  private guard<T>(p: Promise<T>): Promise<T> {
+    p.catch(() => {}); // the loser of the race is not an unhandled rejection
+    return Promise.race([p, this.goneP]);
   }
 }

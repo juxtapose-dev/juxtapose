@@ -1,5 +1,5 @@
 export { Browser, BrowserContext, type ContextOptions } from './browser.js';
-export { CdpPage, TimeoutError, type Page } from './page.js';
+export { CdpPage, PageCrashedError, TimeoutError, type Page } from './page.js';
 export {
   CdpConnection,
   CdpError,

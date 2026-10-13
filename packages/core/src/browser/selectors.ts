@@ -11,15 +11,20 @@
 // cannot change a pixel; closed roots are invisible to Playwright too.
 
 const PLAYWRIGHT_ONLY = [
-  /^[a-zA-Z-]+=/, // text=, css=, xpath=, id=, nth=, internal:…= (engine prefix)
+  /^[a-zA-Z_-]+=/, // text=, css=, xpath=, id=, nth=, _react=, _vue= (engine prefix)
   /^internal:/,
   />>/,
   /:(has-text|text|text-is|text-matches|visible|nth-match|light|above|below|left-of|right-of|near)\(/,
   /:visible\b/,
 ];
 
+// Quoted strings are attribute values, never syntax: `[title=">>"]` is CSS.
+// Emptying them (quotes kept) leaves `text="x"` and `:has-text("x")` caught.
+const QUOTED = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
+
 export function isCssSelector(selector: string): boolean {
-  return !PLAYWRIGHT_ONLY.some((re) => re.test(selector));
+  const syntax = selector.replace(QUOTED, '""');
+  return !PLAYWRIGHT_ONLY.some((re) => re.test(syntax));
 }
 
 export function assertCssSelector(selector: string): void {

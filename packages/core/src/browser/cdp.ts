@@ -96,6 +96,27 @@ export class CdpConnection {
     return this.handlers.size;
   }
 
+  /** Total registered handlers, summed over every key; a leak test's yardstick. */
+  get handlerCount(): number {
+    let n = 0;
+    for (const set of this.handlers.values()) n += set.size;
+    return n;
+  }
+
+  /**
+   * Call `listener` once when the connection closes (at once if it already
+   * has); returns the unsubscribe. Pages use it to fail in-flight work fast
+   * instead of waiting out each send's timeout.
+   */
+  onClosed(listener: (e: Error) => void): () => void {
+    if (this._closed) {
+      listener(new TargetClosedError(this.closeReason));
+      return () => {};
+    }
+    this.closeWaiters.add(listener);
+    return () => this.closeWaiters.delete(listener);
+  }
+
   allocateId(): number {
     return ++this.lastId;
   }

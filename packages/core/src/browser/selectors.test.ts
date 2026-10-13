@@ -49,3 +49,14 @@ describe('isCssSelector', () => {
     );
   });
 });
+
+describe('isCssSelector edge cases', () => {
+  it('ignores Playwright-looking text inside quoted attribute values', () => {
+    for (const s of ['[title=">>"]', "[data-x='text=a']", '[aria-label="a:visible"]'])
+      expect(isCssSelector(s), s).toBe(true);
+  });
+  it('catches underscore engines like _react= and _vue=', () => {
+    for (const s of ['_react=Button', '_vue=list-item'])
+      expect(isCssSelector(s), s).toBe(false);
+  });
+});
