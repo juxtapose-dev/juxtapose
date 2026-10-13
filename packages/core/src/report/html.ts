@@ -10,7 +10,7 @@
 // pull request who has checked nothing out.
 
 import type { RunReport, DiffResult } from '../types.js';
-import { formatPercent } from './format.js';
+import { describeMagnitude } from './format.js';
 
 export interface HtmlReportOptions {
   report: RunReport;
@@ -80,7 +80,7 @@ function storySection(
   <h2>
     <span class="badge ${result.status}">${statusLabel(result.status)}</span>
     ${escapeHtml(result.storyId)}
-    ${result.status === 'fail' ? `<span class="pct">${escapeHtml(formatPercent(result.mismatchPercent))} changed</span>` : ''}
+    ${result.status === 'fail' ? `<span class="pct">${escapeHtml(describeMagnitude(result))}</span>` : ''}
   </h2>
   ${result.error ? `<p class="error">${escapeHtml(result.error)}</p>` : ''}
   ${

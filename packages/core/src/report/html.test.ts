@@ -155,3 +155,14 @@ describe('buildHtmlReport', () => {
     expect(html).toContain('1/1 captured');
   });
 });
+
+describe('sub-threshold changes', () => {
+  it('says the diff marked nothing instead of "0% changed"', () => {
+    const html = buildHtmlReport({
+      report: report([result('a', 'fail')]),
+      images: withImages('a'),
+    });
+    expect(html).toContain('subtle change, diff marks no pixels');
+    expect(html).not.toContain('0% changed');
+  });
+});
