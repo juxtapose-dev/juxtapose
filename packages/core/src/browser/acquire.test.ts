@@ -40,7 +40,10 @@ describe.skipIf(!chrome)('acquireBrowser', () => {
     outsideCi(env);
     delete env.JUX_NO_DAEMON;
     let seen: string | undefined;
+    // JUX_CACHE_DIR points nowhere, so name the binary: without it this passed
+    // only where Playwright's ms-playwright cache happened to hold a match.
     await acquireBrowser({
+      chrome: chrome!.path,
       env,
       connectWarm: (o) => {
         seen = o.stateDir;
