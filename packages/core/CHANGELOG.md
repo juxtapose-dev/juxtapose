@@ -1,5 +1,12 @@
 # @juxtapose/core
 
+## 0.6.0
+
+### Minor Changes
+
+- 8ea2e71: The CDP driver, launch flags, installer and warm-browser daemon are exported on their own as `@juxtapose/core/browser`. That entry imports nothing else from core, and the main entry still exports everything it did.
+- a4593ae: Keep one browser warm between `jux snap`, `jux run` and `jux init` invocations (per user and rendering environment, idle exit after 10 minutes). It is off in CI, on Windows, with `--no-daemon`, and with `JUX_NO_DAEMON=1`. Captures are byte-identical warm and cold. `jux browser start|stop|status` manage it. The daemon's socket and state live in `JUX_STATE_DIR`, which defaults to the cache dir (`JUX_CACHE_DIR`) so existing setups do not move.
+
 ## 0.5.0
 
 ### Minor Changes

@@ -1,5 +1,19 @@
 # @juxtapose/cli
 
+## 0.6.0
+
+### Minor Changes
+
+- a4593ae: Keep one browser warm between `jux snap`, `jux run` and `jux init` invocations (per user and rendering environment, idle exit after 10 minutes). It is off in CI, on Windows, with `--no-daemon`, and with `JUX_NO_DAEMON=1`. Captures are byte-identical warm and cold. `jux browser start|stop|status` manage it. The daemon's socket and state live in `JUX_STATE_DIR`, which defaults to the cache dir (`JUX_CACHE_DIR`) so existing setups do not move.
+
+### Patch Changes
+
+- Updated dependencies [8ea2e71]
+- Updated dependencies [a4593ae]
+  - @juxtapose/core@0.6.0
+  - @juxtapose/adapter-ladle@0.3.1
+  - @juxtapose/adapter-storybook@0.3.1
+
 ## 0.5.0
 
 ### Minor Changes
