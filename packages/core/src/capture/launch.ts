@@ -54,7 +54,7 @@ export interface LaunchOptions {
   headless?: boolean;
 }
 
-/** Build the Playwright launch options for a reproducible capture browser. */
+/** Our own flags; `chromeArgs` wraps them with the parity set. */
 export function deterministicLaunchOptions(opts: LaunchOptions = {}): {
   headless: boolean;
   args: string[];
@@ -63,4 +63,101 @@ export function deterministicLaunchOptions(opts: LaunchOptions = {}): {
     headless: opts.headless ?? true,
     args: [...DETERMINISTIC_CHROMIUM_ARGS, ...(opts.args ?? [])],
   };
+}
+
+/**
+ * playwright-core 1.62.0's `chromiumSwitches()` plus its headless additions
+ * (`lib/coreBundle.js` L34630–34690, L43067–43097), copied verbatim.
+ *
+ * The byte-identity spike (spec, 2026-10-13) matched 29/29 example stories
+ * against the Playwright pipeline with exactly this list. It was not pruned:
+ * a Blink feature flag that changes rasterization — PaintHolding,
+ * CDPScreenshotNewSurface — would turn every baseline red, and the gain from
+ * dropping any of these is unmeasurable. Change only with a determinism run
+ * per removed flag.
+ */
+export const PARITY_CHROMIUM_ARGS: readonly string[] = [
+  '--disable-field-trial-config',
+  '--disable-background-networking',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-back-forward-cache',
+  '--disable-breakpad',
+  '--disable-client-side-phishing-detection',
+  '--disable-component-extensions-with-background-pages',
+  '--disable-component-update',
+  '--no-default-browser-check',
+  '--disable-default-apps',
+  '--disable-dev-shm-usage',
+  '--disable-edgeupdater',
+  '--disable-extensions',
+  '--disable-features=' +
+    [
+      'AvoidUnnecessaryBeforeUnloadCheckSync',
+      'BoundaryEventDispatchTracksNodeRemoval',
+      'DestroyProfileOnBrowserClose',
+      'DialMediaRouteProvider',
+      'GlobalMediaControls',
+      'HttpsUpgrades',
+      'LensOverlay',
+      'MediaRouter',
+      'PaintHolding',
+      'ThirdPartyStoragePartitioning',
+      'BlockOriginHeaderModificationOnRedirect',
+      'Translate',
+      'AutoDeElevate',
+      'OptimizationHints',
+      'msForceBrowserSignIn',
+      'msEdgeUpdateLaunchServicesPreferredVersion',
+    ].join(','),
+  '--enable-features=CDPScreenshotNewSurface',
+  '--allow-pre-commit-input',
+  '--disable-hang-monitor',
+  '--disable-ipc-flooding-protection',
+  '--disable-popup-blocking',
+  '--disable-prompt-on-repost',
+  '--disable-renderer-backgrounding',
+  '--disable-updater-scheduler',
+  '--force-color-profile=srgb',
+  '--metrics-recording-only',
+  '--no-first-run',
+  '--password-store=basic',
+  '--use-mock-keychain',
+  '--no-service-autorun',
+  '--export-tagged-pdf',
+  '--disable-search-engine-choice-screen',
+  '--unsafely-disable-devtools-self-xss-warnings',
+  '--edge-skip-compat-layer-relaunch',
+  '--disable-infobars',
+  '--disable-search-engine-choice-screen',
+  '--disable-sync',
+];
+
+const HEADLESS_ARGS = [
+  '--headless',
+  '--hide-scrollbars',
+  '--mute-audio',
+  '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
+];
+
+/** The full command line, in Playwright's order so the spike's evidence transfers. */
+export function chromeArgs(opts: {
+  userDataDir: string;
+  args?: string[];
+  headless?: boolean;
+}): string[] {
+  const { headless, args } = deterministicLaunchOptions({
+    headless: opts.headless,
+    args: opts.args,
+  });
+  return [
+    ...PARITY_CHROMIUM_ARGS,
+    '--enable-unsafe-swiftshader',
+    ...(headless ? HEADLESS_ARGS : []),
+    '--no-sandbox',
+    ...args,
+    `--user-data-dir=${opts.userDataDir}`,
+    '--remote-debugging-pipe',
+    '--no-startup-window',
+  ];
 }
