@@ -38,6 +38,7 @@ const HTML = `<!doctype html><html><head><style>
     <svg width="20" height="20"><circle cx="10" cy="10" r="8" fill="#f00"/></svg>
     <input value="typed text" placeholder="Name">
     <input type="password" value="hunter2">
+    <input type="PASSWORD" value="hunter3">
     <div style="margin-top:700px;height:1500px"><p>below fold</p></div>
   </main>
   <script>

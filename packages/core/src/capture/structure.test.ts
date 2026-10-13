@@ -120,6 +120,8 @@ test('a password input is kept but its value is never recorded', () => {
   const pw = find((e) => e.tag === 'input' && e.text === undefined);
   expect(pw).toMatchObject({ role: 'textbox' });
   expect(JSON.stringify(snap())).not.toContain('hunter2');
+  // HTML type values are case-insensitive
+  expect(JSON.stringify(snap())).not.toContain('hunter3');
 });
 
 test('rects are rounded to 0.01px', () => {

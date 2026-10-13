@@ -331,7 +331,9 @@ export function normalizeStructure(
         if (!isPseudo) delete styles.content;
         const pseudoText = isPseudo ? parseContent(values[contentIdx]) : '';
         // Sidecars are committed to git: never record a secret field's value.
-        const secret = tag === 'input' && (a.type === 'password' || a.type === 'hidden');
+        const secret =
+          tag === 'input' &&
+          ['password', 'hidden'].includes((a.type ?? '').toLowerCase());
         const typed = secret ? undefined : inputValue.get(i);
         const text = collapse(pseudoText || typed || ownText.get(i) || '');
         const role = a.role ?? implicitRole(tag, a);
