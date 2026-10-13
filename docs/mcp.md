@@ -20,10 +20,11 @@ on the warm browser:
 - **Warm browser off** (`--no-daemon`, `JUX_NO_DAEMON=1`, CI, or Windows): the
   server launches a private browser and closes it when the session ends.
 
-The session ends when the client closes stdin. The server finishes the call in
-progress, then exits with code 0. On `SIGTERM` or `SIGINT`, the server stops
-reading input, drops the call in progress without answering it, closes the
-browser, and exits with code 143 or 130. A second signal exits immediately.
+The session ends when the client closes stdin. The server finishes every call
+in progress, answers each one, then exits with code 0. On `SIGTERM` or
+`SIGINT`, the server stops reading input, drops every call in progress without
+answering it, closes the browser, and exits with code 143 or 130. A second
+signal exits immediately.
 
 ## Requirements
 
@@ -215,19 +216,20 @@ stories, are not errors.
 A `snap` of several URLs where one page fails returns `isError: true` and still
 includes the JSON for the pages it wrote.
 
-A `project` outside the server's root, including through a symbolic link, and
+A `project` outside the server's root, including through a symbolic link, or
+inside a `.juxtapose` directory, and
 a `diff` reference that is not a snap name are tool errors. Nothing is read or
 written.
 
 Protocol problems are JSON-RPC errors:
 
-| Code     | Meaning                                                                |
-| -------- | ---------------------------------------------------------------------- |
-| `-32700` | The line is not JSON.                                                  |
-| `-32600` | Not a valid request, such as an `id` that is not a string or a number. |
-| `-32601` | Unknown method.                                                        |
-| `-32602` | Unknown tool, or `arguments` is not an object.                         |
-| `-32603` | Internal error.                                                        |
+| Code     | Meaning                                                                                                         |
+| -------- | --------------------------------------------------------------------------------------------------------------- |
+| `-32700` | The line is not JSON.                                                                                           |
+| `-32600` | Not a valid request, such as an `id` that is not a string or a number, or the `id` of a call still in progress. |
+| `-32601` | Unknown method.                                                                                                 |
+| `-32602` | Unknown tool, or `arguments` is not an object.                                                                  |
+| `-32603` | Internal error.                                                                                                 |
 
 ## Protocol
 
@@ -237,12 +239,72 @@ stdin and stdout. It implements `initialize`, `notifications/initialized`,
 responses from the client, because it sends no requests. It writes only
 protocol messages to stdout. Logs go to stderr.
 
-The server runs tool calls one at a time, in the order it receives them,
-because they share the browser and the snaps directory.
+## Concurrency
+
+Agents often call several tools in one turn. The server runs calls at the same
+time when they touch different files, and makes the rest take turns. Replies
+can arrive in a different order from the requests; match them by `id`.
+
+Before a call starts, the server works out everything it reads and writes, and
+waits until it can have all of it at once:
+
+| Tool               | Reads                                                             | Writes                                 |
+| ------------------ | ----------------------------------------------------------------- | -------------------------------------- |
+| `snap`             |                                                                   | the `as` snap, or every `<asPrefix>-*` |
+| `diff`             | the `a` and `b` snaps, or every `<a>-*` and `<b>-*` with `prefix` | with `crops`, that pair's crops        |
+| `check`, `handoff` | the last run                                                      |                                        |
+| `run`, `approve`   | everything                                                        | everything                             |
+
+Two calls overlap only when neither writes what the other reads or writes:
+
+- `snap` calls with different names run in parallel. Two `snap` calls with the
+  same name run one after the other. A prefix covers every name that starts
+  with it and a `-`: `asPrefix: "before"` and `as: "before-home"` take turns.
+- By default, at most 4 `snap` calls capture at once (fewer on small
+  machines). Each one uses its own browser
+  context, so parallel snaps share no cookies, storage or page. A snap taken in
+  parallel is byte-identical to the same snap taken alone. To change the limit,
+  see [Snap concurrency](#snap-concurrency).
+- A `diff` waits for any `snap` that writes one of its sides, and a `snap`
+  waits for any `diff` reading the name it writes.
+- `run` and `approve` run alone: they wait for every call before them, and
+  every later call waits for them.
+- Snaps and diffs in different `project` directories never wait for each
+  other. `run` and `approve` still wait for everything.
+
+Calls that conflict start in the order the server reads them from stdin,
+including calls sent in one write: a `diff` sent before a `snap` of the same
+name reads the snap as it was before that `snap`. A call that is waiting holds
+back every later call that conflicts with it, so a `run` behind a stream of
+`snap` calls still gets its turn. A call that conflicts with nothing before it
+starts as soon as the server has checked its arguments and every earlier call's
+arguments, even if it arrived after a call that is waiting.
 
 When you cancel a call with `notifications/cancelled`, the server does not
 answer it. A call that has not started never runs. A call that is running
-finishes before the next call starts, so the two never share the browser or
-the snaps directory, and its result is discarded. A cancelled `run` stops
-starting new stories and writes no report, so `check`, `handoff` and `approve`
-keep reading the previous run.
+finishes, and keeps what it reads and writes until it does, so a later call on
+the same snaps still waits for it. Its result is discarded. A cancelled `run`
+stops starting new stories and writes no report, so `check`, `handoff` and
+`approve` keep reading the previous run.
+
+### Snap concurrency
+
+By default, the server captures at most half as many snaps at once as the
+machine has CPU cores, from 1 up to 4. To change that, set
+`mcp.concurrency` in `juxtapose.config.json`:
+
+```json
+{
+  "mcp": { "concurrency": 8 }
+}
+```
+
+The `--concurrency` flag overrides the file for one server, for example
+`jux mcp --concurrency 2`. Both take a whole number from 1 to 16, and are not
+limited by the core count; any other
+value stops the server with exit code 2 before it reads any input. The server
+reads the config from its `--project` directory once, at startup.
+
+On a 15-core machine, 8 snaps at once finished in 338 ms with a limit of 8 and
+in 604 ms with a limit of 4, and each capture took about 10% longer. On a
+machine with fewer cores, a higher limit can make captures slower.

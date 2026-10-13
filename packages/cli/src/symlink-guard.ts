@@ -32,7 +32,22 @@ export function symlinkRefusal(link: string): string {
  *  `.juxtapose/snaps/x.webp -> ~/.bashrc` ignores `.gitignore`; removing it
  *  drops the link, not its target, and `wx` (O_EXCL) fails rather than follow
  *  anything recreated in between. */
-export async function writeFresh(p: string, data: string | Uint8Array): Promise<void> {
-  await rm(p, { force: true });
-  await writeFile(p, data, { flag: 'wx' });
+export function writeFresh(p: string, data: string | Uint8Array): Promise<void> {
+  // Serialized per path within the process. `jux mcp` runs snaps (and crops)
+  // in parallel, and every one of them writes the dir's shared `.gitignore`:
+  // interleaved as rm, rm, write, write, the second `wx` fails with EEXIST and
+  // fails a capture that succeeded.
+  const prev = inFlight.get(p) ?? Promise.resolve();
+  const next = prev.then(async () => {
+    await rm(p, { force: true });
+    await writeFile(p, data, { flag: 'wx' });
+  });
+  const settled = next.catch(() => {});
+  inFlight.set(p, settled);
+  void settled.then(() => {
+    if (inFlight.get(p) === settled) inFlight.delete(p);
+  });
+  return next;
 }
+
+const inFlight = new Map<string, Promise<void>>();

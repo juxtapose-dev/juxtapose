@@ -23,6 +23,8 @@ loaded.
 Concurrency defaults to 8. Higher is not automatically better — past your core
 count, contention slows captures down rather than speeding them up.
 
+`mcp.concurrency` sets how many snaps `jux mcp` captures at once, from 1 to 16. The default is half the CPU cores, from 1 up to 4. See [MCP server](mcp.md#snap-concurrency).
+
 Per-story options go through the platform's own parameter mechanism
 (`parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle):
 

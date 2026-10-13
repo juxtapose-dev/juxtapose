@@ -1,11 +1,18 @@
-import { mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { expect, test } from 'vitest';
 import { diffCommand } from './commands/diff.js';
 import { snapCommand } from './commands/snap.js';
-import { firstSymlink } from './symlink-guard.js';
+import { firstSymlink, writeFresh } from './symlink-guard.js';
 
 // sharp is core's dependency, not the CLI's: resolve it from where core lives.
 const coreRequire = createRequire(
@@ -90,4 +97,13 @@ test('snap --as-prefix refuses through a symlinked snaps dir, before any browser
   expect(r).toBe(3);
   expect(err).toContain('refusing to write through symlink');
   expect(readdirSync(outside)).toEqual(['p-home.webp']);
+});
+
+test('writeFresh to one path from parallel calls: every call succeeds, last write wins', async () => {
+  // jux mcp runs snaps in parallel and each rewrites the snaps dir's
+  // .gitignore; unserialized, rm/rm/write/write fails the second with EEXIST.
+  const dir = tmp('jux-fresh-');
+  const p = path.join(dir, '.gitignore');
+  await Promise.all(Array.from({ length: 16 }, (_, i) => writeFresh(p, `${i}\n`)));
+  expect(readFileSync(p, 'utf8')).toBe('15\n');
 });

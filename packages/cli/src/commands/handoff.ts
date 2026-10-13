@@ -3,7 +3,7 @@
 // Writes to stdout so it pipes: `jux handoff foo--bar | claude -p`.
 
 import { existsSync } from 'node:fs';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
   buildHandoffPrompt,
@@ -14,6 +14,7 @@ import {
 } from '@juxtapose/core';
 import { resolveContext, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
+import { writeFresh } from '../symlink-guard.js';
 import { stdio, type Session } from '../io.js';
 import { DEFAULT_VIEWPORT } from '@juxtapose/core';
 
@@ -69,7 +70,10 @@ export async function handoffCommand(
   // Write the sidecar the prompt points at: the agent reads one small JSON
   // instead of parsing coordinates back out of prose.
   await mkdir(path.join(runDir, 'diffs'), { recursive: true });
-  await writeFile(
+  // writeFresh, not writeFile: `jux mcp` runs handoffs in parallel under a
+  // shared lock on the run, and two truncating writes of one story's sidecar
+  // could interleave; writeFresh serializes per path and never follows a link.
+  await writeFresh(
     diffDataPath,
     JSON.stringify(
       {

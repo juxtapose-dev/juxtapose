@@ -7,18 +7,30 @@
 // 2026-10-12 agent toolchain spec). What MCP adds is the session: one browser
 // acquired on first use and lent to every snap and run until stdin closes,
 // which is the per-call launch cost an agent loop otherwise pays each turn.
+// Calls that touch different snaps run in parallel on that browser;
+// scheduler.ts decides which calls may overlap.
 //
 // Hand-rolled JSON-RPC 2.0 over newline-delimited stdio (MCP 2025-06-18),
 // like the dependency-free CDP driver: the surface is five methods.
 
 import { realpathSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { readFile, realpath } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { acquireBrowser, MAX_CROPS, type Browser } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
+import { loadConfig } from '../context.js';
 import { captureIo, type Session } from '../io.js';
 import { latestRunDir } from '../run-dir.js';
+import {
+  EXCLUSIVE,
+  Scheduler,
+  type Lock,
+  type LockKey,
+  type LockSet,
+} from '../scheduler.js';
+import { snapName } from '../snap-name.js';
 import { MAX_VIEWPORT_SIDE } from './snap.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
@@ -27,6 +39,43 @@ export interface McpFlags {
   project?: string;
   chrome?: string;
   'no-daemon'?: boolean;
+  /** Snap calls that may capture at once; see SNAP_SLOTS. */
+  concurrency?: string;
+}
+
+/** Past 16 the capture pool timed out from CPU contention on a 10-core
+ *  machine (capture/pool.ts), so a larger value is a mistake, not a tuning. */
+export const MAX_SNAP_SLOTS = 16;
+
+/** The default snap pool: half the cores, at least 1 and at most SNAP_SLOTS.
+ *  Half, because Chrome rasterizes on the CPU and the dev server being
+ *  captured, the editor and the agent share the machine. */
+export function defaultSnapSlots(cores: number = availableParallelism()): number {
+  return Math.min(SNAP_SLOTS, Math.max(1, Math.floor(cores / 2)));
+}
+
+/** The snap pool size: `--concurrency`, else `mcp.concurrency` from the
+ *  project config, else defaultSnapSlots. Each must be a whole number in
+ *  1..MAX_SNAP_SLOTS; the error names the source that is wrong. */
+export function resolveSnapSlots(
+  flag: string | undefined,
+  config: unknown,
+  cores: number = availableParallelism(),
+): { slots: number } | { error: string } {
+  const fallback = defaultSnapSlots(cores);
+  const range = `a whole number from 1 to ${MAX_SNAP_SLOTS} (default ${fallback})`;
+  if (flag !== undefined) {
+    const n = /^\d+$/.test(flag) ? Number(flag) : NaN;
+    return n >= 1 && n <= MAX_SNAP_SLOTS
+      ? { slots: n }
+      : { error: `--concurrency must be ${range}` };
+  }
+  if (config === undefined) return { slots: fallback };
+  return Number.isInteger(config) &&
+    (config as number) >= 1 &&
+    (config as number) <= MAX_SNAP_SLOTS
+    ? { slots: config as number }
+    : { error: `mcp.concurrency in the project config must be ${range}` };
 }
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
@@ -158,6 +207,10 @@ const INSTRUCTIONS =
   'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops only when `explained` is not "full". For Storybook/Ladle projects use run, check and handoff. Never approve unless the user asks.';
 
 class ArgError extends Error {}
+class UnknownTool extends Error {}
+
+const CANCELLED = 'jux: cancelled before it started';
+const SHUTTING_DOWN = 'jux: the server is shutting down';
 
 const str = (args: Args, key: string, required = false): string | undefined => {
   const v = args[key];
@@ -185,78 +238,186 @@ const strings = (args: Args, key: string): string[] | undefined => {
   return v as string[];
 };
 
-/** One server: the tool handlers and the session browser. The transport is
- *  separate so tests can drive it without a process. */
+/** A validated call: the locks it needs, and the work to run once they are
+ *  granted. Arguments are checked before queueing, so a bad call answers at
+ *  once instead of waiting behind a run. */
+interface Planned {
+  locks: LockSet;
+  exec: (signal?: AbortSignal) => Promise<ToolResult>;
+}
+
+/** The most snap calls the default lets capture at once (defaultSnapSlots
+ *  takes half the cores, up to this); more wait for a slot. `--concurrency`
+ *  and `mcp.concurrency` set it outright.
+ *
+ *  Each snap opens its own browser context in the one session browser, and
+ *  Chrome rasterizes on the CPU (browser/flags.ts), so parallel snaps share
+ *  cores. Measured 2026-10-13 on a 15-core M5 Pro, example Storybook stories
+ *  at 800x600, through `jux mcp` over stdio, median of 5:
+ *
+ *    4 snaps   serial    parallel
+ *    daemon    1028 ms   299 ms
+ *    private   1048 ms   303 ms   (JUX_NO_DAEMON=1)
+ *
+ *  8 snap calls at once, by slot limit (wall / median capture time):
+ *  1: 2109 / 222 ms, 2: 1055 / 223, 4: 604 / 242, 8: 338 / 266. A snap is
+ *  mostly settle waits, so on this machine 8 was faster still; the default
+ *  stops at 4 anyway because a call may carry many urls (one slot, several pages),
+ *  the capture pool measured CPU contention turning into settle timeouts at
+ *  16 workers on 10 cores (capture/pool.ts), and an agent's dev server and
+ *  editor share the machine. The config sets it higher where that is
+ *  measured to help. */
+export const SNAP_SLOTS = 4;
+
+/** One server: the tool handlers, the scheduler and the session browser.
+ *  The transport is separate so tests can drive it without a process. */
 export class McpServer {
   private browser: Promise<Browser> | null = null;
+  private lending: Promise<Browser> | null = null;
+  private closed = false;
   private readonly project: string;
+  private readonly scheduler: Scheduler;
 
-  constructor(private readonly flags: McpFlags = {}) {
+  constructor(
+    private readonly flags: McpFlags = {},
+    opts: { snapSlots?: number } = {},
+  ) {
     // Real path, so the containment check below compares like with like on a
     // machine where the root itself sits under a symlink (macOS /tmp).
     const root = path.resolve(flags.project ?? process.cwd());
     try {
-      this.project = realpathSync(root);
+      this.project = realpathSync.native(root);
     } catch {
       this.project = root;
     }
+    this.scheduler = new Scheduler({ snap: opts.snapSlots ?? defaultSnapSlots() });
   }
 
   /** The session browser, re-acquired if it died (a crash, or `jux browser
-   *  stop` under a warm daemon) so one bad call does not end the session. */
-  private lend = async (): Promise<Browser> => {
+   *  stop` under a warm daemon) so one bad call does not end the session.
+   *
+   *  Single flight: parallel snaps that all find the browser dead must share
+   *  one replacement. Each deciding on its own would launch one browser per
+   *  call and keep only the last; the others' processes and temp profiles
+   *  would outlive the session. */
+  private lend = (): Promise<Browser> => {
+    // After close(), a straggling call must not launch a browser that nothing
+    // will ever close.
+    if (this.closed) return Promise.reject(new Error(SHUTTING_DOWN));
+    if (!this.lending) {
+      const p = this.reacquire();
+      this.lending = p;
+      void p
+        .finally(() => {
+          if (this.lending === p) this.lending = null;
+        })
+        .catch(() => {});
+    }
+    return this.lending;
+  };
+
+  private async reacquire(): Promise<Browser> {
     const current = this.browser ? await this.browser.catch(() => null) : null;
     if (current?.isConnected()) return current;
     // Dead but not closed: close() still reaps a private launch's process and
     // deletes its temp profile, which a crash leaves behind.
     if (current) await current.close().catch(() => {});
+    if (this.closed) throw new Error(SHUTTING_DOWN);
     const next = acquireBrowser({
       chrome: this.flags.chrome,
       noDaemon: this.flags['no-daemon'] === true,
     });
     this.browser = next;
-    // A failed launch is reported by the call that asked; the next call retries.
+    // A failed launch is reported by the calls that asked; the next call retries.
     next.catch(() => {
       if (this.browser === next) this.browser = null;
     });
     return next;
-  };
+  }
 
   async close(): Promise<void> {
+    this.closed = true;
+    // A reacquire in progress lands in this.browser; wait for it so it is the
+    // one closed below, not one that outlives the session.
+    await this.lending?.catch(() => {});
     const b = this.browser ? await this.browser.catch(() => null) : null;
     this.browser = null;
     await b?.close().catch(() => {});
   }
 
+  /** Validate, wait for the call's locks, run it, release. A call cancelled
+   *  while it waits never starts. One cancelled while it runs keeps its locks
+   *  until it settles: only run can stop early, and leftover snap or diff
+   *  work must not overlap a call that touches the same files. */
   async call(name: string, args: Args, signal?: AbortSignal): Promise<ToolResult> {
+    // The place in line is taken now, before planning awaits anything, so
+    // conflicting calls are granted in the order they arrived.
+    const ticket = this.scheduler.ticket();
+    let planned: Planned;
     try {
-      switch (name) {
-        case 'snap':
-          return await this.snap(args, signal);
-        case 'diff':
-          return await this.diff(args, signal);
-        case 'run':
-          return await this.run(args, signal);
-        case 'check':
-          return await this.invoke(
-            async (s) => (await import('./check.js')).checkCommand(this.common(), s),
-            signal,
-          );
-        case 'handoff': {
-          const story = str(args, 'story', true)!;
-          return await this.invoke(
-            async (s) =>
-              (await import('./handoff.js')).handoffCommand(story, this.common(), s),
-            signal,
-          );
-        }
-        case 'approve':
-          return await this.approve(args, signal);
-      }
+      planned = await this.plan(name, args);
     } catch (err) {
+      ticket.cancel();
+      if (err instanceof UnknownTool) throw err;
       return errorResult(err instanceof Error ? err.message : String(err));
     }
-    throw new Error(`unknown tool '${name}'`);
+    const release = await ticket.acquire(planned.locks, signal);
+    if (!release) return errorResult(CANCELLED);
+    // Granted in the same turn as its signal aborted (a shutdown aborts every
+    // call in one loop): it was cancelled before it started, so it must not.
+    if (signal?.aborted) {
+      release();
+      return errorResult(CANCELLED);
+    }
+    try {
+      return await planned.exec(signal);
+    } catch (err) {
+      return errorResult(err instanceof Error ? err.message : String(err));
+    } finally {
+      release();
+    }
+  }
+
+  private async plan(name: string, args: Args): Promise<Planned> {
+    switch (name) {
+      case 'snap':
+        return this.snap(args);
+      case 'diff':
+        return this.diff(args);
+      case 'run':
+        return this.run(args);
+      case 'check':
+        return {
+          locks: this.readsRun(),
+          exec: (signal) =>
+            this.invoke(
+              async (s) => (await import('./check.js')).checkCommand(this.common(), s),
+              signal,
+            ),
+        };
+      case 'handoff': {
+        const story = str(args, 'story', true)!;
+        return {
+          locks: this.readsRun(),
+          exec: (signal) =>
+            this.invoke(
+              async (s) =>
+                (await import('./handoff.js')).handoffCommand(story, this.common(), s),
+              signal,
+            ),
+        };
+      }
+      case 'approve':
+        return this.approve(args);
+    }
+    throw new UnknownTool(`unknown tool '${name}'`);
+  }
+
+  /** check and handoff read the last run, which run and approve write. */
+  private readsRun(): LockSet {
+    return {
+      locks: [{ key: { kind: 'key', project: this.project, key: 'run' }, mode: 'read' }],
+    };
   }
 
   private common() {
@@ -282,10 +443,14 @@ export class McpServer {
       throw new ArgError(
         `'project' must be the server's project (${this.project}) or a directory inside it; restart the server with --project to use another`,
       );
+    // jux's own scratch and baselines: a project there would put snaps and
+    // crops among the files run and approve own, outside any lock.
+    if (path.relative(this.project, real).split(path.sep).includes('.juxtapose'))
+      throw new ArgError(`'project' must not be inside a .juxtapose directory; got ${p}`);
     return real;
   }
 
-  private async snap(args: Args, signal?: AbortSignal): Promise<ToolResult> {
+  private async snap(args: Args): Promise<Planned> {
     const url = str(args, 'url');
     const as = str(args, 'as');
     const urls = strings(args, 'urls');
@@ -309,27 +474,40 @@ export class McpServer {
     const waitFor = str(args, 'waitFor');
     const mask = strings(args, 'mask');
     const project = await this.projectArg(args);
-    const { snapCommand } = await import('./snap.js');
-    return this.invoke(
-      (s) =>
-        snapCommand(
-          url ? [url] : urls!,
-          {
-            json: true,
-            project,
-            ...(as ? { as } : {}),
-            ...(asPrefix ? { 'as-prefix': asPrefix } : {}),
-            ...(viewport ? { viewport } : {}),
-            ...(waitFor ? { 'wait-for': waitFor } : {}),
-            ...(mask ? { mask } : {}),
-          },
-          { ...s, browser: this.lend },
-        ),
-      signal,
-    );
+    // The names snapCommand will write: `as`, or every `<asPrefix>-<slug>`
+    // plus `<asPrefix>.set.json`, normalized by the same snapName.
+    const key: LockKey = as
+      ? { kind: 'name', project, name: snapName(as, as) }
+      : { kind: 'prefix', project, prefix: snapName(asPrefix!, asPrefix) };
+    // Parallel snaps share the browser but never a context or page: each
+    // snapPages call opens its own context and disposes it (core
+    // capture/snap.ts), the isolation the run pool already relies on.
+    return {
+      locks: { locks: [{ key, mode: 'write' }], slot: 'snap' },
+      exec: async (signal) => {
+        const { snapCommand } = await import('./snap.js');
+        return this.invoke(
+          (s) =>
+            snapCommand(
+              url ? [url] : urls!,
+              {
+                json: true,
+                project,
+                ...(as ? { as } : {}),
+                ...(asPrefix ? { 'as-prefix': asPrefix } : {}),
+                ...(viewport ? { viewport } : {}),
+                ...(waitFor ? { 'wait-for': waitFor } : {}),
+                ...(mask ? { mask } : {}),
+              },
+              { ...s, browser: this.lend },
+            ),
+          signal,
+        );
+      },
+    };
   }
 
-  private async diff(args: Args, signal?: AbortSignal): Promise<ToolResult> {
+  private async diff(args: Args): Promise<Planned> {
     // Names only. The CLI also takes `.webp` paths, which would let a tool
     // call read (and decode, and crop) any image on the machine.
     const a = snapRef(args, 'a');
@@ -337,63 +515,97 @@ export class McpServer {
     const crops = bool(args, 'crops') === true;
     const prefix = bool(args, 'prefix') === true;
     const project = await this.projectArg(args);
-    const { diffCommand } = await import('./diff.js');
-    const result = await this.invoke(
-      (s) => diffCommand(a, b, { json: true, project, crops, prefix }, s),
-      signal,
-    );
-    if (crops && !result.isError)
-      result.content.push(...(await cropImages(result, project)));
-    return result;
+    const { diffCommand, cropDirName } = await import('./diff.js');
+    // Reads both sides, as diffCommand resolves them; crops also rewrite the
+    // pair's own crops dir, which a second diff of the same pair would empty.
+    const side = (ref: string): LockKey =>
+      prefix
+        ? { kind: 'prefix', project, prefix: snapName(ref, ref) }
+        : { kind: 'name', project, name: snapName(ref, ref) };
+    const locks: Lock[] = [
+      { key: side(a), mode: 'read' },
+      { key: side(b), mode: 'read' },
+    ];
+    if (crops)
+      locks.push({
+        key: { kind: 'key', project, key: `crops/${cropDirName(a, b)}` },
+        mode: 'write',
+      });
+    return {
+      locks: { locks },
+      exec: async (signal) => {
+        const result = await this.invoke(
+          (s) => diffCommand(a, b, { json: true, project, crops, prefix }, s),
+          signal,
+        );
+        if (crops && !result.isError)
+          result.content.push(...(await cropImages(result, project)));
+        return result;
+      },
+    };
   }
 
-  private async run(args: Args, signal?: AbortSignal): Promise<ToolResult> {
+  /** run captures with a worker pool of its own and rewrites the last run:
+   *  exclusive, so no snap shares the CPU with its captures and no
+   *  check/handoff/approve reads a half-written run. */
+  private run(args: Args): Planned {
     const all = bool(args, 'all');
     const since = str(args, 'since');
     const stories = strings(args, 'stories');
-    const { runCommand } = await import('./run.js');
-    return this.invoke(
-      (s) =>
-        runCommand(
-          {
-            ...this.common(),
-            ...(all ? { all } : {}),
-            ...(since ? { since } : {}),
-            ...(stories?.length ? { story: stories } : {}),
-          },
-          { ...s, browser: this.lend },
-        ),
-      signal,
-    );
+    return {
+      locks: EXCLUSIVE,
+      exec: async (signal) => {
+        const { runCommand } = await import('./run.js');
+        return this.invoke(
+          (s) =>
+            runCommand(
+              {
+                ...this.common(),
+                ...(all ? { all } : {}),
+                ...(since ? { since } : {}),
+                ...(stories?.length ? { story: stories } : {}),
+              },
+              { ...s, browser: this.lend },
+            ),
+          signal,
+        );
+      },
+    };
   }
 
   /** Explicit ids only, each one a result in the last run: an approval that
    *  matches nothing would otherwise report "nothing to approve" and look
-   *  like success to an agent that mistyped an id. */
-  private async approve(args: Args, signal?: AbortSignal): Promise<ToolResult> {
+   *  like success to an agent that mistyped an id. Exclusive: it writes
+   *  baselines and the manifest, which the next run reads. */
+  private approve(args: Args): Planned {
     const stories = strings(args, 'stories');
     if (!stories?.length)
       throw new ArgError(
         "'stories' is required: a non-empty array of exact story ids from the last run. There is no 'all'.",
       );
-    // Resolved once: validation and approval must read the same run even if
-    // another process writes a newer one in between.
-    const runDir = await latestRunDir(this.project);
-    if (!runDir) return errorResult('jux: no run found. Call the run tool first.');
-    const report = JSON.parse(
-      await readFile(path.join(runDir, 'report.json'), 'utf8'),
-    ) as { results: Array<{ storyId: string }> };
-    const known = new Set(report.results.map((r) => r.storyId));
-    const unknown = stories.filter((id) => !known.has(id));
-    if (unknown.length)
-      return errorResult(
-        `jux: not in the last run: ${unknown.join(', ')}. Pass exact story ids from the run result; nothing was approved.`,
-      );
-    const { approveCommand } = await import('./approve.js');
-    return this.invoke(
-      (s) => approveCommand({ ...this.common(), run: runDir, story: stories }, s),
-      signal,
-    );
+    return {
+      locks: EXCLUSIVE,
+      exec: async (signal) => {
+        // Resolved once, under the lock: validation and approval must read the
+        // same run even if another process writes a newer one in between.
+        const runDir = await latestRunDir(this.project);
+        if (!runDir) return errorResult('jux: no run found. Call the run tool first.');
+        const report = JSON.parse(
+          await readFile(path.join(runDir, 'report.json'), 'utf8'),
+        ) as { results: Array<{ storyId: string }> };
+        const known = new Set(report.results.map((r) => r.storyId));
+        const unknown = stories.filter((id) => !known.has(id));
+        if (unknown.length)
+          return errorResult(
+            `jux: not in the last run: ${unknown.join(', ')}. Pass exact story ids from the run result; nothing was approved.`,
+          );
+        const { approveCommand } = await import('./approve.js');
+        return this.invoke(
+          (s) => approveCommand({ ...this.common(), run: runDir, story: stories }, s),
+          signal,
+        );
+      },
+    };
   }
 
   /** Run a command with captured output and map its exit code. 2 (usage) and
@@ -579,6 +791,13 @@ const rpcError = (id: string | number | null, code: number, message: string): Js
 const SIGNALS = { SIGINT: 2, SIGTERM: 15 } as const;
 
 export async function mcpCommand(flags: McpFlags, version: string): Promise<number> {
+  const config = await loadConfig(path.resolve(flags.project ?? process.cwd()));
+  const pool = resolveSnapSlots(flags.concurrency, config.mcp?.concurrency);
+  if ('error' in pool) {
+    process.stderr.write(`jux mcp: ${pool.error}.\n`);
+    return EXIT.usage;
+  }
+  const snapSlots = pool.slots;
   // stdout is the protocol channel. Keep a private writer for it, then point
   // process.stdout at stderr so nothing else (a stray console.log in a
   // dependency) can interleave with a JSON-RPC line and corrupt the stream.
@@ -591,12 +810,13 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
     if (!outBroken) writeOut(JSON.stringify(m) + '\n');
   };
 
-  const server = new McpServer(flags);
+  const server = new McpServer(flags, { snapSlots });
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
-  // Tool calls run one at a time: they share a browser and the snaps dir,
-  // and a capture is deterministic only when nothing else is loading. Ping and
-  // the rest are answered at once.
-  let queue: Promise<unknown> = Promise.resolve();
+  // Tool calls run concurrently; McpServer.call holds each one until the
+  // scheduler grants the files and browser time it needs (see scheduler.ts).
+  // Ping and the rest are answered at once.
+  /** Calls not settled yet, so stdin EOF can wait for every one of them. */
+  const inFlight = new Set<Promise<void>>();
   /** Calls not yet answered, by request id, for notifications/cancelled. */
   const pending = new Map<string | number, AbortController>();
   let shuttingDown = false;
@@ -628,8 +848,9 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
     void exit(EXIT.failure, Promise.resolve());
   });
 
-  // A signal ends the session now: no new calls, the in-flight one aborted
-  // (closing the browser fails its capture) and not answered. A second signal
+  // A signal ends the session now: no new calls, every call in flight aborted
+  // and not answered. Queued calls never start; running ones fail when the
+  // browser closes under them. A second signal
   // means the shutdown itself is stuck.
   for (const [name, num] of Object.entries(SIGNALS)) {
     process.on(name, () => {
@@ -641,16 +862,26 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
   }
 
   const onCall = (id: string | number, msg: unknown) => {
+    // Ids must be unique per session. A second call under an id still in
+    // flight would take over its cancellation entry, so cancelling one would
+    // cancel the other, and the first to finish would delete both.
+    if (pending.has(id)) {
+      send(
+        rpcError(
+          id,
+          -32600,
+          `request id ${JSON.stringify(id)} is already in use by a call in progress`,
+        ),
+      );
+      return;
+    }
     const controller = new AbortController();
     pending.set(id, controller);
     const { signal } = controller;
-    queue = queue.then(async () => {
-      // Cancelled while queued: never starts.
-      if (signal.aborted) return;
+    const done = (async () => {
       try {
-        // A cancelled running call keeps the queue until it settles: only run
-        // can stop early (no new stories), and leftover snap or diff work must
-        // not overlap the next call on the shared browser or snaps dir. Its
+        // Cancelled while queued: McpServer.call never starts it. Cancelled
+        // while running: it keeps its locks until it settles. Either way its
         // reply is dropped, as the cancellation spec requires.
         const reply = await handleMessage(server, msg, version, signal);
         if (reply && !signal.aborted) send(reply);
@@ -660,7 +891,9 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
       } finally {
         pending.delete(id);
       }
-    });
+    })();
+    inFlight.add(done);
+    void done.finally(() => inFlight.delete(done));
   };
 
   lines.on('line', (line) => {
@@ -698,7 +931,7 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
   // A signal or a broken stdout closed the input; that path owns the exit.
   if (shuttingDown) return new Promise<never>(() => {});
   shuttingDown = true;
-  return exit(EXIT.clean, queue);
+  return exit(EXIT.clean, Promise.allSettled([...inFlight]));
 }
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
