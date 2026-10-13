@@ -6,7 +6,7 @@ export const BROWSER_HELP = `browser
     --chrome <path>              use this binary instead (or set JUX_CHROME=<path>); nothing is downloaded
   jux browser path               print the browser path jux will use
   jux browser status             which browser jux will use, where it came from, and whether the
-                                 warm browser is running (pid, key, started, idle timeout)
+                                 warm browser is running (pid, started, idle timeout, socket)
   jux browser start|stop         keep one browser warm between runs (on by default; JUX_NO_DAEMON=1,
                                  --no-daemon on snap/run/init, or any CI variable turns it off).
                                  start reports the running one; stop does nothing if none is running.
