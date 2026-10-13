@@ -33,7 +33,7 @@ import { chromeForTests } from './__tests__/helpers.js';
 const chrome = chromeForTests();
 
 it.runIf(!!process.env.CI)('CI has the browser the real-Chrome suites need', () => {
-  // Every real-Chrome suite (here, page, pool, structure-capture) is
+  // Every real-Chrome suite (here, page, pool, structure-capture, supervisor) is
   // describe.skipIf(!chrome); without a browser on the runner they would all
   // skip silently and CI would check none of the driver.
   expect(chrome, 'no browser: run `jux browser install` before pnpm test').not.toBeNull();
