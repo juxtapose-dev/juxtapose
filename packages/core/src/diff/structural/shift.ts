@@ -1,7 +1,7 @@
 // "Everything below the banner moved down 14px because the banner grew 14px"
 // is one fact, not forty. Collapse a run of ≥3 matched elements that moved by
 // the same (dx, dy), contiguous in document order, into one `shift` anchored
-// on the nearest preceding element that changed in some other way.
+// on the element that explains it (see `collapse`).
 //
 // The anchor set is wider than the spec's added/removed/resized: a margin or
 // line-height change moves everything after it without resizing anything the
@@ -56,7 +56,7 @@ export function synthesizeShifts(facts: Fact[]): Fact[] {
         continue;
       const run = g.slice(start, k);
       start = k;
-      const shift = run.length >= MIN_RUN ? collapse(run, anchors) : undefined;
+      const shift = run.length >= MIN_RUN ? collapse(run, anchors, moved) : undefined;
       if (!shift) continue;
       for (const f of run) collapsed.add(f);
       shifts.push(shift);
@@ -67,13 +67,46 @@ export function synthesizeShifts(facts: Fact[]): Fact[] {
   return sortFacts([...facts.filter((f) => !collapsed.has(f)), ...shifts]);
 }
 
-/** One contiguous run as a shift on the nearest preceding anchor; none
- *  before it means nothing explains the move, so it stays as moves. */
-function collapse(run: Fact[], anchors: Fact[]): Fact | undefined {
-  const first = run[0].order;
-  const anchor = anchors.filter((f) => f.order < first).at(-1);
+/** One contiguous run as a shift on what explains it; nothing means the
+ *  move stays as moves. In order of preference:
+ *
+ *  1. A move with another displacement that crossed the run — before it in
+ *     the baseline, after it now, or the reverse. That is a reorder: moving
+ *     item 3 to slot 9 of 12 moves items 4–9 up 37px each, and item 3 (the
+ *     only thing the author touched) sits after them in the current order,
+ *     so "nearest preceding" can never find it. Measured on the 12-item
+ *     probe: before this, the six −37px moves stayed six (no anchor) and
+ *     item 3's `moved down 222px` was the 8th line.
+ *  2. The nearest preceding element that changed in another way.
+ *  3. The nearest preceding move with another displacement.
+ *
+ *  (1) and (3) take the head of the anchor's own block of equal moves, so the
+ *  shift names the list item, not the `span` inside it that moved with it.
+ *  (2) is ahead of (3) because a nearer odd move is usually a consequence of
+ *  the same cause: in `inserted` the logo drops off the button's line between
+ *  the banner and the rows, and the rows moved because of the banner. */
+function collapse(run: Fact[], anchors: Fact[], moved: Fact[]): Fact | undefined {
+  const first = run[0];
+  const last = run[run.length - 1];
+  const d = first.delta as Extract<Delta, { kind: 'moved' }>;
+  const other = moved.filter((f) => {
+    const m = f.delta as Extract<Delta, { kind: 'moved' }>;
+    return m.dx !== d.dx || m.dy !== d.dy;
+  });
+  const base = (f: Fact) => f.source.index; // moves are matched: baseline side
+  const crossed = other
+    .filter(
+      (f) =>
+        (base(f) < base(first) && f.order > last.order) ||
+        (base(f) > base(last) && f.order < first.order),
+    )
+    .sort((x, y) => base(x) - base(y));
+  const preceding = (fs: Fact[]) => fs.filter((f) => f.order < first.order).at(-1);
+  const anchor =
+    (crossed[0] && headOf(crossed[0], moved)) ??
+    preceding(anchors) ??
+    (preceding(other) && headOf(preceding(other)!, moved));
   if (!anchor) return undefined;
-  const d = run[0].delta as Extract<Delta, { kind: 'moved' }>;
   return {
     delta: {
       kind: 'shift',
@@ -85,7 +118,22 @@ function collapse(run: Fact[], anchors: Fact[]): Fact | undefined {
     rects: run.flatMap((f) => f.rects),
     abstract: anchor.abstract,
     order: anchor.order + 0.25,
+    source: anchor.source,
   };
+}
+
+/** The first of the moves contiguous (in document order) with `f` that
+ *  share its displacement: an element and the descendants that moved with it
+ *  read as the element. */
+function headOf(f: Fact, moved: Fact[]): Fact {
+  const m = f.delta as Extract<Delta, { kind: 'moved' }>;
+  let k = moved.indexOf(f);
+  while (k > 0) {
+    const p = moved[k - 1].delta as Extract<Delta, { kind: 'moved' }>;
+    if (p.dx !== m.dx || p.dy !== m.dy) break;
+    k--;
+  }
+  return moved[k];
 }
 
 /** Some anchor sits strictly between two run members. An anchor at a

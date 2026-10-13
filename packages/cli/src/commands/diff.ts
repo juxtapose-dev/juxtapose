@@ -60,7 +60,7 @@ export async function readSnap(dir: string, ref: string): Promise<ReadSnap> {
 export function formatVerdict(v: StructuralVerdict): string {
   const lines = [v.summary];
   if (v.deltas.length > 0) {
-    lines.push('', ...describeDeltas(v.deltas));
+    lines.push('', ...describeDeltas(v.deltas, v.deltaCount));
     // The JSON is capped by the same size budget, so it cannot list the rest.
     if (v.deltaCount > v.deltas.length)
       lines.push(`  …and ${v.deltaCount - v.deltas.length} more`);

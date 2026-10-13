@@ -1,6 +1,6 @@
 // Structural diff → tier-0 verdict. Pure, no browser, no I/O.
 //
-// Composition: match → facts → shifts → coverage → classify → summary, then a
+// Composition: match → facts → shifts → unique labels → coverage → classify → summary, then a
 // signature over the abstracted facts. Every list is sorted by a documented
 // key and the result is built as one literal, so the same inputs always
 // serialize to the same bytes (the CLI promises that in its JSON contract).
@@ -16,6 +16,7 @@ import type {
 } from '../types.js';
 import { classify, computeFlags, type ClassifyContext } from './structural/classify.js';
 import { computeCoverage } from './structural/coverage.js';
+import { disambiguate } from './structural/disambiguate.js';
 import { compareCodeUnits, computeFacts, type Fact } from './structural/deltas.js';
 import { matchElements } from './structural/match.js';
 import { synthesizeShifts } from './structural/shift.js';
@@ -51,13 +52,19 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
   // With a truncated side, the elements past the cap exist but were not
   // recorded; reporting them as removed would be a lie the summary already
   // tells more honestly as a count.
+  // Labels are made unique last, so only elements still named after the
+  // shift collapse — the ones a reader will see — are renamed.
   const facts: Fact[] = comparable
-    ? synthesizeShifts(
-        computeFacts(baseline, current, matchElements(baseline, current)).filter(
-          (f) =>
-            !(f.delta.kind === 'removed' && current.truncated) &&
-            !(f.delta.kind === 'added' && baseline.truncated),
+    ? disambiguate(
+        synthesizeShifts(
+          computeFacts(baseline, current, matchElements(baseline, current)).filter(
+            (f) =>
+              !(f.delta.kind === 'removed' && current.truncated) &&
+              !(f.delta.kind === 'added' && baseline.truncated),
+          ),
         ),
+        baseline,
+        current,
       )
     : [];
 

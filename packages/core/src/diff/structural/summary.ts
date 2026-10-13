@@ -25,7 +25,9 @@ export const MAX_SUMMARY = 300;
 const LEAD_ITEMS = 3;
 /** Changes listed in one element's clause; the rest join "(+N more)". */
 const CLAUSE_CHANGES = 3;
-const MAX_VALUE = 40;
+/** Longest value shown in prose. Not deltas.ts's MAX_VALUE (200), which caps
+ *  what the JSON stores; this caps what a sentence repeats of it. */
+const MAX_SHOWN_VALUE = 40;
 
 export function describeDelta(d: Delta): string {
   switch (d.kind) {
@@ -49,59 +51,25 @@ export function describeDelta(d: Delta): string {
 /** The deltas as indented display lines for a human, grouped by element:
  *  the element's content changes (four-side longhands collapsed), then its
  *  resize and move on one line. Groups run causes first — content, added and
- *  removed; then shifts; then moves; then resizes, so an ancestor's
- *  consequential `resized` comes last. */
-export function describeDeltas(deltas: Delta[]): string[] {
-  interface Group {
-    rank: number;
-    el?: string;
-    content: ContentDelta[];
-    resized?: string;
-    moved?: string;
-    solo?: string;
-  }
-  const groups: Group[] = [];
-  const byEl = new Map<string, Group>();
-  const of = (el: string): Group => {
-    let g = byEl.get(el);
-    if (!g) {
-      g = { rank: 4, el, content: [] };
-      byEl.set(el, g);
-      groups.push(g);
-    }
-    return g;
-  };
-  for (const d of deltas) {
-    if (d.kind === 'added' || d.kind === 'removed' || d.kind === 'shift') {
-      groups.push({
-        rank: d.kind === 'shift' ? 1 : 0,
-        content: [],
-        solo: describeDelta(d),
-      });
-    } else {
-      const g = of(d.el);
-      if (d.kind === 'moved') {
-        g.moved = `moved ${direction(d.dx, d.dy)}`;
-        g.rank = Math.min(g.rank, 2);
-      } else if (d.kind === 'resized') {
-        g.resized = `resized ${extent(d.dw, d.dh)}`;
-        g.rank = Math.min(g.rank, 3);
-      } else {
-        g.content.push(d);
-        g.rank = 0;
-      }
-    }
-  }
+ *  removed, and a move a shift is blamed on; then shifts; then other moves;
+ *  then resizes, so an ancestor's consequential `resized` comes last. Every
+ *  delta passed in is stated on some line; `total` is the verdict's
+ *  `deltaCount`, which says whether `deltas` is the whole set. */
+export function describeDeltas(deltas: Delta[], total = deltas.length): string[] {
+  const ctx = context(deltas, total);
   const lines: string[] = [];
-  const ordered = groups
-    .map((g, i) => ({ g, i }))
-    .sort((a, b) => a.g.rank - b.g.rank || a.i - b.i);
+  const ordered = groupByElement(deltas)
+    .map((g, i) => ({ g, i, rank: groupRank(g, ctx) }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i);
   for (const { g } of ordered) {
     if (g.solo !== undefined) {
-      lines.push(`  ${g.solo}`);
+      lines.push(`  ${describe(g.solo, ctx)}`);
       continue;
     }
-    const effects = [g.resized, g.moved].filter((x): x is string => x !== undefined);
+    const effects = [
+      g.resized && `resized ${extent(g.resized.dw, g.resized.dh)}`,
+      g.moved && `moved ${direction(g.moved.dx, g.moved.dy)}`,
+    ].filter((x): x is string => typeof x === 'string');
     const own = [
       ...shorthand(g.content, ' → ').map((p) => p.text),
       ...(effects.length ? [effects.join(', ')] : []),
@@ -113,6 +81,118 @@ export function describeDeltas(deltas: Delta[]): string[] {
     }
   }
   return lines;
+}
+
+type Moved = Extract<Delta, { kind: 'moved' }>;
+type Resized = Extract<Delta, { kind: 'resized' }>;
+
+/** One element's deltas, or one delta that stands alone. */
+interface Group {
+  el?: string;
+  content: ContentDelta[];
+  resized?: Resized;
+  moved?: Moved;
+  solo?: Delta;
+}
+
+/** Facts about one element are adjacent in `deltas` (they sort by element
+ *  position first) and, since `disambiguate`, distinct elements never share
+ *  a label — so an element is a run of one label, not every delta with that
+ *  label. The run also splits when a kind or property repeats, which only an
+ *  older verdict with colliding labels can produce: two elements, never one
+ *  element stating `background-color` twice. */
+function groupByElement(deltas: Delta[]): Group[] {
+  const groups: Group[] = [];
+  let open: { g: Group; seen: Set<string> } | undefined;
+  for (const d of deltas) {
+    if (d.kind === 'added' || d.kind === 'removed' || d.kind === 'shift') {
+      groups.push({ content: [], solo: d });
+      open = undefined;
+      continue;
+    }
+    const fact =
+      d.kind === 'style'
+        ? `style:${d.prop}`
+        : d.kind === 'attr'
+          ? `attr:${d.attr}`
+          : d.kind;
+    if (!open || open.g.el !== d.el || open.seen.has(fact)) {
+      open = { g: { el: d.el, content: [] }, seen: new Set() };
+      groups.push(open.g);
+    }
+    open.seen.add(fact);
+    if (d.kind === 'moved') open.g.moved = d;
+    else if (d.kind === 'resized') open.g.resized = d;
+    else open.g.content.push(d);
+  }
+  return groups;
+}
+
+/** What ranking and wording need to know about the whole delta set. */
+interface Context {
+  /** Labels a shift is blamed on (`after`) that changed in no other way: a
+   *  move there is the cause. */
+  anchors: Set<string>;
+  /** How many moves and shifts carry each displacement. */
+  displacements: Map<string, number>;
+  /** Nothing moved or resized, and `deltas` is the whole set. */
+  still: boolean;
+}
+
+const disp = (d: { dx: number; dy: number }) => `${d.dx},${d.dy}`;
+
+function context(deltas: Delta[], total: number): Context {
+  const anchors = new Set<string>();
+  const displacements = new Map<string, number>();
+  // An element with its own content change is the cause through that change
+  // (padding grew); its move is a consequence like any other.
+  const changed = new Set(
+    deltas
+      .filter(
+        (d): d is ContentDelta =>
+          d.kind === 'text' || d.kind === 'style' || d.kind === 'attr',
+      )
+      .map((d) => d.el),
+  );
+  for (const d of deltas) {
+    if (d.kind === 'shift' && !changed.has(d.after)) anchors.add(d.after);
+    if (d.kind === 'shift' || d.kind === 'moved')
+      displacements.set(disp(d), (displacements.get(disp(d)) ?? 0) + 1);
+  }
+  const still =
+    total === deltas.length &&
+    !deltas.some((d) => d.kind === 'shift' || d.kind === 'moved' || d.kind === 'resized');
+  return { anchors, displacements, still };
+}
+
+/** A move a shift names as its cause (a reordered item) reads with the
+ *  causes; a move with a displacement nothing else shares reads before ones
+ *  that are part of a crowd. */
+function moveRank(d: Moved, ctx: Context): number {
+  if (ctx.anchors.has(d.el)) return 0.5;
+  return (ctx.displacements.get(disp(d)) ?? 0) > 1 ? 3.5 : 3;
+}
+
+function groupRank(g: Group, ctx: Context): number {
+  if (g.solo) return g.solo.kind === 'shift' ? 1 : 0;
+  if (g.content.length) return 0;
+  // 0.5 (blamed by a shift), else 2 or 2.5: after shifts, before resizes.
+  if (g.moved) {
+    const r = moveRank(g.moved, ctx);
+    return r === 0.5 ? r : r - 1;
+  }
+  return 4;
+}
+
+/** `describeDelta`, except that a removal with nothing moving or resizing
+ *  around it may not be a removal: the capture drops `visibility: hidden`
+ *  boxes, which leave their space behind. `display: none` and a real removal
+ *  reflow what follows; this does not. The JSON `kind` stays `removed` —
+ *  that is what the structure says — only the prose hedges. */
+function describe(d: Delta, ctx: Context): string {
+  if (d.kind === 'removed' && ctx.still)
+    return `hidden or removed ${d.el} (${d.rect.w}×${d.rect.h} at ${d.rect.x},${d.rect.y})`;
+  return describeDelta(d);
 }
 
 type ContentDelta = Extract<Delta, { kind: 'text' | 'style' | 'attr' }>;
@@ -210,7 +290,7 @@ function lead(head: string, a: SummaryArgs, tail: string[]): string {
     `${head}: ${texts.join('; ')}${more > 0 ? ` (+${more} more)` : ''}`;
   const shown: string[] = [];
   let used = 0;
-  for (const item of leadItems(a.deltas).slice(0, LEAD_ITEMS)) {
+  for (const item of leadItems(a.deltas, a.deltaCount).slice(0, LEAD_ITEMS)) {
     const fit =
       item.find(
         (o) =>
@@ -230,7 +310,8 @@ type LeadItem = Array<{
   consumed: number;
 }>;
 
-/** Causes before consequences; within a rank, fact (document) order. */
+/** Causes before consequences; within a rank, fact (document) order. A
+ *  move is ranked by `moveRank`. */
 const CAUSE_RANK: Record<Delta['kind'], number> = {
   removed: 0,
   added: 0,
@@ -242,39 +323,47 @@ const CAUSE_RANK: Record<Delta['kind'], number> = {
   moved: 3,
 };
 
-function leadItems(deltas: Delta[]): LeadItem[] {
-  const ranked = deltas
-    .map((d, i) => ({ d, i }))
-    .sort((x, y) => CAUSE_RANK[x.d.kind] - CAUSE_RANK[y.d.kind] || x.i - y.i)
-    .map((x) => x.d);
-
-  // Content changes on one element read as one clause: `el a→b, c→d`.
-  const order: Array<string | Delta> = [];
-  const byEl = new Map<string, ContentDelta[]>();
-  for (const d of ranked) {
-    if (d.kind === 'text' || d.kind === 'style' || d.kind === 'attr') {
-      const list = byEl.get(d.el);
-      if (list) list.push(d);
-      else {
-        byEl.set(d.el, [d]);
-        order.push(d.el);
-      }
-    } else order.push(d);
-  }
-  return order.map((x) => {
-    if (typeof x !== 'string') return [{ text: describeDelta(x), consumed: 1 }];
-    const parts = shorthand(byEl.get(x)!);
-    const forms: LeadItem = [];
-    for (let k = Math.min(CLAUSE_CHANGES, parts.length); k >= 1; k--) {
-      const some = parts.slice(0, k);
-      forms.push({
-        text: `${x} ${some.map((p) => p.text).join(', ')}`,
-        consumed: some.reduce((n, p) => n + p.consumed, 0),
+function leadItems(deltas: Delta[], total: number): LeadItem[] {
+  const ctx = context(deltas, total);
+  const rank = (d: Delta) => (d.kind === 'moved' ? moveRank(d, ctx) : CAUSE_RANK[d.kind]);
+  // Content changes on one element read as one clause: `el a→b, c→d`; its
+  // resize and move stay separate clauses, ranked as consequences.
+  const items: Array<{ rank: number; i: number; item: LeadItem }> = [];
+  for (const g of groupByElement(deltas)) {
+    const i = items.length;
+    if (g.solo) {
+      items.push({
+        rank: rank(g.solo),
+        i,
+        item: [{ text: describe(g.solo, ctx), consumed: 1 }],
       });
+      continue;
     }
-    forms.push({ text: `${x} ${parts[0].name} changed`, consumed: parts[0].consumed });
-    return forms;
-  });
+    if (g.content.length)
+      items.push({ rank: 0, i, item: contentForms(g.el!, g.content) });
+    for (const d of [g.resized, g.moved])
+      if (d)
+        items.push({
+          rank: rank(d),
+          i: items.length,
+          item: [{ text: describeDelta(d), consumed: 1 }],
+        });
+  }
+  return items.sort((x, y) => x.rank - y.rank || x.i - y.i).map((x) => x.item);
+}
+
+function contentForms(el: string, content: ContentDelta[]): LeadItem {
+  const parts = shorthand(content);
+  const forms: LeadItem = [];
+  for (let k = Math.min(CLAUSE_CHANGES, parts.length); k >= 1; k--) {
+    const some = parts.slice(0, k);
+    forms.push({
+      text: `${el} ${some.map((p) => p.text).join(', ')}`,
+      consumed: some.reduce((n, p) => n + p.consumed, 0),
+    });
+  }
+  forms.push({ text: `${el} ${parts[0].name} changed`, consumed: parts[0].consumed });
+  return forms;
 }
 
 interface Part {
@@ -381,7 +470,7 @@ function regions(a: SummaryArgs): string {
 
 const size = (s: StructureSnapshot) => `${s.viewport.width}×${s.viewport.height}`;
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
-const trim = (s: string) => clip(s, MAX_VALUE);
+const trim = (s: string) => clip(s, MAX_SHOWN_VALUE);
 
 /** Opaque `rgb(r, g, b)` as `#rrggbb`: a third the length, and the form a
  *  developer greps their stylesheet for. Alpha colours stay as they are. */

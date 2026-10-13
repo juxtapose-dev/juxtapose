@@ -26,6 +26,17 @@ export interface Fact {
   /** Position in the current document; for `removed`, that of the preceding
    *  matched element. Keeps output order stable across runs. */
   order: number;
+  /** The element this fact is about, as an index into one side's snapshot:
+   *  the baseline for matched and removed elements (their label comes from
+   *  it), the current side for added ones; a shift carries its anchor's.
+   *  Labels are not identities — two `div.card`s are two elements — so
+   *  anything that groups facts by element keys on this. */
+  source: Source;
+}
+
+export interface Source {
+  side: 'baseline' | 'current';
+  index: number;
 }
 
 /** Within one position, which fact reads first. */
@@ -65,6 +76,7 @@ export function computeFacts(
       rects: [ea.rect, eb.rect],
       abstract: abstractLabel(eb),
       order: j,
+      source: { side: 'baseline', index: i },
     });
     // Every fact about a matched element carries ONE label, the baseline
     // side's. A button's label is its name, and its name is usually its text,
@@ -138,6 +150,7 @@ export function computeFacts(
       rects: [e.rect],
       abstract: abstractLabel(e),
       order: j,
+      source: { side: 'current', index: j },
     });
   }
 
@@ -157,6 +170,7 @@ export function computeFacts(
       rects: [e.rect],
       abstract: abstractLabel(e),
       order: lastMatchedBefore(i),
+      source: { side: 'baseline', index: i },
     });
   }
 

@@ -95,7 +95,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     lines.push(v.summary);
     lines.push('');
     if (v.deltas.length > 0) {
-      lines.push(...describeDeltas(v.deltas));
+      lines.push(...describeDeltas(v.deltas, v.deltaCount));
       if (v.deltaCount > v.deltas.length) {
         lines.push(
           `  …and ${v.deltaCount - v.deltas.length} more (see the diff data file)`,

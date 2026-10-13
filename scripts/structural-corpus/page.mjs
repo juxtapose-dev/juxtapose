@@ -6,8 +6,10 @@
 
 /**
  * @typedef {{ css?: string; saveText?: string; banner?: string; logo?: string;
- *   removeRow?: boolean; canvasFill?: string }} PageOptions
+ *   removeRow?: boolean; canvasFill?: string; rowOrder?: number[] }} PageOptions
  */
+
+const ROW_WORDS = ['one', 'two', 'three', 'four', 'five'];
 
 /** @param {PageOptions} o */
 export function render(o) {
@@ -27,11 +29,15 @@ export function render(o) {
   <button class="save" data-testid="save">${o.saveText ?? 'Save'}</button>
   ${o.banner ?? ''}
   <img id="logo" src="${o.logo ?? '/logo-a.svg'}" width="32" height="32" alt="Logo">
-  ${o.removeRow ? '' : '<div class="row" id="row-1">Row one</div>'}
-  <div class="row" id="row-2">Row two</div>
-  <div class="row" id="row-3">Row three</div>
-  <div class="row" id="row-4">Row four</div>
-  <div class="row" id="row-5">Row five</div>
+  ${(o.rowOrder ?? [1, 2, 3, 4, 5])
+    // byte-for-byte the markup the fixture was captured from: a removed row
+    // leaves its (blank) line behind
+    .map((n) =>
+      o.removeRow && n === 1
+        ? ''
+        : `<div class="row" id="row-${n}">Row ${ROW_WORDS[n - 1]}</div>`,
+    )
+    .join('\n  ')}
   <canvas id="chart" width="200" height="60"></canvas>
 </main>
 <script>
@@ -160,6 +166,19 @@ export const OPERATORS = [
     },
   },
   {
+    // Row one moved below row four: rows two to four each move up one row
+    // (37px), and row one — the only thing the author touched — moves down
+    // three. The verdict must lead with row one, then the shift it caused.
+    name: 'reorder',
+    page: { rowOrder: [2, 3, 4, 1, 5] },
+    expect: {
+      classification: 'reflow',
+      delta: { kind: 'moved', el: 'div#row-1', dx: 0, dy: 111 },
+      shift: true,
+      lead: 'reflow: div#row-1 moved down 111px; 3 elements after div#row-1 moved up 37px',
+    },
+  },
+  {
     name: 'canvas',
     page: { canvasFill: 'rgb(239, 68, 68)' },
     expect: { classification: 'unknown', flags: ['unexplained-pixels'], noDeltas: true },
@@ -181,7 +200,7 @@ const sameFields = (delta, want) =>
  * (Task 3) and the end-to-end script (Task 7) both call it, so they cannot
  * drift apart.
  * @param {typeof OPERATORS[number]} op
- * @param {{ classification: string; styleTags: string[]; deltas: Array<Record<string, unknown>>; flags: string[]; explained: string }} v
+ * @param {{ classification: string; styleTags: string[]; summary: string; deltas: Array<Record<string, unknown>>; flags: string[]; explained: string }} v
  * @returns {string[]}
  */
 export function checkVerdict(op, v) {
@@ -202,6 +221,8 @@ export function checkVerdict(op, v) {
     problems.push(`expected no deltas, got ${v.deltas.length}`);
   if (e.shift && !v.deltas.some((d) => d.kind === 'shift'))
     problems.push('expected a shift delta');
+  if (e.lead && !v.summary.startsWith(e.lead))
+    problems.push(`summary does not lead with '${e.lead}': '${v.summary}'`);
   if (op.name !== 'noop' && op.name !== 'canvas' && v.explained !== 'full')
     problems.push(`explained ${v.explained}`);
   return problems;
