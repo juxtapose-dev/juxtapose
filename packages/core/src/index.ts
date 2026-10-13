@@ -15,6 +15,9 @@ export type {
   Viewport,
   StoryManifest,
   Snapshot,
+  StructureSnapshot,
+  StructureElement,
+  StructureRect,
   ChangedRegion,
   DiffStatus,
   DiffResult,
@@ -40,6 +43,9 @@ export { GitBaselineStore, encodeStoryId } from './baseline/git-store.js';
 export { hashImage } from './baseline/status.js';
 export type { BaselineStatus, AncestryCheck } from './baseline/status.js';
 export { createAncestryCheck, alwaysAncestor } from './git/ancestry.js';
+
+// Structure sidecars: read and write the gzipped snapshot beside an image.
+export { encodeStructure, decodeStructure } from './capture/structure.js';
 
 // Driving a run.
 export {

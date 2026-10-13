@@ -5,7 +5,7 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { encodeStoryId, type RunReport } from '@juxtapose/core';
+import { decodeStructure, encodeStoryId, type RunReport } from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
 
@@ -58,7 +58,29 @@ export async function approveCommand(flags: CommonFlags): Promise<number> {
     );
     try {
       const image = await readFile(imagePath);
-      await ctx.store.put(result.storyId, image, { commit, approvedBy, approvedAt, env });
+      const gz = await readFile(
+        imagePath.replace(/-current\.webp$/, '-current.structure.json.gz'),
+      ).catch(() => null);
+      // Structure explains a diff, it never gates one: a corrupt sidecar is
+      // treated as absent so the image still gets approved.
+      let structureHash: string | undefined;
+      let structureGz: Buffer | null = null;
+      if (gz) {
+        try {
+          structureHash = decodeStructure(gz).structureHash;
+          structureGz = gz;
+        } catch {
+          structureHash = undefined;
+        }
+      }
+      await ctx.store.put(result.storyId, image, {
+        commit,
+        approvedBy,
+        approvedAt,
+        env,
+        ...(structureHash ? { structureHash } : {}),
+      });
+      if (structureGz) await ctx.store.putStructure?.(result.storyId, structureGz);
       approved.push(result.storyId);
     } catch {
       failed.push({ storyId: result.storyId, reason: 'capture image missing from run' });

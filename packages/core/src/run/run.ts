@@ -16,6 +16,7 @@ import type {
   RunReport,
   Snapshot,
   StoryManifest,
+  StructureSnapshot,
   Viewport,
 } from '../types.js';
 import { capturePool } from '../capture/pool.js';
@@ -52,6 +53,7 @@ export interface RunArtifact {
   status: DiffStatus;
   current: Buffer;
   diff?: Buffer;
+  structure?: StructureSnapshot;
 }
 
 export async function runCapture(opts: RunOptions): Promise<RunReport> {
@@ -161,14 +163,24 @@ async function judge(
   // pass / new / stale need no pixel work: there is either nothing to explain
   // or nothing to compare against.
   if (status !== 'fail') {
-    await opts.onArtifact?.({ storyId: story.storyId, status, current: snapshot.image });
+    await opts.onArtifact?.({
+      storyId: story.storyId,
+      status,
+      current: snapshot.image,
+      structure: snapshot.structure,
+    });
     return base;
   }
 
   const baseline = await opts.store.get(story.storyId);
   if (!baseline) {
     // The manifest claimed a baseline the store can't produce.
-    await opts.onArtifact?.({ storyId: story.storyId, status, current: snapshot.image });
+    await opts.onArtifact?.({
+      storyId: story.storyId,
+      status,
+      current: snapshot.image,
+      structure: snapshot.structure,
+    });
     return { ...base, error: 'baseline missing from store' };
   }
 
@@ -187,6 +199,7 @@ async function judge(
     status,
     current: snapshot.image,
     diff: diff.diffImage,
+    structure: snapshot.structure,
   });
 
   return {

@@ -169,6 +169,9 @@ export interface ApprovalMeta {
   /** Absent on entries approved before this was recorded. Absent must not read
    *  as "matches": an unknown origin is unknown, not current. */
   env?: CaptureEnv;
+  /** structureHash of the approved capture's sidecar. Absent when the capture
+   *  had no structure, or was approved before sidecars existed. */
+  structureHash?: string;
 }
 
 export interface BaselineEntry extends ApprovalMeta {
@@ -219,4 +222,7 @@ export interface BaselineStore {
   remove(storyId: string): Promise<void>;
   readManifest(): Promise<BaselineManifest>;
   writeManifest(manifest: BaselineManifest): Promise<void>;
+  /** Optional: stores that can hold the gzipped structure sidecar. */
+  putStructure?(storyId: string, gz: Buffer): Promise<void>;
+  getStructure?(storyId: string): Promise<Buffer | null>;
 }

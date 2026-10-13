@@ -15,6 +15,7 @@ import {
   alwaysAncestor,
   deterministicLaunchOptions,
   encodeStoryId,
+  encodeStructure,
   formatPercent,
   formatPhases,
   phases,
@@ -223,6 +224,12 @@ async function writeArtifact(runDir: string, a: RunArtifact): Promise<void> {
   const images = path.join(runDir, 'images');
   await writeFile(path.join(images, `${safe}-current.webp`), a.current);
   if (a.diff) await writeFile(path.join(images, `${safe}-diff.webp`), a.diff);
+  if (a.structure) {
+    await writeFile(
+      path.join(images, `${safe}-current.structure.json.gz`),
+      encodeStructure(a.structure),
+    );
+  }
 }
 
 async function emit(
