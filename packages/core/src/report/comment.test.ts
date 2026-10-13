@@ -388,3 +388,40 @@ describe('sub-threshold changes', () => {
     expect(body).not.toContain('subtle');
   });
 });
+
+describe('buildComment with variants', () => {
+  const v = (base: string, name: string, status: DiffStatus, pct = 0): DiffResult => ({
+    ...result(`${base}__${name}`, status, pct),
+    baseStoryId: base,
+    variant: name,
+  });
+
+  it('labels a variant row `story · variant` and counts captures', () => {
+    const body = buildComment({
+      report: report([
+        result('card', 'pass'),
+        v('card', 'dark', 'fail', 3),
+        v('card', 'mobile', 'new'),
+      ]),
+    });
+    expect(body).toContain('`card · dark`');
+    expect(body).toContain('`card · mobile`');
+    expect(body).toMatch(/### 2 captures need review/);
+    // The command still takes the key, quoted where a shell needs it.
+    expect(body).toContain('jux handoff card__dark');
+  });
+
+  it('a passing run says how many stories the captures cover', () => {
+    const body = buildComment({
+      report: report([result('a', 'pass'), v('a', 'dark', 'pass'), result('b', 'pass')]),
+    });
+    expect(body).toContain('3 captures match their baselines, across 2 stories.');
+  });
+
+  it('without variants, reads exactly as before', () => {
+    const body = buildComment({
+      report: report([result('a', 'pass'), result('b', 'pass')]),
+    });
+    expect(body).toContain('2 stories match their baselines.');
+  });
+});

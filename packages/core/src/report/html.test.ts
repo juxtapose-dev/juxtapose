@@ -166,3 +166,29 @@ describe('sub-threshold changes', () => {
     expect(html).not.toContain('0% changed');
   });
 });
+
+describe('buildHtmlReport with variants', () => {
+  it("nests a story's variants under it, labelled by variant", () => {
+    const dark: DiffResult = {
+      ...result('card__dark', 'fail', 2),
+      baseStoryId: 'card',
+      variant: 'dark',
+    };
+    const mobile: DiffResult = {
+      ...result('card__mobile', 'new'),
+      baseStoryId: 'card',
+      variant: 'mobile',
+    };
+    const html = buildHtmlReport({
+      report: report([result('card', 'new'), dark, mobile, result('other', 'new')]),
+      images: new Map(),
+    });
+    const article = html.slice(html.indexOf('<article class="story">'));
+    expect(article).toMatch(/<h2>card<\/h2>/);
+    // default, dark, mobile inside the article, in report order.
+    const labels = [...article.matchAll(/<h3 title="([^"]+)">/g)].map((m) => m[1]);
+    expect(labels).toEqual(['card', 'card · dark', 'card · mobile']);
+    // A story without variants keeps its own top-level section.
+    expect(html).toMatch(/<h2>\s*<span class="badge new">no baseline<\/span>\s*other/);
+  });
+});

@@ -10,7 +10,7 @@
 // pull request who has checked nothing out.
 
 import type { RunReport, DiffResult } from '../types.js';
-import { describeMagnitude } from './format.js';
+import { captureLabel, describeMagnitude } from './format.js';
 
 export interface HtmlReportOptions {
   report: RunReport;
@@ -51,7 +51,9 @@ export function buildHtmlReport({ report, images }: HtmlReportOptions): string {
 ${
   needsReview.length === 0
     ? `<p class="empty">Every captured story matches its approved baseline.</p>`
-    : needsReview.map((r) => storySection(r, images.get(r.storyId))).join('\n')
+    : groupByStory(needsReview)
+        .map((group) => storyGroup(group, images))
+        .join('\n')
 }
 
 <script>${SCRIPT}</script>
@@ -62,9 +64,50 @@ function stat(label: string, value: number, tone = ''): string {
   return `<div class="${tone}"><dt>${label}</dt><dd>${value}</dd></div>`;
 }
 
+type Images = HtmlReportOptions['images'];
+
+/** Captures grouped by story, in first-seen order: a story's variants nest
+ *  under it rather than reading as unrelated stories. */
+function groupByStory(results: DiffResult[]): DiffResult[][] {
+  const groups = new Map<string, DiffResult[]>();
+  for (const r of results) {
+    const key = r.baseStoryId ?? r.storyId;
+    const group = groups.get(key);
+    if (group) group.push(r);
+    else groups.set(key, [r]);
+  }
+  return [...groups.values()];
+}
+
+function storyGroup(group: DiffResult[], images: Images): string {
+  const [first] = group;
+  // A lone default capture renders exactly as before variants existed.
+  if (group.length === 1 && first && first.variant === undefined)
+    return storySection(first, images.get(first.storyId), 'h2', first.storyId);
+  const story = first?.baseStoryId ?? first?.storyId ?? '';
+  return `
+<article class="story">
+  <h2>${escapeHtml(story)}</h2>
+  ${group
+    .map((r) =>
+      storySection(
+        r,
+        images.get(r.storyId),
+        'h3',
+        r.variant ?? 'default',
+        captureLabel(r),
+      ),
+    )
+    .join('\n')}
+</article>`;
+}
+
 function storySection(
   result: DiffResult,
   imgs: { baseline?: Buffer; current?: Buffer; diff?: Buffer } | undefined,
+  level: 'h2' | 'h3',
+  label: string,
+  title = label,
 ): string {
   const baseline = dataUri(imgs?.baseline);
   const current = dataUri(imgs?.current);
@@ -77,11 +120,11 @@ function storySection(
 
   return `
 <section>
-  <h2>
+  <${level}${level === 'h3' ? ` title="${escapeHtml(title)}"` : ''}>
     <span class="badge ${result.status}">${statusLabel(result.status)}</span>
-    ${escapeHtml(result.storyId)}
+    ${escapeHtml(label)}
     ${result.status === 'fail' ? `<span class="pct">${escapeHtml(describeMagnitude(result))}</span>` : ''}
-  </h2>
+  </${level}>
   ${result.error ? `<p class="error">${escapeHtml(result.error)}</p>` : ''}
   ${
     comparable
@@ -171,6 +214,10 @@ dl .bad dd { color: var(--bad); } dl .warn dd { color: var(--warn); }
 .meta { color: var(--muted); font-size: 13px; margin: 0 0 28px; }
 .empty { color: var(--muted); }
 section { border-top: 1px solid var(--line); padding: 20px 0; }
+article.story { border-top: 1px solid var(--line); padding-top: 20px; }
+article.story > h2 { margin-bottom: 4px; }
+article.story section { border-top: none; padding: 12px 0 12px 16px; border-left: 2px solid var(--line); }
+h3 { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin: 0 0 8px; }
 h2 { font-size: 15px; font-weight: 600; display: flex; align-items: center;
      gap: 10px; margin: 0 0 12px; }
 .badge { font-size: 11px; text-transform: uppercase; letter-spacing: .04em;

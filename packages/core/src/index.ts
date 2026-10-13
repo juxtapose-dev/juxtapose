@@ -58,6 +58,11 @@ export {
   VariantConfigError,
   VARIANT_NAME,
 } from './capture/variants.js';
+export {
+  discoverParams,
+  prepareCaptures,
+  type PrepareOptions,
+} from './capture/discover.js';
 
 // Implementing a baseline store. `encodeStoryId` matters for anyone building
 // keys from a story id — they are platform-supplied and not path-safe.
@@ -178,12 +183,20 @@ export {
 export {
   buildHandoffPrompt,
   describeCause,
+  describeVariant,
+  handoffVariant,
   type HandoffPayload,
 } from './agent/handoff.js';
 export { buildComment, type CommentOptions } from './report/comment.js';
 export { isRunReport, parseRunReport } from './report/run-report.js';
 export { buildHtmlReport, type HtmlReportOptions } from './report/html.js';
-export { formatPercent } from './report/format.js';
+export {
+  formatPercent,
+  captureLabel,
+  countStories,
+  hasVariants,
+  type CaptureRef,
+} from './report/format.js';
 export {
   resolveArtifactUrl,
   resolveGitHubContext,

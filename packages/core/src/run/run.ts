@@ -296,9 +296,15 @@ async function tryStructural(
 
 /** The grouping fields a report needs, present only on a variant capture so
  *  a default capture's result serializes exactly as it did before variants. */
-function variantOf(story: StoryManifest): Pick<DiffResult, 'baseStoryId' | 'variant'> {
+function variantOf(
+  story: StoryManifest,
+): Pick<DiffResult, 'baseStoryId' | 'variant' | 'variantParams'> {
   return story.variant !== undefined && story.baseStoryId !== undefined
-    ? { baseStoryId: story.baseStoryId, variant: story.variant }
+    ? {
+        baseStoryId: story.baseStoryId,
+        variant: story.variant,
+        variantParams: story.variantParams ?? {},
+      }
     : {};
 }
 

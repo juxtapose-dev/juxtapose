@@ -308,3 +308,31 @@ describe('describeRegion', () => {
     expect(out).toContain('`jux approve --story components-button--primary`');
   });
 });
+
+describe('handoff for a variant capture', () => {
+  it('says which variant it is and what it sets', async () => {
+    const { buildHandoffPrompt, handoffVariant } = await import('./handoff.js');
+    const variant = handoffVariant({
+      baseStoryId: 'card--default',
+      variant: 'mobile-dark',
+      variantParams: { viewport: { width: 375, height: 812 }, colorScheme: 'dark' },
+    });
+    const text = buildHandoffPrompt({
+      storyId: 'card--default__mobile-dark',
+      storyTitle: 'Card — Default',
+      status: 'new',
+      mismatchPercent: 0,
+      mismatchPixels: 0,
+      changedRegions: [],
+      viewport: { width: 375, height: 812 },
+      componentPath: '',
+      images: {},
+      projectRoot: '/p',
+      ...(variant ? { variant } : {}),
+    });
+    expect(text).toContain(
+      'This capture is the `mobile-dark` variant of `card--default`, captured with colorScheme dark, viewport 375×812.',
+    );
+    expect(handoffVariant({})).toBeUndefined();
+  });
+});

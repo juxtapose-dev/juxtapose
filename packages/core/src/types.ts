@@ -261,6 +261,10 @@ export interface DiffResult {
   /** Set only on a variant capture, so reports can group without parsing keys. */
   baseStoryId?: string;
   variant?: string;
+  /** Set only on a variant capture: what the variant sets (its resolved
+   *  `extends` chain). Recorded for the same reason as `viewport` — a handoff
+   *  can say the conditions it was captured under without re-enumerating. */
+  variantParams?: Omit<VariantSpec, 'extends'>;
   status: DiffStatus;
   mismatchPixels: number;
   mismatchPercent: number;

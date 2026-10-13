@@ -41,6 +41,46 @@ export interface HandoffPayload {
   };
   /** So a session running in the wrong repo can detect the mismatch. */
   projectRoot: string;
+  /** Set when the capture is a variant: its story, name and what it sets. */
+  variant?: { baseStoryId: string; name: string; params: Record<string, unknown> };
+}
+
+/** The handoff's variant field from a run result; undefined for a default
+ *  capture. */
+export function handoffVariant(r: {
+  baseStoryId?: string;
+  variant?: string;
+  variantParams?: object;
+}): HandoffPayload['variant'] {
+  return r.baseStoryId !== undefined && r.variant !== undefined
+    ? {
+        baseStoryId: r.baseStoryId,
+        name: r.variant,
+        params: { ...(r.variantParams ?? {}) },
+      }
+    : undefined;
+}
+
+/** "the `dark` variant of `card--default`, captured with colorScheme dark and
+ *  viewport 375×812": the conditions an agent is fixing under. */
+export function describeVariant(v: NonNullable<HandoffPayload['variant']>): string {
+  const settings = Object.entries(v.params)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, val]) => {
+      if (
+        k === 'viewport' &&
+        typeof val === 'object' &&
+        val !== null &&
+        'width' in val &&
+        'height' in val
+      )
+        return `viewport ${String(val.width)}×${String(val.height)}`;
+      return `${k} ${typeof val === 'string' ? val : JSON.stringify(val)}`;
+    });
+  const head = `the \`${v.name}\` variant of \`${v.baseStoryId}\``;
+  return settings.length > 0
+    ? `${head}, captured with ${settings.join(', ')}`
+    : `${head}, with no settings of its own`;
 }
 
 export function buildHandoffPrompt(p: HandoffPayload): string {
@@ -49,6 +89,11 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   lines.push(`# Visual change: ${p.storyTitle}`);
   lines.push('');
   lines.push(`Story \`${p.storyId}\` is **${p.status}**.`);
+  if (p.variant) {
+    lines.push(
+      `This capture is ${describeVariant(p.variant)}. Reproduce under those conditions; the story's default capture is a separate baseline.`,
+    );
+  }
   lines.push('');
 
   if (p.status === 'new') {
