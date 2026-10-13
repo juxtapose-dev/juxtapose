@@ -102,10 +102,10 @@ libxkbcommon0 libxrandr2`. linux-arm64 has no published build of this
 version; use `JUX_CHROME`.
 
 `jux browser status` shows which browser jux would use and where it came from;
-`jux browser path` prints just the path.
+`jux browser path` prints only the path.
 
-Mask and `--wait-for` selectors are CSS. Playwright-only forms (`text=`,
-`>>`, `:has-text()`) are rejected with an error rather than silently matching
+Mask and `--wait-for` selectors are CSS. jux rejects Playwright-only forms
+(`text=`, `>>`, `:has-text()`) with an error rather than silently matching
 nothing.
 
 ## Commands
@@ -492,8 +492,8 @@ Per-story options go through the platform's own parameter mechanism
 | `mask`                         | paint over selectors before the shutter (see below) |
 | `liveCapture: false`           | exclude from watch-mode recapture (see below)       |
 
-Captures are reproducible: animations are frozen, webfonts and images
-are awaited, and rendering is pinned to settings that don't vary by machine.
+Captures are reproducible: juxtapose freezes animations, waits for webfonts
+and images, and pins rendering to settings that don't vary by machine.
 
 ### Content that changes every run
 
@@ -546,11 +546,11 @@ pnpm add -D @juxtapose/storybook   # then add it to .storybook/main.js addons
 
 With the addon installed, editing a component recaptures it while you work, so
 the diff is ready before you go looking for it. Storybook's own hot
-reload is the trigger — there is no file watcher to configure — and a burst of
-saves is coalesced into one capture.
+reload is the trigger — there is no file watcher to configure — and juxtapose
+coalesces a burst of saves into one capture.
 
 Scope is every story sharing the component you edited. If a `storybook build`
-happens to be lying around, that widens to everything importing it, since the
+exists, that widens to everything importing it, since the
 dev server has no bundler graph of its own to consult. Set
 `liveCapture: false` on a story whose play function or delay makes constant
 recapture cost more than it returns; it still captures on a normal run.
@@ -572,7 +572,7 @@ Two of these are the ones you install:
 Ladle needs no second package — the CLI covers it, and Ladle has no addon slot
 to put a panel in.
 
-The rest arrive as dependencies. You would only reach for one directly to build
+The rest arrive as dependencies. You would reach for one directly only to build
 an adapter or a UI of your own:
 
 | package                        | what it is                                                 |
@@ -602,12 +602,8 @@ Early, but usable. Verified end to end on Storybook (React and Vue) and Ladle:
   shows the pixels only when structure can't explain them. A Claude Code skill
   ships in `plugins/claude-code/`.
 
-In progress: a warm browser daemon so repeat snaps skip the browser launch, and
-event-driven settling that captures as soon as a page is idle instead of after
-a fixed wait.
-
 Hosted baseline storage is the main gap. `storage.kind` accepts `"s3"`, but the
-CLI throws on it today — git is the only implemented backend, and `"fs"` is that
+CLI throws on it in this version — git is the only implemented backend, and `"fs"` is that
 same store pointed at a directory you choose. That is about where the image
 bytes live, not about review: hosted review works with baselines in git. See
 the [issues](https://github.com/juxtapose-dev/juxtapose/issues) for the roadmap.

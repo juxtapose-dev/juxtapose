@@ -29,7 +29,7 @@ pnpm check:determinism   # needs pnpm build and a built example first
 ## Working on capture
 
 The examples are the real test surface. Unit tests cover the pure functions,
-but every significant bug so far was invisible to them and obvious the moment
+but every significant bug so far was invisible to them and showed up the moment
 the tool ran against an actual workbench.
 
 ```bash
