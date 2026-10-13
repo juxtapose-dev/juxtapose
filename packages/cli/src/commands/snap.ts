@@ -8,9 +8,10 @@
 // failed one is reported (with its error, in --json too) and the exit is 3:
 // the agent asked for all of them, so a partial set must not look like success.
 
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  compareCodeUnits,
   encodeStructure,
   snapPages,
   type CaptureEnv,
@@ -146,7 +147,10 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
     // A smaller page set must not leave last run's snaps to pair with; the
     // dir is scratch, so this is safe. Done after capture so a failed launch
     // deletes nothing.
-    if (prefix) await clearPrefix(dir, prefix);
+    if (prefix) {
+      await clearPrefix(dir, prefix);
+      await writeSnapSet(dir, prefix, urls.map(nameOf));
+    }
   } catch (err) {
     process.stderr.write(
       `jux snap: could not write to ${dir}: ${errorMessage(err)}. Check the directory is writable, or pass --project <dir>.\n`,
@@ -209,11 +213,43 @@ function retryCommand(url: string, name: string, flags: SnapFlags): string {
   return parts.join(' ');
 }
 
-/** Remove `<prefix>-* snaps (image and sidecar) from a previous run. */
-async function clearPrefix(dir: string, prefix: string): Promise<void> {
+/** Remove the snaps (image and sidecar) a previous `--as-prefix <prefix>`
+ *  run wrote. `<prefix>.set.json` lists them; matching `<prefix>-*` instead
+ *  would also delete a longer prefix's snaps (`a` clears `a-b-home`). With no
+ *  set file — snaps from before it existed — that glob is the fallback. A
+ *  listed name outside `<prefix>-` is ignored, so an edited set file cannot
+ *  reach another prefix's snaps. */
+export async function clearPrefix(dir: string, prefix: string): Promise<void> {
+  const listed = await readSnapSet(dir, prefix);
   for (const f of await readdir(dir)) {
-    if (f.startsWith(`${prefix}-`) && /\.(webp|structure\.json\.gz)$/.test(f))
-      await rm(path.join(dir, f), { force: true });
+    const m = /^(.*)\.(webp|structure\.json\.gz)$/.exec(f);
+    if (!m || !m[1].startsWith(`${prefix}-`)) continue;
+    if (listed && !listed.has(m[1])) continue;
+    await rm(path.join(dir, f), { force: true });
+  }
+}
+
+const setFile = (dir: string, prefix: string) => path.join(dir, `${prefix}.set.json`);
+
+/** Record the snap names a prefixed run is about to write (every requested
+ *  page, written or not: a failed page's old snap was cleared too). */
+export async function writeSnapSet(
+  dir: string,
+  prefix: string,
+  names: string[],
+): Promise<void> {
+  const sorted = [...new Set(names)].sort(compareCodeUnits);
+  await writeFile(setFile(dir, prefix), JSON.stringify({ names: sorted }) + '\n');
+}
+
+async function readSnapSet(dir: string, prefix: string): Promise<Set<string> | null> {
+  try {
+    const parsed = JSON.parse(await readFile(setFile(dir, prefix), 'utf8')) as unknown;
+    const names = (parsed as { names?: unknown }).names;
+    if (!Array.isArray(names) || !names.every((n) => typeof n === 'string')) return null;
+    return new Set(names);
+  } catch {
+    return null; // absent or unreadable: fall back to the prefix glob
   }
 }
 
