@@ -12,6 +12,7 @@ import { runCommand } from './commands/run.js';
 import { approveCommand } from './commands/approve.js';
 import { checkCommand } from './commands/check.js';
 import { handoffCommand } from './commands/handoff.js';
+import { snapCommand } from './commands/snap.js';
 
 const USAGE = `
 jux — visual regression testing for component workbenches
@@ -22,6 +23,7 @@ Usage
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
   jux handoff <storyId>          print an agent prompt for one failing story
+  jux snap <url> [options]       capture one page: pixels + structure, no workbench
   jux --version                  print installed package versions
 
 Common options
@@ -42,6 +44,12 @@ run
 approve
   --story <id>                   approve one story (repeatable)
   --all                          approve everything that failed or is new
+
+snap
+  --as <name>                    name for this snap (default: from the url)
+  --viewport <WxH>               default 1280x800
+  --wait-for <selector>          wait for this selector before capture
+  --mask <selector>              cover before capture (repeatable)
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -74,6 +82,10 @@ async function main(argv: string[]): Promise<number> {
       html: { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },
       run: { type: 'string' },
+      as: { type: 'string' },
+      viewport: { type: 'string' },
+      'wait-for': { type: 'string' },
+      mask: { type: 'string', multiple: true },
     },
   });
 
@@ -88,6 +100,8 @@ async function main(argv: string[]): Promise<number> {
       return checkCommand(values as never);
     case 'handoff':
       return handoffCommand(positionals[0], values as never);
+    case 'snap':
+      return snapCommand(positionals[0], values as never);
     default:
       process.stderr.write(`jux: unknown command '${command}'\n${USAGE}`);
       return 2;
