@@ -49,6 +49,13 @@ export { createAncestryCheck, alwaysAncestor } from './git/ancestry.js';
 
 // Structure sidecars: read and write the gzipped snapshot beside an image.
 export { encodeStructure, decodeStructure } from './capture/structure.js';
+// Approving a run capture with its sidecar: every approval path (CLI approve,
+// init, the review server) goes through this so they cannot disagree.
+export {
+  approveCapture,
+  readRunStructure,
+  type RunStructure,
+} from './baseline/approve.js';
 
 // Driving a run.
 export {

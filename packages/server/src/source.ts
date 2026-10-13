@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { chromium, type Browser } from 'playwright';
 import {
+  approveCapture,
   buildHandoffPrompt,
   createAncestryCheck,
   alwaysAncestor,
@@ -213,14 +214,26 @@ export class RunDirSource implements ReviewSource {
     const task = this.approvalQueue.then(async () => {
       const image = await this.readImage('current', storyId);
       if (!image) throw new Error(`no capture for ${storyId} in the last run`);
-      await this.opts.store.put(storyId, image, {
-        commit: this.opts.commitSha,
-        approvedBy: process.env.JUXTAPOSE_USER ?? process.env.USER ?? 'unknown',
-        approvedAt: new Date().toISOString(),
-        // The run that produced this capture, not the addon process. Approving
-        // through the panel must record the same fingerprint the CLI would.
-        env: this.report?.env,
-      });
+      const { structureError } = await approveCapture(
+        this.opts.store,
+        storyId,
+        image,
+        {
+          commit: this.opts.commitSha,
+          approvedBy: process.env.JUXTAPOSE_USER ?? process.env.USER ?? 'unknown',
+          approvedAt: new Date().toISOString(),
+          // The run that produced this capture, not the addon process. Approving
+          // through the panel must record the same fingerprint the CLI would.
+          env: this.report?.env,
+        },
+        this.imagePath('current', storyId),
+      );
+      // Approved either way: structure never decides a story's status.
+      if (structureError) {
+        process.stderr.write(
+          `juxtapose: approved ${storyId}, but its structure was not saved: ${structureError}\n`,
+        );
+      }
     });
     // Keep the chain alive even if this link rejects, or one failed approval
     // would wedge every subsequent one.
@@ -316,15 +329,19 @@ export class RunDirSource implements ReviewSource {
     return this.report;
   }
 
-  private async readImage(
-    kind: 'current' | 'diff',
-    storyId: string,
-  ): Promise<Buffer | null> {
-    const file = path.join(
+  private imagePath(kind: 'current' | 'diff', storyId: string): string {
+    return path.join(
       this.opts.runDir,
       'images',
       `${encodeStoryId(storyId)}-${kind}.webp`,
     );
+  }
+
+  private async readImage(
+    kind: 'current' | 'diff',
+    storyId: string,
+  ): Promise<Buffer | null> {
+    const file = this.imagePath(kind, storyId);
     try {
       return await readFile(file);
     } catch {
