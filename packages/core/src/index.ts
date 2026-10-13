@@ -124,7 +124,7 @@ export {
   type InstallOptions,
   type InstallResult,
 } from './browser/install.js';
-export { CHROME_VERSION } from './browser/pins.js';
+export { CHROME_VERSION, CHROME_PINS, chromePlatform } from './browser/pins.js';
 export { assertCssSelector } from './browser/selectors.js';
 export {
   resolveAffected,

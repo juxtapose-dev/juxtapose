@@ -9,15 +9,13 @@
 
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import {
   approveCapture,
   acquireBrowser,
-  CHROME_VERSION,
   installChrome,
-  juxCacheDir,
   resolveChrome,
-  stderrProgress,
   encodeStoryId,
   runCapture,
   alwaysAncestor,
@@ -34,6 +32,7 @@ import {
 } from '../context.js';
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
+import { installWithProxy } from './browser.js';
 
 const CONFIG_NAME = 'juxtapose.config.json';
 
@@ -84,11 +83,22 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
   let browser;
   try {
     if (!resolveChrome({ flag: flags.chrome })) {
-      say(`Downloading chrome-headless-shell ${CHROME_VERSION} (~100 MB, once)…`);
-      await installChrome({
-        cacheDir: juxCacheDir(),
-        onProgress: flags.json ? undefined : stderrProgress(),
-      });
+      // Same path as `jux browser install`: proxy re-exec, and a stderr line
+      // before the download (never silent, even with --json or in CI).
+      const out = await installWithProxy(
+        {
+          env: process.env,
+          writeErr: (s) => process.stderr.write(s),
+          install: installChrome,
+          // The child's stdout is the install report; init's stdout stays its own.
+          spawn: (cmd, args, env) =>
+            spawnSync(cmd, args, { stdio: ['ignore', 2, 'inherit'], env }),
+          argv: [process.argv[1], 'browser', 'install'],
+        },
+        { force: false, json: flags.json === true },
+      );
+      if ('code' in out && out.code !== EXIT.clean)
+        throw new Error('jux: the browser install failed (see above).');
     }
     browser = await acquireBrowser({ chrome: flags.chrome });
   } catch (err) {

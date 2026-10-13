@@ -63,6 +63,15 @@ jobs:
       - name: Install Chromium
         run: node packages/cli/dist/index.js browser install
 
+      # deb.deps ships beside the binary in the Chrome for Testing zip.
+      # Lines may carry version constraints and `a | b` alternatives, which
+      # `apt-get satisfy` understands (comma-joined).
+      - name: Install Chromium system libraries
+        run: |
+          dir=$(dirname "$(node packages/cli/dist/index.js browser path)")
+          sudo apt-get update
+          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$dir/deb.deps")"
+
       - name: Build example workbenches
         run: |
           pnpm --filter example-storybook build
@@ -140,6 +149,15 @@ jobs:
 
       - name: Install Chromium
         run: node packages/cli/dist/index.js browser install
+
+      # deb.deps ships beside the binary in the Chrome for Testing zip.
+      # Lines may carry version constraints and `a | b` alternatives, which
+      # `apt-get satisfy` understands (comma-joined).
+      - name: Install Chromium system libraries
+        run: |
+          dir=$(dirname "$(node packages/cli/dist/index.js browser path)")
+          sudo apt-get update
+          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$dir/deb.deps")"
 
       - name: Build the example workbench
         run: pnpm --filter example-storybook build

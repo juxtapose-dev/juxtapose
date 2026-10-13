@@ -9,7 +9,9 @@ pnpm test
 Node 22.2+ and pnpm 9+. Capturing anything also needs the pinned browser (a one-time ~100 MB download):
 
 ```bash
-npx -p @juxtapose/cli jux browser install
+# from a checkout, after `pnpm build` (the published form is
+# `npx -p @juxtapose/cli jux browser install`):
+node packages/cli/dist/index.js browser install
 ```
 
 ## Checks

@@ -3,7 +3,12 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { InstallOptions } from '@juxtapose/core';
-import { browserCommand, reexecForProxy, type BrowserCommandIo } from './browser.js';
+import {
+  browserCommand,
+  installWithProxy,
+  reexecForProxy,
+  type BrowserCommandIo,
+} from './browser.js';
 
 function harness(over: Partial<BrowserCommandIo> = {}) {
   const out: string[] = [];
@@ -32,13 +37,13 @@ describe('jux browser', () => {
   it('status --json with nothing installed is parseable and exits 3', async () => {
     const h = harness();
     expect(await browserCommand(['status'], true, h.io)).toBe(3);
-    expect(JSON.parse(h.out()).browser).toBeNull();
+    expect(JSON.parse(h.out()).path).toBeNull();
   });
 
   it('an unknown subcommand is a usage error', async () => {
     const h = harness();
     expect(await browserCommand(['frobnicate'], false, h.io)).toBe(2);
-    expect(h.err()).toMatch(/unknown browser subcommand 'frobnicate'/);
+    expect(h.err()).toMatch(/unknown subcommand 'frobnicate'/);
   });
 
   it('install passes --force and the cache dir through, and reports the result', async () => {
@@ -123,5 +128,97 @@ describe('jux browser', () => {
     expect(
       reexecForProxy({ ...base, env: { HTTPS_PROXY: 'x' }, nodeFlags: new Set() }),
     ).toBeNull();
+  });
+
+  it('rejects unknown flags with exit 2, naming the flag', async () => {
+    for (const bad of ['--bogus', '--forcee']) {
+      const h = harness();
+      expect(await browserCommand(['install', bad], false, h.io)).toBe(2);
+      expect(h.err()).toContain(bad);
+    }
+  });
+
+  it('-h and --help print the browser help and exit 0', async () => {
+    for (const flag of ['-h', '--help']) {
+      const h = harness();
+      expect(await browserCommand([flag], false, h.io)).toBe(0);
+      expect(h.out()).toMatch(/jux browser install/);
+      expect(h.out()).toMatch(/--force/);
+    }
+    const h = harness();
+    expect(await browserCommand(['install', '-h'], false, h.io)).toBe(0);
+  });
+
+  it('install --json, status --json and path --json share one shape', async () => {
+    const keys = ['path', 'pinned', 'source', 'version'];
+    const installed = harness({
+      install: async () => ({
+        path: '/x/chrome',
+        version: '151',
+        alreadyInstalled: true,
+        source: 'jux-cache',
+      }),
+    });
+    await browserCommand(['install'], true, installed.io);
+    expect(Object.keys(JSON.parse(installed.out())).sort()).toEqual(
+      [...keys, 'installed'].sort(),
+    );
+    const dir = mkdtempSync(path.join(tmpdir(), 'jux-bt-'));
+    try {
+      const bin = path.join(dir, 'chrome');
+      writeFileSync(bin, '');
+      for (const sub of ['status', 'path']) {
+        const h = harness({ env: { JUX_CHROME: bin } });
+        expect(await browserCommand([sub], true, h.io)).toBe(0);
+        const j = JSON.parse(h.out());
+        expect(Object.keys(j).sort()).toEqual(keys);
+        expect(j.path).toBe(bin);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    for (const sub of ['status', 'path']) {
+      const h = harness();
+      expect(await browserCommand([sub], true, h.io)).toBe(3);
+      const j = JSON.parse(h.out());
+      expect(Object.keys(j).sort()).toEqual(keys);
+      expect(j.path).toBeNull();
+    }
+  });
+
+  it('always writes one stderr line before a download, even with --json', async () => {
+    const h = harness({
+      install: async () => ({
+        path: '/x/chrome',
+        version: '151',
+        alreadyInstalled: false,
+      }),
+    });
+    await browserCommand(['install'], true, h.io);
+    expect(h.err()).toMatch(
+      /^jux: downloading Chrome for Testing \S+ \(~\d+ MB\) to .+…\n$/,
+    );
+  });
+
+  it('installWithProxy re-execs through the proxy path and reports the child code', async () => {
+    const calls: string[][] = [];
+    const h = harness({
+      env: { HTTPS_PROXY: 'x' },
+      nodeFlags: new Set(['--use-env-proxy']),
+      argv: ['/cli/index.js', 'browser', 'install'],
+      spawn: (_c, a) => {
+        calls.push(a);
+        return { status: 0 } as never;
+      },
+      install: async () => {
+        throw new Error('must not install in-process');
+      },
+    });
+    const r = await installWithProxy(h.io as BrowserCommandIo, {
+      force: false,
+      json: false,
+    });
+    expect(r).toEqual({ code: 0 });
+    expect(calls[0][0]).toBe('--use-env-proxy');
   });
 });

@@ -148,9 +148,7 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
   } catch (err) {
     // Only the browser itself can throw here; per-page problems come back as
     // results. No browser means nothing was captured, for any url.
-    process.stderr.write(
-      `jux snap: could not launch the browser: ${errorMessage(err)}${captureHint(errorMessage(err))}\n`,
-    );
+    process.stderr.write(`${describeLaunchFailure(errorMessage(err))}\n`);
     return EXIT.failure;
   } finally {
     await browser?.close().catch(() => {});
@@ -273,12 +271,20 @@ async function readSnapSet(dir: string, prefix: string): Promise<Set<string> | n
   }
 }
 
+/** Core messages carry their own `jux: `; wrapped, that reads as a doubled prefix. */
+const stripJuxPrefix = (m: string): string => m.replace(/^jux: /, '');
+
+export function describeLaunchFailure(message: string): string {
+  return `jux snap: could not launch the browser: ${stripJuxPrefix(message)}${captureHint(message)}`;
+}
+
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
 function describeFailure(r: SnapPageResult): string | null {
-  if (r.error) return `could not capture ${r.url}: ${r.error}${captureHint(r.error)}`;
+  if (r.error)
+    return `could not capture ${r.url}: ${stripJuxPrefix(r.error)}${captureHint(r.error)}`;
   if (r.status !== null && (r.status < 200 || r.status >= 300)) {
     return `${r.url} returned HTTP ${r.status}; nothing written. Fix the route or URL, then retry.`;
   }

@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
 import { EXIT } from './exit-codes.js';
+import { BROWSER_HELP } from './commands/browser-help.js';
 
 const USAGE = `
 jux — visual regression testing for component workbenches
@@ -33,33 +34,7 @@ Common options
   --run <dir>                    run directory to read (approve, check, handoff)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
 
-browser
-  install                        download the pinned chrome-headless-shell once; no-op if present
-                                 (first run: npx -p @juxtapose/cli jux browser install)
-    --force                      reinstall even if a usable browser exists
-  path                           print the browser path jux will use
-  status                         which browser jux will use, and where it came from
-  exit 0 ok · 2 usage · 3 failure (no browser, download failed); --json prints one JSON object
-
-run
-  --since <commit>               only capture stories affected since this commit; failing stories
-                                 then say which changed files they import (cause)
-  --all                          capture everything, skip affected-analysis
-  --comment                      post a summary as a GitHub PR comment
-  --html                         write a self-contained report.html to the run dir
-
-approve
-  --story <id>                   approve one story (repeatable)
-  --all                          approve everything that failed or is new
-
-snap
-  --as <name>                    name for this snap (default: from the url)
-  --as-prefix <p>                several urls: name each <p>-<slug> (slug = path), one browser
-                                 launch; first removes older <p>-* snaps
-  --viewport <WxH>               default 1280x800
-  --wait-for <selector>          wait for this selector before capture
-  --mask <selector>              cover before capture (repeatable)
-
+${BROWSER_HELP}
 diff
   <a>, <b>                       snap names (from --as), or paths to .webp files
   --prefix                       pair <a>-<slug> with <b>-<slug> and verdict every page
