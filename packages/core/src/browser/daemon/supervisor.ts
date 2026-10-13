@@ -132,13 +132,52 @@ const BROWSER_SESSION_ALLOW: Readonly<Record<string, readonly IdKey[]>> = {
  * (clearDataForOrigin) and DOMSnapshot on page sessions (page.ts,
  * capture/structure.ts); the rest are the standard target-scoped domains.
  *
- * Storage: clearDataForOrigin without a context id clears this target's own
- * partition. Refusing it (the old rule) silently broke resetBetweenPages, so
- * a page read localStorage the previous page wrote: through the daemon the
- * second page hashed 0bc8f889… against 89456235… from a fresh launch. Only
- * the cookie methods fall back to the shared default context; they still
- * need an owned browserContextId (COOKIE_METHODS).
+ * Storage passes method by method (PAGE_SESSION_STORAGE); some methods
+ * inside an allowed domain reach past the page (PAGE_SESSION_DENY).
  */
+/**
+ * Storage on a page session: only methods that act on this target's own
+ * storage partition and origin. clearDataForOrigin is jux's own reset
+ * (page.ts clearOrigin); refusing it (the PR #102 rule) silently broke
+ * resetBetweenPages, so a page read localStorage the previous page wrote and
+ * hashed 0bc8f889… through the daemon against 89456235… from a fresh launch.
+ * Left out on purpose: trust tokens, interest groups, shared storage and
+ * its budget, bucket tracking, bounce tracking, related website sets and
+ * k-anonymity (browser- or profile-wide state), and overrideQuotaForOrigin
+ * (not verified to stay in one partition). The cookie methods go by
+ * COOKIE_METHODS instead. Method list from the pinned Chrome's /json/protocol.
+ */
+const PAGE_SESSION_STORAGE: ReadonlySet<string> = new Set([
+  'Storage.getStorageKey',
+  'Storage.getStorageKeyForFrame',
+  'Storage.clearDataForOrigin',
+  'Storage.clearDataForStorageKey',
+  'Storage.getUsageAndQuota',
+  'Storage.trackCacheStorageForOrigin',
+  'Storage.trackCacheStorageForStorageKey',
+  'Storage.trackIndexedDBForOrigin',
+  'Storage.trackIndexedDBForStorageKey',
+  'Storage.untrackCacheStorageForOrigin',
+  'Storage.untrackCacheStorageForStorageKey',
+  'Storage.untrackIndexedDBForOrigin',
+  'Storage.untrackIndexedDBForStorageKey',
+]);
+
+/**
+ * Methods of allowed page-session domains whose names or descriptions say
+ * they reach past the page ("Clears browser cache", third-party cookie
+ * controls, "whether all certificate errors should be ignored"). Found by
+ * scanning the pinned Chrome's /json/protocol for those domains; refused
+ * conservatively since jux never sends them and one client clearing the
+ * cache or flipping cookie policy would change another's next load.
+ */
+const PAGE_SESSION_DENY: ReadonlySet<string> = new Set([
+  'Network.clearBrowserCache',
+  'Network.clearBrowserCookies',
+  'Network.setCookieControls',
+  'Security.setIgnoreCertificateErrors',
+]);
+
 const PAGE_SESSION_DOMAINS: ReadonlySet<string> = new Set([
   'Accessibility',
   'Animation',
@@ -521,7 +560,11 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
         if (!required) return no(browserWideWhy(method));
       } else if (COOKIE_METHODS.includes(method)) {
         required = ['browserContextId'];
-      } else if (PAGE_SESSION_DOMAINS.has(domain)) {
+      } else if (
+        domain === 'Storage'
+          ? PAGE_SESSION_STORAGE.has(method)
+          : PAGE_SESSION_DOMAINS.has(domain) && !PAGE_SESSION_DENY.has(method)
+      ) {
         required = [];
       } else return no(`the browser (${domain || method} is not scoped to one page)`);
     }

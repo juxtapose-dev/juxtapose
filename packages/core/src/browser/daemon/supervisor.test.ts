@@ -560,6 +560,19 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         ['Memory.getBrowserSamplingProfile', {}],
         ['NotADomain.method', {}],
         ['nodot', {}],
+        // Storage beyond this page's own partition (allow-listed per method).
+        ['Storage.setStorageBucketTracking', { storageKey: 'http://x/', enable: true }],
+        ['Storage.resetSharedStorageBudget', { ownerOrigin: 'http://x' }],
+        ['Storage.setSharedStorageTracking', { enable: true }],
+        ['Storage.setInterestGroupTracking', { enable: true }],
+        ['Storage.getTrustTokens', {}],
+        ['Storage.overrideQuotaForOrigin', { origin: 'http://x' }],
+        ['Storage.setAttributionReportingLocalTestingMode', { enabled: true }],
+        // Browser-reaching methods inside allowed domains.
+        ['Network.clearBrowserCache', {}],
+        ['Network.clearBrowserCookies', {}],
+        ['Network.setCookieControls', { enableThirdPartyCookieRestriction: false }],
+        ['Security.setIgnoreCertificateErrors', { ignore: true }],
       ] as [string, object][])
         await refusedBy(b.send(method, params, pb.sessionId));
       // Allowed with owned ids.
@@ -651,6 +664,9 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         ],
         ['DOMSnapshot.captureSnapshot', { computedStyles: [] }],
         ['Fetch.disable', {}],
+        // Page-scoped neighbours of the denied methods stay allowed.
+        ['Storage.getUsageAndQuota', { origin: 'http://127.0.0.1' }],
+        ['Network.getCookies', {}],
       ] as [string, object][])
         await a.send(method, params, sessionId);
       a.close();
@@ -683,11 +699,18 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         .catch(() => {});
       await sleep(100);
       expect(sup.inFlight).toBe(1);
-      const gone = new Promise((r) => b.sock.once('close', r));
-      b.sock.destroy();
-      await gone;
-      for (let i = 0; i < 40 && sup.inFlight > 0; i++) await sleep(50);
-      expect(sup.inFlight).toBe(0);
+      // Chrome is stopped while b drops, so no detach event can purge the
+      // entry: only dropClient can (removing that purge left inFlight at 1).
+      process.kill(sup.chromePid, 'SIGSTOP');
+      try {
+        const gone = new Promise((r) => b.sock.once('close', r));
+        b.sock.destroy();
+        await gone;
+        for (let i = 0; i < 40 && sup.inFlight > 0; i++) await sleep(25);
+        expect(sup.inFlight).toBe(0);
+      } finally {
+        process.kill(sup.chromePid, 'SIGCONT');
+      }
       a.close();
     }));
 
