@@ -378,6 +378,9 @@ next.
 
 ## Decisions this spec makes (flagged for review)
 
+Owner review, 2026-10-12: decisions 1, 2, 6 and 8 are **approved**. The rest
+are still open.
+
 1. **Exit code 3 for tool and environment failures.** Today a crash exits 1,
    the same as "needs review". Scripts that test for exactly 1 will see 3;
    anything that treats nonzero as failure is unaffected, since both 1 and 3
