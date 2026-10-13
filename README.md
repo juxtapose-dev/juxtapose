@@ -602,10 +602,6 @@ Early, but usable. Verified end to end on Storybook (React and Vue) and Ladle:
   shows the pixels only when structure can't explain them. A Claude Code skill
   ships in `plugins/claude-code/`.
 
-In progress: a warm browser daemon so repeat snaps skip the browser launch, and
-event-driven settling that captures as soon as a page is idle instead of after
-a fixed wait.
-
 Hosted baseline storage is the main gap. `storage.kind` accepts `"s3"`, but the
 CLI throws on it in this version — git is the only implemented backend, and `"fs"` is that
 same store pointed at a directory you choose. That is about where the image
