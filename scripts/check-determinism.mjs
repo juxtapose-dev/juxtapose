@@ -10,7 +10,10 @@
 // Exit 0 if every story is byte-stable across every run, 1 otherwise, with the
 // unstable stories named and their distinct hashes printed.
 //
-// Usage: node scripts/check-determinism.mjs <exampleDir> [runs]
+// Usage: node scripts/check-determinism.mjs [--daemon] <exampleDir> [runs]
+//
+// Without --daemon every run is a fresh launch (JUX_NO_DAEMON=1): that is the
+// cold path CI takes, and a local check leaves no warm browser idling.
 
 import { execFile } from 'node:child_process';
 import { readFile, readdir } from 'node:fs/promises';
@@ -23,8 +26,12 @@ import path from 'node:path';
 // middle, so nothing here can be shell-injected via a path.
 const run = promisify(execFile);
 
-const exampleDir = path.resolve(process.argv[2] ?? 'examples/storybook');
-const runs = Number(process.argv[3] ?? 3);
+const argv = process.argv.slice(2);
+const daemon = argv.includes('--daemon');
+const positional = argv.filter((a) => a !== '--daemon');
+const exampleDir = path.resolve(positional[0] ?? 'examples/storybook');
+const runs = Number(positional[1] ?? 3);
+const env = daemon ? process.env : { ...process.env, JUX_NO_DAEMON: '1' };
 const cli = path.resolve('packages/cli/dist/index.js');
 
 if (!existsSync(cli)) {
@@ -37,7 +44,7 @@ const seen = new Map();
 for (let i = 1; i <= runs; i++) {
   // Each iteration is a fresh capture of unchanged input. Any difference
   // between iterations is by definition nondeterminism in the tool.
-  await run('node', [cli, 'run', '--all'], { cwd: exampleDir }).catch((err) => {
+  await run('node', [cli, 'run', '--all'], { cwd: exampleDir, env }).catch((err) => {
     // A non-zero exit is expected whenever stories are new or failing; the
     // report is what we care about, not the status code.
     if (!err.stdout && !err.stderr) throw err;

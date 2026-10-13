@@ -3,7 +3,7 @@ import net from 'node:net';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { lstat, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -197,6 +197,13 @@ describe.skipIf(!chrome)('supervisor', () => {
     expect(exited).toBe(true);
   });
 
+  it('refreshes the state file mtime every second as a heartbeat (Task 13 fix 2)', () =>
+    withSupervisor(async ({ paths }) => {
+      const old = new Date(Date.now() - 60_000);
+      await utimes(paths.state, old, old);
+      await sleep(1300);
+      expect(Date.now() - (await stat(paths.state)).mtimeMs).toBeLessThan(2000);
+    }));
   it('the socket is a 0600 socket owned by this user', () =>
     withSupervisor(async ({ paths }) => {
       const st = await lstat(paths.socket);

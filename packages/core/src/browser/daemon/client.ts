@@ -2,17 +2,23 @@
 //
 // Try the warm browser; never let it cost correctness or a hang. Every
 // failure here (no daemon, stale file, refused hello, a spawn that dies, the
-// race lost and the winner slow) ends in the same private launch PR 1 ships,
-// with one JUX_DEBUG line saying why. The budget is 2 s to reach a daemon
-// this call spawned or found; a client that finds another launch in progress
-// (a live lock holder) waits for it up to the lock's 30 s stale window rather
-// than starting a second Chrome.
+// race lost and the winner slow, a socket we do not trust) ends in the same
+// private launch PR 1 ships, with one JUX_DEBUG line saying why. The budget
+// is 2 s to reach a daemon this call spawned or found; a client that finds
+// another launch in progress (a live lock holder) waits for it 3 s longer
+// rather than starting a second Chrome, and no longer, so a Ctrl-Z'd jux
+// holding the lock stalls nobody.
+//
+// Ruling 24: the only socket ever connected to is the one computed from the
+// cache dir and key, and only once it is a 0600 socket of ours in a verified
+// private directory. The path in the state file is never trusted.
 //
 // Once connected, the Browser is the daemon's: if the daemon dies mid-run,
 // the connection closes, isConnected() goes false and the pool reports
 // BrowserDiedError exactly as for a private Chrome that died (PR 1).
 
-import { spawn } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { lstat, stat } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,14 +27,15 @@ import { CdpConnection } from '../cdp.js';
 import { CHROME_VERSION } from '../pins.js';
 import { SocketTransport } from '../transport.js';
 import {
-  LOCK_STALE_MS,
   acquireLock,
   clearState,
   daemonKey,
   daemonPaths,
+  ensureDaemonDirs,
   lockHeld,
   pidAlive,
   readState,
+  recheckDaemonDirs,
   type DaemonPaths,
   type DaemonState,
 } from './state.js';
@@ -45,10 +52,11 @@ export interface WarmOptions {
   executablePath: string;
   args?: string[];
   cacheDir: string;
+  /** The caller's environment: the key is computed from it and the daemon runs with it. */
   env?: NodeJS.ProcessEnv;
   idleMinutes?: number;
-  /** Test seam: start a daemon for these args. Default: a detached supervisor-main. */
-  spawnDaemon?: (args: SpawnArgs) => void;
+  /** Test seam: start a daemon for these args with this env. Default: a detached supervisor-main. */
+  spawnDaemon?: (args: SpawnArgs, env: NodeJS.ProcessEnv) => void;
   connectTimeoutMs?: number;
 }
 
@@ -60,12 +68,30 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 2000;
  * defect 13), so the first probe gets 500 ms, not the whole 2 s.
  */
 const PROBE_TIMEOUT_MS = 500;
+/** How much longer than the budget a live lock holder is waited on. */
+const HOLDER_GRACE_MS = 3000;
+/**
+ * The supervisor touches its state file every second. Ten silent seconds
+ * means stopped or wedged, not busy: a daemon serving a 700-story run still
+ * runs its timers.
+ */
+const HEARTBEAT_STALE_MS = 10_000;
 const POLL_MS = 50;
 
-/** `CI` is the convention; these are the systems that do not set it. */
+const DEFAULT_ENTRY = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  'supervisor-main.js',
+);
+
+/**
+ * `CI` is the convention; these are the systems that do not set it (GitHub
+ * Actions does, but `CI` can be unset in a step's env; Jenkins sets BUILD_ID).
+ */
 export const CI_ENV_VARS = [
   'CI',
+  'GITHUB_ACTIONS',
   'JENKINS_URL',
+  'BUILD_ID',
   'TEAMCITY_VERSION',
   'BUILDKITE',
   'GITLAB_CI',
@@ -73,19 +99,15 @@ export const CI_ENV_VARS = [
   'CODEBUILD_BUILD_ID',
 ] as const;
 
-/**
- * Off with `--no-daemon`, JUX_NO_DAEMON=1, or any CI marker. An empty marker
- * is unset (shells export `CI=` when clearing it), and `CI=false`/`CI=0` are
- * how people say "not CI" explicitly.
- */
+/** Empty is unset (shells export `X=` when clearing it); `0`/`false` say "no" explicitly. */
+const truthy = (v: string | undefined): boolean =>
+  !!v && v !== '0' && v.toLowerCase() !== 'false';
+
+/** Off with `--no-daemon`, JUX_NO_DAEMON (any truthy value), or any CI marker. */
 export function daemonEnabled(env: NodeJS.ProcessEnv, flagNoDaemon = false): boolean {
   if (flagNoDaemon) return false;
-  if (env.JUX_NO_DAEMON === '1') return false;
-  for (const v of CI_ENV_VARS) {
-    const value = env[v];
-    if (value && value !== 'false' && value !== '0') return false;
-  }
-  return true;
+  if (truthy(env.JUX_NO_DAEMON)) return false;
+  return !CI_ENV_VARS.some((v) => truthy(env[v]));
 }
 
 type StatusOptions = Pick<WarmOptions, 'executablePath' | 'cacheDir' | 'args' | 'env'>;
@@ -103,6 +125,28 @@ function pathsFor(opts: StatusOptions): DaemonPaths {
   return daemonPaths(opts.cacheDir, keyFor(opts));
 }
 
+/**
+ * Ruling 24: null when `paths.socket` is a 0600 socket owned by us in the
+ * verified private directories, else why not. Run right before connecting.
+ */
+async function untrustedSocket(paths: DaemonPaths): Promise<string | null> {
+  try {
+    await recheckDaemonDirs(paths, await ensureDaemonDirs(paths));
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+  const st = await lstat(paths.socket).catch(() => null);
+  if (!st) return null; // nothing there yet: connecting finds nobody
+  const uid = process.getuid?.();
+  if (
+    !st.isSocket() ||
+    (st.mode & 0o777) !== 0o600 ||
+    (uid !== undefined && st.uid !== uid)
+  )
+    return `${paths.socket} is not a private socket of ours`;
+  return null;
+}
+
 type Probe =
   | { kind: 'ok'; connection: CdpConnection; product: string }
   /** Nothing listens (ENOENT, ECONNREFUSED): the daemon is gone. */
@@ -111,12 +155,12 @@ type Probe =
   /** Something listens but would not finish the hello. */
   | { kind: 'refused'; reason: string };
 
-/** One connect + hello within `timeoutMs`. */
-function tryConnect(socketPath: string, timeoutMs: number): Promise<Probe> {
+/** One connect + hello within `timeoutMs`, to the computed socket only. */
+function tryConnect(paths: DaemonPaths, timeoutMs: number): Promise<Probe> {
   return new Promise((resolve) => {
     let settled = false;
     let conn: CdpConnection | null = null;
-    const sock = net.connect(socketPath);
+    const sock = net.connect(paths.socket);
     const finish = (p: Probe) => {
       if (settled) return;
       settled = true;
@@ -147,30 +191,47 @@ function tryConnect(socketPath: string, timeoutMs: number): Promise<Probe> {
   });
 }
 
+/** Verify, then connect: a socket we do not trust is never connected to. */
+async function probe(paths: DaemonPaths, timeoutMs: number): Promise<Probe> {
+  const why = await untrustedSocket(paths);
+  return why ? { kind: 'refused', reason: why } : tryConnect(paths, timeoutMs);
+}
+
+/**
+ * Start a detached supervisor-main with the caller's env: the key was computed
+ * from that env, so Chrome must render with it (TZ, LANG, fonts), not with
+ * whatever env this process happens to have. Detached in its own process
+ * group with stdio ignored: it outlives this jux, and a Ctrl-C to this
+ * terminal must not reach it.
+ */
+export function spawnSupervisor(
+  args: SpawnArgs,
+  env: NodeJS.ProcessEnv,
+  entry = DEFAULT_ENTRY,
+): ChildProcess {
+  const child = spawn(process.execPath, [entry, JSON.stringify(args)], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+    env,
+  });
+  child.unref();
+  return child;
+}
+
 /** What became of a daemon this client spawned; `failed` set when it cannot come up. */
 interface SpawnWatch {
   failed: string | null;
 }
 
-function defaultSpawn(args: SpawnArgs, watch: SpawnWatch): void {
-  const entry = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    'supervisor-main.js',
-  );
-  // Detached in its own process group with stdio ignored: the daemon must
-  // outlive this jux, and a Ctrl-C to this terminal must not reach it.
-  const child = spawn(process.execPath, [entry, JSON.stringify(args)], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
+function defaultSpawn(args: SpawnArgs, env: NodeJS.ProcessEnv, watch: SpawnWatch): void {
+  const child = spawnSupervisor(args, env);
   // An async spawn failure is an 'error' event; unhandled, it would crash jux.
   child.on('error', (e) => (watch.failed ??= `spawn failed: ${e.message}`));
   // Exit 0 is a lost start race (Ruling 21): the winner is coming, keep polling.
   child.on('exit', (code, signal) => {
     if (code !== 0) watch.failed ??= `daemon exited (${signal ?? `code ${code}`})`;
   });
-  child.unref();
 }
 
 type Outcome = { browser: Browser; warm: true } | { why: string };
@@ -196,7 +257,39 @@ function usable(s: DaemonState, key: string, opts: WarmOptions): boolean {
   );
 }
 
+function commandLine(pid: number): Promise<string> {
+  return new Promise((resolve) =>
+    execFile('ps', ['-o', 'command=', '-p', String(pid)], (err, out) =>
+      resolve(err ? '' : out),
+    ),
+  );
+}
+
+/**
+ * True when the daemon behind a timed-out probe is wedged, not busy: its
+ * heartbeat is over 10 s old and the pid really is our supervisor-main for
+ * this key (not a reused pid, which we must never signal).
+ */
+async function wedged(s: DaemonState, paths: DaemonPaths, key: string): Promise<boolean> {
+  const st = await stat(paths.state).catch(() => null);
+  if (!st || Date.now() - st.mtimeMs <= HEARTBEAT_STALE_MS) return false;
+  const cmd = await commandLine(s.pid);
+  return cmd.includes('supervisor-main') && cmd.includes(key);
+}
+
+async function killWedged(pid: number): Promise<void> {
+  // SIGKILL: a stopped process does not act on SIGTERM. Its Chrome loses the
+  // pipe and exits with it.
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    // already gone
+  }
+  for (let i = 0; i < 20 && pidAlive(pid); i++) await sleep(POLL_MS);
+}
+
 async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
+  const env = opts.env ?? process.env;
   const key = keyFor(opts);
   const paths = daemonPaths(opts.cacheDir, key);
   const start = Date.now();
@@ -204,21 +297,26 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
 
   const existing = await readState(paths);
   if (existing) {
-    if (!pidAlive(existing.pid)) {
-      await clearState(paths); // SIGKILLed daemon or a reboot: nothing to reuse
+    if (!pidAlive(existing.pid) || existing.socket !== paths.socket) {
+      // SIGKILLed daemon, a reboot, or a state naming a socket we would never
+      // connect to (Ruling 24): nothing to reuse.
+      await clearState(paths);
     } else if (!usable(existing, key, opts)) {
       // Never reuse a daemon with another fingerprint (Ruling 7), and never
       // remove a live process's files.
       return { why: `state file names another daemon (pid ${existing.pid})` };
     } else {
-      const p = await tryConnect(existing.socket, PROBE_TIMEOUT_MS);
+      const p = await probe(paths, PROBE_TIMEOUT_MS);
       if (p.kind === 'ok') return wrap(p);
-      if (p.kind === 'timeout')
-        return {
-          why: `daemon pid ${existing.pid} did not answer in ${PROBE_TIMEOUT_MS} ms`,
-        };
       if (p.kind === 'refused') return { why: `daemon refused: ${p.reason}` };
-      // Nobody listens: the pid was reused by an unrelated process.
+      if (p.kind === 'timeout') {
+        if (!(await wedged(existing, paths, key)))
+          return {
+            why: `daemon pid ${existing.pid} did not answer in ${PROBE_TIMEOUT_MS} ms`,
+          };
+        await killWedged(existing.pid);
+      }
+      // Dead (the pid was reused by an unrelated process) or killed as wedged.
       await clearState(paths);
     }
   }
@@ -228,10 +326,10 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
   try {
     for (;;) {
       const s = await readState(paths);
-      if (s && usable(s, key, opts) && pidAlive(s.pid)) {
+      if (s && s.socket === paths.socket && usable(s, key, opts) && pidAlive(s.pid)) {
         const remaining = start + budget - Date.now();
-        const p = await tryConnect(
-          s.socket,
+        const p = await probe(
+          paths,
           Math.min(PROBE_TIMEOUT_MS, Math.max(100, remaining)),
         );
         if (p.kind === 'ok') return wrap(p);
@@ -249,8 +347,8 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
             idleMinutes: opts.idleMinutes ?? DEFAULT_IDLE_MINUTES,
           };
           try {
-            if (opts.spawnDaemon) opts.spawnDaemon(args);
-            else defaultSpawn(args, watch);
+            if (opts.spawnDaemon) opts.spawnDaemon(args, env);
+            else defaultSpawn(args, env, watch);
           } catch (e) {
             return { why: `spawn failed: ${e instanceof Error ? e.message : String(e)}` };
           }
@@ -260,8 +358,8 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
       const elapsed = Date.now() - start;
       if (elapsed >= budget) {
         // Past the budget, only another client's launch in progress is worth
-        // waiting for; our own spawn had its 2 s.
-        if (watch || elapsed >= LOCK_STALE_MS || !(await lockHeld(paths)))
+        // waiting for, and only briefly; our own spawn had its 2 s.
+        if (watch || elapsed >= budget + HOLDER_GRACE_MS || !(await lockHeld(paths)))
           return { why: `no daemon answered within ${elapsed} ms` };
       }
       await sleep(POLL_MS);
@@ -322,6 +420,12 @@ export async function stopDaemon(opts: StatusOptions): Promise<boolean> {
   const s = await daemonStatus(opts);
   // An in-process supervisor (tests) shares our pid: signalling it would kill us.
   if (!s || s.pid === process.pid) return false;
+  // A reused pid is somebody else's process: signal only our supervisor-main.
+  const cmd = await commandLine(s.pid);
+  if (!cmd.includes('supervisor-main') || !cmd.includes(s.key)) {
+    await clearState(pathsFor(opts));
+    return false;
+  }
   try {
     process.kill(s.pid, 'SIGTERM');
   } catch {

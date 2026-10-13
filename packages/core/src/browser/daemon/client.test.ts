@@ -1,14 +1,29 @@
-import { describe, it, expect } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import net from 'node:net';
+import { execFileSync, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { chmod, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   connectWarmBrowser,
   daemonEnabled,
   daemonStatus,
+  spawnSupervisor,
+  stopDaemon,
   type SpawnArgs,
 } from './client.js';
-import { acquireLock, daemonKey, daemonPaths, writeState } from './state.js';
+import {
+  acquireLock,
+  daemonKey,
+  daemonPaths,
+  ensureDaemonDirs,
+  pidAlive,
+  readState,
+  writeState,
+  type DaemonPaths,
+} from './state.js';
 import { startSupervisor } from './supervisor.js';
 import { CHROME_VERSION } from '../pins.js';
 import { chromeForTests } from '../__tests__/helpers.js';
@@ -18,6 +33,13 @@ const chrome = chromeForTests();
 type Sup = Awaited<ReturnType<typeof startSupervisor>>;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const here = path.dirname(fileURLToPath(import.meta.url));
+const builtMain = path.join(here, '../../../dist/browser/daemon/supervisor-main.js');
+const built = existsSync(builtMain);
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('daemonEnabled', () => {
   it('is off with JUX_NO_DAEMON, the flag, or any CI marker', () => {
@@ -43,6 +65,14 @@ describe('daemonEnabled', () => {
     expect(daemonEnabled({ CI: '0' })).toBe(true);
     expect(daemonEnabled({ CI: 'true' })).toBe(false);
     expect(daemonEnabled({ JUX_NO_DAEMON: '' })).toBe(true);
+  });
+  it('JUX_NO_DAEMON takes any truthy spelling; GitHub Actions and BUILD_ID are CI', () => {
+    for (const v of ['1', 'true', 'yes', 'TRUE'])
+      expect(daemonEnabled({ JUX_NO_DAEMON: v }), v).toBe(false);
+    for (const v of ['0', 'false'])
+      expect(daemonEnabled({ JUX_NO_DAEMON: v }), v).toBe(true);
+    expect(daemonEnabled({ GITHUB_ACTIONS: 'true' })).toBe(false);
+    expect(daemonEnabled({ BUILD_ID: '42' })).toBe(false);
   });
 });
 
@@ -82,6 +112,44 @@ async function withCache(fn: (cache: string) => Promise<void>) {
 
 const keyOf = (env: NodeJS.ProcessEnv = process.env) =>
   daemonKey({ binary: chrome!.path, version: CHROME_VERSION, args: [], env });
+
+/** A state file for `pid` that is otherwise ours: right key, binary, version. */
+async function plantState(paths: DaemonPaths, pid: number, socket = paths.socket) {
+  await writeState(paths, {
+    pid,
+    socket,
+    binary: chrome!.path,
+    version: CHROME_VERSION,
+    key: path.basename(paths.state, '.json'),
+    startedAt: new Date().toISOString(),
+    idleMinutes: 10,
+  });
+}
+
+/** A listener that counts connections; jux never says hello to it. */
+async function listener(at: string) {
+  let connections = 0;
+  const server = net.createServer((s) => {
+    connections++;
+    s.destroy();
+  });
+  await new Promise<void>((r) => server.listen(at, r));
+  return {
+    connections: () => connections,
+    close: () => new Promise<void>((r) => server.close(() => r())),
+  };
+}
+
+function captureDebug() {
+  const lines: string[] = [];
+  const orig = process.stderr.write.bind(process.stderr);
+  vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+    if (String(chunk).includes('warm browser unavailable')) lines.push(String(chunk));
+    else orig(chunk);
+    return true;
+  }) as typeof process.stderr.write);
+  return lines;
+}
 
 describe.skipIf(!chrome)('connectWarmBrowser', () => {
   it('stale state file is replaced: dead pid and a missing socket', () =>
@@ -198,6 +266,203 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
         await d.stop();
       }
     }));
+
+  it(
+    'a live holder that never finishes is waited on for the budget plus 3 s, not 30 s',
+    () =>
+      withCache(async (cache) => {
+        const paths = daemonPaths(cache, keyOf());
+        const release = await acquireLock(paths); // a Ctrl-Z'd jux, alive forever
+        const d = inProcessDaemon();
+        try {
+          const t0 = Date.now();
+          const { browser, warm } = await connectWarmBrowser({
+            executablePath: chrome!.path,
+            cacheDir: cache,
+            spawnDaemon: d.spawnDaemon,
+            connectTimeoutMs: 200,
+          });
+          const waited = Date.now() - t0;
+          expect(warm).toBe(false);
+          expect(d.count()).toBe(0);
+          expect(waited).toBeGreaterThanOrEqual(3000);
+          expect(waited).toBeLessThan(8000);
+          await browser.close();
+        } finally {
+          await release!();
+          await d.stop();
+        }
+      }),
+    15_000,
+  );
+
+  it('Ruling 24: a state naming a socket elsewhere is never connected to; it is stale', () =>
+    withCache(async (cache) => {
+      const paths = daemonPaths(cache, keyOf());
+      const evil = path.join(cache, 'evil.sock');
+      const server = await listener(evil);
+      await plantState(paths, process.pid, evil); // live pid, foreign socket
+      const connect = vi.spyOn(net, 'connect');
+      const d = inProcessDaemon();
+      try {
+        const { browser, warm } = await connectWarmBrowser({
+          executablePath: chrome!.path,
+          cacheDir: cache,
+          spawnDaemon: d.spawnDaemon,
+        });
+        expect(connect.mock.calls.some((c) => c[0] === evil)).toBe(false);
+        expect(server.connections()).toBe(0);
+        expect(warm).toBe(true); // replaced by our own daemon
+        expect(d.count()).toBe(1);
+        await browser.close();
+      } finally {
+        await d.stop();
+        await server.close();
+      }
+    }));
+
+  it('Ruling 24: a socket with mode 0666 is refused (private launch, debug line)', () =>
+    withCache(async (cache) => {
+      const paths = daemonPaths(cache, keyOf());
+      await ensureDaemonDirs(paths);
+      const server = await listener(paths.socket);
+      await chmod(paths.socket, 0o666);
+      await plantState(paths, process.pid);
+      const lines = captureDebug();
+      const d = inProcessDaemon();
+      try {
+        const { browser, warm } = await connectWarmBrowser({
+          executablePath: chrome!.path,
+          cacheDir: cache,
+          env: { ...process.env, JUX_DEBUG: '1' },
+          spawnDaemon: d.spawnDaemon,
+          connectTimeoutMs: 300,
+        });
+        expect(warm).toBe(false);
+        expect(server.connections()).toBe(0);
+        expect(d.count()).toBe(0);
+        expect(lines.join('')).toMatch(/not a private socket/);
+        await browser.close();
+      } finally {
+        await d.stop();
+        await server.close();
+      }
+    }));
+
+  it('Ruling 24: a regular file in place of the socket is refused', () =>
+    withCache(async (cache) => {
+      const paths = daemonPaths(cache, keyOf());
+      await ensureDaemonDirs(paths);
+      await writeFile(paths.socket, '', { mode: 0o600 });
+      await plantState(paths, process.pid);
+      const connect = vi.spyOn(net, 'connect');
+      const d = inProcessDaemon();
+      try {
+        const { browser, warm } = await connectWarmBrowser({
+          executablePath: chrome!.path,
+          cacheDir: cache,
+          spawnDaemon: d.spawnDaemon,
+          connectTimeoutMs: 300,
+        });
+        expect(warm).toBe(false);
+        expect(connect.mock.calls.some((c) => c[0] === paths.socket)).toBe(false);
+        expect(d.count()).toBe(0);
+        await browser.close();
+      } finally {
+        await d.stop();
+      }
+    }));
+
+  it.skipIf(!built)(
+    'a stopped daemon is kept while its heartbeat is fresh, and replaced (SIGKILL) once it is stale',
+    () =>
+      withCache(async (cache) => {
+        const key = keyOf();
+        const paths = daemonPaths(cache, key);
+        const child: ChildProcess = spawnSupervisor(
+          {
+            executablePath: chrome!.path,
+            args: [],
+            cacheDir: cache,
+            key,
+            idleMinutes: 10,
+          },
+          process.env,
+          builtMain,
+        );
+        const exited = new Promise<NodeJS.Signals | null>((r) =>
+          child.once('exit', (_c, sig) => r(sig)),
+        );
+        const d = inProcessDaemon();
+        let chromePid = 0;
+        try {
+          for (let i = 0; i < 100 && (await readState(paths))?.pid !== child.pid; i++)
+            await sleep(50);
+          chromePid = Number(
+            execFileSync('pgrep', ['-P', String(child.pid)], { encoding: 'utf8' }).trim(),
+          );
+          child.kill('SIGSTOP');
+
+          // Fresh heartbeat: maybe just busy. Never killed; this run goes private.
+          const kept = await connectWarmBrowser({
+            executablePath: chrome!.path,
+            cacheDir: cache,
+            spawnDaemon: d.spawnDaemon,
+          });
+          expect(kept.warm).toBe(false);
+          expect(d.count()).toBe(0);
+          expect(pidAlive(child.pid!)).toBe(true);
+          await kept.browser.close();
+
+          // A stopped process cannot refresh: age the heartbeat past 10 s.
+          const old = new Date(Date.now() - 20_000);
+          await utimes(paths.state, old, old);
+          const { browser, warm } = await connectWarmBrowser({
+            executablePath: chrome!.path,
+            cacheDir: cache,
+            spawnDaemon: d.spawnDaemon,
+          });
+          expect(warm).toBe(true);
+          expect(d.count()).toBe(1);
+          expect(await exited).toBe('SIGKILL');
+          await browser.close();
+          // Its Chrome loses the pipe and goes with it.
+          for (let i = 0; i < 40 && pidAlive(chromePid); i++) await sleep(50);
+          expect(pidAlive(chromePid)).toBe(false);
+        } finally {
+          child.kill('SIGKILL');
+          if (chromePid && pidAlive(chromePid)) process.kill(chromePid, 'SIGKILL');
+          await d.stop();
+        }
+      }),
+    30_000,
+  );
+
+  it.skipIf(!built)(
+    'the spawned daemon renders with the caller’s env (TZ)',
+    () =>
+      withCache(async (cache) => {
+        const env = { ...process.env, TZ: 'Pacific/Honolulu' };
+        const opts = { executablePath: chrome!.path, cacheDir: cache, env };
+        try {
+          const { browser, warm } = await connectWarmBrowser({
+            ...opts,
+            spawnDaemon: (a, e) => void spawnSupervisor(a, e, builtMain),
+            connectTimeoutMs: 5000,
+          });
+          expect(warm).toBe(true);
+          const ctx = await browser.newContext({ viewport: { width: 100, height: 100 } });
+          const page = await ctx.newPage();
+          expect(
+            await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
+          ).toBe('Pacific/Honolulu');
+          await browser.close();
+        } finally {
+          expect(await stopDaemon(opts)).toBe(true);
+        }
+      }),
+    20_000,
+  );
 
   it('a different environment key gets its own daemon, never the other one', () =>
     withCache(async (cache) => {

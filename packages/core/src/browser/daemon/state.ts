@@ -61,7 +61,7 @@ export interface DirIdentity {
   socketDir: { dev: number; ino: number };
 }
 
-export const LOCK_STALE_MS = 30_000;
+const LOCK_STALE_MS = 30_000;
 // sun_path is 104 bytes on macOS, 108 on Linux; stay under both.
 const MAX_SOCKET_BYTES = 100;
 // Everything that can change fonts, locale formatting or text shaping.

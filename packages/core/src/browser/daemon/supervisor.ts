@@ -32,7 +32,7 @@
 //   at the request (defect 12), so it is not disposed twice.
 
 import net from 'node:net';
-import { chmod, lstat, rm } from 'node:fs/promises';
+import { chmod, lstat, rm, utimes } from 'node:fs/promises';
 import { CHROME_VERSION } from '../pins.js';
 import { launchChrome, type LaunchedChrome } from '../launch.js';
 import { NullFramer } from '../transport.js';
@@ -47,6 +47,12 @@ import {
   type DaemonState,
 } from './state.js';
 
+/**
+ * The state file's mtime is a heartbeat. A SIGSTOPped or event-loop-blocked
+ * daemon never idles out, and every client would pay a probe timeout forever;
+ * a client replaces a daemon whose heartbeat is over 10 s old (client.ts).
+ */
+const HEARTBEAT_MS = 1_000;
 /** A client that has not said hello by then is not a jux client. */
 const HELLO_TIMEOUT_MS = 5_000;
 /** How long a connect probe may take before the listener counts as alive (a full backlog). */
@@ -215,6 +221,8 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
   const targetOwner = new Map<string, Client>();
   const sessionOwner = new Map<string, Client>();
   let idleTimer: NodeJS.Timeout | null = null;
+  // Assigned once serving; stop() may run before that (a failed writeState).
+  let heartbeat: NodeJS.Timeout | undefined = undefined;
   let stopping: Promise<void> | null = null;
   let socketIno = -1;
 
@@ -550,6 +558,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
   async function stop(): Promise<void> {
     return (stopping ??= (async () => {
       if (idleTimer) clearTimeout(idleTimer);
+      clearInterval(heartbeat);
       for (const c of clients) c.socket.destroy();
       await new Promise<void>((r) => server.close(() => r()));
       // Only our own files: a daemon that started after we stopped serving
@@ -623,6 +632,16 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     await stop();
     throw e;
   }
+
+  // Only our own file: a daemon that replaced us owns its heartbeat.
+  heartbeat = setInterval(() => {
+    void readState(paths).then(async (s) => {
+      if (s?.pid !== process.pid || s.startedAt !== state.startedAt) return;
+      const now = new Date();
+      await utimes(paths.state, now, now).catch(() => {});
+    });
+  }, HEARTBEAT_MS);
+  heartbeat.unref();
 
   chrome.connection.onClose = () => void stop();
   if (chrome.connection.closed) void stop();
