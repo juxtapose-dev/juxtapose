@@ -19,6 +19,7 @@ import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { acquireBrowser, MAX_CROPS, type Browser } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
+import { loadConfig } from '../context.js';
 import { captureIo, type Session } from '../io.js';
 import { latestRunDir } from '../run-dir.js';
 import {
@@ -37,6 +38,34 @@ export interface McpFlags {
   project?: string;
   chrome?: string;
   'no-daemon'?: boolean;
+  /** Snap calls that may capture at once; see SNAP_SLOTS. */
+  concurrency?: string;
+}
+
+/** Past 16 the capture pool timed out from CPU contention on a 10-core
+ *  machine (capture/pool.ts), so a larger value is a mistake, not a tuning. */
+export const MAX_SNAP_SLOTS = 16;
+
+/** The snap pool size: `--concurrency`, else `mcp.concurrency` from the
+ *  project config, else SNAP_SLOTS. Each must be a whole number in
+ *  1..MAX_SNAP_SLOTS; the error names the source that is wrong. */
+export function resolveSnapSlots(
+  flag: string | undefined,
+  config: unknown,
+): { slots: number } | { error: string } {
+  const range = `a whole number from 1 to ${MAX_SNAP_SLOTS} (default ${SNAP_SLOTS})`;
+  if (flag !== undefined) {
+    const n = /^\d+$/.test(flag) ? Number(flag) : NaN;
+    return n >= 1 && n <= MAX_SNAP_SLOTS
+      ? { slots: n }
+      : { error: `--concurrency must be ${range}` };
+  }
+  if (config === undefined) return { slots: SNAP_SLOTS };
+  return Number.isInteger(config) &&
+    (config as number) >= 1 &&
+    (config as number) <= MAX_SNAP_SLOTS
+    ? { slots: config as number }
+    : { error: `mcp.concurrency in the project config must be ${range}` };
 }
 
 type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
@@ -724,6 +753,13 @@ const rpcError = (id: string | number | null, code: number, message: string): Js
 const SIGNALS = { SIGINT: 2, SIGTERM: 15 } as const;
 
 export async function mcpCommand(flags: McpFlags, version: string): Promise<number> {
+  const config = await loadConfig(path.resolve(flags.project ?? process.cwd()));
+  const pool = resolveSnapSlots(flags.concurrency, config.mcp?.concurrency);
+  if ('error' in pool) {
+    process.stderr.write(`jux mcp: ${pool.error}.\n`);
+    return EXIT.usage;
+  }
+  const snapSlots = pool.slots;
   // stdout is the protocol channel. Keep a private writer for it, then point
   // process.stdout at stderr so nothing else (a stray console.log in a
   // dependency) can interleave with a JSON-RPC line and corrupt the stream.
@@ -736,7 +772,7 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
     if (!outBroken) writeOut(JSON.stringify(m) + '\n');
   };
 
-  const server = new McpServer(flags);
+  const server = new McpServer(flags, { snapSlots });
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
   // Tool calls run concurrently; McpServer.call holds each one until the
   // scheduler grants the files and browser time it needs (see scheduler.ts).

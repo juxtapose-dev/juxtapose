@@ -146,7 +146,7 @@ function createStore(projectRoot: string, config: ProjectConfig): BaselineStore 
   }
 }
 
-async function loadConfig(projectRoot: string): Promise<ProjectConfig> {
+export async function loadConfig(projectRoot: string): Promise<ProjectConfig> {
   for (const name of ['juxtapose.config.json', '.juxtaposerc.json']) {
     try {
       return JSON.parse(

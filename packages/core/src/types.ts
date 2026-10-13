@@ -341,6 +341,12 @@ export interface ProjectConfig {
   threshold?: number;
   minDiffPercent?: number;
   storage?: StorageConfig;
+  /** `jux mcp` settings. */
+  mcp?: {
+    /** Snap calls that may capture at once (1-16). Default 4; the
+     *  `--concurrency` flag overrides it. */
+    concurrency?: number;
+  };
 }
 
 export type StorageConfig =

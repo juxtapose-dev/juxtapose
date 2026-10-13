@@ -261,7 +261,8 @@ Two calls overlap only when neither writes what the other reads or writes:
   with it and a `-`: `asPrefix: "before"` and `as: "before-home"` take turns.
 - At most 4 `snap` calls capture at once. Each one uses its own browser
   context, so parallel snaps share no cookies, storage or page. A snap taken in
-  parallel is byte-identical to the same snap taken alone.
+  parallel is byte-identical to the same snap taken alone. To change the limit,
+  see [Snap concurrency](#snap-concurrency).
 - A `diff` waits for any `snap` that writes one of its sides, and a `snap`
   waits for any `diff` reading the name it writes.
 - `run` and `approve` run alone: they wait for every call before them, and
@@ -281,3 +282,23 @@ finishes, and keeps what it reads and writes until it does, so a later call on
 the same snaps still waits for it. Its result is discarded. A cancelled `run`
 stops starting new stories and writes no report, so `check`, `handoff` and
 `approve` keep reading the previous run.
+
+### Snap concurrency
+
+The server captures at most 4 snaps at once by default. To change that, set
+`mcp.concurrency` in `juxtapose.config.json`:
+
+```json
+{
+  "mcp": { "concurrency": 8 }
+}
+```
+
+The `--concurrency` flag overrides the file for one server, for example
+`jux mcp --concurrency 2`. Both take a whole number from 1 to 16; any other
+value stops the server with exit code 2 before it reads any input. The server
+reads the config from its `--project` directory once, at startup.
+
+On a 15-core machine, 8 snaps at once finished in 338 ms with a limit of 8 and
+in 604 ms with a limit of 4, and each capture took about 10% longer. On a
+machine with fewer cores, a higher limit can make captures slower.
