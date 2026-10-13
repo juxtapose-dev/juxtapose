@@ -81,8 +81,21 @@ describe.skipIf(!chrome)('launchChrome', () => {
     const b = await launchChrome({ executablePath: chrome!.path, spawn: realSpawn });
     const pid = b.pid;
     terminateAll();
-    await new Promise((r) => setTimeout(r, 300));
-    expect(() => process.kill(pid, 0)).toThrow(); // gone
+    // Poll, not a fixed 300 ms: on a loaded CI runner the profile removal
+    // landed after 300 ms (2026-10-13) while the kill itself had succeeded.
+    const alive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (let t = Date.now(); Date.now() - t < 5000;) {
+      if (!alive() && !existsSync(b.userDataDir)) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(alive()).toBe(false);
     expect(existsSync(b.userDataDir)).toBe(false);
   });
 });

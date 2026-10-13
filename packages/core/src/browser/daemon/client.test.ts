@@ -111,7 +111,9 @@ describe('daemon key', () => {
       const k = daemonKeyFor(base, 'jux-a');
       expect(daemonKeyFor(base, 'jux-a')).toBe(k);
       // Extra args and a different jux version or supervisor build: new socket.
-      expect(daemonKeyFor({ ...base, args: ['--lang=de'] }, 'jux-a')).not.toBe(k);
+      expect(
+        daemonKeyFor({ ...base, args: ['--user-agent=jux-arg-probe'] }, 'jux-a'),
+      ).not.toBe(k);
       expect(daemonKeyFor(base, 'jux-b')).not.toBe(k);
       // An in-place update of the binary (same path): size and mtime change.
       await writeFile(bin, 'v2-longer');
@@ -632,15 +634,16 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
         const b = await connectWarmBrowser({
           executablePath: chrome!.path,
           stateDir: cache,
-          args: ['--lang=de'],
+          args: ['--user-agent=jux-arg-probe'],
           spawnDaemon,
         });
         expect(a.warm && b.warm).toBe(true);
-        expect(spawnedWith).toEqual([[], ['--lang=de']]);
+        expect(spawnedWith).toEqual([[], ['--user-agent=jux-arg-probe']]);
         const page = await (
           await b.browser.newContext({ viewport: { width: 100, height: 100 } })
         ).newPage();
-        expect(await page.evaluate(() => navigator.language)).toBe('de');
+        // Not --lang: Linux Chrome takes its locale from LANG and ignores the flag.
+        expect(await page.evaluate(() => navigator.userAgent)).toBe('jux-arg-probe');
         await a.browser.close();
         await b.browser.close();
       } finally {
