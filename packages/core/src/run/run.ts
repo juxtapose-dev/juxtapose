@@ -21,6 +21,8 @@ import type {
 } from '../types.js';
 import { capturePool } from '../capture/pool.js';
 import { resolveStatus, toDiffStatus, type AncestryCheck } from '../baseline/status.js';
+import { decodeStructure } from '../capture/structure.js';
+import { structuralDiff } from '../diff/structural.js';
 import { diffImages, resolveThreshold, resolveMinDiffPercent } from '../diff/diff.js';
 import { phases, type Phases } from './phases.js';
 
@@ -202,13 +204,41 @@ async function judge(
     structure: snapshot.structure,
   });
 
+  // Structure explains the failure after the pixels have decided it. The
+  // baseline sidecar is read only here, so a green run never touches one. A
+  // manifest hash is not a file: read the store, and treat anything
+  // unreadable as absent. This code runs only on a hash mismatch.
+  const structural = snapshot.structure
+    ? structuralDiff({
+        baseline: await readBaselineStructure(opts.store, story.storyId),
+        current: snapshot.structure,
+        imagesIdentical: false,
+        pixels: diff,
+        escalate: { command: `jux handoff ${story.storyId}` },
+      })
+    : undefined;
+
   return {
     ...base,
     mismatchPixels: diff.mismatchPixels,
     mismatchPercent: diff.mismatchPercent,
     changedRegions: diff.changedRegions,
     error: diff.dimensionMismatch ? 'viewport size changed since baseline' : undefined,
+    ...(structural ? { structural } : {}),
   };
+}
+
+async function readBaselineStructure(
+  store: BaselineStore,
+  storyId: string,
+): Promise<StructureSnapshot | undefined> {
+  if (!store.getStructure) return undefined;
+  try {
+    const gz = await store.getStructure(storyId);
+    return gz ? decodeStructure(gz) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function tally(results: DiffResult[]): Record<DiffStatus, number> {

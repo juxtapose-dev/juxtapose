@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { structuralDiff } from '../diff/structural.js';
+import type { ChangedRegion, StructureSnapshot } from '../types.js';
 import { describe, it, expect } from 'vitest';
 import { buildHandoffPrompt, describeRegion, type HandoffPayload } from './handoff.js';
 
@@ -109,5 +113,57 @@ describe('describeRegion', () => {
     expect(describeRegion({ x: 0, y: 0, width: 600, height: 450 }, vp)).toContain(
       '25% of viewport',
     );
+  });
+
+  const fixture = JSON.parse(
+    readFileSync(
+      path.join(import.meta.dirname, '../diff/__fixtures__/structural-corpus.json'),
+      'utf8',
+    ),
+  ) as {
+    cases: Record<
+      string,
+      {
+        structure: StructureSnapshot;
+        pixels: {
+          mismatchPixels: number;
+          changedRegions: ChangedRegion[];
+          dimensionMismatch: boolean;
+        };
+      }
+    >;
+  };
+  const verdictFor = (name: string) =>
+    structuralDiff({
+      baseline: fixture.cases.noop.structure,
+      current: fixture.cases[name].structure,
+      imagesIdentical: false,
+      pixels: fixture.cases[name].pixels,
+      escalate: { command: 'jux handoff components-button--primary' },
+    });
+
+  it('leads with the tier-0 summary, deltas and flags, before the pixel figures', () => {
+    const structural = verdictFor('text'); // text-only, flag text-changed
+    const out = buildHandoffPrompt({ ...base, structural });
+    expect(out.indexOf(structural.summary)).toBeLessThan(out.indexOf('mismatchPercent'));
+    expect(out).toContain('  button[name="Save"]\n    text "Save" → "Save changes"');
+    expect(out).toContain('Flags: text-changed');
+    expect(out.indexOf('Flags:')).toBeLessThan(out.indexOf('## Images'));
+  });
+
+  it('tells the agent to compare the deltas with what it intended, and when to look at pixels', () => {
+    const out = buildHandoffPrompt({ ...base, structural: verdictFor('color') });
+    expect(out).toMatch(/compare .*against what you intended/i);
+    expect(out).not.toContain('not fully explained');
+    const canvas = verdictFor('canvas'); // unknown, unexplained-pixels
+    expect(canvas.explained).toBe('none');
+    const partial = buildHandoffPrompt({ ...base, structural: canvas });
+    expect(partial).toContain('not fully explained');
+  });
+
+  it('without a verdict the prompt is unchanged in shape', () => {
+    const out = buildHandoffPrompt(base);
+    expect(out).not.toContain('## What changed (structure)');
+    expect(out).toContain('## What changed');
   });
 });

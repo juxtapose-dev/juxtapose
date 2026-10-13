@@ -8,7 +8,8 @@
 // Pure function. No I/O, no clipboard — string in, string out, so it is
 // trivially testable and callable from both the CLI and a server.
 
-import type { ChangedRegion, DiffStatus, Viewport } from '../types.js';
+import type { ChangedRegion, DiffStatus, StructuralVerdict, Viewport } from '../types.js';
+import { describeDeltas } from '../diff/structural/summary.js';
 
 export interface HandoffPayload {
   storyId: string;
@@ -22,6 +23,8 @@ export interface HandoffPayload {
   componentPath: string;
   /** Absolute path to the machine-readable sidecar for this diff. */
   diffDataPath?: string;
+  /** Tier-0 verdict from the run, when the capture had structure. */
+  structural?: StructuralVerdict;
   images: {
     baseline?: string;
     current?: string;
@@ -68,7 +71,40 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     lines.push(`Read \`${p.diffDataPath}\` for the full machine-readable diff.`, '');
   }
 
-  lines.push('## What changed');
+  if (p.structural) {
+    const v = p.structural;
+    lines.push('## What changed (structure)');
+    lines.push('');
+    lines.push(v.summary);
+    lines.push('');
+    if (v.deltas.length > 0) {
+      lines.push(...describeDeltas(v.deltas));
+      if (v.deltaCount > v.deltas.length) {
+        lines.push(
+          `  …and ${v.deltaCount - v.deltas.length} more (see the diff data file)`,
+        );
+      }
+      lines.push('');
+    }
+    if (v.flags.length > 0) {
+      lines.push(`Flags: ${v.flags.join(', ')}`);
+      lines.push('');
+    }
+    lines.push(
+      'Compare these deltas against what you intended to change. If every delta is',
+      'one you meant, this is the change you made.',
+    );
+    if (v.explained !== 'full') {
+      lines.push(
+        `The pixels are not fully explained (coverage ${v.coverage}): something changed`,
+        'that the DOM and styles do not account for (canvas, image content, or',
+        'rendering drift). Inspect the images below before deciding.',
+      );
+    }
+    lines.push('');
+  }
+
+  lines.push(p.structural ? '## Pixels' : '## What changed');
   lines.push('');
   lines.push('```json');
   lines.push(

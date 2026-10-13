@@ -75,6 +75,7 @@ export async function handoffCommand(
         mismatchPixels: result.mismatchPixels,
         viewport,
         changedRegions: result.changedRegions,
+        structural: result.structural,
       },
       null,
       2,
@@ -91,6 +92,7 @@ export async function handoffCommand(
     viewport,
     componentPath: story?.componentPath ?? '',
     diffDataPath,
+    ...(result.structural ? { structural: result.structural } : {}),
     images: {
       baseline: path.join(images, `${safe}-baseline.webp`),
       current: path.join(images, `${safe}-current.webp`),
