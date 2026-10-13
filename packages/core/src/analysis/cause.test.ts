@@ -381,8 +381,12 @@ describe('prepareCause', () => {
 
   // git's own complaints ("fatal: not a git repository", diff's usage text)
   // went straight to the terminal through an inherited stderr. Checked in a
-  // child process, since an inherited fd never passes through this one.
-  it('says nothing on stderr outside a repository', async () => {
+  // child process, since an inherited fd never passes through this one. The
+  // child loads cause.ts directly, which needs `module.registerHooks` and
+  // type stripping on by default: Node 22.18+. The engines field allows 20.
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  const canStripTypes = major > 22 || (major === 22 && minor >= 18);
+  it.skipIf(!canStripTypes)('says nothing on stderr outside a repository', async () => {
     const hooks = path.join(root, 'load-ts.mjs');
     await writeFile(
       hooks,
