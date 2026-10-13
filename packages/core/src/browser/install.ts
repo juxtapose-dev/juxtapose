@@ -41,6 +41,9 @@ export interface InstallOptions {
   pin?: ChromePin;
   /** Reinstall even when a usable browser is already in the jux or Playwright cache. */
   force?: boolean;
+  /** Test seams: the flags this Node accepts, and the zip installer. */
+  nodeFlags?: ReadonlySet<string>;
+  installZip?: typeof installZip;
 }
 
 export interface InstallResult {
@@ -52,30 +55,32 @@ export interface InstallResult {
 }
 
 const PROXY_VARS = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy'];
+const PROXY_FLAG = '--use-env-proxy';
 
-export function proxyHint(env: NodeJS.ProcessEnv): string {
+export function proxyHint(
+  env: NodeJS.ProcessEnv,
+  nodeFlags: ReadonlySet<string> = process.allowedNodeEnvironmentFlags,
+): string {
   const set = PROXY_VARS.find((v) => env[v]);
   if (!set) return '';
-  return (
-    ` ${set} is set but Node's fetch does not use it by default: re-run with NODE_USE_ENV_PROXY=1 ` +
-    '(Node 24+), or download the zip yourself and set JUX_CHROME.'
-  );
+  const fix = nodeFlags.has(PROXY_FLAG)
+    ? 're-run with NODE_USE_ENV_PROXY=1, or'
+    : `this Node lacks ${PROXY_FLAG}, so`;
+  return ` ${set} is set but Node's fetch does not use it by default: ${fix} download the zip yourself and set JUX_CHROME.`;
 }
 
 /**
- * Extra node args for the CLI to re-exec with, or null. Only Node 24+ has
- * --use-env-proxy; on 22 the hint in the download error is all we can offer.
+ * Extra node args for the CLI to re-exec with, or null. Detects the flag
+ * rather than comparing versions: it is whatever this Node accepts.
  */
 export function proxyReexecArgs(
   env: NodeJS.ProcessEnv,
-  nodeVersion: string = process.versions.node,
+  nodeFlags: ReadonlySet<string> = process.allowedNodeEnvironmentFlags,
   execArgv: readonly string[] = process.execArgv,
 ): string[] | null {
   if (!PROXY_VARS.some((v) => env[v])) return null;
-  if (env.NODE_USE_ENV_PROXY === '1') return null;
-  if (execArgv.includes('--use-env-proxy')) return null;
-  if (Number(nodeVersion.split('.')[0]) < 24) return null;
-  return ['--use-env-proxy'];
+  if (env.NODE_USE_ENV_PROXY === '1' || execArgv.includes(PROXY_FLAG)) return null;
+  return nodeFlags.has(PROXY_FLAG) ? [PROXY_FLAG] : null;
 }
 
 /** A progress callback for stderr, or undefined when stderr is not a TTY. */
@@ -123,47 +128,64 @@ export async function installChrome(opts: InstallOptions): Promise<InstallResult
     }
   }
 
+  const nodeFlags = opts.nodeFlags ?? process.allowedNodeEnvironmentFlags;
+  const nextStep = `Retry with \`npx -p @juxtapose/cli jux browser install\`, or download ${pin.url} yourself and set JUX_CHROME to the chrome-headless-shell binary inside it.`;
   const doFetch = opts.fetch ?? fetch;
   let res: Response;
   try {
     res = await doFetch(pin.url);
   } catch (err) {
     throw new Error(
-      `jux: download failed for ${pin.url}: ${(err as Error).message}.${proxyHint(env) || ' Check the network, or download the zip yourself and set JUX_CHROME.'}`,
+      `jux: download failed for ${pin.url}: ${(err as Error).message}.${proxyHint(env, nodeFlags)} ${nextStep}`,
+      { cause: err },
     );
   }
   if (!res.ok || !res.body)
-    throw new Error(`jux: download failed: HTTP ${res.status} for ${pin.url}`);
+    throw new Error(
+      `jux: download failed: HTTP ${res.status} for ${pin.url}. ${nextStep}`,
+    );
   const total = Number(res.headers.get('content-length')) || null;
   // Streamed into the hash and a chunk list: ~120 MB held once, not twice.
   const chunks: Buffer[] = [];
   let received = 0;
+  let overLength = false;
   const hash = createHash('sha256');
   try {
-    for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
       const b = Buffer.from(chunk);
       received += b.length;
       // A server streaming past the pinned size is wrong already; stop buffering.
-      if (received > pin.bytes) break;
+      if (received > pin.bytes) {
+        overLength = true;
+        break;
+      }
       chunks.push(b);
       hash.update(b);
       opts.onProgress?.(received, total);
     }
   } catch (err) {
     throw new Error(
-      `jux: download interrupted for ${pin.url}: ${(err as Error).message}.${proxyHint(env)}`,
+      `jux: download interrupted for ${pin.url}: ${(err as Error).message}.${proxyHint(env, nodeFlags)} ${nextStep}`,
+      { cause: err },
     );
   }
   const digest = hash.digest('hex');
-  if (digest !== pin.sha256 || received !== pin.bytes) {
+  if (!overLength && digest !== pin.sha256) {
     throw new Error(
-      `jux: sha256 mismatch for ${pin.url}: expected sha256 ${pin.sha256} (${pin.bytes} bytes), ` +
-        `got ${digest} (${received > pin.bytes ? `more than ${pin.bytes}` : received} bytes). ` +
-        'The download is corrupt or the published file changed; nothing was installed.',
+      `jux: sha256 mismatch for ${pin.url}: expected ${pin.sha256}, got ${digest}. ` +
+        `The download is corrupt or the published file changed; nothing was installed. ${nextStep}`,
+    );
+  }
+  if (overLength || received !== pin.bytes) {
+    throw new Error(
+      `jux: length mismatch for ${pin.url}: expected ${pin.bytes} bytes, got ${overLength ? `more than ${pin.bytes}` : received} bytes. ` +
+        `The download is truncated or the published file changed; nothing was installed. ${nextStep}`,
     );
   }
 
-  await installZip(Buffer.concat(chunks), installDir, { marker: INSTALL_MARKER });
+  await (opts.installZip ?? installZip)(Buffer.concat(chunks), installDir, {
+    marker: INSTALL_MARKER,
+  });
   await verifyInstall(installDir, binary);
   return { path: binary, version: CHROME_VERSION, alreadyInstalled: false };
 }
@@ -174,6 +196,7 @@ export async function installChrome(opts: InstallOptions): Promise<InstallResult
  */
 async function verifyInstall(installDir: string, binary: string): Promise<void> {
   const fail = async (why: string): Promise<never> => {
+    // Also removes a concurrent installer's dir when that one is the broken one: it is unusable either way.
     await rm(installDir, { recursive: true, force: true });
     throw new Error(
       `jux: install of chrome-headless-shell ${CHROME_VERSION} into ${installDir} is not usable: ${why}. ` +

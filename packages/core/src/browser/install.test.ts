@@ -173,6 +173,7 @@ describe('installChrome', () => {
           platform: 'linux64',
           fetch: offline,
           env: { HTTPS_PROXY: 'http://proxy:3128' },
+          nodeFlags: new Set(['--use-env-proxy']),
         }),
       ).rejects.toThrow(/NODE_USE_ENV_PROXY=1.*JUX_CHROME/s);
       await expect(
@@ -190,13 +191,113 @@ describe('proxyHint', () => {
 
 describe('proxyReexecArgs', () => {
   const proxy = { HTTPS_PROXY: 'http://p:1' };
-  it('re-execs only on Node 24+ with a proxy variable and no flag yet', () => {
-    expect(proxyReexecArgs(proxy, '24.1.0', [])).toEqual(['--use-env-proxy']);
-    expect(proxyReexecArgs(proxy, '22.12.0', [])).toBeNull();
-    expect(proxyReexecArgs({}, '24.1.0', [])).toBeNull();
-    expect(proxyReexecArgs(proxy, '24.1.0', ['--use-env-proxy'])).toBeNull();
-    expect(
-      proxyReexecArgs({ ...proxy, NODE_USE_ENV_PROXY: '1' }, '24.1.0', []),
-    ).toBeNull();
+  const has = new Set(['--use-env-proxy']);
+  it('re-execs only when the flag is supported, a proxy variable is set and the flag is not yet on', () => {
+    expect(proxyReexecArgs(proxy, has, [])).toEqual(['--use-env-proxy']);
+    expect(proxyReexecArgs(proxy, new Set(), [])).toBeNull();
+    expect(proxyReexecArgs({}, has, [])).toBeNull();
+    expect(proxyReexecArgs(proxy, has, ['--use-env-proxy'])).toBeNull();
+    expect(proxyReexecArgs({ ...proxy, NODE_USE_ENV_PROXY: '1' }, has, [])).toBeNull();
   });
+  it('the hint names NODE_USE_ENV_PROXY=1 only when the flag is supported', () => {
+    expect(proxyHint(proxy, has)).toMatch(/NODE_USE_ENV_PROXY=1/);
+    const old = proxyHint(proxy, new Set());
+    expect(old).toMatch(/JUX_CHROME/);
+    expect(old).not.toMatch(/NODE_USE_ENV_PROXY/);
+  });
+});
+
+describe('installChrome failure modes', () => {
+  const NEXT =
+    /Retry with `npx -p @juxtapose\/cli jux browser install`, or download .*\.zip yourself and set JUX_CHROME/s;
+  const base = (cacheDir: string) => ({
+    cacheDir,
+    platform: 'mac-arm64' as const,
+    env: isolated(cacheDir),
+  });
+  it('every download error ends with a next step', () =>
+    withCache(async (cacheDir) => {
+      await expect(
+        installChrome({ ...base(cacheDir), fetch: fakeFetch(Buffer.alloc(0), 403) }),
+      ).rejects.toThrow(NEXT);
+      const dies = (async () =>
+        new Response(
+          new ReadableStream({
+            start(c) {
+              c.enqueue(new Uint8Array(4));
+              c.error(new Error('socket hang up'));
+            },
+          }),
+        )) as typeof fetch;
+      await expect(installChrome({ ...base(cacheDir), fetch: dies })).rejects.toThrow(
+        NEXT,
+      );
+      await expect(
+        installChrome({ ...base(cacheDir), fetch: fakeFetch(zip) }),
+      ).rejects.toThrow(NEXT);
+    }));
+  it('a stream longer than the pin is a length mismatch, not a sha256 one', () =>
+    withCache(async (cacheDir) => {
+      const err = await installChrome({
+        ...base(cacheDir),
+        fetch: fakeFetch(zip),
+        pin: { ...pin, bytes: zip.length - 1 },
+      }).catch((e: Error) => e);
+      expect((err as Error).message).toMatch(/length mismatch/);
+      expect((err as Error).message).not.toMatch(/sha256 mismatch/);
+      expect((err as Error).message).toMatch(NEXT);
+    }));
+  it('a matching hash with the wrong declared length is a length mismatch', () =>
+    withCache(async (cacheDir) => {
+      await expect(
+        installChrome({
+          ...base(cacheDir),
+          fetch: fakeFetch(zip),
+          pin: { ...pin, bytes: zip.length + 1 },
+        }),
+      ).rejects.toThrow(/length mismatch/);
+    }));
+  it('verification fails when the swap left no marker', () =>
+    withCache(async (cacheDir) => {
+      await expect(
+        installChrome({
+          ...base(cacheDir),
+          fetch: fakeFetch(zip),
+          pin,
+          installZip: async () => [],
+        }),
+      ).rejects.toThrow(/marker is missing/);
+    }));
+  it('verification fails when the zip had no binary', () =>
+    withCache(async (cacheDir) => {
+      const empty = buildZip([
+        {
+          name: 'chrome-headless-shell-mac-arm64/README',
+          data: Buffer.from('x'),
+          mode: 0o644,
+        },
+      ]);
+      await expect(
+        installChrome({ ...base(cacheDir), fetch: fakeFetch(empty), pin: pinFor(empty) }),
+      ).rejects.toThrow(/chrome-headless-shell is missing/);
+    }));
+  it('a binary without the marker is not an install', () =>
+    withCache(async (cacheDir) => {
+      const dir = path.join(cacheDir, 'chrome-headless-shell', CHROME_VERSION);
+      const bin = path.join(
+        dir,
+        'chrome-headless-shell-mac-arm64',
+        'chrome-headless-shell',
+      );
+      await mkdir(path.dirname(bin), { recursive: true });
+      await writeFile(bin, '#!/bin/sh\n');
+      let calls = 0;
+      const counting = (async () => {
+        calls++;
+        return new Response(zip);
+      }) as typeof fetch;
+      const r = await installChrome({ ...base(cacheDir), fetch: counting, pin });
+      expect(calls).toBe(1);
+      expect(r.alreadyInstalled).toBe(false);
+    }));
 });
