@@ -2,7 +2,7 @@
 // workbench. The first half of the agent loop: snap before an edit, snap
 // after, then `jux diff` (PR b).
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   encodeStructure,
@@ -32,8 +32,12 @@ export async function snapCommand(
   let viewport: Viewport | undefined;
   if (flags.viewport) {
     const m = /^(\d+)x(\d+)$/.exec(flags.viewport);
-    if (!m) {
-      process.stderr.write(`jux snap: --viewport must be WxH, got '${flags.viewport}'\n`);
+    // 0 passes the pattern but Playwright rejects it, which surfaced as exit 1
+    // "could not capture" for what is a usage error.
+    if (!m || Number(m[1]) === 0 || Number(m[2]) === 0) {
+      process.stderr.write(
+        `jux snap: --viewport must be WxH, both above 0, got '${flags.viewport}'\n`,
+      );
       return 2;
     }
     viewport = { width: Number(m[1]), height: Number(m[2]) };
@@ -74,8 +78,12 @@ export async function snapCommand(
   const image = path.join(dir, `${name}.webp`);
   await writeFile(image, result.snapshot.image);
   const s = result.snapshot.structure;
-  const structure = s ? path.join(dir, `${name}.structure.json.gz`) : null;
-  if (s && structure) await writeFile(structure, encodeStructure(s));
+  const sidecar = path.join(dir, `${name}.structure.json.gz`);
+  // A previous snap's sidecar under this name would otherwise sit beside the
+  // new pixels, and a later diff would pair them (Ruling 7, for snaps).
+  await rm(sidecar, { force: true });
+  const structure = s ? sidecar : null;
+  if (s) await writeFile(sidecar, encodeStructure(s));
 
   const out = {
     name,
