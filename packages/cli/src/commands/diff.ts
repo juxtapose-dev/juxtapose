@@ -17,6 +17,7 @@ import {
   shellQuote,
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
+import { errorMessage } from '../guards.js';
 import { snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 import { firstSymlink, symlinkRefusal, writeFresh } from '../symlink-guard.js';
@@ -56,7 +57,7 @@ export async function readSnap(dir: string, ref: string): Promise<ReadSnap> {
   try {
     return { kind: 'ok', side: { image: bytes, structure: decodeStructure(gz) } };
   } catch (err) {
-    return { kind: 'corrupt', file: sidecar, error: (err as Error).message };
+    return { kind: 'corrupt', file: sidecar, error: errorMessage(err) };
   }
 }
 
@@ -110,7 +111,7 @@ export async function diffCommand(
     // sharp failing to decode a .webp, or anything else unforeseen: a tool
     // failure, distinct from "different" so a script never approves on it.
     io.err(
-      `jux diff: failed: ${(err as Error).message}. Re-take both snaps with \`jux snap <url> --as ${shellQuote(a)}\` / \`--as ${shellQuote(b)}\` and retry.\n`,
+      `jux diff: failed: ${errorMessage(err)}. Re-take both snaps with \`jux snap <url> --as ${shellQuote(a)}\` / \`--as ${shellQuote(b)}\` and retry.\n`,
     );
     return EXIT.failure;
   }
@@ -125,31 +126,34 @@ async function loadSides(
   { sides: [SnapSide, SnapSide] } | { code: number; message: string; failure: SetFailure }
 > {
   const [ra, rb] = await Promise.all([readSnap(dir, a), readSnap(dir, b)]);
-  for (const [ref, r] of [
-    [a, ra],
-    [b, rb],
-  ] as const) {
-    if (r.kind === 'missing') {
-      return {
-        code: EXIT.usage,
-        failure: { code: 'snap-missing', file: path.basename(r.image) },
-        message: ref.endsWith('.webp')
-          ? `jux diff: no file at ${r.image}. Check the path, or take it with \`jux snap <url> --as <name>\`.\n`
-          : `jux diff: no snap named '${ref}' in ${dir}. Run \`jux snap <url> --as ${shellQuote(ref)}\` first.\n`,
-      };
-    }
-    if (r.kind === 'corrupt') {
-      return {
-        code: EXIT.failure,
-        failure: {
-          code: r.file.endsWith('.webp') ? 'image-undecodable' : 'sidecar-undecodable',
-          file: path.basename(r.file),
-        },
-        message: `jux diff: cannot read ${r.file} (${r.error}). Delete it or re-take the snap with \`jux snap <url> --as ${shellQuote(ref)}\`.\n`,
-      };
-    }
+  // a's failure first, then b's.
+  if (ra.kind !== 'ok') return sideFailure(dir, a, ra);
+  if (rb.kind !== 'ok') return sideFailure(dir, b, rb);
+  return { sides: [ra.side, rb.side] };
+}
+
+function sideFailure(
+  dir: string,
+  ref: string,
+  r: Exclude<ReadSnap, { kind: 'ok' }>,
+): { code: number; message: string; failure: SetFailure } {
+  if (r.kind === 'missing') {
+    return {
+      code: EXIT.usage,
+      failure: { code: 'snap-missing', file: path.basename(r.image) },
+      message: ref.endsWith('.webp')
+        ? `jux diff: no file at ${r.image}. Check the path, or take it with \`jux snap <url> --as <name>\`.\n`
+        : `jux diff: no snap named '${ref}' in ${dir}. Run \`jux snap <url> --as ${shellQuote(ref)}\` first.\n`,
+    };
   }
-  return { sides: [(ra as { side: SnapSide }).side, (rb as { side: SnapSide }).side] };
+  return {
+    code: EXIT.failure,
+    failure: {
+      code: r.file.endsWith('.webp') ? 'image-undecodable' : 'sidecar-undecodable',
+      file: path.basename(r.file),
+    },
+    message: `jux diff: cannot read ${r.file} (${r.error}). Delete it or re-take the snap with \`jux snap <url> --as ${shellQuote(ref)}\`.\n`,
+  };
 }
 
 async function diffTwo(a: string, b: string, flags: DiffFlags, io: Io): Promise<number> {
@@ -394,7 +398,7 @@ async function diffPrefix(
     );
     return EXIT.usage;
   }
-  const files = await readdir(dir).catch(() => [] as string[]);
+  const files = await readdir(dir).catch((): string[] => []);
   const { pairs, missing } = pairByPrefix(files, pa, pb);
   if (pairs.length === 0 && missing.length === 0) {
     io.err(

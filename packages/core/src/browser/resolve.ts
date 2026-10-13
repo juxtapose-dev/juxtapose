@@ -8,6 +8,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { homedir as osHomedir } from 'node:os';
 import path from 'node:path';
+import { errorMessage } from './guards.js';
 import {
   CHROME_VERSION,
   MS_PLAYWRIGHT_REVISION,
@@ -55,7 +56,7 @@ export function noBrowserMessage(opts: ResolveOptions = {}): string {
     chromePlatform(opts.platform ?? process.platform, opts.arch ?? process.arch);
     return NO_BROWSER_MESSAGE;
   } catch (err) {
-    return (err as Error).message;
+    return errorMessage(err);
   }
 }
 

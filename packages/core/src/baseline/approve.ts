@@ -6,6 +6,7 @@
 // bootstrapped, and every panel approval, silently dropped its structure.
 
 import { readFile } from 'node:fs/promises';
+import { errorMessage } from '../browser/guards.js';
 import { decodeStructure } from '../capture/structure.js';
 import type { ApprovalMeta, BaselineStore } from '../types.js';
 
@@ -61,6 +62,6 @@ export async function approveCapture(
     await store.putStructure!(storyId, structure.gz);
     return {};
   } catch (err) {
-    return { structureError: (err as Error).message };
+    return { structureError: errorMessage(err) };
   }
 }

@@ -22,6 +22,7 @@ import {
   shellQuote,
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
+import { isRecord } from '../guards.js';
 import { prefixSlugs, snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 import { firstSymlink, symlinkRefusal, writeFresh } from '../symlink-guard.js';
@@ -283,9 +284,10 @@ export async function writeSnapSet(
 
 async function readSnapSet(dir: string, prefix: string): Promise<Set<string> | null> {
   try {
-    const parsed = JSON.parse(await readFile(setFile(dir, prefix), 'utf8')) as unknown;
-    const names = (parsed as { names?: unknown }).names;
-    if (!Array.isArray(names) || !names.every((n) => typeof n === 'string')) return null;
+    const parsed: unknown = JSON.parse(await readFile(setFile(dir, prefix), 'utf8'));
+    const names = isRecord(parsed) ? parsed['names'] : undefined;
+    if (!Array.isArray(names) || !names.every((n): n is string => typeof n === 'string'))
+      return null;
     return new Set(names);
   } catch {
     return null; // absent or unreadable: fall back to the prefix glob

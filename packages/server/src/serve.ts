@@ -4,7 +4,6 @@
 // instead, which is why the router is separate from this.
 
 import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { createRouter } from './router.js';
 import type { ReviewSource } from './types.js';
 
@@ -26,7 +25,10 @@ export async function serve(source: ReviewSource, port = 0): Promise<ServeHandle
   });
 
   await new Promise<void>((ok) => server.listen(port, '127.0.0.1', ok));
-  const addr = server.address() as AddressInfo;
+  // A TCP listen always has an AddressInfo; the string form is for pipes.
+  const addr = server.address();
+  if (addr === null || typeof addr === 'string')
+    throw new Error(`jux: review server has no TCP address (${String(addr)})`);
 
   return {
     url: `http://127.0.0.1:${addr.port}`,

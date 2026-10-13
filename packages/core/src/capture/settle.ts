@@ -89,6 +89,10 @@ export async function armSettle(page: Page): Promise<void> {
  * original tool cut per-story time meaningfully by collapsing these.
  */
 export async function drain(page: Page): Promise<void> {
+  // The window cast inside is a cast, not a global Window augmentation: the
+  // callback runs in the page, and declaring the hook globally would leak it
+  // into core's public types. (Comments stay out here: TypeScript keeps them
+  // in the callback's source, which is what the page evaluates.)
   await page
     .evaluate(async () => {
       const w = window as unknown as { __juxWait?: Promise<void> };

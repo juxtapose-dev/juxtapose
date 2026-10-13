@@ -87,6 +87,8 @@ interface Channel {
 /** The channel is how the manager hears from the preview. Absent in tests and
  *  in any host that stubs the addons API. */
 function getChannel(api: unknown): Channel | null {
+  // A cast, not a guard: Channel is Storybook's own type and a function
+  // returning one cannot be checked at runtime beyond `typeof`, below.
   const getter = (api as { getChannel?: () => Channel }).getChannel;
   if (typeof getter !== 'function') return null;
   try {

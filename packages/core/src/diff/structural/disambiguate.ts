@@ -24,10 +24,7 @@ export function disambiguate(
   current: StructureSnapshot,
 ): Fact[] {
   const snap = (s: Source) => (s.side === 'baseline' ? baseline : current);
-  const nth = {
-    baseline: undefined as number[] | undefined,
-    current: undefined as number[] | undefined,
-  };
+  const nth: { baseline?: number[]; current?: number[] } = {};
   // ordinals has one entry per element, and a source indexes an element.
   const nthOf = (s: Source) => (nth[s.side] ??= ordinals(snap(s)))[s.index]!;
   const key = (s: Source) => `${s.side}:${s.index}`;
@@ -38,7 +35,7 @@ export function disambiguate(
   for (const f of facts) {
     const l = labelOf(f);
     let ids = byLabel.get(l);
-    if (!ids) byLabel.set(l, (ids = new Map()));
+    if (!ids) byLabel.set(l, (ids = new Map<string, Source>()));
     ids.set(key(f.source), f.source);
   }
 

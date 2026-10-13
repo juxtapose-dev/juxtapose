@@ -7,13 +7,17 @@
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createRouter, RunDirSource } from '@juxtapose/server';
 import { GitBaselineStore, type ProjectConfig } from '@juxtapose/core';
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 
+// Vite's connect middlewares receive Node's own request and response (its
+// Connect.IncomingMessage extends http.IncomingMessage), declared here so the
+// addon does not depend on vite's types.
 interface ViteDevServer {
   middlewares: {
-    use(fn: (req: unknown, res: unknown, next: () => void) => void): void;
+    use(fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void): void;
   };
   config?: { server?: { port?: number } };
 }
@@ -64,14 +68,10 @@ function juxtaposePlugin(): VitePlugin {
     name: 'juxtapose',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const request = req as { headers?: Record<string, string | undefined> };
-        const host = request.headers?.host;
+        const host = req.headers.host;
         if (host) source.setBaseUrl(`http://${host}`);
 
-        void handler(
-          req as Parameters<typeof handler>[0],
-          res as Parameters<typeof handler>[1],
-        ).then((handled) => {
+        void handler(req, res).then((handled) => {
           if (!handled) next();
         });
       });
@@ -82,6 +82,7 @@ function juxtaposePlugin(): VitePlugin {
 function loadConfig(projectRoot: string): ProjectConfig {
   for (const name of ['juxtapose.config.json', '.juxtaposerc.json']) {
     try {
+      // As the CLI's loadConfig: settings are checked where they are used.
       // Synchronous on purpose: this runs once at dev-server startup, and
       // making the plugin factory async would complicate Storybook's config
       // loading for no benefit.

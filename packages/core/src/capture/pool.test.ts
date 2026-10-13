@@ -103,7 +103,7 @@ async function daemonBrowser(): Promise<{ browser: Browser; done: () => Promise<
     });
     const t = new SocketTransport(sock);
     const c = new CdpConnection(t);
-    const ready = c.once<{ product: string }>('jux.ready');
+    const ready = c.once('jux.ready');
     t.send(JSON.stringify({ jux: 'hello', version: CHROME_VERSION }));
     const { product } = await ready;
     return {

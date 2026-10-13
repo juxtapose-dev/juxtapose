@@ -101,15 +101,14 @@ async function withSupervisor(
 
 /** Creates a context, a target in it and a flat session on it. */
 async function openPage(c: CdpConnection) {
-  const { browserContextId } = await c.send<{ browserContextId: string }>(
-    'Target.createBrowserContext',
-    { disposeOnDetach: true },
-  );
-  const { targetId } = await c.send<{ targetId: string }>('Target.createTarget', {
+  const { browserContextId } = await c.send('Target.createBrowserContext', {
+    disposeOnDetach: true,
+  });
+  const { targetId } = await c.send('Target.createTarget', {
     url: 'about:blank',
     browserContextId,
   });
-  const { sessionId } = await c.send<{ sessionId: string }>('Target.attachToTarget', {
+  const { sessionId } = await c.send('Target.attachToTarget', {
     targetId,
     flatten: true,
   });
@@ -123,8 +122,8 @@ describe.skipIf(!chrome)('supervisor', () => {
       const a = (await connect(paths.socket)).c;
       const b = (await connect(paths.socket)).c;
       const [va, vb] = await Promise.all([
-        a.send<{ product: string }>('Browser.getVersion'),
-        b.send<{ product: string }>('Browser.getVersion'),
+        a.send('Browser.getVersion'),
+        b.send('Browser.getVersion'),
       ]);
       expect(va.product).toBe(vb.product);
       const { browserContextId, sessionId } = await openPage(a);
@@ -133,7 +132,7 @@ describe.skipIf(!chrome)('supervisor', () => {
       let aSaw = 0;
       a.on('Runtime.executionContextCreated', () => aSaw++, sessionId);
       await a.send('Runtime.enable', {}, sessionId);
-      const r = await a.send<{ result: { value: number } }>(
+      const r = await a.send(
         'Runtime.evaluate',
         { expression: '6*7', returnByValue: true },
         sessionId,
@@ -142,19 +141,13 @@ describe.skipIf(!chrome)('supervisor', () => {
       expect(aSaw).toBeGreaterThan(0);
       expect(bSaw).toBe(0);
       // Each client sees only its own contexts (and not the default one).
-      const own = await b.send<{ browserContextId: string }>(
-        'Target.createBrowserContext',
-      );
-      const seen = await b.send<{
-        browserContextIds: string[];
-        defaultBrowserContextId?: string;
-      }>('Target.getBrowserContexts');
+      const own = await b.send('Target.createBrowserContext');
+      const seen = await b.send('Target.getBrowserContexts');
       expect(seen.browserContextIds).toEqual([own.browserContextId]);
       expect(seen.defaultBrowserContextId).toBeUndefined();
-      expect(
-        (await a.send<{ browserContextIds: string[] }>('Target.getBrowserContexts'))
-          .browserContextIds,
-      ).toEqual([browserContextId]);
+      expect((await a.send('Target.getBrowserContexts')).browserContextIds).toEqual([
+        browserContextId,
+      ]);
       expect(await sup.browserContextIds()).toContain(browserContextId);
       a.close();
       // After a drops, its context is gone from the browser.
@@ -169,9 +162,7 @@ describe.skipIf(!chrome)('supervisor', () => {
   it('a context the client disposed itself is not disposed twice (no error on drop)', () =>
     withSupervisor(async ({ paths, sup }) => {
       const a = (await connect(paths.socket)).c;
-      const { browserContextId } = await a.send<{ browserContextId: string }>(
-        'Target.createBrowserContext',
-      );
+      const { browserContextId } = await a.send('Target.createBrowserContext');
       await a.send('Target.disposeBrowserContext', { browserContextId });
       a.close();
       const b = (await connect(paths.socket)).c;
@@ -266,13 +257,11 @@ describe.skipIf(!chrome)('supervisor', () => {
       );
       await refused(b.send('Target.setDiscoverTargets', { discover: true }));
       await refused(b.send('Browser.close'));
-      const { targetInfos } = await b.send<{ targetInfos: { targetId: string }[] }>(
-        'Target.getTargets',
-      );
+      const { targetInfos } = await b.send('Target.getTargets');
       expect(targetInfos.map((t) => t.targetId)).not.toContain(targetId);
 
       // a's page still works and b heard nothing about it.
-      const r = await a.send<{ result: { value: number } }>(
+      const r = await a.send(
         'Runtime.evaluate',
         { expression: '6*7', returnByValue: true },
         sessionId,
@@ -302,10 +291,7 @@ describe.skipIf(!chrome)('supervisor', () => {
         },
         sessionId,
       );
-      const child = a.once<{ sessionId: string; targetInfo: { type: string } }>(
-        'Target.attachedToTarget',
-        sessionId,
-      );
+      const child = a.once('Target.attachedToTarget', sessionId);
       await a.send(
         'Runtime.evaluate',
         {
@@ -315,7 +301,7 @@ describe.skipIf(!chrome)('supervisor', () => {
       );
       const { sessionId: childSession, targetInfo } = await child;
       expect(targetInfo.type).toBe('worker');
-      const r = await a.send<{ result: { value: number } }>(
+      const r = await a.send(
         'Runtime.evaluate',
         { expression: '2+3', returnByValue: true },
         childSession,
@@ -335,20 +321,18 @@ describe.skipIf(!chrome)('supervisor', () => {
       const b = (await connect(paths.socket)).c;
       const { sessionId } = await openPage(a.c);
       a.sock.pause();
-      const big = a.c.send<{ result: { value: string } }>(
+      const big = a.c.send(
         'Runtime.evaluate',
         { expression: `'x'.repeat(24 * 1024 * 1024)`, returnByValue: true },
         sessionId,
       );
-      const small = a.c.send<{ result: { value: number } }>(
+      const small = a.c.send(
         'Runtime.evaluate',
         { expression: '1+1', returnByValue: true },
         sessionId,
       );
       // b is not held up by a's full socket.
-      expect((await b.send<{ product: string }>('Browser.getVersion')).product).toMatch(
-        /HeadlessChrome/,
-      );
+      expect((await b.send('Browser.getVersion')).product).toMatch(/HeadlessChrome/);
       await sleep(300);
       a.sock.resume();
       expect((await big).result.value.length).toBe(24 * 1024 * 1024);
@@ -488,11 +472,7 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
           pb.sessionId,
         ),
       );
-      const { targetInfos } = await b.send<{ targetInfos: { targetId: string }[] }>(
-        'Target.getTargets',
-        {},
-        pb.sessionId,
-      );
+      const { targetInfos } = await b.send('Target.getTargets', {}, pb.sessionId);
       expect(targetInfos.map((t) => t.targetId)).not.toContain(pa.targetId);
       await refusedBy(
         b.send('Target.attachToTarget', { targetId: pa.targetId, flatten: true }),
@@ -612,10 +592,8 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         '{"id":"x","method":"Browser.getVersion"}',
       ])
         b.sock.write(frame + '\0');
-      expect((await b.c.send<{ product: string }>('Browser.getVersion')).product).toMatch(
-        /HeadlessChrome/,
-      );
-      const r = await a.send<{ result: { value: number } }>(
+      expect((await b.c.send('Browser.getVersion')).product).toMatch(/HeadlessChrome/);
+      const r = await a.send(
         'Runtime.evaluate',
         { expression: '6*7', returnByValue: true },
         pa.sessionId,
@@ -637,9 +615,7 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         );
         for (let i = 0; i < 80 && !r.isClosed(); i++) await sleep(25);
         expect(r.isClosed()).toBe(true);
-        expect((await a.send<{ product: string }>('Browser.getVersion')).product).toMatch(
-          /HeadlessChrome/,
-        );
+        expect((await a.send('Browser.getVersion')).product).toMatch(/HeadlessChrome/);
         a.close();
       },
       10,
@@ -727,7 +703,7 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
       // the pool (which rebuilds a worker only on TargetClosedError or
       // PageCrashedError) kept the dead page for the next story.
       const { c } = await connect(paths.socket);
-      const { product } = await c.send<{ product: string }>('Browser.getVersion');
+      const { product } = await c.send('Browser.getVersion');
       const browser = Browser.fromConnection(c, {
         version: product,
         close: async () => c.close(),
@@ -782,9 +758,9 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
     try {
       await withSupervisor(async ({ paths }) => {
         const a = (await connect(paths.socket)).c;
-        const evalIn = async <T>(sessionId: string, expression: string) =>
+        const evalIn = async (sessionId: string, expression: string) =>
           (
-            await a.send<{ result: { value: T } }>(
+            await a.send(
               'Runtime.evaluate',
               { expression, returnByValue: true },
               sessionId,
@@ -792,7 +768,7 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
           ).result.value;
         const loaded = async (sessionId: string) => {
           for (let i = 0; i < 100; i++) {
-            const ok = await evalIn<boolean>(
+            const ok = await evalIn(
               sessionId,
               `document.readyState === 'complete' && location.origin === ${JSON.stringify(origin)}`,
             );
@@ -812,18 +788,16 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
           { origin, storageTypes: 'all' },
           first.sessionId,
         );
-        const { targetId } = await a.send<{ targetId: string }>('Target.createTarget', {
+        const { targetId } = await a.send('Target.createTarget', {
           url: `${origin}/`,
           browserContextId: first.browserContextId,
         });
-        const { sessionId } = await a.send<{ sessionId: string }>(
-          'Target.attachToTarget',
-          { targetId, flatten: true },
-        );
+        const { sessionId } = await a.send('Target.attachToTarget', {
+          targetId,
+          flatten: true,
+        });
         await loaded(sessionId);
-        expect(await evalIn<string | null>(sessionId, 'localStorage.getItem("x")')).toBe(
-          null,
-        );
+        expect(await evalIn(sessionId, 'localStorage.getItem("x")')).toBe(null);
         a.close();
       });
     } finally {
@@ -876,7 +850,7 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
                 refusals.push(e.message);
               throw e;
             })) as typeof c.send;
-          const { product } = await c.send<{ product: string }>('Browser.getVersion');
+          const { product } = await c.send('Browser.getVersion');
           const browser = Browser.fromConnection(c, {
             version: product,
             close: async () => c.close(),

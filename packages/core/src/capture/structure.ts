@@ -9,9 +9,11 @@
 // Everything here is a pure function of the CDP response so it can be tested
 // against real Chromium output committed as a fixture.
 
+import type { Protocol } from 'devtools-protocol';
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { Page } from '../browser/page.js';
+import { isRecord } from '../browser/guards.js';
 import { queryAllExpression } from '../browser/selectors.js';
 import type {
   StructureElement,
@@ -139,33 +141,13 @@ export const MAX_ELEMENTS = 5000;
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 
-/** The subset of a CDP DOMSnapshot.captureSnapshot response we read. */
-export interface CdpSnapshot {
-  documents: Array<{
-    contentHeight?: number;
-    nodes: {
-      parentIndex: number[];
-      nodeType: number[];
-      nodeName: number[];
-      nodeValue: number[];
-      attributes: number[][];
-      /** Rare-string data: parallel arrays of node index → string index.
-       *  Verified on Chromium 151: pseudo-elements appear as element nodes
-       *  named `::before`/`::after` with pseudoType set; an <input>'s typed
-       *  value is in inputValue, not in an attribute. */
-      pseudoType?: { index: number[]; value: number[] };
-      inputValue?: { index: number[]; value: number[] };
-    };
-    layout: {
-      nodeIndex: number[];
-      styles: number[][];
-      /** DOM.Rectangle: [x, y, width, height]. */
-      bounds: Array<[number, number, number, number]>;
-      paintOrders?: number[];
-    };
-  }>;
-  strings: string[];
-}
+/**
+ * A DOMSnapshot.captureSnapshot response. Verified on Chromium 151:
+ * pseudo-elements appear as element nodes named `::before`/`::after` with
+ * pseudoType set; an <input>'s typed value is in inputValue, not in an
+ * attribute.
+ */
+export type CdpSnapshot = Protocol.DOMSnapshot.CaptureSnapshotResponse;
 
 const IMPLICIT_ROLES: Record<string, string> = {
   button: 'button',
@@ -212,7 +194,23 @@ export function normalizeStructure(
   // DOMSnapshot's arrays are parallel by protocol: nodes.* has one entry per
   // node, layout.* one per layout row, and each styles row one value per
   // requested property. The indexed reads marked `!` below rely on that.
-  const { nodes, layout } = doc;
+  const { layout } = doc;
+  // Optional in the protocol, always sent by Chromium. A missing one is a
+  // broken snapshot: say which, rather than fail on a later read (or, for
+  // nodeValue on a page without text, not at all).
+  const need = <T>(v: T | undefined, name: string): T => {
+    if (v === undefined)
+      throw new Error(`DOMSnapshot.captureSnapshot returned no nodes.${name}`);
+    return v;
+  };
+  const nodes = {
+    parentIndex: need(doc.nodes.parentIndex, 'parentIndex'),
+    nodeType: need(doc.nodes.nodeType, 'nodeType'),
+    nodeName: need(doc.nodes.nodeName, 'nodeName'),
+    nodeValue: need(doc.nodes.nodeValue, 'nodeValue'),
+    attributes: need(doc.nodes.attributes, 'attributes'),
+    inputValue: doc.nodes.inputValue,
+  };
   // `visibility` is requested after STRUCTURE_PROPS and used only to filter.
   const visibilityIdx = STRUCTURE_PROPS.length;
 
@@ -284,7 +282,9 @@ export function normalizeStructure(
       if (row === undefined) return; // no box: nothing to stand in for
       total++;
       if (elements.length < MAX_ELEMENTS) {
-        const [x, y, w, h] = layout.bounds[row]!;
+        // DOM.Rectangle is [x, y, width, height]; a short one reads NaN, as it
+        // always has (round(undefined)).
+        const [x = NaN, y = NaN, w = NaN, h = NaN] = layout.bounds[row]!;
         elements.push({
           path,
           parent: keptParent,
@@ -310,7 +310,7 @@ export function normalizeStructure(
       return;
     }
 
-    const [x, y, w, h] = layout.bounds[row]!;
+    const [x = NaN, y = NaN, w = NaN, h = NaN] = layout.bounds[row]!;
     const rect: StructureRect = { x: round(x), y: round(y), w: round(w), h: round(h) };
     const offscreen =
       rect.x + rect.w <= 0 ||
@@ -485,8 +485,8 @@ export function effectiveStyle(
 /** Canonical JSON: object keys sorted at every level, so hashing is stable. */
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
-  if (v && typeof v === 'object') {
-    const o = v as Record<string, unknown>;
+  if (isRecord(v)) {
+    const o = v;
     return `{${Object.keys(o)
       .sort()
       .filter((k) => o[k] !== undefined)
@@ -504,8 +504,29 @@ export function encodeStructure(s: StructureSnapshot): Buffer {
   return gzipSync(Buffer.from(JSON.stringify(s)));
 }
 
+/**
+ * The envelope encodeStructure always writes. Elements are not checked one by
+ * one: every reader already treats a bad sidecar as no structure.
+ */
+function isStructureSnapshot(v: unknown): v is StructureSnapshot {
+  return (
+    isRecord(v) &&
+    v['schema'] === 'juxtapose.structure/v1' &&
+    typeof v['structureHash'] === 'string' &&
+    typeof v['contentHeight'] === 'number' &&
+    isRecord(v['viewport']) &&
+    typeof v['viewport']['width'] === 'number' &&
+    typeof v['viewport']['height'] === 'number' &&
+    Array.isArray(v['elements'])
+  );
+}
+
+/** Throws on a sidecar that is not one encodeStructure wrote; every caller catches. */
 export function decodeStructure(b: Buffer): StructureSnapshot {
-  return JSON.parse(gunzipSync(b).toString('utf8')) as StructureSnapshot;
+  const parsed: unknown = JSON.parse(gunzipSync(b).toString('utf8'));
+  if (!isStructureSnapshot(parsed))
+    throw new Error('not a juxtapose.structure/v1 sidecar');
+  return parsed;
 }
 
 /**
@@ -537,7 +558,9 @@ export async function captureStructure(
       ),
     );
   const verify = (sel: string) =>
-    page.evaluate<{ total: number; marked: number }>(
+    // unknown: checked below rather than assumed; the page's globals are the
+    // story's to replace.
+    page.evaluate<unknown>(
       queryAllExpression(
         sel,
         'return { total: els.length, marked: els.filter((e) => e.hasAttribute(a0)).length };',
@@ -571,19 +594,19 @@ export async function captureStructure(
   }
 
   try {
-    const raw = await page.send<CdpSnapshot>('DOMSnapshot.captureSnapshot', {
+    const raw = await page.send('DOMSnapshot.captureSnapshot', {
       computedStyles: [...STRUCTURE_PROPS, 'visibility'],
       includeDOMRects: true,
       includePaintOrder: true,
     });
     for (const [k, sel] of mask.entries()) {
-      const v = (await verify(sel)) as { total: number; marked: number } | undefined;
+      const v = await verify(sel);
       // Every current match still marked, and none of the marked ones gone.
       const intact =
-        typeof v === 'object' &&
-        v !== null &&
-        v.marked === v.total &&
-        v.marked >= markedCounts[k]!; // one count was pushed per mask selector
+        isRecord(v) &&
+        v['marked'] === v['total'] &&
+        typeof v['marked'] === 'number' &&
+        v['marked'] >= markedCounts[k]!; // one count was pushed per mask selector
       if (!intact) return undefined;
     }
     return normalizeStructure(raw, viewport);

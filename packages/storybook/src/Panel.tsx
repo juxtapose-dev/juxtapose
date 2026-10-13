@@ -9,6 +9,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { styled, Badge, Button, EmptyTabContent, Loader } from './storybook.js';
+import { mutedColor } from './theme.js';
 // Deep import on purpose: '@juxtapose/core' reaches sharp and the browser driver
 // through the capture modules, and this file is bundled for the browser.
 import { formatPercent } from '@juxtapose/core/format';
@@ -54,19 +55,19 @@ const Body = styled.div({ padding: 12, overflow: 'auto', flex: 1 });
 const Spacer = styled.div({ flex: 1 });
 
 const Muted = styled.span(({ theme }) => ({
-  color: theme.textMutedColor,
+  color: mutedColor(theme),
   fontSize: 12,
 }));
 
 const Stat = styled.span(({ theme }) => ({
   font: `600 12px/1 ${theme.typography.fonts.base}`,
-  color: theme.textMutedColor,
+  color: mutedColor(theme),
 }));
 
 const ModeGroup = styled.div({ display: 'flex', gap: 2 });
 
 const Note = styled.span(({ theme }) => ({
-  color: theme.textMutedColor,
+  color: mutedColor(theme),
   fontSize: 12,
   fontStyle: 'italic',
 }));
@@ -444,7 +445,7 @@ function useKeyboardShortcuts(
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-      const target = event.target as HTMLElement | null;
+      const target = event.target instanceof HTMLElement ? event.target : null;
       const tag = target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (target?.isContentEditable) return;

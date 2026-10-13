@@ -16,6 +16,11 @@ import type {
   StoryParams,
 } from '@juxtapose/core';
 
+// The `window as unknown as {…}` casts below sit inside page.evaluate
+// callbacks: they run in the page, and the globals they read are Storybook
+// internals with no published types. The cast is the claim; the code still
+// checks each value before using it.
+
 interface StorybookIndexEntry {
   id: string;
   type?: 'story' | 'docs';
@@ -29,6 +34,14 @@ interface StorybookIndex {
   v?: number;
   entries: Record<string, StorybookIndexEntry>;
 }
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** An object with an `entries` object; entries are read field by field
+ *  downstream. */
+const isStorybookIndex = (v: unknown): v is StorybookIndex =>
+  isRecord(v) && isRecord(v['entries']);
 
 /**
  * Phases where the story is settled enough to screenshot.
@@ -303,8 +316,8 @@ async function readIndex(buildDir: string): Promise<StorybookIndex | null> {
   for (const name of ['index.json', 'stories.json']) {
     try {
       const raw = await readFile(path.join(buildDir, name), 'utf8');
-      const parsed = JSON.parse(raw) as StorybookIndex;
-      if (parsed?.entries) return parsed;
+      const parsed: unknown = JSON.parse(raw);
+      if (isStorybookIndex(parsed)) return parsed;
     } catch {
       // try the next candidate
     }
@@ -316,8 +329,8 @@ async function fetchIndex(origin: string): Promise<StorybookIndex | null> {
   try {
     const res = await fetch(new URL('index.json', withSlash(origin)));
     if (!res.ok) return null;
-    const parsed = (await res.json()) as StorybookIndex;
-    return parsed?.entries ? parsed : null;
+    const parsed: unknown = await res.json();
+    return isStorybookIndex(parsed) ? parsed : null;
   } catch {
     return null;
   }

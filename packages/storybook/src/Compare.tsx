@@ -8,6 +8,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { styled } from './storybook.js';
+import { mutedColor } from './theme.js';
 import { Loupe } from './Loupe.js';
 
 export type ViewMode = 'sxs' | 'slider' | 'onion' | 'flicker';
@@ -58,7 +59,7 @@ const Pair = styled.div({
 
 const Caption = styled.div(({ theme }) => ({
   font: `500 11px/1.4 ${theme.typography.fonts.base}`,
-  color: theme.textMutedColor,
+  color: mutedColor(theme),
   textTransform: 'uppercase',
   letterSpacing: 0.4,
   marginBottom: 6,

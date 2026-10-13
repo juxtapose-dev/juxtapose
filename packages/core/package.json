@@ -33,6 +33,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "devtools-protocol": "0.0.1653615",
     "pixelmatch": "^6.0.0",
     "sharp": "^0.35.3"
   },

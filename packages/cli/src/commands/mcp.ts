@@ -18,8 +18,9 @@ import { availableParallelism } from 'node:os';
 import { readFile, realpath } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
-import { acquireBrowser, MAX_CROPS, type Browser } from '@juxtapose/core';
+import { acquireBrowser, MAX_CROPS, parseRunReport, type Browser } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
+import { isRecord } from '../guards.js';
 import { loadConfig } from '../context.js';
 import { captureIo, type Session } from '../io.js';
 import { latestRunDir } from '../run-dir.js';
@@ -71,14 +72,19 @@ export function resolveSnapSlots(
       : { error: `--concurrency must be ${range}` };
   }
   if (config === undefined) return { slots: fallback };
-  return Number.isInteger(config) &&
-    (config as number) >= 1 &&
-    (config as number) <= MAX_SNAP_SLOTS
-    ? { slots: config as number }
+  return typeof config === 'number' &&
+    Number.isInteger(config) &&
+    config >= 1 &&
+    config <= MAX_SNAP_SLOTS
+    ? { slots: config }
     : { error: `mcp.concurrency in the project config must be ${range}` };
 }
 
-type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
+type RpcId = string | number | null;
+/** One JSON-RPC 2.0 response line; `result` is whatever the method answers. */
+type RpcResponse =
+  | { jsonrpc: '2.0'; id: RpcId; result: unknown }
+  | { jsonrpc: '2.0'; id: RpcId; error: { code: number; message: string } };
 type Args = Record<string, unknown>;
 
 type Content =
@@ -233,9 +239,12 @@ const bool = (args: Args, key: string): boolean | undefined => {
 const strings = (args: Args, key: string): string[] | undefined => {
   const v = args[key];
   if (v === undefined || v === null) return undefined;
-  if (!Array.isArray(v) || !v.every((s) => typeof s === 'string' && s !== ''))
+  if (
+    !Array.isArray(v) ||
+    !v.every((s): s is string => typeof s === 'string' && s !== '')
+  )
     throw new ArgError(`'${key}' must be an array of non-empty strings`);
-  return v as string[];
+  return v;
 };
 
 /** A validated call: the locks it needs, and the work to run once they are
@@ -596,9 +605,9 @@ export class McpServer {
         // same run even if another process writes a newer one in between.
         const runDir = await latestRunDir(this.project);
         if (!runDir) return errorResult('jux: no run found. Call the run tool first.');
-        const report = JSON.parse(
+        const report = parseRunReport(
           await readFile(path.join(runDir, 'report.json'), 'utf8'),
-        ) as { results: Array<{ storyId: string }> };
+        );
         const known = new Set(report.results.map((r) => r.storyId));
         const unknown = stories.filter((id) => !known.has(id));
         if (unknown.length)
@@ -696,8 +705,14 @@ export async function cropImages(
   if (!json || json.type !== 'text') return [];
   let files: string[];
   try {
-    const parsed = JSON.parse(json.text) as { crops?: Array<{ file: string }> };
-    files = (parsed.crops ?? []).map((c) => c.file);
+    const parsed: unknown = JSON.parse(json.text);
+    if (!isRecord(parsed)) return [];
+    const crops = parsed['crops'] ?? [];
+    if (!Array.isArray(crops)) return [];
+    // A crop without a string file is skipped (it used to fail the path join below).
+    files = crops.flatMap((c) =>
+      isRecord(c) && typeof c['file'] === 'string' ? [c['file']] : [],
+    );
   } catch {
     return [];
   }
@@ -722,13 +737,6 @@ export async function cropImages(
   return images;
 }
 
-interface Request {
-  jsonrpc?: unknown;
-  id?: unknown;
-  method?: unknown;
-  params?: unknown;
-}
-
 /** One JSON-RPC message in, at most one out. Returns null for notifications
  *  and for responses the client sends us (we never send requests). */
 export async function handleMessage(
@@ -736,24 +744,26 @@ export async function handleMessage(
   msg: unknown,
   version: string,
   signal?: AbortSignal,
-): Promise<Json | null> {
-  if (Array.isArray(msg) || typeof msg !== 'object' || msg === null)
+): Promise<RpcResponse | null> {
+  if (!isRecord(msg))
     return rpcError(null, -32600, 'expected one JSON-RPC 2.0 object per line');
-  const req = msg as Request;
+  const req = msg;
   // A response from the client: we send no requests, so there is nothing to
   // match it to, and answering a response is itself a protocol error.
   if (!('method' in req) && ('result' in req || 'error' in req)) return null;
-  const hasId = 'id' in req && (typeof req.id === 'string' || typeof req.id === 'number');
-  const id = hasId ? (req.id as string | number) : null;
+  const rawId = req['id'];
+  const id = typeof rawId === 'string' || typeof rawId === 'number' ? rawId : null;
+  const hasId = id !== null;
   // MCP ids are strings or numbers, never null; an `id` of another type is a
   // malformed request, and dropping it would leave the client waiting.
   if ('id' in req && !hasId)
     return rpcError(null, -32600, 'id must be a string or number');
-  if (req.jsonrpc !== '2.0' || typeof req.method !== 'string')
+  const method = req['method'];
+  if (req['jsonrpc'] !== '2.0' || typeof method !== 'string')
     return rpcError(id, -32600, 'invalid request');
   if (!hasId) return null; // notifications/initialized, cancelled, …
-  const params = (req.params ?? {}) as Record<string, unknown>;
-  switch (req.method) {
+  const params = isRecord(req['params']) ? req['params'] : {};
+  switch (method) {
     case 'initialize':
       // We speak one version. A client asking for another gets ours and
       // decides whether to continue, as the lifecycle spec prescribes.
@@ -766,29 +776,28 @@ export async function handleMessage(
     case 'ping':
       return rpcResult(id, {});
     case 'tools/list':
-      return rpcResult(id, { tools: TOOLS as unknown as Json });
+      return rpcResult(id, { tools: TOOLS });
     case 'tools/call': {
       const name = params.name;
       if (typeof name !== 'string' || !TOOLS.some((t) => t.name === name))
         return rpcError(id, -32602, `unknown tool: ${String(name)}`);
       const args = params.arguments ?? {};
-      if (typeof args !== 'object' || args === null || Array.isArray(args))
-        return rpcError(id, -32602, 'arguments must be an object');
-      const result = await server.call(name, args as Args, signal);
-      return rpcResult(id, result as unknown as Json);
+      if (!isRecord(args)) return rpcError(id, -32602, 'arguments must be an object');
+      const result = await server.call(name, args, signal);
+      return rpcResult(id, result);
     }
     default:
-      return rpcError(id, -32601, `method not found: ${req.method}`);
+      return rpcError(id, -32601, `method not found: ${method}`);
   }
 }
 
-const rpcResult = (id: string | number | null, result: Json): Json => ({
+const rpcResult = (id: RpcId, result: unknown): RpcResponse => ({
   jsonrpc: '2.0',
   id,
   result,
 });
 
-const rpcError = (id: string | number | null, code: number, message: string): Json => ({
+const rpcError = (id: RpcId, code: number, message: string): RpcResponse => ({
   jsonrpc: '2.0',
   id,
   error: { code, message },
@@ -812,7 +821,7 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
   const writeOut = stdout.write.bind(stdout);
   stdout.write = process.stderr.write.bind(process.stderr);
   let outBroken = false;
-  const send = (m: Json) => {
+  const send = (m: RpcResponse) => {
     if (!outBroken) writeOut(JSON.stringify(m) + '\n');
   };
 
@@ -911,18 +920,20 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
       send(rpcError(null, -32700, 'parse error'));
       return;
     }
-    const req = msg as Request | null;
-    if (req?.method === 'notifications/cancelled') {
-      const id = (req.params as { requestId?: unknown } | undefined)?.requestId;
+    const req = isRecord(msg) ? msg : undefined;
+    if (req?.['method'] === 'notifications/cancelled') {
+      const p = req['params'];
+      const id = isRecord(p) ? p['requestId'] : undefined;
       if (typeof id === 'string' || typeof id === 'number') pending.get(id)?.abort();
       return;
     }
+    const id = req?.['id'];
     if (
-      req?.method === 'tools/call' &&
-      req.jsonrpc === '2.0' &&
-      (typeof req.id === 'string' || typeof req.id === 'number')
+      req?.['method'] === 'tools/call' &&
+      req['jsonrpc'] === '2.0' &&
+      (typeof id === 'string' || typeof id === 'number')
     ) {
-      onCall(req.id, msg);
+      onCall(id, msg);
       return;
     }
     void handleMessage(server, msg, version).then(

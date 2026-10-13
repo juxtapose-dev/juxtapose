@@ -7,8 +7,16 @@
 // sends when asked. The screenshot is a verbatim port of
 // Screenshotter.screenshotPage (coreBundle.js L21258–21370).
 
+import type { Protocol } from 'devtools-protocol';
 import type { Viewport } from './types.js';
-import { CdpConnection, CdpError, TargetClosedError } from './cdp.js';
+import {
+  CdpConnection,
+  CdpError,
+  TargetClosedError,
+  type CdpMethod,
+  type CdpParams,
+  type CdpResult,
+} from './cdp.js';
 import { assertCssSelector, QUERY_ALL_SOURCE, queryAllExpression } from './selectors.js';
 
 export class TimeoutError extends Error {
@@ -61,6 +69,12 @@ export interface Page {
    * Raw CDP on this page's session, for DOMSnapshot.
    * @internal Not part of the adapter API; the protocol surface is Chrome's, not ours.
    */
+  send<M extends CdpMethod>(method: M, params?: CdpParams<M>): Promise<CdpResult<M>>;
+  /**
+   * Untyped fallback: a method newer than the pinned protocol, or a caller
+   * written against 0.7's `send<T>(method: string)`.
+   * @internal
+   */
   send<T = unknown>(method: string, params?: object): Promise<T>;
   /** HTTP status of each main-document response; returns the unsubscribe. */
   onMainResponse(handler: (status: number) => void): () => void;
@@ -77,7 +91,10 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // in headless mode; without them a story that says `font-family: sans-serif`
 // renders with Chromium's built-in defaults and the bytes differ from every
 // existing baseline.
-const FONT_FAMILIES: Record<'linux' | 'mac' | 'win', object> = {
+const FONT_FAMILIES: Record<
+  'linux' | 'mac' | 'win',
+  Protocol.Page.SetFontFamiliesRequest
+> = {
   linux: {
     fontFamilies: {
       standard: 'Times New Roman',
@@ -212,7 +229,9 @@ const BLOCK_SERVICE_WORKERS_SCRIPT = `
 if (navigator.serviceWorker) navigator.serviceWorker.register = async () => { console.warn('Service Worker registration blocked by Playwright'); };
 `;
 
-const metricsOverride = (v: Viewport) => ({
+const metricsOverride = (
+  v: Viewport,
+): Protocol.Emulation.SetDeviceMetricsOverrideRequest => ({
   mobile: false,
   width: v.width,
   height: v.height,
@@ -222,7 +241,7 @@ const metricsOverride = (v: Viewport) => ({
   screenOrientation: { angle: 0, type: 'landscapePrimary' },
 });
 
-const EMULATED_MEDIA = {
+const EMULATED_MEDIA: Protocol.Emulation.SetEmulatedMediaRequest = {
   media: '',
   features: [
     { name: 'prefers-color-scheme', value: 'light' },
@@ -296,14 +315,8 @@ const SELECTOR_VISIBLE = `function (selector) {
   return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
 }`;
 
-interface FrameInfo {
-  url: string;
-  urlFragment?: string;
-  parentId?: string;
-}
-
 /** CDP's Frame.url excludes the fragment; Playwright's page.url() includes it. */
-const frameUrl = (f: FrameInfo) => f.url + (f.urlFragment ?? '');
+const frameUrl = (f: Protocol.Page.Frame) => f.url + (f.urlFragment ?? '');
 
 function serialize(arg: unknown): string {
   return arg === undefined ? 'undefined' : JSON.stringify(arg);
@@ -342,9 +355,8 @@ export class CdpPage implements Page {
     this.offs.push(
       connection.on(
         'Page.frameNavigated',
-        (p) => {
-          const f = (p as { frame: FrameInfo }).frame;
-          if (!f.parentId) this.currentUrl = frameUrl(f);
+        ({ frame }) => {
+          if (!frame.parentId) this.currentUrl = frameUrl(frame);
         },
         sessionId,
       ),
@@ -354,8 +366,8 @@ export class CdpPage implements Page {
       // every later evaluate on this page.
       connection.on(
         'Page.javascriptDialogOpening',
-        (p) => {
-          const accept = (p as { type: string }).type === 'beforeunload';
+        ({ type }) => {
+          const accept = type === 'beforeunload';
           void this.send('Page.handleJavaScriptDialog', { accept }).catch(() => {});
         },
         sessionId,
@@ -378,7 +390,8 @@ export class CdpPage implements Page {
       connection.on(
         'Inspector.detached',
         (p) => {
-          const reason = (p as { reason?: string }).reason ?? '';
+          // Typed as always present; `?? ''` kept from before the protocol types.
+          const reason = p.reason ?? '';
           this.fail(
             /render process gone/i.test(reason)
               ? new PageCrashedError()
@@ -390,7 +403,7 @@ export class CdpPage implements Page {
       // Browser-session event: the target closed under us (context disposed,
       // window.close()). Drop our listeners with it.
       connection.on('Target.detachedFromTarget', (p) => {
-        if ((p as { sessionId?: string }).sessionId !== this.sessionId) return;
+        if (p.sessionId !== this.sessionId) return;
         this.fail(new TargetClosedError('target closed'));
         this.dispose();
       }),
@@ -439,9 +452,11 @@ export class CdpPage implements Page {
     return page;
   }
 
-  send<T = unknown>(method: string, params: object = {}): Promise<T> {
+  send<M extends CdpMethod>(method: M, params?: CdpParams<M>): Promise<CdpResult<M>>;
+  send<T = unknown>(method: string, params?: object): Promise<T>;
+  send(method: string, params?: object): Promise<unknown> {
     if (this.goneError) return Promise.reject(this.goneError);
-    return this.guard(this.connection.send<T>(method, params, this.sessionId));
+    return this.guard(this.connection.send(method, params, this.sessionId));
   }
 
   url(): string {
@@ -452,8 +467,7 @@ export class CdpPage implements Page {
     if (this.closed) return () => {};
     const off = this.connection.on(
       'Network.responseReceived',
-      (p) => {
-        const r = p as { type: string; frameId?: string; response: { status: number } };
+      (r) => {
         // The top frame's id is the target id in Chromium (verified 2026-10-13).
         if (r.type === 'Document' && r.frameId === this.targetId)
           handler(r.response.status);
@@ -480,8 +494,7 @@ export class CdpPage implements Page {
     const loaded = new Promise<void>((r) => (onLoad = r));
     const off = this.connection.on(
       'Page.lifecycleEvent',
-      (p) => {
-        const e = p as { name: string; frameId: string; loaderId: string };
+      (e) => {
         if (e.name !== 'load' || e.frameId !== this.targetId) return;
         if (wanted === undefined) early.push(e.loaderId);
         else if (e.loaderId === wanted) onLoad();
@@ -504,12 +517,9 @@ export class CdpPage implements Page {
       if (this.goneError) throw this.goneError;
       // The send's own cap sits past the goto timeout so the TimeoutError
       // naming the url is the one the caller sees.
-      const res = await this.connection.send<{ loaderId?: string; errorText?: string }>(
-        'Page.navigate',
-        { url },
-        this.sessionId,
-        { timeout: timeout + 1000 },
-      );
+      const res = await this.connection.send('Page.navigate', { url }, this.sessionId, {
+        timeout: timeout + 1000,
+      });
       if (res.errorText)
         throw new Error(`jux: navigation to ${url} failed: ${res.errorText}`);
       // No loaderId: a same-document navigation (fragment change); the
@@ -526,9 +536,7 @@ export class CdpPage implements Page {
       off();
       navigated.catch(() => {}); // the loser of the race is not an unhandled rejection
     }
-    const { frameTree } = await this.send<{ frameTree: { frame: FrameInfo } }>(
-      'Page.getFrameTree',
-    );
+    const { frameTree } = await this.send('Page.getFrameTree');
     this.currentUrl = frameUrl(frameTree.frame);
   }
 
@@ -541,10 +549,7 @@ export class CdpPage implements Page {
       typeof fn === 'string' ? fn : `(${fn.toString()})(${serialize(arg)})`;
     if (this.goneError) throw this.goneError;
     const r = await this.guard(
-      this.connection.send<{
-        result: { value?: R };
-        exceptionDetails?: { text: string; exception?: { description?: string } };
-      }>(
+      this.connection.send(
         'Runtime.evaluate',
         { expression, awaitPromise: true, returnByValue: true },
         this.sessionId,
@@ -556,6 +561,8 @@ export class CdpPage implements Page {
         r.exceptionDetails.exception?.description ?? r.exceptionDetails.text,
       );
     }
+    // The caller's claim about what its page code returns: nothing on this
+    // side can check it (returnByValue gives back whatever JSON the page made).
     return r.result.value as R;
   }
 
@@ -641,9 +648,10 @@ export class CdpPage implements Page {
         await this.evaluate(queryAllExpression(mask.join(', '), MASK_BODY, '#F0F'));
       }
       try {
-        const { visualViewport } = await this.send<{
-          visualViewport: { pageX: number; pageY: number; scale: number };
-        }>('Page.getLayoutMetrics');
+        // The device-pixel `visualViewport` Playwright reads, not the protocol's
+        // preferred cssVisualViewport (@deprecated there): the clip must match
+        // Screenshotter's.
+        const { visualViewport } = await this.send('Page.getLayoutMetrics');
         const clip = {
           x: visualViewport.pageX,
           y: visualViewport.pageY,
@@ -651,7 +659,7 @@ export class CdpPage implements Page {
           height: Math.ceil(this.viewport.height / visualViewport.scale),
           scale: visualViewport.scale,
         };
-        const { data } = await this.send<{ data: string }>('Page.captureScreenshot', {
+        const { data } = await this.send('Page.captureScreenshot', {
           format: 'png',
           clip,
           captureBeyondViewport: false,

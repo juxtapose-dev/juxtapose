@@ -20,6 +20,9 @@ export interface Progress {
   storyId: string | null;
 }
 
+// Bundle and Progress come from @juxtapose/server, built from the same types
+// in the same release; the casts below are that claim. Errors go through
+// `unknown` because a proxy or an older server can answer them.
 export async function fetchBundle(): Promise<Bundle> {
   const res = await fetch(`${API}/bundle`);
   if (!res.ok) throw new Error(`bundle: ${res.status}`);
@@ -39,8 +42,12 @@ export async function approveStory(storyId: string): Promise<void> {
     body: JSON.stringify({ storyId }),
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `approve failed: ${res.status}`);
+    const body: unknown = await res.json().catch(() => ({}));
+    const error =
+      typeof body === 'object' && body !== null && 'error' in body
+        ? body.error
+        : undefined;
+    throw new Error(typeof error === 'string' ? error : `approve failed: ${res.status}`);
   }
 }
 
@@ -63,8 +70,16 @@ export async function fetchAffected(storyId: string): Promise<string[]> {
   try {
     const res = await fetch(`${API}/affected?storyId=${encodeURIComponent(storyId)}`);
     if (!res.ok) return [storyId];
-    const body = (await res.json()) as { storyIds?: string[] };
-    return body.storyIds?.length ? body.storyIds : [storyId];
+    const body: unknown = await res.json();
+    const ids =
+      typeof body === 'object' && body !== null && 'storyIds' in body
+        ? body.storyIds
+        : undefined;
+    return Array.isArray(ids) &&
+      ids.length > 0 &&
+      ids.every((id): id is string => typeof id === 'string')
+      ? ids
+      : [storyId];
   } catch {
     return [storyId];
   }

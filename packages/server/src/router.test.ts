@@ -156,6 +156,16 @@ describe('review API', () => {
     expect(source.runCalls).toEqual([['a--b']]);
   });
 
+  it('refuses a storyIds that is not a list of ids, instead of running on it', async () => {
+    const res = await fetch(api('/run'), {
+      method: 'POST',
+      body: JSON.stringify({ storyIds: 'a--b' }),
+    });
+    expect(res.status).toBe(400);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(source.runCalls).toEqual([]);
+  });
+
   it('cancels a run', async () => {
     expect((await fetch(api('/cancel'), { method: 'POST' })).status).toBe(200);
     expect(source.cancelled).toBe(1);

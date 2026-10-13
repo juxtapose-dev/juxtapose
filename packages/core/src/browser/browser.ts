@@ -43,19 +43,16 @@ export class BrowserContext {
   ) {}
 
   async newPage(): Promise<Page> {
-    const { targetId } = await this.connection.send<{ targetId: string }>(
-      'Target.createTarget',
-      {
-        url: 'about:blank',
-        browserContextId: this.id,
-      },
-    );
+    const { targetId } = await this.connection.send('Target.createTarget', {
+      url: 'about:blank',
+      browserContextId: this.id,
+    });
     let page: CdpPage;
     try {
-      const { sessionId } = await this.connection.send<{ sessionId: string }>(
-        'Target.attachToTarget',
-        { targetId, flatten: true },
-      );
+      const { sessionId } = await this.connection.send('Target.attachToTarget', {
+        targetId,
+        flatten: true,
+      });
       page = await CdpPage.create(this.connection, targetId, sessionId, {
         viewport: this.opts.viewport,
         blockServiceWorkers: this.opts.blockServiceWorkers === true,
@@ -106,9 +103,7 @@ export class Browser {
     const { launchChrome } = await import('./launch.js');
     const launched = await launchChrome(opts);
     try {
-      const { product } = await launched.connection.send<{ product: string }>(
-        'Browser.getVersion',
-      );
+      const { product } = await launched.connection.send('Browser.getVersion');
       return new Browser(
         launched.connection,
         stripProduct(product),
@@ -144,7 +139,7 @@ export class Browser {
   }
 
   async newContext(opts: ContextOptions): Promise<BrowserContext> {
-    const { browserContextId } = await this.connection.send<{ browserContextId: string }>(
+    const { browserContextId } = await this.connection.send(
       'Target.createBrowserContext',
       {
         disposeOnDetach: true,

@@ -27,6 +27,7 @@ import { userInfo } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { ensurePrivateDir } from '../private-dir.js';
+import { errnoCode, isRecord } from '../guards.js';
 
 export interface DaemonState {
   pid: number;
@@ -192,8 +193,8 @@ export async function recheckDaemonDirs(
 }
 
 function isState(v: unknown): v is DaemonState {
-  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
-  const s = v as Record<string, unknown>;
+  if (!isRecord(v)) return false;
+  const s = v;
   return (
     typeof s['pid'] === 'number' &&
     Number.isInteger(s['pid']) &&
@@ -216,7 +217,7 @@ export async function readState(paths: DaemonPaths): Promise<DaemonState | null>
 }
 
 async function sweepTempFiles(dir: string): Promise<void> {
-  for (const name of await readdir(dir).catch(() => [] as string[])) {
+  for (const name of await readdir(dir).catch((): string[] => [])) {
     const m = /\.json\.(\d+)\.tmp$/.exec(name);
     if (!m || pidAlive(Number(m[1]))) continue;
     const file = path.join(dir, name);
@@ -321,7 +322,7 @@ export async function acquireLock(
     // one handed to a supervisor.
     return () => releaseLockHeldBy(paths, process.pid);
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return null;
+    if (errnoCode(err) === 'EEXIST') return null;
     throw err;
   }
 }
@@ -370,7 +371,7 @@ export function pidAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM';
+    return errnoCode(err) === 'EPERM';
   }
 }
 

@@ -5,7 +5,7 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { encodeStoryId, hashImage, type RunReport } from '@juxtapose/core';
+import { encodeStoryId, hashImage, parseRunReport } from '@juxtapose/core';
 import { resolveContext, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
@@ -42,9 +42,7 @@ export async function checkCommand(
     return 1;
   }
 
-  const report = JSON.parse(
-    await readFile(path.join(runDir, 'report.json'), 'utf8'),
-  ) as RunReport;
+  const report = parseRunReport(await readFile(path.join(runDir, 'report.json'), 'utf8'));
 
   const manifest = await ctx.store.readManifest();
 

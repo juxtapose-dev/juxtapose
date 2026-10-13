@@ -8,7 +8,7 @@ import path from 'node:path';
 import {
   buildHandoffPrompt,
   encodeStoryId,
-  type RunReport,
+  parseRunReport,
   type HandoffPayload,
   shellQuote,
 } from '@juxtapose/core';
@@ -38,9 +38,7 @@ export async function handoffCommand(
     return 1;
   }
 
-  const report = JSON.parse(
-    await readFile(path.join(runDir, 'report.json'), 'utf8'),
-  ) as RunReport;
+  const report = parseRunReport(await readFile(path.join(runDir, 'report.json'), 'utf8'));
 
   const result = report.results.find((r) => r.storyId === storyId);
   if (!result) {

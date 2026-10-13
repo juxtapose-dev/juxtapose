@@ -168,6 +168,7 @@ export {
   type HandoffPayload,
 } from './agent/handoff.js';
 export { buildComment, type CommentOptions } from './report/comment.js';
+export { isRunReport, parseRunReport } from './report/run-report.js';
 export { buildHtmlReport, type HtmlReportOptions } from './report/html.js';
 export { formatPercent } from './report/format.js';
 export {

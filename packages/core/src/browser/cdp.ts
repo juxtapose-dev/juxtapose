@@ -8,6 +8,8 @@
 // when the script returns, so a story with a synchronous infinite loop would
 // otherwise hang the worker and the run.
 
+import type { ProtocolMapping } from 'devtools-protocol/types/protocol-mapping.js';
+import { isRecord } from './guards.js';
 import type { Transport } from './transport.js';
 
 export interface RawMessage {
@@ -19,7 +21,52 @@ export interface RawMessage {
   sessionId?: string;
 }
 
+/**
+ * A parsed frame with the shape RawMessage promises. Only the envelope is
+ * checked; params and result stay `unknown` here and get their protocol types
+ * from `send` and `on`. Unknown keys are kept: the supervisor forwards frames
+ * as they came.
+ */
+export function isRawMessage(v: unknown): v is RawMessage {
+  if (!isRecord(v)) return false;
+  const { id, method, sessionId, error } = v;
+  return (
+    (id === undefined || typeof id === 'number') &&
+    (method === undefined || typeof method === 'string') &&
+    (sessionId === undefined || typeof sessionId === 'string') &&
+    (error === undefined ||
+      (isRecord(error) &&
+        typeof error['code'] === 'number' &&
+        typeof error['message'] === 'string'))
+  );
+}
+
+type Commands = ProtocolMapping.Commands;
+
+/** Every command Chrome's protocol defines, as of the pinned devtools-protocol. */
+export type CdpMethod = keyof Commands;
+export type CdpParams<M extends CdpMethod> = Commands[M]['paramsType'][0];
+export type CdpResult<M extends CdpMethod> = Commands[M]['returnType'];
+
+/**
+ * The warm-browser daemon's own events, sent by the supervisor on the same
+ * socket as Chrome's (supervisor.ts, the hello handshake).
+ */
+export interface JuxEvents {
+  'jux.ready': [{ product: string }];
+  'jux.refused': [{ reason?: string }];
+}
+
+type Events = ProtocolMapping.Events & JuxEvents;
+export type CdpEvent = keyof Events;
+/** An event's params; `undefined` for the events that carry none (Inspector.targetCrashed). */
+export type CdpEventParams<E extends CdpEvent> = Events[E] extends [infer P]
+  ? P
+  : undefined;
+
 export const SEND_TIMEOUT_MS = 30_000;
+/** JSON-RPC's "internal error": what a reply that fails isRawMessage rejects with. */
+export const MALFORMED_REPLY_CODE = -32603;
 
 export class CdpError extends Error {
   constructor(
@@ -55,7 +102,26 @@ interface Pending {
   timer: NodeJS.Timeout;
 }
 
-type Handler = (params: unknown, sessionId?: string) => void;
+/**
+ * A stored handler. `never` params: every typed handler is assignable to it,
+ * and dispatch is the one caller (through asProtocol).
+ *
+ * send, on and once each have a typed overload (a protocol method or event,
+ * inferred) and an untyped fallback (any string, the caller's `<T>`): the
+ * fallback keeps methods newer than the pinned protocol, the daemon's own
+ * events, and adapters written against 0.7's `send<T>(method: string)`
+ * compiling. A typed name with an explicit `<T>` takes the fallback too.
+ */
+type Handler = (params: never, sessionId?: string) => void;
+
+/**
+ * The one place a reply or event gets its protocol type: the peer is Chrome
+ * (or the supervisor proxying it), trusted to speak the protocol it
+ * advertises, exactly as Playwright and Puppeteer trust it. Validating every
+ * frame against the protocol schema would cost the hot path (a 2 MB
+ * screenshot reply per story) for a peer we launched ourselves.
+ */
+const asProtocol = <T>(v: unknown): T => v as T;
 
 export class CdpConnection {
   private lastId = 0;
@@ -131,17 +197,30 @@ export class CdpConnection {
     this.transport.send(JSON.stringify(message));
   }
 
+  /** Params default to `{}`, as Chrome expects for a command that takes none. */
+  send<M extends CdpMethod>(
+    method: M,
+    params?: CdpParams<M>,
+    sessionId?: string,
+    opts?: { timeout?: number },
+  ): Promise<CdpResult<M>>;
   send<T = unknown>(
     method: string,
-    params: object = {},
+    params?: object,
+    sessionId?: string,
+    opts?: { timeout?: number },
+  ): Promise<T>;
+  send(
+    method: string,
+    params?: object,
     sessionId?: string,
     opts: { timeout?: number } = {},
-  ): Promise<T> {
+  ): Promise<unknown> {
     if (this._closed)
       return Promise.reject(new TargetClosedError(this.closeReason, method));
     const id = this.allocateId();
     const timeout = opts.timeout ?? SEND_TIMEOUT_MS;
-    return new Promise<T>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new SendTimeoutError(method, timeout));
@@ -149,13 +228,14 @@ export class CdpConnection {
       timer.unref();
       this.pending.set(id, {
         method,
-        resolve: resolve as (v: unknown) => void,
+        resolve,
         reject,
         timer,
       });
       try {
+        const p = params ?? {};
         this.sendRaw(
-          sessionId ? { id, method, params, sessionId } : { id, method, params },
+          sessionId ? { id, method, params: p, sessionId } : { id, method, params: p },
         );
       } catch (e) {
         clearTimeout(timer);
@@ -165,8 +245,18 @@ export class CdpConnection {
     });
   }
 
-  on(method: string, handler: Handler, sessionId?: string): () => void {
-    const key = `${sessionId ?? ''}\n${method}`;
+  on<E extends CdpEvent>(
+    event: E,
+    handler: (params: CdpEventParams<E>, sessionId?: string) => void,
+    sessionId?: string,
+  ): () => void;
+  on(
+    event: string,
+    handler: (params: unknown, sessionId?: string) => void,
+    sessionId?: string,
+  ): () => void;
+  on(event: string, handler: Handler, sessionId?: string): () => void {
+    const key = `${sessionId ?? ''}\n${event}`;
     let set = this.handlers.get(key);
     if (!set) this.handlers.set(key, (set = new Set()));
     set.add(handler);
@@ -181,25 +271,35 @@ export class CdpConnection {
    * session-scoped events never arrive; pass the page's sessionId for page
    * events.
    */
-  once<P = unknown>(
-    method: string,
+  once<E extends CdpEvent>(
+    event: E,
     sessionId?: string,
-    predicate: (p: P) => boolean = () => true,
-  ): Promise<P> {
+    predicate?: (p: CdpEventParams<E>) => boolean,
+  ): Promise<CdpEventParams<E>>;
+  once<P = unknown>(
+    event: string,
+    sessionId?: string,
+    predicate?: (p: P) => boolean,
+  ): Promise<P>;
+  once(
+    event: string,
+    sessionId?: string,
+    predicate: (p: never) => boolean = () => true,
+  ): Promise<unknown> {
     if (this._closed)
-      return Promise.reject(new TargetClosedError(this.closeReason, method));
-    return new Promise<P>((resolve, reject) => {
+      return Promise.reject(new TargetClosedError(this.closeReason, event));
+    return new Promise<unknown>((resolve, reject) => {
       const onClosed = (e: Error) => {
         off();
         reject(e);
       };
       const off = this.on(
-        method,
+        event,
         (params) => {
-          if (!predicate(params as P)) return;
+          if (!predicate(asProtocol<never>(params))) return;
           off();
           this.closeWaiters.delete(onClosed);
-          resolve(params as P);
+          resolve(params);
         },
         sessionId,
       );
@@ -212,12 +312,33 @@ export class CdpConnection {
   }
 
   private dispatch(raw: string): void {
-    let m: RawMessage;
+    let parsed: unknown;
     try {
-      m = JSON.parse(raw) as RawMessage;
+      parsed = JSON.parse(raw);
     } catch {
       return; // Chrome never sends non-JSON frames; nothing to do but ignore.
     }
+    // Nor frames that are not a message object. A `null` frame used to throw
+    // here, out of the transport's data event. A malformed reply to one of our
+    // own sends still answers it, as an error, rather than leaving it to time
+    // out.
+    if (!isRawMessage(parsed)) {
+      const id = isRecord(parsed) ? parsed['id'] : undefined;
+      const p = typeof id === 'number' ? this.pending.get(id) : undefined;
+      if (typeof id === 'number' && p) {
+        this.pending.delete(id);
+        clearTimeout(p.timer);
+        p.reject(
+          new CdpError(
+            MALFORMED_REPLY_CODE,
+            p.method,
+            'malformed reply from the browser',
+          ),
+        );
+      }
+      return;
+    }
+    const m = parsed;
     try {
       this.onRaw?.(m);
     } catch (e) {
@@ -246,7 +367,7 @@ export class CdpConnection {
   private runHandlers(set: Set<Handler>, m: RawMessage): void {
     for (const h of [...set]) {
       try {
-        h(m.params, m.sessionId);
+        h(asProtocol<never>(m.params), m.sessionId);
       } catch (e) {
         this.onError(e, 'handler');
       }

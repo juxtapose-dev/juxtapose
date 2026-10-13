@@ -7,6 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { navigateToStory } from '@juxtapose/core';
+
 import type {
   Page,
   Platform,
@@ -16,6 +17,11 @@ import type {
   StoryParams,
 } from '@juxtapose/core';
 
+// The `window as unknown as {…}` casts below sit inside page.evaluate
+// callbacks: they run in the page, and the globals they read are Ladle
+// internals with no published types. The cast is the claim; the code still
+// checks each value before using it.
+
 /**
  * One entry in Ladle's meta.json.
  *
@@ -23,6 +29,7 @@ import type {
  * `MetaJsonStory` type omits `filePath` and `namedExport` even though
  * get-meta-json.js demonstrably emits both. The runtime data is authoritative.
  */
+
 interface LadleStory {
   name: string;
   levels: string[];
@@ -38,6 +45,13 @@ interface LadleStory {
 interface LadleMeta {
   stories: Record<string, LadleStory>;
 }
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** An object with a `stories` object; stories are read field by field
+ *  downstream. */
+const isLadleMeta = (v: unknown): v is LadleMeta => isRecord(v) && isRecord(v['stories']);
 
 /** Where a story declares juxtapose config. Ladle's `meta` is an open index
  *  signature, so a namespaced key passes through untouched. */
@@ -153,8 +167,8 @@ async function loadMeta(target: EnumerateTarget): Promise<LadleMeta | null> {
     try {
       const res = await fetch(new URL('meta.json', withSlash(target.origin)));
       if (!res.ok) return null;
-      const parsed = (await res.json()) as LadleMeta;
-      return parsed?.stories ? parsed : null;
+      const parsed: unknown = await res.json();
+      return isLadleMeta(parsed) ? parsed : null;
     } catch {
       return null;
     }
@@ -163,8 +177,8 @@ async function loadMeta(target: EnumerateTarget): Promise<LadleMeta | null> {
   if (!target.buildDir) return null;
   try {
     const raw = await readFile(path.join(target.buildDir, 'meta.json'), 'utf8');
-    const parsed = JSON.parse(raw) as LadleMeta;
-    return parsed?.stories ? parsed : null;
+    const parsed: unknown = JSON.parse(raw);
+    return isLadleMeta(parsed) ? parsed : null;
   } catch {
     return null;
   }
