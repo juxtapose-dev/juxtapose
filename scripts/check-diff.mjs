@@ -143,9 +143,9 @@ check(
   crops.code === 1 &&
     vc.schema === 'juxtapose.crops/v1' &&
     vc.verdict?.classification === 'style-only' &&
-    vc.dir === '.juxtapose/crops/before-vs-after' &&
+    vc.dir === '.juxtapose/crops/before~vs~after' &&
     vc.crops.length >= 1 &&
-    cropFile.startsWith('.juxtapose/crops/before-vs-after/crop-1.png') &&
+    cropFile.startsWith('.juxtapose/crops/before~vs~after/crop-1.png') &&
     !cropFile.includes('\\') &&
     existsSync(cropAbs) &&
     readFileSync(cropAbs).subarray(1, 4).toString('latin1') === 'PNG' &&
@@ -163,10 +163,10 @@ check(
   '--crops human output: verdict, then absolute crop paths, no next:',
 );
 // A fresh call empties the dir: a stale crop from a bigger diff cannot linger.
-writeFileSync(path.join(project, '.juxtapose/crops/before-vs-after/crop-9.png'), 'stale');
+writeFileSync(path.join(project, '.juxtapose/crops/before~vs~after/crop-9.png'), 'stale');
 await jux(['diff', 'before', 'after', '--crops']);
 check(
-  !existsSync(path.join(project, '.juxtapose/crops/before-vs-after/crop-9.png')) &&
+  !existsSync(path.join(project, '.juxtapose/crops/before~vs~after/crop-9.png')) &&
     readFileSync(path.join(project, '.juxtapose/crops/.gitignore'), 'utf8') === '*\n',
   '--crops empties the pair dir first and the crops dir self-ignores',
 );
@@ -174,8 +174,20 @@ const cropsSame = await jux(['diff', 'before', 'same', '--crops', '--json']);
 check(
   cropsSame.code === 0 &&
     JSON.parse(cropsSame.out).dir === null &&
-    !existsSync(path.join(project, '.juxtapose/crops/before-vs-same')),
+    !existsSync(path.join(project, '.juxtapose/crops/before~vs~same')),
   'identical snaps: --crops exits 0 and writes nothing',
+);
+// Reusing one pair name: crops from the different run must not outlive an
+// identical re-run (removing is not writing).
+await snap('color', 'flip');
+await jux(['diff', 'before', 'flip', '--crops']);
+const flipDir = path.join(project, '.juxtapose/crops/before~vs~flip');
+const hadCrops = existsSync(path.join(flipDir, 'crop-1.png'));
+await snap('noop', 'flip');
+const flipSame = await jux(['diff', 'before', 'flip', '--crops']);
+check(
+  hadCrops && flipSame.code === 0 && !existsSync(flipDir),
+  'an identical re-run of a pair removes its earlier crops',
 );
 // Review Focus 4: a sub-threshold change marks no region; the agent still gets pixels.
 await snap('background', 'bg');
@@ -197,6 +209,7 @@ check(
   cropsDim.code === 1 &&
     vdim.verdict.classification === 'dimension-change' &&
     vdim.crops.length === 1 &&
+    vdim.crops[0].explained === false &&
     vdim.crops[0].box.width === 320 &&
     vdim.crops[0].box.height === 240,
   'a dimension change crops the overlapping frame',

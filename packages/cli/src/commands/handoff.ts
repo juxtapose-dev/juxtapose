@@ -86,12 +86,20 @@ export async function handoffCommand(
 
   // The baseline lives in the store, not the run dir (jux run writes only
   // what it captured); the old `-baseline.webp` run-dir path never existed.
-  const baselineImage = ctx.store.locate?.(storyId);
+  let baselineImage: string | undefined;
+  try {
+    baselineImage = ctx.store.locate?.(storyId);
+  } catch {
+    // A store that cannot say just means no crops command.
+  }
   const currentImage = path.join(images, `${safe}-current.webp`);
   const haveBaseline = baselineImage !== undefined && existsSync(baselineImage);
   const cropsCommand =
-    result.status === 'fail' && haveBaseline && existsSync(currentImage)
-      ? `jux diff ${shellQuote(baselineImage)} ${shellQuote(currentImage)} --crops`
+    result.status === 'fail' &&
+    baselineImage !== undefined &&
+    haveBaseline &&
+    existsSync(currentImage)
+      ? `jux diff ${shellQuote(baselineImage)} ${shellQuote(currentImage)} --crops --project ${shellQuote(ctx.projectRoot)}`
       : undefined;
 
   const payload: HandoffPayload = {

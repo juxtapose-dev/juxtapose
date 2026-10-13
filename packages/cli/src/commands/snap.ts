@@ -22,6 +22,7 @@ import { EXIT } from '../exit-codes.js';
 import { shellQuote } from '../shell-quote.js';
 import { prefixSlugs, snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
+import { firstSymlink, symlinkRefusal } from '../symlink-guard.js';
 
 export interface SnapFlags {
   json?: boolean;
@@ -115,6 +116,17 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
       return EXIT.usage;
     }
     seen.set(name, url);
+  }
+
+  // Before the browser, and before any rm or write under the snaps dir.
+  const link = await firstSymlink(path.resolve(flags.project ?? process.cwd()), [
+    '.juxtapose',
+    'snaps',
+    '.gitignore',
+  ]);
+  if (link) {
+    process.stderr.write(symlinkRefusal(link));
+    return EXIT.failure;
   }
 
   let captured: Awaited<ReturnType<typeof snapPages>>;

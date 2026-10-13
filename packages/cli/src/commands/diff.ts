@@ -19,6 +19,7 @@ import { EXIT } from '../exit-codes.js';
 import { shellQuote } from '../shell-quote.js';
 import { snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
+import { firstSymlink, symlinkRefusal } from '../symlink-guard.js';
 
 export interface DiffFlags {
   json?: boolean;
@@ -192,10 +193,22 @@ async function writeCrops(
   { verdict, pixels, unexplainedRegions: allUnexplained }: SnapComparison,
 ): Promise<number> {
   const root = path.resolve(flags.project ?? process.cwd());
-  const dirName = `${cropName(a)}-vs-${cropName(b)}`;
+  const dirName = cropDirName(a, b);
   const relDir = ['.juxtapose', 'crops', dirName].join('/');
   const cropsRoot = path.join(root, '.juxtapose', 'crops');
   const absDir = path.join(cropsRoot, dirName);
+  // Refuse before any rm or write: a symlinked .juxtapose or crops dir would
+  // send both outside the project.
+  const link =
+    (await firstSymlink(root, ['.juxtapose', 'crops', dirName])) ??
+    (await firstSymlink(cropsRoot, ['.gitignore']));
+  if (link) {
+    process.stderr.write(symlinkRefusal(link));
+    return EXIT.failure;
+  }
+  // Removing is not writing: an identical pair must not leave the crops of an
+  // earlier, different run of the same names behind.
+  await rm(absDir, { recursive: true, force: true });
   if (verdict.classification === 'identical') {
     process.stdout.write(
       flags.json
@@ -209,7 +222,6 @@ async function writeCrops(
     );
     return EXIT.clean;
   }
-  await rm(absDir, { recursive: true, force: true });
   // Self-ignoring, like the snaps dir: crops are scratch, never baselines.
   await mkdir(cropsRoot, { recursive: true });
   await writeFile(path.join(cropsRoot, '.gitignore'), '*\n');
@@ -234,7 +246,8 @@ async function writeCrops(
       scale: c.scale,
       width: c.width,
       height: c.height,
-      explained: !unexplained.has(key(c.region)),
+      // The whole-frame fallback marks nothing, so nothing is "explained".
+      explained: regions.length > 0 && !unexplained.has(key(c.region)),
     });
   }
   if (flags.json) {
@@ -265,6 +278,12 @@ async function writeCrops(
     process.stdout.write(lines.join('\n') + '\n');
   }
   return EXIT.review;
+}
+
+/** `<a>~vs~<b>`: snapName output is [a-z0-9-] only, so `~` can never come
+ *  from a name and ("x-vs-y","z") cannot collide with ("x","y-vs-z"). */
+export function cropDirName(a: string, b: string): string {
+  return `${cropName(a)}~vs~${cropName(b)}`;
 }
 
 /** A snap name, or a `.webp` path's basename, made file-safe for the crops dir. */

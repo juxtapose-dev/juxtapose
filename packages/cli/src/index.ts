@@ -54,7 +54,7 @@ diff
   --prefix                       pair <a>-<slug> with <b>-<slug> and verdict every page
   --json                         the verdict as juxtapose.verdict/v1 JSON (byte-stable)
   --crops                        also write side-by-side strips (baseline | current) per changed
-                                 region, unexplained first, to .juxtapose/crops/<a>-vs-<b>/ and list
+                                 region, unexplained first, to .juxtapose/crops/<a>~vs~<b>/ and list
                                  them; --json wraps the verdict as juxtapose.crops/v1. No browser.
   --prefix output is juxtapose.verdict-set/v1: pages[] (a verdict each), missing[] (unpaired
     slugs), errors[] ({slug, code, file}; code is snap-missing | sidecar-undecodable |

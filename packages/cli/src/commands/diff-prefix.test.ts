@@ -31,3 +31,9 @@ test('a prefix that is a prefix of another prefix does not cross-match', () => {
   const r = pairByPrefix(['before-x.webp', 'before2-x.webp'], 'before', 'before2');
   expect(r.pairs).toEqual([{ slug: 'x', a: 'before-x', b: 'before2-x' }]);
 });
+
+test('crop dir names cannot collide across different pairs', async () => {
+  const { cropDirName } = await import('./diff.js');
+  expect(cropDirName('x-vs-y', 'z')).not.toBe(cropDirName('x', 'y-vs-z'));
+  expect(cropDirName('before', 'after')).toBe('before~vs~after');
+});
