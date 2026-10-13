@@ -133,9 +133,11 @@ jobs:
       # turn the daemon off, so this step removes them; the check fails if the
       # daemon did not start. It is stopped afterwards so the job leaves no Chrome.
       - name: Determinism (Storybook, warm browser)
-        run: |
-          env -u CI -u GITHUB_ACTIONS node scripts/check-determinism.mjs --daemon examples/storybook 3
-          node packages/cli/dist/index.js browser stop
+        run: env -u CI -u GITHUB_ACTIONS node scripts/check-determinism.mjs --daemon examples/storybook 3
+
+      - name: Stop the warm browser
+        if: always()
+        run: node packages/cli/dist/index.js browser stop
 
       - name: Determinism (Storybook, Vue)
         run: node scripts/check-determinism.mjs examples/storybook-vue 3
