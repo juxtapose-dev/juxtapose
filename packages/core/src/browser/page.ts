@@ -380,6 +380,10 @@ export class CdpPage implements Page {
     opts: { viewport: Viewport; blockServiceWorkers: boolean; os: NodeJS.Platform },
   ): Promise<CdpPage> {
     const page = new CdpPage(connection, targetId, sessionId, opts.viewport);
+    // Keyed on the host's process.platform, where Playwright keys on the
+    // browser's UA. The two agree for every supported setup: the pinned
+    // download is per-host, and a BYO binary (JUX_CHROME / --chrome) is
+    // necessarily same-OS because we spawn it locally.
     const fonts =
       FONT_FAMILIES[opts.os === 'darwin' ? 'mac' : opts.os === 'win32' ? 'win' : 'linux'];
     try {
