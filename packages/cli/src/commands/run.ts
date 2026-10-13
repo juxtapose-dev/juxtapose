@@ -74,8 +74,10 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
     return 0;
   }
 
-  const server = ctx.origin ? null : await serveStatic(ctx.buildDir!);
-  const baseUrl = ctx.origin ?? server!.url;
+  // The urls platform addresses pages directly; there is nothing to serve.
+  const needsServer = !ctx.origin && ctx.platform.name !== 'urls';
+  const server = needsServer ? await serveStatic(ctx.buildDir!) : null;
+  const baseUrl = ctx.origin ?? server?.url ?? 'about:blank';
   const browser = await p.time('launch', () =>
     chromium.launch(deterministicLaunchOptions()),
   );

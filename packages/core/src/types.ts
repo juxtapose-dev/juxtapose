@@ -187,10 +187,21 @@ export interface BaselineManifest {
   baselines: Record<string, BaselineEntry>;
 }
 
+/** One page for the `urls` platform. */
+export interface UrlEntry {
+  /** Stable id; used as the story id and for file names. */
+  id: string;
+  /** Absolute, or relative to --origin. */
+  url: string;
+  params?: StoryParams;
+}
+
 /** Project config, from juxtapose.config.{ts,js,json} or package.json#juxtapose. */
 export interface ProjectConfig {
   /** Which workbench. Autodetected when omitted. */
-  platform?: 'storybook' | 'ladle';
+  platform?: 'storybook' | 'ladle' | 'urls';
+  /** Pages to capture when `platform` is 'urls'. */
+  urls?: UrlEntry[];
   /** Where the built static workbench lives. */
   buildDir?: string;
   /** Capture against an already-running dev server instead of building. */

@@ -29,7 +29,7 @@ Common options
   --project <dir>                project root (default: cwd)
   --build-dir <dir>              built workbench directory
   --origin <url>                 capture against a running dev server instead
-  --platform <name>              storybook | ladle (default: autodetect)
+  --platform <name>              storybook | ladle | urls (default: autodetect)
   --concurrency <n>              parallel pages (default: 8)
   --run <dir>                    run directory to read (approve, check, handoff)
 

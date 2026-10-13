@@ -26,6 +26,7 @@ export type {
   BaselineEntry,
   BaselineManifest,
   ProjectConfig,
+  UrlEntry,
   StorageConfig,
   BaselineStore,
 } from './types.js';
@@ -33,6 +34,7 @@ export type {
 // Implementing a platform adapter.
 export type { Platform, EnumerateTarget, SettleContext } from './platform.js';
 export { navigateToStory } from './url-platform.js';
+export { createUrlPlatform } from './platforms/urls.js';
 export { waitForSelector } from './capture/settle.js';
 
 // Implementing a baseline store. `encodeStoryId` matters for anyone building
