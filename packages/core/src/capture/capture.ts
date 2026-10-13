@@ -6,7 +6,13 @@ import sharp from 'sharp';
 import type { Page } from '../browser/page.js';
 import { assertCssSelector } from '../browser/selectors.js';
 import type { Platform } from '../platform.js';
-import type { Snapshot, StoryManifest, StoryParams, Viewport } from '../types.js';
+import type {
+  ColorScheme,
+  Snapshot,
+  StoryManifest,
+  StoryParams,
+  Viewport,
+} from '../types.js';
 import {
   armSettle,
   drain,
@@ -15,6 +21,7 @@ import {
   waitForSelector,
 } from './settle.js';
 import { captureStructure } from './structure.js';
+import { mergeLiveParams, platformStoryId } from './variants.js';
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 2000;
 
@@ -56,6 +63,7 @@ export interface CaptureDeps {
 /** Per-page memo: skip work that only needs doing once per page. */
 const styleInjected = new WeakSet<Page>();
 const pageViewport = new WeakMap<Page, string>();
+const pageColorScheme = new WeakMap<Page, ColorScheme>();
 const warmPages = new WeakMap<Page, string>();
 
 export async function captureStory(
@@ -71,7 +79,14 @@ export async function captureStory(
   const params: StoryParams = { ...story.params };
   const effectiveViewport = params.viewport ?? viewport;
   const timeoutMs = params.captureTimeout ?? DEFAULT_CAPTURE_TIMEOUT_MS;
-  const ctx = { story, params, timeoutMs };
+  // Every platform call gets the platform's own id; the variant capture key
+  // means nothing to Storybook or Ladle.
+  const id = platformStoryId(story);
+  const ctx = {
+    story: id === story.storyId ? story : { ...story, storyId: id },
+    params,
+    timeoutMs,
+  };
 
   // Selector syntax is validated before the page is touched: a Playwright-only
   // selector (`text=`, `>>`) would otherwise match nothing and the story would
@@ -80,6 +95,14 @@ export async function captureStory(
   assertSelectors(params);
 
   await ensureViewport(page, effectiveViewport);
+  // Before showStory, on every capture, so the story renders in its scheme
+  // from the first frame. Only a variant sets it: a default capture resets
+  // to light, which is what stops a pooled page carrying a dark variant's
+  // scheme into the next story. Memoized, so it costs nothing when unchanged.
+  await ensureColorScheme(
+    page,
+    story.variant !== undefined ? (params.colorScheme ?? 'light') : 'light',
+  );
 
   // Arm before triggering the render, or the observer misses the mutations it
   // exists to watch.
@@ -94,13 +117,13 @@ export async function captureStory(
 
   const switched =
     warm && deps.platform.switchStory
-      ? await deps.platform.switchStory(page, story.storyId, ctx)
+      ? await deps.platform.switchStory(page, id, ctx)
       : false;
 
   if (!switched) {
     // Delegated rather than built here: not every platform addresses a story
     // by URL. Playwright galleries render via window.mount() on a fixed page.
-    await deps.platform.showStory(page, story.storyId, deps.baseUrl);
+    await deps.platform.showStory(page, id, deps.baseUrl);
     // A navigation discards injected style tags, so the freeze must be
     // re-applied for the next story that wants it.
     styleInjected.delete(page);
@@ -133,17 +156,24 @@ export async function captureStory(
   // waitForSelector and skip on that platform.
   //
   // Live params override manifest params — the live preview is the story's own
-  // declaration, and the index is a lossy projection of it.
-  const live = await deps.platform.readLiveParams?.(page, story.storyId);
+  // declaration, and the index is a lossy projection of it — but merge under
+  // a variant's own fields, so the mobile variant stays mobile.
+  const live = await deps.platform.readLiveParams?.(page, id);
   if (live) {
-    Object.assign(params, live);
+    Object.assign(params, mergeLiveParams(story, live));
     assertSelectors(params);
+
+    // A story can opt out of a project variant in params only the live
+    // preview carries (Storybook). Honour it as a skip.
+    if (story.variant !== undefined && live.variants?.[story.variant] === false) {
+      return null;
+    }
 
     // Viewport is the one param that cannot be applied retroactively — the
     // story has already laid out. Re-set it and let the platform settle
     // again, so a story declaring its own viewport is captured at that size
     // rather than the project default.
-    const liveViewport = live.viewport;
+    const liveViewport = params.viewport;
     if (liveViewport && !sameViewport(liveViewport, effectiveViewport)) {
       await ensureViewport(page, liveViewport);
       await deps.platform.settle(page, { ...ctx, params });
@@ -205,6 +235,8 @@ export async function captureStory(
 
   return {
     storyId: story.storyId,
+    ...(story.baseStoryId !== undefined ? { baseStoryId: story.baseStoryId } : {}),
+    ...(story.variant !== undefined ? { variant: story.variant } : {}),
     image,
     // The live params may have widened or narrowed this after first render,
     // so report what we actually captured at — the agent handoff computes
@@ -225,6 +257,13 @@ async function ensureViewport(page: Page, viewport: Viewport): Promise<void> {
   if (pageViewport.get(page) === key) return;
   await page.setViewportSize(viewport);
   pageViewport.set(page, key);
+}
+
+/** Media emulation is a CDP round-trip too; skip it when nothing changed. */
+async function ensureColorScheme(page: Page, scheme: ColorScheme): Promise<void> {
+  if (pageColorScheme.get(page) === scheme) return;
+  await page.setColorScheme(scheme);
+  pageColorScheme.set(page, scheme);
 }
 
 /**

@@ -98,6 +98,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     if (outcome.skipped) {
       results.push({
         storyId: outcome.story.storyId,
+        ...variantOf(outcome.story),
         status: 'skip',
         mismatchPixels: 0,
         mismatchPercent: 0,
@@ -110,6 +111,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     if (outcome.error || !outcome.snapshot) {
       results.push({
         storyId: outcome.story.storyId,
+        ...variantOf(outcome.story),
         status: 'fail',
         mismatchPixels: 0,
         mismatchPercent: 0,
@@ -172,6 +174,7 @@ async function judge(
 
   const base: DiffResult = {
     storyId: story.storyId,
+    ...variantOf(story),
     status,
     mismatchPixels: 0,
     mismatchPercent: 0,
@@ -286,6 +289,14 @@ async function tryStructural(
   } catch {
     return undefined;
   }
+}
+
+/** The grouping fields a report needs, present only on a variant capture so
+ *  a default capture's result serializes exactly as it did before variants. */
+function variantOf(story: StoryManifest): Pick<DiffResult, 'baseStoryId' | 'variant'> {
+  return story.variant !== undefined && story.baseStoryId !== undefined
+    ? { baseStoryId: story.baseStoryId, variant: story.variant }
+    : {};
 }
 
 function tally(results: DiffResult[]): Record<DiffStatus, number> {
