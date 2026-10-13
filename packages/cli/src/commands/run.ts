@@ -108,7 +108,12 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
   const baseUrl = ctx.origin ?? server?.url ?? 'about:blank';
   let browser;
   try {
-    browser = await p.time('launch', () => acquireBrowser({ chrome: flags.chrome }));
+    browser = await p.time('launch', () =>
+      acquireBrowser({
+        chrome: flags.chrome,
+        noDaemon: flags['no-daemon'] === true,
+      }),
+    );
   } catch (err) {
     process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
     await server?.close();

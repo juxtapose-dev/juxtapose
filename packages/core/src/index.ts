@@ -110,8 +110,27 @@ export { TargetClosedError } from './browser/cdp.js';
 export { PageCrashedError, TimeoutError, type Page } from './browser/page.js';
 export { acquireBrowser, type AcquireOptions } from './browser/acquire.js';
 export {
+  connectWarmBrowser,
+  daemonEnabled,
+  daemonIdleMinutes,
+  daemonKeyFor,
+  daemonStatus,
+  listDaemons,
+  startDaemon,
+  stopAllDaemons,
+  stopDaemon,
+  CI_ENV_VARS,
+  type WarmOptions,
+  type SpawnArgs,
+  type DaemonStop,
+  type StopResult,
+  type CommandReader,
+} from './browser/daemon/client.js';
+export { daemonSupported, type DaemonState } from './browser/daemon/state.js';
+export {
   resolveChrome,
   juxCacheDir,
+  juxStateDir,
   noBrowserMessage,
   NO_BROWSER_MESSAGE,
   type ChromeSource,

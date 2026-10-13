@@ -13,6 +13,7 @@ export {
   SocketTransport,
   FramedTransport,
   NullFramer,
+  FrameTooLargeError,
   type Transport,
 } from './transport.js';
 export {
@@ -24,6 +25,7 @@ export {
 export {
   resolveChrome,
   juxCacheDir,
+  juxStateDir,
   chromeInstallDir,
   chromeBinaryPath,
   msPlaywrightBinaryPath,
@@ -54,3 +56,15 @@ export {
   QUERY_ALL_SOURCE,
   queryAllExpression,
 } from './selectors.js';
+export {
+  connectWarmBrowser,
+  daemonEnabled,
+  daemonStatus,
+  startDaemon,
+  stopDaemon,
+  CI_ENV_VARS,
+  type WarmOptions,
+  type SpawnArgs,
+  type StopResult,
+  type CommandReader,
+} from './daemon/client.js';

@@ -1,6 +1,16 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
+import net from 'node:net';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { Browser } from '../browser/browser.js';
+import { CdpConnection } from '../browser/cdp.js';
+import { SocketTransport } from '../browser/transport.js';
+import { CHROME_VERSION } from '../browser/pins.js';
+import { daemonPaths } from '../browser/daemon/state.js';
+import { startSupervisor } from '../browser/daemon/supervisor.js';
 import { chromeForTests } from '../browser/__tests__/helpers.js';
 import type { Platform } from '../platform.js';
 import type { StoryManifest } from '../types.js';
@@ -27,9 +37,10 @@ afterEach(() => {
 });
 
 /**
- * `crash` kills its renderer (Page.crash) and fails at once; `die` closes the
- * whole browser; every other story navigates after a pause, so the worker
- * that failed fast is the one that picks up the next story.
+ * `crash` kills its renderer (Page.crash) and fails at once; `close` closes
+ * its own target with an evaluate in flight; `die` closes the whole browser;
+ * every other story navigates after a pause, so the worker that failed fast
+ * is the one that picks up the next story.
  */
 function platformFor(browser: Browser): Platform {
   return {
@@ -43,6 +54,13 @@ function platformFor(browser: Browser): Platform {
     showStory: async (page, id) => {
       if (id === 'crash') await page.send('Page.crash');
       if (id === 'die') await browser.close();
+      if (id === 'close') {
+        const hung = page.evaluate('new Promise(() => {})');
+        await new Promise((r) => setTimeout(r, 100));
+        const { targetId } = page as unknown as { targetId: string };
+        await connectionOf(browser).send('Target.closeTarget', { targetId });
+        await hung;
+      }
       await new Promise((r) => setTimeout(r, 150));
       await page.goto(`${base}/${id}`);
     },
@@ -57,11 +75,66 @@ const story = (id: string): StoryManifest => ({
   params: {},
 });
 
-async function run(ids: string[], concurrency: number) {
+const connectionOf = (b: Browser) =>
+  (b as unknown as { connection: CdpConnection }).connection;
+
+/**
+ * A browser through an in-process supervisor, as `jux` gets it from the warm
+ * daemon; `done` stops the supervisor and removes its state dir.
+ */
+async function daemonBrowser(): Promise<{ browser: Browser; done: () => Promise<void> }> {
+  const dir = await mkdtemp(path.join(tmpdir(), 'jux-pool-'));
+  const paths = daemonPaths(dir, `p${randomBytes(4).toString('hex')}`);
+  const sup = await startSupervisor({
+    executablePath: chrome!.path,
+    paths,
+    key: 'pool-test',
+    idleMinutes: 10,
+  });
+  const done = async () => {
+    await sup.stop();
+    await rm(dir, { recursive: true, force: true });
+  };
+  try {
+    const sock = net.connect(paths.socket);
+    await new Promise<void>((r, e) => {
+      sock.once('connect', r);
+      sock.once('error', e);
+    });
+    const t = new SocketTransport(sock);
+    const c = new CdpConnection(t);
+    const ready = c.once<{ product: string }>('jux.ready');
+    t.send(JSON.stringify({ jux: 'hello', version: CHROME_VERSION }));
+    const { product } = await ready;
+    return {
+      browser: Browser.fromConnection(c, {
+        version: product,
+        close: async () => c.close(),
+      }),
+      done,
+    };
+  } catch (e) {
+    await done();
+    throw e;
+  }
+}
+
+async function run(
+  ids: string[],
+  concurrency: number,
+  via: 'fresh' | 'daemon' = 'fresh',
+) {
   // Identity shuffle: j = floor(0.9999 * (i + 1)) = i, so the queue keeps
   // the order given and the crashing story is taken first.
   vi.spyOn(Math, 'random').mockReturnValue(0.9999);
-  const browser = await Browser.launch({ executablePath: chrome!.path });
+  const d =
+    via === 'daemon'
+      ? await daemonBrowser()
+      : {
+          browser: await Browser.launch({ executablePath: chrome!.path }),
+          done: async () => {},
+        };
+  const { browser } = d;
   const out = new Map<string, CaptureOutcome>();
   try {
     for await (const o of capturePool(ids.map(story), {
@@ -75,6 +148,7 @@ async function run(ids: string[], concurrency: number) {
     }
   } finally {
     await browser.close();
+    await d.done();
   }
   return ids.map((id) => {
     const o = out.get(id);
@@ -93,6 +167,28 @@ describe.skipIf(!chrome)('capturePool after a renderer crash', () => {
 
   it('crash, ok, ok at concurrency 2 is FAIL, PASS, PASS', async () => {
     expect(await run(['crash', 'ok1', 'ok2'], 2)).toEqual([
+      'FAIL PageCrashedError',
+      'PASS',
+      'PASS',
+    ]);
+  });
+
+  // PR #102 re-review N1: through the daemon, the closed target's in-flight
+  // evaluate rejected with CdpError (the supervisor answered it before
+  // forwarding the detach), the pool kept the dead page, and the next story
+  // on that worker failed too: FAIL CdpError, FAIL TargetClosedError, PASS.
+  for (const via of ['fresh', 'daemon'] as const) {
+    it(`${via}: a target closed mid-story is FAIL TargetClosedError, then PASS, PASS`, async () => {
+      expect(await run(['close', 'ok1', 'ok2'], 1, via)).toEqual([
+        'FAIL TargetClosedError',
+        'PASS',
+        'PASS',
+      ]);
+    });
+  }
+
+  it('daemon: crash, ok, ok at concurrency 1 is FAIL, PASS, PASS', async () => {
+    expect(await run(['crash', 'ok1', 'ok2'], 1, 'daemon')).toEqual([
       'FAIL PageCrashedError',
       'PASS',
       'PASS',

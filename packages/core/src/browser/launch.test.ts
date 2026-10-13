@@ -33,7 +33,7 @@ import { chromeForTests } from './__tests__/helpers.js';
 const chrome = chromeForTests();
 
 it.runIf(!!process.env.CI)('CI has the browser the real-Chrome suites need', () => {
-  // Every real-Chrome suite (here, page, pool, structure-capture) is
+  // Every real-Chrome suite (here, page, pool, structure-capture, supervisor) is
   // describe.skipIf(!chrome); without a browser on the runner they would all
   // skip silently and CI would check none of the driver.
   expect(chrome, 'no browser: run `jux browser install` before pnpm test').not.toBeNull();
@@ -81,8 +81,21 @@ describe.skipIf(!chrome)('launchChrome', () => {
     const b = await launchChrome({ executablePath: chrome!.path, spawn: realSpawn });
     const pid = b.pid;
     terminateAll();
-    await new Promise((r) => setTimeout(r, 300));
-    expect(() => process.kill(pid, 0)).toThrow(); // gone
+    // Poll, not a fixed 300 ms: on a loaded CI runner the profile removal
+    // landed after 300 ms (2026-10-13) while the kill itself had succeeded.
+    const alive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (let t = Date.now(); Date.now() - t < 5000;) {
+      if (!alive() && !existsSync(b.userDataDir)) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(alive()).toBe(false);
     expect(existsSync(b.userDataDir)).toBe(false);
   });
 });

@@ -14,6 +14,8 @@ import path from 'node:path';
 // Async exec: execFileSync would block this process's event loop and the
 // in-process server could never answer the child.
 const exec = promisify(execFile);
+// Fresh launches: a local run must not leave a warm browser idling for 10 minutes.
+process.env.JUX_NO_DAEMON = '1';
 const cli = path.resolve(import.meta.dirname, '../packages/cli/dist/index.js');
 const server = createServer((req, res) => {
   if (req.url === '/ok' || req.url === '/ok-two') {

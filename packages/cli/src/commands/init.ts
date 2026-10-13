@@ -100,7 +100,10 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       if ('code' in out && out.code !== EXIT.clean)
         throw new Error('jux: the browser install failed (see above).');
     }
-    browser = await acquireBrowser({ chrome: flags.chrome });
+    browser = await acquireBrowser({
+      chrome: flags.chrome,
+      noDaemon: flags['no-daemon'] === true,
+    });
   } catch (err) {
     process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
     await server?.close();

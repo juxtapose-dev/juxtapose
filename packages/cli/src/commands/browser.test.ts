@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { InstallOptions } from '@juxtapose/core';
+import { CI_ENV_VARS, resolveChrome, type InstallOptions } from '@juxtapose/core';
 import {
   browserCommand,
   installWithProxy,
@@ -171,8 +173,12 @@ describe('jux browser', () => {
         const h = harness({ env: { JUX_CHROME: bin } });
         expect(await browserCommand([sub], true, h.io)).toBe(0);
         const j = JSON.parse(h.out());
-        expect(Object.keys(j).sort()).toEqual(keys);
+        // status adds ok and the warm browsers; path stays the bare shape.
+        expect(Object.keys(j).sort()).toEqual(
+          sub === 'status' ? [...keys, 'daemon', 'daemons', 'ok'].sort() : keys,
+        );
         expect(j.path).toBe(bin);
+        if (sub === 'status') expect(j.ok).toBe(true);
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -181,8 +187,25 @@ describe('jux browser', () => {
       const h = harness();
       expect(await browserCommand([sub], true, h.io)).toBe(3);
       const j = JSON.parse(h.out());
-      expect(Object.keys(j).sort()).toEqual(keys);
+      expect(Object.keys(j).sort()).toEqual(
+        sub === 'status' ? [...keys, 'daemon', 'daemons', 'ok'].sort() : keys,
+      );
       expect(j.path).toBeNull();
+      if (sub === 'status') expect(j.ok).toBe(false);
+    }
+  });
+
+  it('status --json and path --json are one JSON object when --chrome does not resolve', async () => {
+    for (const sub of ['status', 'path']) {
+      const h = harness();
+      expect(
+        await browserCommand([sub, '--chrome', '/nonexistent/chrome'], true, h.io),
+      ).toBe(3);
+      expect(JSON.parse(h.out())).toMatchObject({
+        ok: false,
+        path: null,
+        error: expect.stringMatching(/nonexistent/),
+      });
     }
   });
 
@@ -221,4 +244,175 @@ describe('jux browser', () => {
     expect(r).toEqual({ code: 0 });
     expect(calls[0][0]).toBe('--use-env-proxy');
   });
+});
+
+describe('jux browser start|stop|status (warm browser)', () => {
+  it('stop with nothing running says so and exits 0, with and without --json', async () => {
+    const h = harness();
+    expect(await browserCommand(['stop'], false, h.io)).toBe(0);
+    expect(h.out()).toMatch(/no warm browser/);
+    const j = harness();
+    expect(await browserCommand(['stop', '--json'], false, j.io)).toBe(0);
+    expect(JSON.parse(j.out())).toMatchObject({
+      stopped: false,
+      daemon: { running: false, pid: null },
+    });
+  });
+
+  it('start without a browser exits 3 and names the install command', async () => {
+    const h = harness();
+    expect(await browserCommand(['start'], false, h.io)).toBe(3);
+    expect(h.err()).toMatch(/jux browser install/);
+  });
+
+  it('start and stop are strict about flags and arguments', async () => {
+    for (const argv of [
+      ['start', '--bogus'],
+      ['stop', 'now'],
+      ['start', '--no-daemon'],
+    ]) {
+      const h = harness();
+      expect(await browserCommand(argv, false, h.io), argv.join(' ')).toBe(2);
+    }
+  });
+
+  it('status --json always carries a daemon object (running false when there is no browser)', async () => {
+    const h = harness();
+    await browserCommand(['status'], true, h.io);
+    expect(JSON.parse(h.out()).daemon).toMatchObject({
+      running: false,
+      pid: null,
+      key: null,
+      startedAt: null,
+      idleMinutes: null,
+    });
+  });
+
+  const chrome = (() => {
+    try {
+      return resolveChrome();
+    } catch {
+      return null;
+    }
+  })();
+
+  it.skipIf(!chrome || process.platform === 'win32')(
+    'start spawns one daemon, repeats as already running, status sees it, stop ends it',
+    async () => {
+      const state = mkdtempSync(path.join('/tmp', 'jux-t14-'));
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        JUX_STATE_DIR: state,
+        JUX_NO_DAEMON: '',
+        JUX_BROWSER_IDLE_MINUTES: '1',
+      };
+      for (const v of CI_ENV_VARS) delete env[v];
+      const run = async (argv: string[]) => {
+        const h = harness({ env });
+        const code = await browserCommand(argv, true, h.io);
+        return { code, out: JSON.parse(h.out() || 'null') };
+      };
+      try {
+        const a = await run(['start']);
+        expect(a.code).toBe(0);
+        expect(a.out).toMatchObject({
+          started: true,
+          daemon: { running: true, enabled: true, idleMinutes: 1 },
+        });
+        const pid = a.out.daemon.pid as number;
+        const b = await run(['start']);
+        expect(b.out).toMatchObject({ started: false, daemon: { pid } });
+        const s = await run(['status']);
+        expect(s.out.daemon).toMatchObject({ running: true, pid });
+        expect(s.out.daemon.socket).toMatch(/\.sock$/);
+        const t = await run(['stop']);
+        expect(t.out).toMatchObject({ ok: true, stopped: true, stoppedPids: [pid] });
+        const s2 = await run(['status']);
+        expect(s2.out.daemon).toMatchObject({ running: false, pid: null });
+      } finally {
+        await run(['stop']);
+        rmSync(state, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'status lists a daemon under another key and stop reaches it',
+    async () => {
+      // The key changes with every jux build, binary update or flag change;
+      // `stop` only computed the current one and left the old daemon running.
+      const state = mkdtempSync(path.join('/tmp', 'jux-ok-'));
+      const key = '0ldk3y0ldk3y0ldk';
+      const dir = path.join(state, 'browser');
+      const socket = path.join(dir, `${key}.sock`);
+      mkdirSync(dir, { mode: 0o700 });
+      const child = spawn('sleep', ['60'], { stdio: 'ignore' });
+      const socks: net.Socket[] = [];
+      const server = net.createServer((c) => socks.push(c)); // live, never says hello
+      await new Promise<void>((r) => server.listen(socket, r));
+      chmodSync(socket, 0o600);
+      writeFileSync(
+        path.join(dir, `${key}.json`),
+        JSON.stringify({
+          pid: child.pid,
+          socket,
+          binary: '/old/chrome',
+          version: 'old',
+          key,
+          startedAt: '2026-10-01T00:00:00.000Z',
+          idleMinutes: 35000,
+        }),
+      );
+      const bin = path.join(state, 'chrome');
+      writeFileSync(bin, '');
+      const env = { JUX_STATE_DIR: state, JUX_CHROME: bin };
+      const readCommand = async (pid: number) =>
+        pid === child.pid ? `node /x/supervisor-main.js {"key":"${key}"}` : '';
+      try {
+        const s = harness({ env, readCommand });
+        expect(await browserCommand(['status'], true, s.io)).toBe(0);
+        const j = JSON.parse(s.out());
+        expect(j).toMatchObject({
+          ok: true,
+          daemon: { running: false },
+          daemons: [{ pid: child.pid, key, current: false, running: true }],
+        });
+        const t = harness({ env, readCommand });
+        expect(await browserCommand(['stop'], false, t.io)).toBe(0);
+        expect(t.out()).toBe(`jux: stopped the warm browser (pid ${child.pid})\n`);
+        for (let i = 0; i < 20 && child.exitCode === null && !child.signalCode; i++)
+          await new Promise((r) => setTimeout(r, 50));
+        expect(child.signalCode).toBe('SIGTERM');
+      } finally {
+        child.kill('SIGKILL');
+        for (const c of socks) c.destroy();
+        await new Promise<void>((r) => server.close(() => r()));
+        rmSync(state, { recursive: true, force: true });
+      }
+    },
+    15_000,
+  );
+
+  it.skipIf(!chrome)('start refuses while the daemon is off here', async () => {
+    const h = harness({ env: { ...process.env, JUX_NO_DAEMON: '1' } });
+    expect(await browserCommand(['start'], false, h.io)).toBe(3);
+    expect(h.err()).toMatch(/warm browser is off/);
+  });
+
+  it.skipIf(!chrome)(
+    'start --json failures are a JSON object on stdout with the same exit code',
+    async () => {
+      const off = harness({ env: { ...process.env, JUX_NO_DAEMON: '1' } });
+      expect(await browserCommand(['start', '--json'], false, off.io)).toBe(3);
+      expect(JSON.parse(off.out())).toMatchObject({
+        ok: false,
+        started: false,
+        error: expect.stringMatching(/warm browser is off/),
+      });
+      const none = harness();
+      expect(await browserCommand(['start', '--json'], false, none.io)).toBe(3);
+      expect(JSON.parse(none.out())).toMatchObject({ ok: false, started: false });
+    },
+  );
 });

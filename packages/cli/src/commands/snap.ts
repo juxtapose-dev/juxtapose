@@ -35,6 +35,7 @@ export interface SnapFlags {
   'wait-for'?: string;
   mask?: string[];
   chrome?: string;
+  'no-daemon'?: boolean;
 }
 
 interface Written {
@@ -135,7 +136,10 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
   let captured: Awaited<ReturnType<typeof snapPages>>;
   let browser: Browser | undefined;
   try {
-    browser = await acquireBrowser({ chrome: flags.chrome });
+    browser = await acquireBrowser({
+      chrome: flags.chrome,
+      noDaemon: flags['no-daemon'] === true,
+    });
     captured = await snapPages({
       urls,
       browser,

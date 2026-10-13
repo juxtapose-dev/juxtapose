@@ -15,26 +15,52 @@ export interface Transport {
   close(): void;
 }
 
+/** A frame grew past the framer's cap before its NUL arrived. */
+export class FrameTooLargeError extends Error {
+  constructor(limit: number) {
+    super(`jux: a frame exceeded ${limit} characters`);
+    this.name = 'FrameTooLargeError';
+  }
+}
+
 export class NullFramer {
   // Pieces of the frame in progress. Joined once when its NUL arrives and only
   // the new chunk is scanned: re-slicing one growing string made a 20 MB frame
   // in 64 KB chunks cost 339 ms (40 MB: 1.5 s), quadratic in frame size.
   private parts: string[] = [];
+  private partsChars = 0;
   // Chunk boundaries can fall inside a multi-byte UTF-8 character; a plain
   // toString() per chunk would corrupt it into U+FFFD.
   private readonly decoder = new StringDecoder('utf8');
+
+  /**
+   * `maxFrameChars` bounds one frame. Chrome's pipe is trusted and uncapped;
+   * the supervisor caps its clients so one that never sends a NUL cannot grow
+   * the daemon's memory without bound. Past the cap, push() throws.
+   */
+  constructor(private readonly maxFrameChars = Infinity) {}
+
   push(chunk: Buffer | string, onFrame: (frame: string) => void): void {
     const text = typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
     let start = 0;
     let end: number;
     while ((end = text.indexOf('\0', start)) >= 0) {
       this.parts.push(text.slice(start, end));
+      this.partsChars += end - start;
+      if (this.partsChars > this.maxFrameChars)
+        throw new FrameTooLargeError(this.maxFrameChars);
       const frame = this.parts.length === 1 ? this.parts[0]! : this.parts.join('');
       this.parts = [];
+      this.partsChars = 0;
       start = end + 1;
       onFrame(frame);
     }
-    if (start < text.length) this.parts.push(text.slice(start));
+    if (start < text.length) {
+      this.parts.push(text.slice(start));
+      this.partsChars += text.length - start;
+      if (this.partsChars > this.maxFrameChars)
+        throw new FrameTooLargeError(this.maxFrameChars);
+    }
   }
 }
 

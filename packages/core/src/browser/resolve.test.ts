@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveChrome,
   juxCacheDir,
+  juxStateDir,
   chromeInstallDir,
   chromeBinaryPath,
   msPlaywrightBinaryPath,
@@ -76,6 +77,14 @@ describe('paths', () => {
     expect(juxCacheDir({ ...win, env: { LOCALAPPDATA: 'C:\\L' } })).toBe('C:\\L\\jux');
     expect(juxCacheDir(win)).toBe('C:\\Users\\u\\AppData\\Local\\jux');
     expect(juxCacheDir({ ...mac, env: { JUX_CACHE_DIR: '/tmp/c/../c' } })).toBe('/tmp/c');
+  });
+  it('keeps daemon state with the cache unless JUX_STATE_DIR moves it alone', () => {
+    expect(juxStateDir(mac)).toBe('/Users/u/Library/Caches/jux');
+    expect(juxStateDir({ ...mac, env: { JUX_CACHE_DIR: '/c' } })).toBe('/c');
+    const both = { JUX_CACHE_DIR: '/c', JUX_STATE_DIR: '/s/../s' };
+    expect(juxStateDir({ ...mac, env: both })).toBe('/s');
+    expect(juxCacheDir({ ...mac, env: both })).toBe('/c');
+    expect(juxStateDir({ ...mac, env: { JUX_STATE_DIR: '' } })).toBe(juxCacheDir(mac));
   });
   it('lays the install out like the zip does', () => {
     const dir = chromeInstallDir('/c', '151.0.7922.34');
