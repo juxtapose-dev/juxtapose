@@ -115,3 +115,72 @@ test('approve --story <base id> approves the story and all its variants; a key a
     'home__mobile',
   ]);
 });
+
+/** A run of `card` (new) and its variants with the given statuses; only
+ *  captures that produced an image get one, like a real run. */
+function runWith(root: string, variants: Array<{ variant: string; status: string }>) {
+  const run = path.join(root, '.juxtapose', 'runs', 'r1');
+  mkdirSync(path.join(run, 'images'), { recursive: true });
+  const results = [
+    { storyId: 'card', status: 'new' },
+    ...variants.map((v) => ({
+      storyId: `card__${v.variant}`,
+      baseStoryId: 'card',
+      variant: v.variant,
+      status: v.status,
+    })),
+  ];
+  writeFileSync(path.join(run, 'report.json'), JSON.stringify({ runId: 'r1', results }));
+  for (const r of results) {
+    if (r.status === 'skip') continue;
+    writeFileSync(
+      path.join(run, 'images', `${encodeStoryId(r.storyId)}-current.webp`),
+      Buffer.from(r.storyId),
+    );
+  }
+}
+
+const manifestOf = (root: string) =>
+  JSON.parse(readFileSync(path.join(root, 'juxtapose.manifest.json'), 'utf8')) as {
+    baselines: Record<string, { hash: string; approvedAt: string }>;
+  };
+
+test('approve by base id leaves a skipped variant alone instead of failing on its missing image', async () => {
+  const root = project({ platform: 'urls', urls: [urls[0]] });
+  runWith(root, [{ variant: 'dark', status: 'skip' }]);
+  const io = captureIo();
+  expect(
+    await approveCommand({ json: true, project: root, story: ['card'] }, { io }),
+  ).toBe(0);
+  expect(JSON.parse(io.stdout())).toEqual({ approved: ['card'], failed: [] });
+  expect(Object.keys(manifestOf(root).baselines)).toEqual(['card']);
+});
+
+test('approve by base id does not re-approve a passing variant; its exact key still does', async () => {
+  const root = project({ platform: 'urls', urls: [urls[0]] });
+  runWith(root, [{ variant: 'dark', status: 'new' }]);
+  expect(
+    await approveCommand(
+      { json: true, project: root, story: ['card__dark'] },
+      { io: captureIo() },
+    ),
+  ).toBe(0);
+  const before = manifestOf(root).baselines['card__dark'];
+
+  // Next run: the variant now passes.
+  rmSync(path.join(root, '.juxtapose', 'runs'), { recursive: true });
+  runWith(root, [{ variant: 'dark', status: 'pass' }]);
+  const io = captureIo();
+  expect(
+    await approveCommand({ json: true, project: root, story: ['card'] }, { io }),
+  ).toBe(0);
+  expect(JSON.parse(io.stdout())).toEqual({ approved: ['card'], failed: [] });
+  expect(manifestOf(root).baselines['card__dark']).toEqual(before);
+
+  const exact = captureIo();
+  await approveCommand(
+    { json: true, project: root, story: ['card__dark'] },
+    { io: exact },
+  );
+  expect(JSON.parse(exact.stdout()).approved).toEqual(['card__dark']);
+});

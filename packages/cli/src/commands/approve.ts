@@ -5,7 +5,12 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { approveCapture, encodeStoryId, parseRunReport } from '@juxtapose/core';
+import {
+  approveCapture,
+  encodeStoryId,
+  parseRunReport,
+  type DiffResult,
+} from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
 import { errorMessage } from '../guards.js';
 import { latestRunDir } from '../run-dir.js';
@@ -29,15 +34,21 @@ export async function approveCommand(
   const report = parseRunReport(await readFile(path.join(runDir, 'report.json'), 'utf8'));
 
   const requested = new Set(flags.story ?? []);
+  const needsApproval = (r: DiffResult) =>
+    r.status === 'fail' || r.status === 'new' || r.status === 'stale';
   const candidates = report.results.filter((r) => {
-    // A base id means the story and every variant of it in the run.
-    if (requested.size > 0)
+    if (requested.size > 0) {
+      // An exact key is approved as asked, whatever its status.
+      if (requested.has(r.storyId)) return true;
+      // A base id fans out to its variants, but only the ones that need it: a
+      // skipped variant has no image to approve (it failed the whole call),
+      // and a passing one would only rewrite its approval metadata.
       return (
-        requested.has(r.storyId) ||
-        (r.baseStoryId !== undefined && requested.has(r.baseStoryId))
+        r.baseStoryId !== undefined && requested.has(r.baseStoryId) && needsApproval(r)
       );
+    }
     if (!flags.all) return false;
-    return r.status === 'fail' || r.status === 'new' || r.status === 'stale';
+    return needsApproval(r);
   });
 
   if (requested.size === 0 && !flags.all) {
