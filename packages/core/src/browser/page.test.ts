@@ -110,18 +110,31 @@ describe.skipIf(!chrome)('CdpPage', () => {
       await committed(page, url);
       const ev = page.evaluate('new Promise(() => {})', undefined, { timeout: 20_000 });
       void ctx.close();
-      expect(await rejectsWithin(nav, 1000)).toBeInstanceOf(TargetClosedError);
-      expect(await rejectsWithin(ev, 1000)).toBeInstanceOf(TargetClosedError);
+      const errs = await Promise.all([rejectsWithin(nav, 1000), rejectsWithin(ev, 1000)]);
+      for (const e of errs) expect(e).toBeInstanceOf(TargetClosedError);
     }));
-  it('a renderer crash rejects in-flight evaluate and goto within 1 s', () =>
+  // The bound is how long the renderer takes to die, not the driver: the
+  // browser only learns of a crash once the process is gone. macOS: 1–8 ms.
+  // Linux CfT 151 on ubuntu-latest: 2,049 ms (PR #98 CI) — Chrome for Testing
+  // builds install in-process stack dumping, which symbolizes the trace in
+  // the renderer's signal handler before it dies. 3 s keeps headroom over
+  // that while still failing a driver that waits out the 20 s timeouts.
+  it('a renderer crash rejects in-flight evaluate and goto well before their timeouts', () =>
     withPage(async (page) => {
+      const bound = process.platform === 'linux' ? 3000 : 1000;
       const url = `${base}/stuck-load`;
       const nav = page.goto(url, { timeout: 20_000 });
       await committed(page, url);
       const ev = page.evaluate('new Promise(() => {})', undefined, { timeout: 20_000 });
+      // Both settle together; measure them together so a failed bound on one
+      // cannot leave the other's rejection unhandled.
       void page.send('Page.crash').catch(() => {});
-      expect(await rejectsWithin(ev, 1000)).toBeInstanceOf(PageCrashedError);
-      expect(await rejectsWithin(nav, 1000)).toBeInstanceOf(PageCrashedError);
+      const [evErr, navErr] = await Promise.all([
+        rejectsWithin(ev, bound),
+        rejectsWithin(nav, bound),
+      ]);
+      expect(evErr).toBeInstanceOf(PageCrashedError);
+      expect(navErr).toBeInstanceOf(PageCrashedError);
       await expect(page.evaluate('1')).rejects.toBeInstanceOf(PageCrashedError);
     }));
   it('goto waits for load, evaluate round-trips JSON, url() is the final url', () =>
@@ -358,12 +371,89 @@ describe.skipIf(!chrome)('browser death', () => {
       await committed(page, url);
       const ev = page.evaluate('new Promise(() => {})', undefined, { timeout: 20_000 });
       process.kill(launched.pid, 'SIGKILL');
-      expect(await rejectsWithin(nav, 1000)).toBeInstanceOf(TargetClosedError);
-      expect(await rejectsWithin(ev, 1000)).toBeInstanceOf(TargetClosedError);
+      const errs = await Promise.all([rejectsWithin(nav, 1000), rejectsWithin(ev, 1000)]);
+      for (const e of errs) expect(e).toBeInstanceOf(TargetClosedError);
       expect(b.isConnected()).toBe(false);
     } finally {
       await b.close();
     }
+  });
+});
+
+/**
+ * A page that dies with nothing in flight must not leave a rejected promise
+ * behind: under Node's default --unhandled-rejections=throw that kills the
+ * host (the CLI, the Storybook addon's server) for a crash nobody asked about.
+ */
+describe.skipIf(!chrome)('a page dying idle leaves no unhandled rejection', () => {
+  async function unhandledDuring(fn: () => Promise<void>): Promise<unknown[]> {
+    const seen: unknown[] = [];
+    const spy = (reason: unknown) => seen.push(reason);
+    process.on('unhandledRejection', spy);
+    try {
+      await fn();
+      // unhandledRejection fires after the microtask queue drains; give it a
+      // few macrotask turns to arrive.
+      for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 20));
+    } finally {
+      process.off('unhandledRejection', spy);
+    }
+    return seen;
+  }
+
+  /** Poll until the page reports itself unusable; returns that error. */
+  async function untilGone(page: Page): Promise<unknown> {
+    for (let i = 0; i < 500; i++) {
+      const err = await page.evaluate('1').then(
+        () => null,
+        (e: unknown) => e,
+      );
+      if (err) return err;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error('page never went away');
+  }
+
+  it('a renderer crash', async () => {
+    const seen = await unhandledDuring(() =>
+      withPage(async (page) => {
+        await page.goto(`${base}/plain`);
+        void page.send('Page.crash').catch(() => {});
+        expect(await untilGone(page)).toBeInstanceOf(PageCrashedError);
+      }),
+    );
+    expect(seen).toEqual([]);
+  });
+
+  it('a context close', async () => {
+    const seen = await unhandledDuring(async () => {
+      const ctx = await browser.newContext({ viewport: { width: 300, height: 200 } });
+      const page = await ctx.newPage();
+      await page.goto(`${base}/plain`);
+      await ctx.close();
+      expect(await untilGone(page)).toBeInstanceOf(TargetClosedError);
+    });
+    expect(seen).toEqual([]);
+  });
+
+  it('a browser kill', async () => {
+    const seen = await unhandledDuring(async () => {
+      const launched = await launchChrome({ executablePath: chrome!.path });
+      const b = Browser.fromConnection(launched.connection, {
+        version: 'HeadlessChrome/1.0.0.0',
+        close: launched.close,
+      });
+      try {
+        const ctx = await b.newContext({ viewport: { width: 300, height: 200 } });
+        const page = await ctx.newPage();
+        await page.goto(`${base}/plain`);
+        process.kill(launched.pid, 'SIGKILL');
+        expect(await untilGone(page)).toBeInstanceOf(TargetClosedError);
+      } finally {
+        await b.close();
+      }
+    });
+    expect(seen).toEqual([]);
   });
 });
 

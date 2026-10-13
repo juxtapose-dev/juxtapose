@@ -334,7 +334,11 @@ export class CdpPage implements Page {
   ) {
     this.viewport = viewport;
     this.goneP = new Promise<never>((_, reject) => (this.rejectGone = reject));
-    this.goneP.catch(() => {}); // nobody racing it is not an unhandled rejection
+    // A crash or close with nothing in flight rejects this with no racer
+    // attached; without the catch that is an unhandledRejection, which kills
+    // a host running with Node's default --unhandled-rejections=throw.
+    // Racers still see the rejection: each race attaches its own handler.
+    this.goneP.catch(() => {});
     this.offs.push(
       connection.on(
         'Page.frameNavigated',
@@ -356,9 +360,31 @@ export class CdpPage implements Page {
         },
         sessionId,
       ),
+      // The earliest crash signal CDP has. RenderFrameDevToolsAgentHost::
+      // RenderProcessExited sends it first, then NotifyCrashed → the
+      // browser-level Target.targetCrashed in the same call (measured: same
+      // millisecond on macOS), so listening there too would gain nothing.
+      // Nothing can beat it: the browser learns of the death only when the
+      // renderer process is gone.
       connection.on(
         'Inspector.targetCrashed',
         () => this.fail(new PageCrashedError()),
+        sessionId,
+      ),
+      // The same function's other branch: a renderer that exits with a status
+      // Chromium does not class as a crash gets Inspector.detached("Render
+      // process gone.") instead, and no Target event at all while the target
+      // stays open. Without this, work in flight would wait out its timeout.
+      connection.on(
+        'Inspector.detached',
+        (p) => {
+          const reason = (p as { reason?: string }).reason ?? '';
+          this.fail(
+            /render process gone/i.test(reason)
+              ? new PageCrashedError()
+              : new TargetClosedError(reason || 'inspector detached'),
+          );
+        },
         sessionId,
       ),
       // Browser-session event: the target closed under us (context disposed,
