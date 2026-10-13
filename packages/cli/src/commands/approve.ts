@@ -36,16 +36,22 @@ export async function approveCommand(
   const requested = new Set(flags.story ?? []);
   const needsApproval = (r: DiffResult) =>
     r.status === 'fail' || r.status === 'new' || r.status === 'stale';
+  // A requested id naming a story with variants in this run is a fan-out:
+  // every capture of it, its default included, is approved only if it needs
+  // it. A skipped capture has no image (it failed the whole call) and a
+  // passing one would only rewrite its approval metadata. An id with no
+  // variants in the run is an exact key, approved as asked.
+  const fanOut = new Set(
+    report.results.flatMap((r) =>
+      r.baseStoryId !== undefined && requested.has(r.baseStoryId) ? [r.baseStoryId] : [],
+    ),
+  );
   const candidates = report.results.filter((r) => {
     if (requested.size > 0) {
-      // An exact key is approved as asked, whatever its status.
-      if (requested.has(r.storyId)) return true;
-      // A base id fans out to its variants, but only the ones that need it: a
-      // skipped variant has no image to approve (it failed the whole call),
-      // and a passing one would only rewrite its approval metadata.
-      return (
-        r.baseStoryId !== undefined && requested.has(r.baseStoryId) && needsApproval(r)
-      );
+      const story = r.baseStoryId ?? r.storyId;
+      if (fanOut.has(story))
+        return needsApproval(r) || (requested.has(r.storyId) && r.storyId !== story);
+      return requested.has(r.storyId);
     }
     if (!flags.all) return false;
     return needsApproval(r);

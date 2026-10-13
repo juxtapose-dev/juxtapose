@@ -166,7 +166,7 @@ export async function runCommand(
   }
 
   const runId = `${Date.now().toString(36)}`;
-  let warned = false;
+  const warn = eachOnce((message) => io.err(`\n${message}\n`));
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);
   try {
     // One entry per capture, with the params the preview declares that the
@@ -182,6 +182,16 @@ export async function runCommand(
             viewport: ctx.config.viewport ?? DEFAULT_VIEWPORT,
             ...(ctx.config.variants ? { projectVariants: ctx.config.variants } : {}),
             onWarning: (m) => io.err(`${m}\n`),
+            // Beside the runs, so it is ignored wherever runs are; an unchanged
+            // static build skips the preview load.
+            cache: {
+              dir: path.join(ctx.projectRoot, '.juxtapose', 'runs', '.cache'),
+              target: {
+                projectRoot: ctx.projectRoot,
+                ...(ctx.buildDir ? { buildDir: ctx.buildDir } : {}),
+                ...(ctx.origin ? { origin: ctx.origin } : {}),
+              },
+            },
           }),
         );
       } catch (err) {
@@ -224,12 +234,7 @@ export async function runCommand(
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
       onArtifact: (a) => writeArtifact(runDir, a),
-      // One line per run, not per capture: it is the same advice every time.
-      onWarning: (message) => {
-        if (warned) return;
-        warned = true;
-        io.err(`\n${message}\n`);
-      },
+      onWarning: warn,
       onProgress: (done, total, storyId) => {
         if (!ctx.json) {
           io.err(`\r  ${done}/${total}  ${storyId.slice(0, 48).padEnd(48)}`);
@@ -478,4 +483,15 @@ function variantError(err: unknown, io: Io): number {
   if (!(err instanceof VariantConfigError)) throw err;
   io.err(`${err.message}\n`);
   return EXIT.usage;
+}
+
+/** Each distinct notice once: the same advice repeated per capture is noise,
+ *  but two different notices are two things to know. */
+export function eachOnce(write: (message: string) => void): (message: string) => void {
+  const seen = new Set<string>();
+  return (message) => {
+    if (seen.has(message)) return;
+    seen.add(message);
+    write(message);
+  };
 }

@@ -184,3 +184,67 @@ test('approve by base id does not re-approve a passing variant; its exact key st
   );
   expect(JSON.parse(exact.stdout()).approved).toEqual(['card__dark']);
 });
+
+test('run prints each distinct warning once', async () => {
+  const { eachOnce } = await import('./run.js');
+  const out: string[] = [];
+  const warn = eachOnce((m) => out.push(m));
+  for (const m of ['a', 'b', 'a', 'b', 'c']) warn(m);
+  expect(out).toEqual(['a', 'b', 'c']);
+});
+
+/** A run with exactly these results; an image for every non-skipped one. */
+function runOf(root: string, results: Array<Record<string, string>>) {
+  const run = path.join(root, '.juxtapose', 'runs', 'r1');
+  rmSync(path.join(root, '.juxtapose', 'runs'), { recursive: true, force: true });
+  mkdirSync(path.join(run, 'images'), { recursive: true });
+  writeFileSync(path.join(run, 'report.json'), JSON.stringify({ runId: 'r1', results }));
+  for (const r of results) {
+    if (r['status'] === 'skip') continue;
+    writeFileSync(
+      path.join(run, 'images', `${encodeStoryId(r['storyId']!)}-current.webp`),
+      Buffer.from(`${r['storyId']}:${r['status']}`),
+    );
+  }
+}
+
+test('a base id with variants applies the fan-out rule to its default too: a skipped default is left alone', async () => {
+  const root = project({ platform: 'urls', urls: [urls[0]] });
+  runOf(root, [
+    { storyId: 'card', status: 'skip' },
+    { storyId: 'card__dark', baseStoryId: 'card', variant: 'dark', status: 'fail' },
+  ]);
+  const io = captureIo();
+  expect(
+    await approveCommand({ json: true, project: root, story: ['card'] }, { io }),
+  ).toBe(0);
+  expect(JSON.parse(io.stdout())).toEqual({ approved: ['card__dark'], failed: [] });
+  expect(Object.keys(manifestOf(root).baselines)).toEqual(['card__dark']);
+});
+
+test('a base id with variants does not re-approve its passing default', async () => {
+  const root = project({ platform: 'urls', urls: [urls[0]] });
+  runOf(root, [{ storyId: 'card', status: 'new' }]);
+  await approveCommand(
+    { json: true, project: root, story: ['card'] },
+    { io: captureIo() },
+  );
+  const before = manifestOf(root).baselines['card'];
+
+  runOf(root, [
+    { storyId: 'card', status: 'pass' },
+    { storyId: 'card__dark', baseStoryId: 'card', variant: 'dark', status: 'new' },
+  ]);
+  const io = captureIo();
+  expect(
+    await approveCommand({ json: true, project: root, story: ['card'] }, { io }),
+  ).toBe(0);
+  expect(JSON.parse(io.stdout()).approved).toEqual(['card__dark']);
+  expect(manifestOf(root).baselines['card']).toEqual(before);
+
+  // Without variants in the run, the id is an exact key: approved as asked.
+  runOf(root, [{ storyId: 'card', status: 'pass' }]);
+  const exact = captureIo();
+  await approveCommand({ json: true, project: root, story: ['card'] }, { io: exact });
+  expect(JSON.parse(exact.stdout()).approved).toEqual(['card']);
+});

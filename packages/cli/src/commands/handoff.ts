@@ -109,6 +109,7 @@ export async function handoffCommand(
       ? `jux diff ${shellQuote(baselineImage)} ${shellQuote(currentImage)} --crops --project ${shellQuote(ctx.projectRoot)}`
       : undefined;
 
+  const variant = handoffVariant(result);
   const payload: HandoffPayload = {
     storyId,
     storyTitle: story ? `${story.title} — ${story.name}` : storyId,
@@ -127,7 +128,7 @@ export async function handoffCommand(
       diff: result.status === 'fail' ? path.join(images, `${safe}-diff.webp`) : undefined,
     },
     projectRoot: ctx.projectRoot,
-    ...(handoffVariant(result) ? { variant: handoffVariant(result) } : {}),
+    ...(variant ? { variant } : {}),
   };
 
   io.out(buildHandoffPrompt(payload) + '\n');
