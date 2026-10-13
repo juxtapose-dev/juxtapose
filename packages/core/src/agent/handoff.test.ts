@@ -42,8 +42,23 @@ describe('buildHandoffPrompt', () => {
   it('leads with structured data, not images', () => {
     const out = buildHandoffPrompt(base);
     // The whole efficiency argument: data first, images as a fallback.
-    expect(out.indexOf('What changed')).toBeLessThan(out.indexOf('Images'));
-    expect(out).toContain('inspect only if the data above is insufficient');
+    expect(out.indexOf('What changed')).toBeLessThan(out.indexOf('If still unsure'));
+    expect(out).toContain('## If still unsure');
+  });
+
+  it('ends with the crops command before the image paths', () => {
+    const out = buildHandoffPrompt({
+      ...base,
+      cropsCommand: "jux diff '/repo/.juxtapose/baselines/b.webp' /repo/c.webp --crops",
+    });
+    const footer = out.slice(out.indexOf('## If still unsure'));
+    expect(footer).toContain(
+      "`jux diff '/repo/.juxtapose/baselines/b.webp' /repo/c.webp --crops`",
+    );
+    expect(footer.indexOf('--crops')).toBeLessThan(footer.indexOf('- baseline:'));
+    const bare = buildHandoffPrompt(base);
+    expect(bare).toContain('## If still unsure');
+    expect(bare).not.toContain('--crops');
   });
 
   it('includes the exact mismatch figures', () => {
@@ -196,7 +211,7 @@ describe('describeRegion', () => {
     expect(out.indexOf(structural.summary)).toBeLessThan(out.indexOf('mismatchPercent'));
     expect(out).toContain('  button[name="Save"]\n    text "Save" → "Save changes"');
     expect(out).toContain('Flags: text-changed');
-    expect(out.indexOf('Flags:')).toBeLessThan(out.indexOf('## Images'));
+    expect(out.indexOf('Flags:')).toBeLessThan(out.indexOf('## If still unsure'));
   });
 
   it('tells the agent to compare the deltas with what it intended, and when to look at pixels', () => {

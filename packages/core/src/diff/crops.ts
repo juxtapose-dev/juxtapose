@@ -48,7 +48,10 @@ export async function renderCrops(
   // the one thing worth looking at.
   const wanted = regions.length > 0 ? regions : [{ x: 0, y: 0, ...frame }];
   const out: Crop[] = [];
-  for (const region of wanted.slice(0, MAX_CROPS)) {
+  for (const region of wanted) {
+    // The cap counts rendered crops, not candidates: off-frame regions at the
+    // front must not starve a valid later one.
+    if (out.length >= MAX_CROPS) break;
     const box = cropBox(region, frame);
     if (box.width === 0 || box.height === 0) continue;
     const scale = scaleFor(box);

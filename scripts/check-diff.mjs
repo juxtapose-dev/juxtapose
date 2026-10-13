@@ -130,15 +130,81 @@ check(
   'one argument is usage (2) with the next command',
 );
 
-// The verdict's own `next:` command must work: until crops exist it names
-// the two images and succeeds.
-const crops = await jux(['diff', 'before', 'after', '--crops']);
+// --crops is the real tier-3 now: strips on disk, paths listed, exit as diff.
+const { existsSync, readFileSync } = await import('node:fs');
+const crops = await jux(['diff', 'before', 'after', '--crops', '--json'], {
+  PLAYWRIGHT_BROWSERS_PATH: '/nonexistent',
+  NODE_OPTIONS: `--import ${probe}`,
+});
+const vc = JSON.parse(crops.out || '{}');
+const cropFile = vc.crops?.[0]?.file;
+const cropAbs = cropFile && path.join(project, ...cropFile.split('/'));
 check(
-  crops.code === 0 &&
-    /^open these to compare; crops arrive in a later release\n {2}\S*before\.webp\n {2}\S*after\.webp\n$/.test(
-      crops.out,
-    ),
-  '--crops names both images to open and exits 0',
+  crops.code === 1 &&
+    vc.schema === 'juxtapose.crops/v1' &&
+    vc.verdict?.classification === 'style-only' &&
+    vc.dir === '.juxtapose/crops/before-vs-after' &&
+    vc.crops.length >= 1 &&
+    cropFile.startsWith('.juxtapose/crops/before-vs-after/crop-1.png') &&
+    !cropFile.includes('\\') &&
+    existsSync(cropAbs) &&
+    readFileSync(cropAbs).subarray(1, 4).toString('latin1') === 'PNG' &&
+    vc.crops.every((c) => c.width <= 512 * 2 + 4 && c.height <= 512) &&
+    Object.keys(vc.crops[0]).join() === 'file,region,box,scale,width,height,explained',
+  '--crops writes PNG strips, lists relative paths, exits 1, loads no playwright',
+);
+const cropsHuman = await jux(['diff', 'before', 'after', '--crops']);
+check(
+  /^style-only \(color\)/.test(cropsHuman.out) &&
+    /crops \(baseline \| current\), unexplained first:\n {2}\S.*crop-1\.png {2}\(\d+×\d+ at \d+,\d+, \d+×\)/.test(
+      cropsHuman.out,
+    ) &&
+    !/^next:/m.test(cropsHuman.out),
+  '--crops human output: verdict, then absolute crop paths, no next:',
+);
+// A fresh call empties the dir: a stale crop from a bigger diff cannot linger.
+writeFileSync(path.join(project, '.juxtapose/crops/before-vs-after/crop-9.png'), 'stale');
+await jux(['diff', 'before', 'after', '--crops']);
+check(
+  !existsSync(path.join(project, '.juxtapose/crops/before-vs-after/crop-9.png')) &&
+    readFileSync(path.join(project, '.juxtapose/crops/.gitignore'), 'utf8') === '*\n',
+  '--crops empties the pair dir first and the crops dir self-ignores',
+);
+const cropsSame = await jux(['diff', 'before', 'same', '--crops', '--json']);
+check(
+  cropsSame.code === 0 &&
+    JSON.parse(cropsSame.out).dir === null &&
+    !existsSync(path.join(project, '.juxtapose/crops/before-vs-same')),
+  'identical snaps: --crops exits 0 and writes nothing',
+);
+// Review Focus 4: a sub-threshold change marks no region; the agent still gets pixels.
+await snap('background', 'bg');
+const cropsSub = await jux(['diff', 'before', 'bg', '--crops', '--json']);
+const vsub = JSON.parse(cropsSub.out);
+check(
+  cropsSub.code === 1 &&
+    vsub.verdict.flags.includes('sub-threshold') &&
+    vsub.crops.length === 1 &&
+    vsub.crops[0].box.x === 0 &&
+    vsub.crops[0].box.y === 0,
+  'a sub-threshold change crops the whole frame',
+);
+// Review Focus 2: different sizes crop the overlap.
+await jux(['snap', `${server.url}/op/noop`, '--as', 'small', '--viewport', '320x240']);
+const cropsDim = await jux(['diff', 'before', 'small', '--crops', '--json']);
+const vdim = JSON.parse(cropsDim.out);
+check(
+  cropsDim.code === 1 &&
+    vdim.verdict.classification === 'dimension-change' &&
+    vdim.crops.length === 1 &&
+    vdim.crops[0].box.width === 320 &&
+    vdim.crops[0].box.height === 240,
+  'a dimension change crops the overlapping frame',
+);
+const cropsPrefix = await jux(['diff', '--prefix', 'p1', 'p2', '--crops']);
+check(
+  cropsPrefix.code === 2 && /one pair at a time/.test(cropsPrefix.err),
+  '--crops with --prefix is usage (2) naming the per-page command',
 );
 
 // A name that needs quoting is quoted in the command a hint prints.

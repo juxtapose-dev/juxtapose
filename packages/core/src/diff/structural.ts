@@ -49,7 +49,12 @@ export const MAX_CAUSE_FILES = 5;
  *  reader greps for; a 10-deep monorepo prefix is not. */
 export const MAX_CAUSE_PATH = 80;
 
-export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
+/** The verdict plus every unexplained region: the verdict's own list is the
+ *  prefix that fits the budget, and crops must order and label from the whole. */
+export function structuralDiffWithCoverage(input: StructuralDiffInput): {
+  verdict: StructuralVerdict;
+  unexplainedRegions: ChangedRegion[];
+} {
   const { baseline, current, pixels, imagesIdentical } = input;
   const comparable =
     baseline !== undefined &&
@@ -171,7 +176,15 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
     return out;
   };
   const kept = fit(deltas);
-  return build(kept, fit(cov.unexplainedRegions));
+  return {
+    verdict: build(kept, fit(cov.unexplainedRegions)),
+    unexplainedRegions: cov.unexplainedRegions,
+  };
+}
+
+/** The verdict alone; what every caller but `--crops` wants. */
+export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
+  return structuralDiffWithCoverage(input).verdict;
 }
 
 /** sha256 of the classification, then the facts with each element reduced

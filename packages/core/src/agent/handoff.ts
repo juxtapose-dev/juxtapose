@@ -31,6 +31,8 @@ export interface HandoffPayload {
   diffDataPath?: string;
   /** Tier-0 verdict from the run, when the capture had structure. */
   structural?: StructuralVerdict;
+  /** `jux diff <baseline.webp> <current.webp> --crops`, when both files exist. */
+  cropsCommand?: string;
   images: {
     baseline?: string;
     current?: string;
@@ -168,10 +170,15 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
 
   lines.push(...actions(p, { approveVerb: 'accept the new rendering' }));
 
-  if (p.images.baseline || p.images.current || p.images.diff) {
-    lines.push('');
-    lines.push('## Images (inspect only if the data above is insufficient)');
-    lines.push('');
+  if (p.cropsCommand || p.images.baseline || p.images.current || p.images.diff) {
+    lines.push('', '## If still unsure', '');
+    if (p.cropsCommand) {
+      lines.push(
+        `Side-by-side crops of each changed region, unexplained first — run \`${p.cropsCommand}\` and open the files it lists.`,
+        '',
+      );
+    }
+    lines.push('Full images, last resort:');
     if (p.images.baseline) lines.push(`- baseline: \`${p.images.baseline}\``);
     if (p.images.current) lines.push(`- current: \`${p.images.current}\``);
     if (p.images.diff) lines.push(`- diff overlay: \`${p.images.diff}\``);

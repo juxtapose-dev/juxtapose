@@ -110,6 +110,25 @@ test('at most MAX_CROPS strips, in the order given', async () => {
   expect(crops.map((c) => c.region)).toEqual(regions.slice(0, MAX_CROPS));
 });
 
+test('off-frame regions at the front do not starve valid ones of the cap', async () => {
+  const a = await frame(100, 100);
+  const off = Array.from({ length: MAX_CROPS }, (_, k) => ({
+    x: 1000 + k,
+    y: 1000,
+    width: 5,
+    height: 5,
+  }));
+  const valid = Array.from({ length: MAX_CROPS + 1 }, (_, k) => ({
+    x: k * 10,
+    y: 10,
+    width: 5,
+    height: 5,
+  }));
+  const crops = await renderCrops(a, a, [...off, ...valid]);
+  expect(crops).toHaveLength(MAX_CROPS);
+  expect(crops.map((c) => c.region)).toEqual(valid.slice(0, MAX_CROPS));
+});
+
 // Review Focus 2
 test('images of different sizes crop the overlap and never throw', async () => {
   const a = await frame(200, 100);

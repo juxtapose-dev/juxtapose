@@ -11,6 +11,7 @@ import {
   MAX_DELTAS,
   MAX_VERDICT,
   structuralDiff,
+  structuralDiffWithCoverage,
   type StructuralDiffInput,
 } from './structural.js';
 
@@ -646,4 +647,35 @@ test('change states the shared change without per-page labels, and only when the
     escalate: { command: 'x' },
   });
   expect('change' in none).toBe(false);
+});
+
+test('structuralDiffWithCoverage returns every unexplained region, even the ones the budget drops from the verdict', () => {
+  const a = fixture.cases.noop.structure;
+  const b = structuredClone(a);
+  for (const e of b.elements) {
+    e.styles = {
+      ...e.styles,
+      opacity: '0.5',
+      transform: 'matrix(1, 0, 0, 1, 1, 0)',
+      'box-shadow': 'rgb(0, 0, 0) 0px 1px 2px 0px',
+    };
+  }
+  const regions = Array.from({ length: 40 }, (_, k) => ({
+    x: 16 + k * 10,
+    y: 440,
+    width: 8,
+    height: 8,
+  }));
+  const input: StructuralDiffInput = {
+    baseline: a,
+    current: b,
+    imagesIdentical: false,
+    pixels: { changedRegions: regions, dimensionMismatch: false },
+    escalate: ESC,
+  };
+  const { verdict, unexplainedRegions } = structuralDiffWithCoverage(input);
+  expect(unexplainedRegions).toEqual(regions);
+  expect(verdict.unexplainedRegions.length).toBeLessThan(regions.length);
+  expect(JSON.stringify(verdict).length).toBeLessThanOrEqual(MAX_VERDICT);
+  expect(structuralDiff(input)).toEqual(verdict);
 });

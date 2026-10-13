@@ -351,4 +351,7 @@ export interface BaselineStore {
   /** Optional: stores that can hold the gzipped structure sidecar. */
   putStructure?(storyId: string, gz: Buffer): Promise<void>;
   getStructure?(storyId: string): Promise<Buffer | null>;
+  /** Optional: where the baseline image lives on disk, for stores that keep
+   *  one. The handoff hands it to `jux diff … --crops`. */
+  locate?(storyId: string): string | undefined;
 }

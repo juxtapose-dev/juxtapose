@@ -2,14 +2,16 @@
 // tier-0 verdict out, no browser. Exit 0 identical, 1 different, 2 usage,
 // 3 when an input exists but cannot be read.
 
-import { existsSync } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   compareCodeUnits,
   compareSnaps,
   decodeStructure,
   describeDeltas,
+  renderCrops,
+  type ChangedRegion,
+  type SnapComparison,
   type SnapSide,
   type StructuralVerdict,
 } from '@juxtapose/core';
@@ -65,7 +67,10 @@ function imagePath(dir: string, ref: string): string {
     : path.join(dir, `${snapName(ref, ref)}.webp`);
 }
 
-export function formatVerdict(v: StructuralVerdict): string {
+export function formatVerdict(
+  v: StructuralVerdict,
+  opts: { next?: boolean } = {},
+): string {
   const lines = [v.summary];
   if (v.deltas.length > 0) {
     lines.push('', ...describeDeltas(v.deltas, v.deltaCount));
@@ -74,7 +79,7 @@ export function formatVerdict(v: StructuralVerdict): string {
       lines.push(`  …and ${v.deltaCount - v.deltas.length} more`);
   }
   if (v.flags.length) lines.push('', `flags: ${v.flags.join(', ')}`);
-  if (v.classification !== 'identical')
+  if (v.classification !== 'identical' && opts.next !== false)
     lines.push('', `next: ${v.escalate.command}  (opens the pixels)`);
   return lines.join('\n') + '\n';
 }
@@ -90,27 +95,11 @@ export async function diffCommand(
     );
     return EXIT.usage;
   }
-  if (flags.crops) {
-    // Tier-3 crops land in a later release. Until then the verdict's own
-    // `next:` command still has to work, so it names the pixels to open and
-    // succeeds: it did what this version can. Exit 2 here sent an agent that
-    // followed `next:` into a usage error.
-    const dir = snapsDir(flags.project);
-    const images = [imagePath(dir, a), imagePath(dir, b)];
-    const absent = images.find((p) => !existsSync(p));
-    if (absent) {
-      process.stderr.write(
-        `jux diff: no file at ${absent}. Take both snaps with \`jux snap <url> --as ${shellQuote(a)}\` and \`--as ${shellQuote(b)}\` first.\n`,
-      );
-      return EXIT.usage;
-    }
-    // --json keeps stdout machine-readable even on this stand-in path.
-    process.stdout.write(
-      flags.json
-        ? `${JSON.stringify({ images })}\n`
-        : `open these to compare; crops arrive in a later release\n  ${images[0]}\n  ${images[1]}\n`,
+  if (flags.crops && flags.prefix) {
+    process.stderr.write(
+      'jux diff: --crops takes one pair at a time. Run `jux diff --prefix <a> <b>` first, then `jux diff <a>-<slug> <b>-<slug> --crops` for the page you want to see.\n',
     );
-    return EXIT.clean;
+    return EXIT.usage;
   }
   try {
     return await (flags.prefix ? diffPrefix(a, b, flags) : diffTwo(a, b, flags));
@@ -168,13 +157,120 @@ async function diffTwo(a: string, b: string, flags: DiffFlags): Promise<number> 
     return loaded.code;
   }
   const [sa, sb] = loaded.sides;
-  const { verdict } = await compareSnaps(sa, sb, {
+  const comparison = await compareSnaps(sa, sb, {
     command: `jux diff ${shellQuote(a)} ${shellQuote(b)} --crops`,
   });
+  if (flags.crops) return writeCrops(a, b, flags, [sa, sb], comparison);
+  const { verdict } = comparison;
   process.stdout.write(
     flags.json ? JSON.stringify(verdict) + '\n' : formatVerdict(verdict),
   );
   return verdict.classification === 'identical' ? EXIT.clean : EXIT.review;
+}
+
+/** `crops[]` entry in `juxtapose.crops/v1`. */
+interface CropFile {
+  /** Forward-slash path relative to the project root, the same on every OS. */
+  file: string;
+  region: ChangedRegion;
+  box: ChangedRegion;
+  scale: number;
+  width: number;
+  height: number;
+  /** False for a region no delta explains (from the full coverage result). */
+  explained: boolean;
+}
+
+/** The tier-3 escalation: the verdict plus one strip per region, unexplained
+ *  first, under .juxtapose/crops/<a>-vs-<b>/. The dir is emptied first so a
+ *  stale crop from an earlier pair can never sit beside a fresh one. */
+async function writeCrops(
+  a: string,
+  b: string,
+  flags: DiffFlags,
+  [sa, sb]: [SnapSide, SnapSide],
+  { verdict, pixels, unexplainedRegions: allUnexplained }: SnapComparison,
+): Promise<number> {
+  const root = path.resolve(flags.project ?? process.cwd());
+  const dirName = `${cropName(a)}-vs-${cropName(b)}`;
+  const relDir = ['.juxtapose', 'crops', dirName].join('/');
+  const cropsRoot = path.join(root, '.juxtapose', 'crops');
+  const absDir = path.join(cropsRoot, dirName);
+  if (verdict.classification === 'identical') {
+    process.stdout.write(
+      flags.json
+        ? JSON.stringify({
+            schema: 'juxtapose.crops/v1',
+            verdict,
+            dir: null,
+            crops: [],
+          }) + '\n'
+        : `${verdict.summary}\nnothing to crop\n`,
+    );
+    return EXIT.clean;
+  }
+  await rm(absDir, { recursive: true, force: true });
+  // Self-ignoring, like the snaps dir: crops are scratch, never baselines.
+  await mkdir(cropsRoot, { recursive: true });
+  await writeFile(path.join(cropsRoot, '.gitignore'), '*\n');
+  // From the full coverage list, not the verdict's budget-fitted prefix: a
+  // region the budget dropped from the verdict is still unexplained.
+  const key = (r: ChangedRegion) => `${r.x},${r.y},${r.width},${r.height}`;
+  const unexplained = new Set(allUnexplained.map(key));
+  const regions = [
+    ...allUnexplained,
+    ...pixels.changedRegions.filter((r) => !unexplained.has(key(r))),
+  ];
+  const crops = await renderCrops(sa.image, sb.image, regions);
+  await mkdir(absDir, { recursive: true });
+  const files: CropFile[] = [];
+  for (const [k, c] of crops.entries()) {
+    const name = `crop-${k + 1}.png`;
+    await writeFile(path.join(absDir, name), c.png);
+    files.push({
+      file: `${relDir}/${name}`,
+      region: c.region,
+      box: c.box,
+      scale: c.scale,
+      width: c.width,
+      height: c.height,
+      explained: !unexplained.has(key(c.region)),
+    });
+  }
+  if (flags.json) {
+    process.stdout.write(
+      JSON.stringify({
+        schema: 'juxtapose.crops/v1',
+        verdict,
+        dir: relDir,
+        crops: files,
+      }) + '\n',
+    );
+  } else {
+    // No `next:` line: crops are the last step.
+    const lines = [formatVerdict(verdict, { next: false }).trimEnd()];
+    lines.push(
+      '',
+      regions.length === 0
+        ? 'crops (baseline | current) — no region was marked, so this is the whole frame:'
+        : 'crops (baseline | current), unexplained first:',
+    );
+    for (const f of files) {
+      const r = f.region;
+      const tag = f.explained ? '' : '  unexplained';
+      lines.push(
+        `  ${path.join(root, ...f.file.split('/'))}  (${r.width}×${r.height} at ${r.x},${r.y}, ${f.scale >= 1 ? `${f.scale}×` : `${Math.round(f.scale * 100)}%`})${tag}`,
+      );
+    }
+    process.stdout.write(lines.join('\n') + '\n');
+  }
+  return EXIT.review;
+}
+
+/** A snap name, or a `.webp` path's basename, made file-safe for the crops dir. */
+function cropName(ref: string): string {
+  const base = ref.endsWith('.webp') ? path.basename(ref, '.webp') : ref;
+  return snapName(base, base);
 }
 
 export interface PrefixPairing {
