@@ -57,6 +57,7 @@ and the component's source path, rather than an image it has to squint at.
 ```bash
 pnpm add -D @juxtapose/cli
 npx storybook build          # or: npx ladle build
+npx -p @juxtapose/cli jux browser install      # once, ~100 MB
 npx -p @juxtapose/cli jux init                 # writes the config, captures, approves
 ```
 
@@ -76,20 +77,52 @@ captures everything instead. Missing a regression is much worse than spending a
 few extra seconds, so it errs that way deliberately. Every report says which
 set it chose and why; `--all` forces a full run.
 
+## Browser
+
+jux drives a pinned `chrome-headless-shell` 151.0.7922.34 from Chrome for
+Testing — the same build Playwright 1.62 ships, so baselines captured with
+earlier jux versions still match.
+
+```bash
+npx -p @juxtapose/cli jux browser install   # once, ~100 MB
+```
+
+It lands in `~/Library/Caches/jux` (macOS), `~/.cache/jux` (Linux) or
+`%LOCALAPPDATA%\jux` (Windows); `JUX_CACHE_DIR` overrides. If Playwright's
+cache already holds the same build, jux uses it and downloads nothing.
+`JUX_CHROME=<path>` or `--chrome <path>` uses your own Chromium instead; the
+version is recorded in each run's `env`, so a mismatch is reported rather
+than silently red. Behind a proxy, set `HTTPS_PROXY` as usual — the installer
+re-runs itself with Node's `--use-env-proxy`. Linux needs Chromium's shared
+libraries — on Ubuntu 24.04: `sudo apt-get install libasound2t64
+libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64
+libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0
+libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3
+libxkbcommon0 libxrandr2`. linux-arm64 has no published build of this
+version; use `JUX_CHROME`.
+
+`jux browser status` shows which browser jux would use and where it came from;
+`jux browser path` prints just the path.
+
+Mask and `--wait-for` selectors are CSS. Playwright-only forms (`text=`,
+`>>`, `:has-text()`) are rejected with an error rather than silently matching
+nothing.
+
 ## Commands
 
-| command                       | what it does                                                                     |
-| ----------------------------- | -------------------------------------------------------------------------------- |
-| `jux init`                    | set up config and capture the first baselines                                    |
-| `jux run`                     | capture affected stories and compare to baselines                                |
-| `jux run --all`               | capture everything, skipping change analysis                                     |
-| `jux approve --all`           | promote the last run's captures to baselines                                     |
-| `jux approve --story <id>`    | approve one story                                                                |
-| `jux check`                   | exit non-zero if anything still needs review — for CI                            |
-| `jux handoff <id>`            | print an agent-ready prompt for one failing story                                |
-| `jux snap <url>… --as <name>` | capture a page (or several with `--as-prefix`): pixels + structure, no workbench |
-| `jux diff <a> <b> --json`     | tier-0 verdict: what changed between two snaps, no browser                       |
-| `jux diff <a> <b> --crops`    | the verdict plus side-by-side PNG strips per changed region, no browser          |
+| command                             | what it does                                                                     |
+| ----------------------------------- | -------------------------------------------------------------------------------- |
+| `jux init`                          | set up config and capture the first baselines                                    |
+| `jux run`                           | capture affected stories and compare to baselines                                |
+| `jux run --all`                     | capture everything, skipping change analysis                                     |
+| `jux approve --all`                 | promote the last run's captures to baselines                                     |
+| `jux approve --story <id>`          | approve one story                                                                |
+| `jux check`                         | exit non-zero if anything still needs review — for CI                            |
+| `jux handoff <id>`                  | print an agent-ready prompt for one failing story                                |
+| `jux snap <url>… --as <name>`       | capture a page (or several with `--as-prefix`): pixels + structure, no workbench |
+| `jux diff <a> <b> --json`           | tier-0 verdict: what changed between two snaps, no browser                       |
+| `jux diff <a> <b> --crops`          | the verdict plus side-by-side PNG strips per changed region, no browser          |
+| `jux browser install\|status\|path` | install, inspect or locate the pinned browser                                    |
 
 All commands accept `--json` for machine-readable output. `jux run` exits
 non-zero when any story fails, is new, or has a stale baseline.

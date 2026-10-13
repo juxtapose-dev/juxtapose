@@ -60,6 +60,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/jux
+          key: chrome-headless-shell-151.0.7922.34-${{ runner.os }}
+
       - name: Install Chromium
         run: node packages/cli/dist/index.js browser install
 
@@ -146,6 +152,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/jux
+          key: chrome-headless-shell-151.0.7922.34-${{ runner.os }}
 
       - name: Install Chromium
         run: node packages/cli/dist/index.js browser install
