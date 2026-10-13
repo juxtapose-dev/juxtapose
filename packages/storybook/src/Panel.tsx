@@ -26,7 +26,9 @@ import {
   startRun,
   adjacentStory,
   approvableCaptures,
+  approveEach,
   capturesFor,
+  describeFailures,
   pickCapture,
   type Bundle,
 } from './api.js';
@@ -201,15 +203,19 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
 
   const approveVariants = useCallback(async () => {
     setBusy(true);
+    // Every capture is attempted, and the panel refreshes whatever happened:
+    // stopping at the first failure left later ones unapproved and the
+    // earlier ones still drawn as pending.
+    const failed = await approveEach(
+      variantsToApprove.map((c) => c.storyId),
+      approveStory,
+    );
     try {
-      for (const item of variantsToApprove) await approveStory(item.storyId);
       await refresh();
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
+    setError(failed.length > 0 ? `Could not approve ${describeFailures(failed)}` : null);
   }, [variantsToApprove, refresh]);
 
   const approveAll = useCallback(async () => {

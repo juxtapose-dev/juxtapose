@@ -17,6 +17,7 @@ import type {
 } from '../types.js';
 import { describeDeltas } from '../diff/structural/summary.js';
 import { shellQuote } from '../shell-quote.js';
+import { compareCodeUnits } from '../report/format.js';
 
 export interface HandoffPayload {
   storyId: string;
@@ -65,7 +66,7 @@ export function handoffVariant(r: {
  *  viewport 375×812": the conditions an agent is fixing under. */
 export function describeVariant(v: NonNullable<HandoffPayload['variant']>): string {
   const settings = Object.entries(v.params)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .sort(([a], [b]) => compareCodeUnits(a, b))
     .map(([k, val]) => {
       if (
         k === 'viewport' &&

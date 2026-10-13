@@ -3,6 +3,8 @@
 // Kept free of React so it can be tested without a renderer, and so a Ladle or
 // Histoire UI can reuse it unchanged.
 
+// Deep import: '@juxtapose/core' reaches sharp; this file is bundled for the browser.
+import { compareCodeUnits } from '@juxtapose/core/format';
 import type { RunReport, DiffResult } from '@juxtapose/core';
 
 const API = '/jux/api';
@@ -182,17 +184,18 @@ export function capturesFor(
   storyId: string | null,
 ): DiffResult[] {
   if (!report || storyId === null) return [];
-  return report.results
-    .filter((r) => (r.baseStoryId ?? r.storyId) === storyId)
-    .sort((a, b) =>
-      a.variant === undefined
-        ? -1
-        : b.variant === undefined
-          ? 1
-          : a.variant < b.variant
-            ? -1
-            : 1,
-    );
+  return (
+    report.results
+      .filter((r) => (r.baseStoryId ?? r.storyId) === storyId)
+      // Default first, then variants in code-unit order.
+      .sort((a, b) =>
+        a.variant === undefined
+          ? -1
+          : b.variant === undefined
+            ? 1
+            : compareCodeUnits(a.variant, b.variant),
+      )
+  );
 }
 
 /**
@@ -222,4 +225,28 @@ export function approvableCaptures(
       !r.error &&
       !done.has(r.storyId),
   );
+}
+
+/** Approve each id in order, carrying on past failures; returns the ones
+ *  that failed with their reasons. */
+export async function approveEach(
+  ids: readonly string[],
+  approve: (id: string) => Promise<unknown>,
+): Promise<Array<{ id: string; reason: string }>> {
+  const failed: Array<{ id: string; reason: string }> = [];
+  for (const id of ids) {
+    try {
+      await approve(id);
+    } catch (err) {
+      failed.push({ id, reason: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return failed;
+}
+
+/** `card--a__dark (server said no), card--a__mobile (…)` */
+export function describeFailures(
+  failed: ReadonlyArray<{ id: string; reason: string }>,
+): string {
+  return failed.map((f) => `${f.id} (${f.reason})`).join(', ');
 }

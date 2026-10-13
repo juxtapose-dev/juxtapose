@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   adjacentStory,
   approvableCaptures,
+  approveEach,
+  describeFailures,
   capturesFor,
   needsReview,
   imageUrl,
@@ -157,5 +159,18 @@ describe('variant switcher', () => {
     expect(approvableCaptures(captures, ['card__dark']).map((c) => c.storyId)).toEqual([
       'card__mobile',
     ]);
+  });
+});
+
+describe('approveEach', () => {
+  it('attempts every id and reports the failures with reasons', async () => {
+    const tried: string[] = [];
+    const failed = await approveEach(['a', 'b', 'c'], async (id) => {
+      tried.push(id);
+      if (id === 'b') throw new Error('409');
+    });
+    expect(tried).toEqual(['a', 'b', 'c']);
+    expect(failed).toEqual([{ id: 'b', reason: '409' }]);
+    expect(describeFailures(failed)).toBe('b (409)');
   });
 });
