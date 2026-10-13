@@ -8,10 +8,12 @@ through the same CLI. Baselines live in
 your repo by default — no bucket, no account, no service.
 
 ```bash
-npx jux run           # capture and compare
-npx jux approve --all # bless the current rendering
-npx jux check         # exit 0/1, for CI
+npx -p @juxtapose/cli jux run           # capture and compare
+npx -p @juxtapose/cli jux approve --all # bless the current rendering
+npx -p @juxtapose/cli jux check         # exit 0/1, for CI
 ```
+
+The `jux` command comes from `@juxtapose/cli` (`pnpm add -D @juxtapose/cli`). Without it installed, run it as shown above: the unscoped `jux` name on npm is an unrelated package. The rest of this README writes the bare command, `jux …`.
 
 ## Hosted review
 
@@ -19,7 +21,7 @@ npx jux check         # exit 0/1, for CI
      is for. Everything below this line is factual and can stay as written. -->
 
 ```bash
-npx jux run --comment
+npx -p @juxtapose/cli jux run --comment
 # then review at https://<your-org>.juxtapose.dev
 ```
 
@@ -55,15 +57,15 @@ and the component's source path, rather than an image it has to squint at.
 ```bash
 pnpm add -D @juxtapose/cli
 npx storybook build          # or: npx ladle build
-npx jux init                 # writes the config, captures, approves
+npx -p @juxtapose/cli jux init                 # writes the config, captures, approves
 ```
 
 `init` does the steps below in one command; run them yourself if you'd rather
 see each:
 
 ```bash
-npx jux run --all            # everything is "new" the first time
-npx jux approve --all        # establish baselines
+npx -p @juxtapose/cli jux run --all            # everything is "new" the first time
+npx -p @juxtapose/cli jux approve --all        # establish baselines
 git add juxtapose.manifest.json .juxtapose/baselines
 ```
 
@@ -87,6 +89,7 @@ set it chose and why; `--all` forces a full run.
 | `jux handoff <id>`            | print an agent-ready prompt for one failing story                                |
 | `jux snap <url>… --as <name>` | capture a page (or several with `--as-prefix`): pixels + structure, no workbench |
 | `jux diff <a> <b> --json`     | tier-0 verdict: what changed between two snaps, no browser                       |
+| `jux diff <a> <b> --crops`    | the verdict plus side-by-side PNG strips per changed region, no browser          |
 
 All commands accept `--json` for machine-readable output. `jux run` exits
 non-zero when any story fails, is new, or has a stale baseline.
@@ -224,7 +227,7 @@ op-noop: identical: images byte-identical, no structural change.
 | `flags`              | `element-removed`, `text-changed`, `large-reflow`, `unexplained-pixels`, `sub-threshold` (the images differ but the pixel diff marked nothing; the deltas are the change), `structure-truncated`, `no-baseline-structure`, `no-current-structure`, `below-fold`                                                                                                                                                                 |
 | `signature`          | sha256 of the classification and the deltas with elements abstracted to role/tag — the same change on two pages shares one                                                                                                                                                                                                                                                                                                      |
 | `cause`              | only from `jux run --since`: `{ kind, files }`. `in-closure`: changed files this story imports (≤ 5, nearest first, paths relative to the project root, ≤ 80 chars keeping the tail). `config`: a root lockfile, root `tsconfig*.json` or workbench config dir changed, which reaches every story. `none-in-closure`: no changed file is in the story's traced imports. `unknown`: the trace could not be completed (see below) |
-| `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run. `--crops` is not implemented yet; it prints the two image paths to open and exits 0. Arguments are shell-quoted when needed, and a `.webp` path argument appears verbatim, so a verdict for two absolute paths names this machine's paths                                                                         |
+| `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run. Arguments are shell-quoted when needed, and a `.webp` path argument appears verbatim, so a verdict for two absolute paths names this machine's paths                                                                                                                                                              |
 
 The verdict never decides pass/fail — the pixel hash does. It explains a
 failure so an agent can compare the deltas with what it meant to change.
@@ -273,6 +276,111 @@ For a page set, 3 beats 1 beats 0. One bad pair does not stop the others from
 being verdicted. An unexpected crash prints one line and exits 3; set
 `JUX_DEBUG=1` to also print the stack trace.
 
+### Crops (`juxtapose.crops/v1`)
+
+When `explained` is not `full`, the verdict's `escalate.command` is the
+last step: `jux diff before after --crops` writes one PNG per changed region
+— baseline on the left, current on the right, the region's box doubled for
+context, enlarged to at most 512px a side, unexplained regions first — to
+`.juxtapose/crops/before~vs~after/crop-N.png` and lists them. No browser.
+
+```
+style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure explains the changed region.
+
+  button[name="Save"] color #ffffff → #fef08a
+
+crops (baseline | current), unexplained first:
+  /work/app/.juxtapose/crops/before~vs~after-color/crop-1.png  (35×12 at 31,84, 7×)
+```
+
+That is the real output of `jux diff before after-color --crops` on the corpus
+`color` page at 1280×800, with the project path shortened to `/work/app`.
+
+With `--json` the payload wraps the verdict: `{ schema, verdict, dir, crops[] }`
+where each crop is `{ file, region, box, scale, width, height, explained }`
+and `file` is a forward-slash path relative to the project root:
+
+```json
+{
+  "schema": "juxtapose.crops/v1",
+  "verdict": { "schema": "juxtapose.verdict/v1", "…": "as above" },
+  "dir": ".juxtapose/crops/before~vs~after-color",
+  "crops": [
+    {
+      "file": ".juxtapose/crops/before~vs~after-color/crop-1.png",
+      "region": { "x": 31, "y": 84, "width": 35, "height": 12 },
+      "box": { "x": 13, "y": 78, "width": 70, "height": 24 },
+      "scale": 7,
+      "width": 984,
+      "height": 168,
+      "explained": true
+    }
+  ]
+}
+```
+
+- At most 8 crops. `explained` is `false` for a region no delta accounts
+  for; those come first.
+- Identical snaps write nothing, print `nothing to crop` (`"crops": []`,
+  `"dir": null` with `--json`) and exit 0. A different pair exits 1.
+- The pair's directory is emptied on every call, identical runs included, so
+  a stale crop never sits beside a fresh one. `.juxtapose/crops/` ignores
+  itself (it holds a `.gitignore`).
+- With no marked region (a sub-threshold change, a size change) the one crop
+  is the whole overlapping frame.
+- It refuses, with exit 3, to write through a symlinked `.juxtapose`,
+  `crops` or snaps path, or a symlinked file.
+- `--crops` takes one pair; combined with `--prefix` it exits 2. Run
+  `jux diff --prefix before after` first, then `--crops` on the page you want.
+
+### Groups and cause (`jux run`)
+
+A token bump that turns forty stories red is one decision, not forty.
+`jux run` groups failing stories whose verdicts share a `signature` (and have
+at least one delta), prints up to 10 groups largest first, and writes all of
+them to `report.json` as `groups[]`: `{ signature, summary, storyIds }`. The
+`change` line is the abstract form of the change, so it reads the same for
+every story in the group.
+
+With `--since <commit>`, each failing story's verdict also carries `cause`
+(see the table above), printed before the structural summary. Here the story
+file was edited (`label: 'Click me'` → `'Click me now'`):
+
+```
+  fail   button--primary 0.26%
+         cause: Changed files this story imports, nearest first: `stories/Button.stories.jsx` (the story file itself).
+         text-only: button[name="Click me"] text "Click me"→"Click me now"; button[name="Click me"] resized width +34.12px. Structure explains the changed region.
+```
+
+And here a shared component's padding changed (`10px 20px` → `12px 24px`).
+A Storybook build bundles components into chunks without a source path, so
+the cause is `unknown` and the review list prints nothing for it; the group
+shows what the four stories have in common:
+
+```
+  1 change shared by several stories:
+  style-only (spacing): button padding 10px 20px→12px 24px; div resized height +4px (+1 more) — 4 stories
+    button--danger, button--ghost, button--primary, button--secondary
+```
+
+`jux handoff <id>` prints the cause under `## Why` (or `Cause unknown: …`)
+and ends with the shell-quoted `jux diff … --crops --project …` command for
+that story.
+
+## Claude Code skill
+
+`plugins/claude-code/` is a Claude Code plugin with one skill,
+`visual-check`, that teaches the loop above: snap before editing, snap after,
+read the verdict, open crops only when the verdict cannot explain the pixels,
+never a full screenshot first. Load it for a session with:
+
+```bash
+claude --plugin-dir path/to/juxtapose/plugins/claude-code
+```
+
+and invoke it as `/juxtapose:visual-check`, or let Claude pick it up when you
+ask it to change something that renders.
+
 ## In CI
 
 `jux run --comment` posts a summary to the pull request, updating the same
@@ -280,7 +388,7 @@ comment on every push rather than adding a new one:
 
 ```yaml
 - run: npx storybook build
-- run: npx jux run --comment --html
+- run: npx -p @juxtapose/cli jux run --comment --html
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

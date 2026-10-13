@@ -32,7 +32,8 @@ Common options
   --run <dir>                    run directory to read (approve, check, handoff)
 
 run
-  --since <commit>               only capture stories affected since this commit
+  --since <commit>               only capture stories affected since this commit; failing stories
+                                 then say which changed files they import (cause)
   --all                          capture everything, skip affected-analysis
   --comment                      post a summary as a GitHub PR comment
   --html                         write a self-contained report.html to the run dir
