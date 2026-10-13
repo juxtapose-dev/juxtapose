@@ -72,6 +72,11 @@ function store(
       version: 1,
       baselines: {
         s: { ...meta, hash: 'not-the-current-hash', structureHash: BASE.structureHash },
+        "it's a story": {
+          ...meta,
+          hash: 'not-the-current-hash',
+          structureHash: BASE.structureHash,
+        },
         'no-current': { ...meta, hash: 'nope' },
         // hash equals the captured bytes: this story passes
         green: {
@@ -122,6 +127,15 @@ test('a failing story with sidecars on both sides carries a verdict', async () =
   expect(r.results[0].structural?.classification).toBe('style-only');
   // In run mode the next command is the handoff for this story.
   expect(r.results[0].structural?.escalate.command).toBe('jux handoff s');
+});
+
+// Every printed command is pasteable: an id with a space or a quote is
+// shell-quoted like the CLI's own hints.
+test('the handoff escalate command shell-quotes the story id', async () => {
+  const r = await run(store('ok'), "it's a story");
+  expect(r.results[0].structural?.escalate.command).toBe(
+    "jux handoff 'it'\\''s a story'",
+  );
 });
 
 // Verification 5: a green story never reads a sidecar.

@@ -34,6 +34,7 @@ import {
 } from '../diff/diff.js';
 import { phases, type Phases } from './phases.js';
 import type { CauseIndex } from '../analysis/cause.js';
+import { shellQuote } from '../shell-quote.js';
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
@@ -279,7 +280,7 @@ async function tryStructural(
       current: snapshot.structure,
       imagesIdentical: false,
       pixels,
-      escalate: { command: `jux handoff ${story.storyId}` },
+      escalate: { command: `jux handoff ${shellQuote(story.storyId)}` },
       ...(cause ? { cause } : {}),
     });
   } catch {

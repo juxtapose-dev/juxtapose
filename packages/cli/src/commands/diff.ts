@@ -14,9 +14,9 @@ import {
   type SnapComparison,
   type SnapSide,
   type StructuralVerdict,
+  shellQuote,
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
-import { shellQuote } from '../shell-quote.js';
 import { snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 import { firstSymlink, symlinkRefusal, writeFresh } from '../symlink-guard.js';

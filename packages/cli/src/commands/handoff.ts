@@ -10,10 +10,10 @@ import {
   encodeStoryId,
   type RunReport,
   type HandoffPayload,
+  shellQuote,
 } from '@juxtapose/core';
 import { resolveContext, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
-import { shellQuote } from '../shell-quote.js';
 import { DEFAULT_VIEWPORT } from '@juxtapose/core';
 
 export async function handoffCommand(

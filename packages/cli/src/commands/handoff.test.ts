@@ -2,9 +2,8 @@ import { mkdir, writeFile, rm, mkdtemp } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { GitBaselineStore, encodeStoryId } from '@juxtapose/core';
+import { GitBaselineStore, encodeStoryId, shellQuote } from '@juxtapose/core';
 import { afterEach, expect, test, vi } from 'vitest';
-import { shellQuote } from '../shell-quote.js';
 import { handoffCommand } from './handoff.js';
 
 const dirs: string[] = [];

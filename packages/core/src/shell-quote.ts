@@ -1,6 +1,7 @@
 // Every hint that prints a command prints one an agent can paste. A snap
 // name with a space (`jux diff 'a b' x`) printed bare made the suggested
-// `jux snap <url> --as a b` a different command.
+// `jux snap <url> --as a b` a different command. In core so the verdict's
+// `escalate.command` and the CLI's hints share one implementation.
 
 const SHELL_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
 

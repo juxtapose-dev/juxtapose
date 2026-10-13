@@ -17,9 +17,9 @@ import {
   type CaptureEnv,
   type SnapPageResult,
   type Viewport,
+  shellQuote,
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
-import { shellQuote } from '../shell-quote.js';
 import { prefixSlugs, snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 import { firstSymlink, symlinkRefusal, writeFresh } from '../symlink-guard.js';

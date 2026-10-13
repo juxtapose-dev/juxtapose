@@ -75,6 +75,7 @@ export { compareSnaps, type SnapSide, type SnapComparison } from './diff/compare
 export { renderCrops, MAX_CROPS, MAX_CROP_SIDE, type Crop } from './diff/crops.js';
 export { describeDelta, describeDeltas } from './diff/structural/summary.js';
 export { compareCodeUnits } from './diff/structural/deltas.js';
+export { shellQuote } from './shell-quote.js';
 
 // Driving a run.
 export {
