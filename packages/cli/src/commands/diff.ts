@@ -99,25 +99,25 @@ async function loadSides(
   dir: string,
   a: string,
   b: string,
-): Promise<{ sides: [SnapSide, SnapSide] } | { code: number }> {
+): Promise<{ sides: [SnapSide, SnapSide] } | { code: number; message: string }> {
   const [ra, rb] = await Promise.all([readSnap(dir, a), readSnap(dir, b)]);
   for (const [ref, r] of [
     [a, ra],
     [b, rb],
   ] as const) {
     if (r.kind === 'missing') {
-      process.stderr.write(
-        ref.endsWith('.webp')
+      return {
+        code: EXIT.usage,
+        message: ref.endsWith('.webp')
           ? `jux diff: no file at ${r.image}. Check the path, or take it with \`jux snap <url> --as <name>\`.\n`
           : `jux diff: no snap named '${ref}' in ${dir}. Run \`jux snap <url> --as ${ref}\` first.\n`,
-      );
-      return { code: EXIT.usage };
+      };
     }
     if (r.kind === 'corrupt') {
-      process.stderr.write(
-        `jux diff: cannot read ${r.file} (${r.error}). Delete it or re-take the snap with \`jux snap <url> --as ${ref}\`.\n`,
-      );
-      return { code: EXIT.failure };
+      return {
+        code: EXIT.failure,
+        message: `jux diff: cannot read ${r.file} (${r.error}). Delete it or re-take the snap with \`jux snap <url> --as ${ref}\`.\n`,
+      };
     }
   }
   return { sides: [(ra as { side: SnapSide }).side, (rb as { side: SnapSide }).side] };
@@ -126,7 +126,10 @@ async function loadSides(
 async function diffTwo(a: string, b: string, flags: DiffFlags): Promise<number> {
   const dir = snapsDir(flags.project);
   const loaded = await loadSides(dir, a, b);
-  if ('code' in loaded) return loaded.code;
+  if ('code' in loaded) {
+    process.stderr.write(loaded.message);
+    return loaded.code;
+  }
   const [sa, sb] = loaded.sides;
   const { verdict } = await compareSnaps(sa, sb, {
     command: `jux diff ${a} ${b} --crops`,
@@ -173,10 +176,25 @@ interface PageVerdict {
   verdict: StructuralVerdict;
 }
 
+interface PageError {
+  slug: string;
+  a: string;
+  b: string;
+  error: string;
+}
+
 async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<number> {
   const dir = snapsDir(flags.project);
   const pa = snapName(a, a);
   const pb = snapName(b, b);
+  // `a` matches every `a-<slug>`, so a prefix nested in the other would pair
+  // one side's snaps with themselves or swallow the other's.
+  if (pa === pb || pa.startsWith(`${pb}-`) || pb.startsWith(`${pa}-`)) {
+    process.stderr.write(
+      `jux diff: prefixes '${pa}' and '${pb}' overlap (one is the other plus '-…'), so their snaps cannot be told apart. Re-take the snaps under unrelated prefixes, e.g. \`jux snap <url>… --as-prefix before\` and \`--as-prefix after\`.\n`,
+    );
+    return EXIT.usage;
+  }
   const files = await readdir(dir).catch(() => [] as string[]);
   const { pairs, missing } = pairByPrefix(files, pa, pb);
   if (pairs.length === 0 && missing.length === 0) {
@@ -186,26 +204,45 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
     return EXIT.usage;
   }
   const pages: PageVerdict[] = [];
+  const errors: PageError[] = [];
   for (const p of pairs) {
-    const loaded = await loadSides(dir, p.a, p.b);
-    if ('code' in loaded) return loaded.code; // already explained
-    const [sa, sb] = loaded.sides;
-    const { verdict } = await compareSnaps(sa, sb, {
-      command: `jux diff ${p.a} ${p.b} --crops`,
-    });
-    pages.push({ ...p, verdict });
+    // One unreadable pair must not hide the verdicts of the others.
+    try {
+      const loaded = await loadSides(dir, p.a, p.b);
+      if ('code' in loaded) {
+        errors.push({ ...p, error: loaded.message.trim() });
+        continue;
+      }
+      const [sa, sb] = loaded.sides;
+      const { verdict } = await compareSnaps(sa, sb, {
+        command: `jux diff ${p.a} ${p.b} --crops`,
+      });
+      pages.push({ ...p, verdict });
+    } catch (err) {
+      errors.push({
+        ...p,
+        error: `jux diff: failed: ${err instanceof Error ? err.message : String(err)}. Re-take both with \`jux snap <url> --as ${p.a}\` / \`--as ${p.b}\`.`,
+      });
+    }
   }
   const summary = {
     identical: pages.filter((p) => p.verdict.classification === 'identical').length,
     different: pages.filter((p) => p.verdict.classification !== 'identical').length,
     missing: missing.length,
+    errored: errors.length,
   };
   process.stdout.write(
     flags.json
-      ? JSON.stringify({ schema: 'juxtapose.verdict-set/v1', pages, missing, summary }) +
-          '\n'
-      : formatPrefixSet(pages, missing, summary, pa, pb),
+      ? JSON.stringify({
+          schema: 'juxtapose.verdict-set/v1',
+          pages,
+          missing,
+          errors,
+          summary,
+        }) + '\n'
+      : formatPrefixSet(pages, missing, errors, summary, pa, pb),
   );
+  if (summary.errored > 0) return EXIT.failure;
   return summary.different === 0 && summary.missing === 0 ? EXIT.clean : EXIT.review;
 }
 
@@ -213,14 +250,16 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
 function formatPrefixSet(
   pages: PageVerdict[],
   missing: PrefixPairing['missing'],
-  summary: { identical: number; different: number; missing: number },
+  errors: PageError[],
+  summary: { identical: number; different: number; missing: number; errored: number },
   pa: string,
   pb: string,
 ): string {
-  const total = pages.length + missing.length;
+  const total = pages.length + missing.length + errors.length;
   const parts: string[] = [];
   if (summary.different) parts.push(`${summary.different} changed`);
   if (summary.identical) parts.push(`${summary.identical} identical`);
+  if (summary.errored) parts.push(`${summary.errored} unreadable`);
   let head = `${total} page${total === 1 ? '' : 's'}: ${parts.join(', ') || 'none paired'}`;
   for (const prefix of [pb, pa]) {
     const slugs = missing
@@ -234,9 +273,12 @@ function formatPrefixSet(
   }
   for (const p of pages.filter((x) => x.verdict.classification === 'identical'))
     out.push(`${p.slug}: ${p.verdict.summary}`);
+  for (const e of errors) out.push(`${e.slug}: ${e.error}`);
+  // A slug that is path-based changes when the page's host or path does, so
+  // that is the usual reason one side has no snap for it.
   for (const m of missing)
     out.push(
-      `${m.slug}: no ${m.want} — run \`jux snap <url> --as ${m.want}\` (or re-run the --as-prefix snap for both sides)`,
+      `${m.slug}: no ${m.want}. A changed host or path is the usual cause; re-run \`jux snap <url>… --as-prefix ${m.want === `${pb}-${m.slug}` ? pb : pa}\` with the same paths, or take just this one with \`jux snap <url> --as ${m.want}\`.`,
     );
   return out.join('\n').trimEnd() + '\n';
 }

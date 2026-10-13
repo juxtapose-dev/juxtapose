@@ -8,7 +8,7 @@
 // failed one is reported (with its error, in --json too) and the exit is 3:
 // the agent asked for all of them, so a partial set must not look like success.
 
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   encodeStructure,
@@ -18,7 +18,7 @@ import {
   type Viewport,
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
-import { snapName } from '../snap-name.js';
+import { prefixSlugs, snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 
 export interface SnapFlags {
@@ -77,13 +77,8 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
   const prefix = flags['as-prefix']
     ? snapName(flags['as-prefix'], flags['as-prefix'])
     : undefined;
-  const nameOf = (url: string) =>
-    prefix ? `${prefix}-${snapName(url)}` : snapName(url, flags.as);
-
-  // Validate every url before launching anything: a bad argument is a usage
-  // error, and names derive from host + path, so two urls differing only by
-  // query would silently overwrite each other.
-  const seen = new Map<string, string>();
+  // Prefix names are path-based so before/after pair across a dev-server port
+  // change; see prefixSlugs. Single-url naming is unchanged.
   for (const url of urls) {
     if (!/^https?:\/\//i.test(url)) {
       process.stderr.write(
@@ -91,6 +86,24 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
       );
       return EXIT.usage;
     }
+  }
+  let slugOf = new Map<string, string>();
+  try {
+    if (prefix) slugOf = prefixSlugs(urls);
+  } catch (err) {
+    process.stderr.write(
+      `jux snap: not a valid URL: ${String(err)}. Check the arguments.\n`,
+    );
+    return EXIT.usage;
+  }
+  const nameOf = (url: string) =>
+    prefix ? `${prefix}-${slugOf.get(url) ?? snapName(url)}` : snapName(url, flags.as);
+
+  // Validate every url before launching anything: a bad argument is a usage
+  // error, and names derive from host + path, so two urls differing only by
+  // query would silently overwrite each other.
+  const seen = new Map<string, string>();
+  for (const url of urls) {
     const name = nameOf(url);
     const prior = seen.get(name);
     if (prior) {
@@ -116,7 +129,7 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
     // Only the browser itself can throw here; per-page problems come back as
     // results. No browser means nothing was captured, for any url.
     process.stderr.write(
-      `jux snap: could not launch the browser: ${(err as Error).message}${captureHint((err as Error).message)}\n`,
+      `jux snap: could not launch the browser: ${errorMessage(err)}${captureHint(errorMessage(err))}\n`,
     );
     return EXIT.failure;
   }
@@ -124,27 +137,36 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
 
   const dir = snapsDir(flags.project);
   const results: Array<Written | { url: string; error: string }> = [];
-  let failed = 0;
+  const failedUrls: string[] = [];
   try {
     await mkdir(dir, { recursive: true });
     // Self-ignoring: snaps are scratch, never baselines.
     await writeFile(path.join(dir, '.gitignore'), '*\n');
-    for (const r of pages) {
-      const problem = describeFailure(r);
-      if (problem) {
-        failed++;
-        process.stderr.write(`jux snap: ${problem}\n`);
-        results.push({ url: r.url, error: problem });
-        continue;
-      }
-      results.push(await write(dir, nameOf(r.url), r, env));
-    }
+    // A smaller page set must not leave last run's snaps to pair with; the
+    // dir is scratch, so this is safe. Done after capture so a failed launch
+    // deletes nothing.
+    if (prefix) await clearPrefix(dir, prefix);
   } catch (err) {
     process.stderr.write(
-      `jux snap: could not write to ${dir}: ${(err as Error).message}. Check the directory is writable, or pass --project <dir>.\n`,
+      `jux snap: could not write to ${dir}: ${errorMessage(err)}. Check the directory is writable, or pass --project <dir>.\n`,
     );
     return EXIT.failure;
   }
+  for (const r of pages) {
+    let problem = describeFailure(r);
+    if (!problem) {
+      try {
+        results.push(await write(dir, nameOf(r.url), r, env));
+        continue;
+      } catch (err) {
+        problem = `could not write ${nameOf(r.url)} to ${dir}: ${errorMessage(err)}. Check the directory is writable, or pass --project <dir>.`;
+      }
+    }
+    failedUrls.push(r.url);
+    process.stderr.write(`jux snap: ${problem}\n`);
+    results.push({ url: r.url, error: problem });
+  }
+  const failed = failedUrls.length;
 
   if (flags.json) {
     process.stdout.write(
@@ -159,8 +181,28 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
         `jux: snapped ${r.url} → ${r.name} (${r.elements} elements, ${r.durationMs} ms)\n`,
       );
     }
+    if (urls.length > 1 || failed) {
+      process.stdout.write(
+        `${urls.length - failed} of ${urls.length} pages written; ${failed} failed\n`,
+      );
+    }
+    for (const url of failedUrls) {
+      process.stdout.write(`retry: jux snap ${url} --as ${nameOf(url)}\n`);
+    }
   }
   return failed > 0 ? EXIT.failure : EXIT.clean;
+}
+
+/** Remove `<prefix>-*` snaps (image and sidecar) from a previous run. */
+async function clearPrefix(dir: string, prefix: string): Promise<void> {
+  for (const f of await readdir(dir)) {
+    if (f.startsWith(`${prefix}-`) && /\.(webp|structure\.json\.gz)$/.test(f))
+      await rm(path.join(dir, f), { force: true });
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function describeFailure(r: SnapPageResult): string | null {

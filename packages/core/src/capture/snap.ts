@@ -47,10 +47,8 @@ const DEFAULT_SNAP_VIEWPORT: Viewport = { width: 1280, height: 800 };
  * asked for all of them and wants to know which ones it got.
  *
  * One page, navigated, is the cold path captureStory already takes: a
- * navigation discards injected styles and captureStory re-applies them. What
- * a navigation does not discard is origin storage and cookies, so those are
- * cleared between pages; otherwise a page's result would depend on which page
- * was captured before it.
+ * navigation discards injected styles and captureStory re-applies them.
+ * Origin state is cleared between pages by resetBetweenPages.
  */
 export async function snapPages(
   opts: SnapPagesOptions,
@@ -61,7 +59,11 @@ export async function snapPages(
   const { chromium } = await import('playwright');
   const browser = await chromium.launch(deterministicLaunchOptions());
   try {
-    const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+    const context = await browser.newContext({
+      viewport,
+      deviceScaleFactor: 1,
+      serviceWorkers: 'block',
+    });
     const page = await context.newPage();
     let status: number | null = null;
     page.on('response', (r) => {
@@ -87,9 +89,13 @@ export async function snapPages(
         if (!snapshot) throw new Error('page declared skip');
         pages.push({ url, snapshot, status });
       } catch (err) {
-        pages.push({ url, status, error: (err as Error).message });
+        pages.push({
+          url,
+          status,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-      await resetBetweenPages(context, page);
+      await resetBetweenPages(context, page, url);
     }
     return { env: captureEnv(browser), pages };
   } finally {
@@ -97,16 +103,34 @@ export async function snapPages(
   }
 }
 
-/** Best effort: a page that blocks storage access (opaque origin, about:blank
- *  after a failed load) has nothing to leak, so a throw here is not a failure. */
-async function resetBetweenPages(context: BrowserContext, page: Page): Promise<void> {
+/**
+ * A navigation keeps everything origin-scoped: cookies, localStorage,
+ * IndexedDB, Cache Storage and service workers. One context is shared by every
+ * page (a context per page would cost the launch savings back), so the
+ * previous page's origin is wiped through CDP instead; otherwise a page's
+ * pixels could depend on which page was captured before it. Service workers
+ * are blocked at context creation, since clearing cannot stop one that has
+ * already intercepted the next navigation.
+ *
+ * The origin comes from the requested URL, not the page: after a failed load
+ * the page is an error page with an opaque origin. Best effort: nothing here
+ * may fail a capture that already succeeded.
+ */
+async function resetBetweenPages(
+  context: BrowserContext,
+  page: Page,
+  requestedUrl: string,
+): Promise<void> {
   await context.clearCookies().catch(() => {});
-  await page
-    .evaluate(() => {
-      localStorage.clear();
-      sessionStorage.clear();
+  const cdp = await context.newCDPSession(page).catch(() => null);
+  if (!cdp) return;
+  await cdp
+    .send('Storage.clearDataForOrigin', {
+      origin: new URL(requestedUrl).origin,
+      storageTypes: 'all',
     })
     .catch(() => {});
+  await cdp.detach().catch(() => {});
 }
 
 export async function snapPage(opts: SnapOptions): Promise<SnapResult> {

@@ -212,9 +212,7 @@ server.serveAs('color', 'padding');
 await jux(['snap', `${base}/noop`, `${base}/color`, '--as-prefix', 'p2']);
 const set = await jux(['diff', '--prefix', 'p1', 'p2', '--json']);
 const vs = JSON.parse(set.out);
-const bySlug = Object.fromEntries(
-  vs.pages.map((p) => [p.slug.replace(/^.*-op-/, ''), p]),
-);
+const bySlug = Object.fromEntries(vs.pages.map((p) => [p.slug.replace(/^op-/, ''), p]));
 check(
   set.code === 1 &&
     vs.schema === 'juxtapose.verdict-set/v1' &&
@@ -222,7 +220,7 @@ check(
     bySlug.noop.verdict.classification === 'identical' &&
     bySlug.color.verdict.classification !== 'identical' &&
     vs.missing.length === 1 &&
-    vs.missing[0].slug.endsWith('-op-padding') &&
+    vs.missing[0].slug === 'op-padding' &&
     vs.missing[0].want.startsWith('p2-') &&
     vs.summary.identical === 1 &&
     vs.summary.different === 1 &&
@@ -231,8 +229,10 @@ check(
 );
 const human2 = await jux(['diff', '--prefix', 'p1', 'p2']);
 check(
-  /^3 pages: 1 changed, 1 identical; missing p2: .*-op-padding\n/.test(human2.out) &&
-    /no p2-.*jux snap <url> --as p2-/.test(human2.out) &&
+  /^3 pages: 1 changed, 1 identical; missing p2: op-padding\n/.test(human2.out) &&
+    /no p2-op-padding\. A changed host or path.*--as-prefix p2.*--as p2-op-padding/.test(
+      human2.out,
+    ) &&
     human2.out.indexOf('changed') < human2.out.indexOf('next: jux diff p1-'),
   '--prefix human output leads with the page summary and says which snap to take',
 );
@@ -248,6 +248,50 @@ const noset = await jux(['diff', '--prefix', 'zz', 'yy']);
 check(
   noset.code === 2 && /--as-prefix zz/.test(noset.err),
   'unknown prefixes are usage (2) with the next command',
+);
+
+// A dev server that restarts on another port between before and after must
+// still pair: slugs are path-based, not origin-based.
+const server2 = await startCorpusServer();
+await jux([
+  'snap',
+  `${server.url}/op/noop`,
+  `${server.url}/op/padding`,
+  '--as-prefix',
+  'pa',
+]);
+await jux([
+  'snap',
+  `${server2.url}/op/noop`,
+  `${server2.url}/op/padding`,
+  '--as-prefix',
+  'pb',
+]);
+const ported = await jux(['diff', '--prefix', 'pa', 'pb', '--json']);
+const vp = JSON.parse(ported.out);
+check(
+  ported.code === 0 && vp.pages.length === 2 && vp.missing.length === 0,
+  'before and after on different ports pair by path',
+);
+console.log(
+  `     ${server.url} vs ${server2.url}: ${vp.pages.length} paired, ${vp.missing.length} missing`,
+);
+server2.close();
+const nested = await jux(['diff', '--prefix', 'pa', 'pa-x']);
+check(
+  nested.code === 2 && /overlap/.test(nested.err),
+  'overlapping prefixes are usage (2) saying why',
+);
+// An unreadable pair is reported for its slug and the rest still verdict.
+writeFileSync(path.join(snaps, 'pb-op-padding.structure.json.gz'), 'not gzip');
+const partial = await jux(['diff', '--prefix', 'pa', 'pb', '--json']);
+const vq = JSON.parse(partial.out);
+check(
+  partial.code === 3 &&
+    vq.pages.length === 1 &&
+    vq.errors.length === 1 &&
+    vq.errors[0].slug === 'op-padding',
+  'one unreadable pair is an error entry, the rest still verdict, exit 3',
 );
 
 server.close();

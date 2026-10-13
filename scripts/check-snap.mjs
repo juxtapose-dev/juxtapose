@@ -26,15 +26,19 @@ const server = createServer((req, res) => {
 }).listen(0);
 const port = server.address().port;
 const project = mkdtempSync(path.join(tmpdir(), 'jux-snap-'));
-const run = async (args, env = {}) => {
+const run = async (args, env = {}, json = true) => {
   try {
     return {
       code: 0,
       out: (
-        await exec('node', [cli, 'snap', ...args, '--project', project, '--json'], {
-          encoding: 'utf8',
-          env: { ...process.env, ...env },
-        })
+        await exec(
+          'node',
+          [cli, 'snap', ...args, '--project', project, ...(json ? ['--json'] : [])],
+          {
+            encoding: 'utf8',
+            env: { ...process.env, ...env },
+          },
+        )
       ).stdout,
     };
   } catch (e) {
@@ -152,14 +156,14 @@ check(
 
 const dup = await run([
   `http://127.0.0.1:${port}/ok`,
-  `http://127.0.0.1:${port}/ok?page=2`,
+  `http://127.0.0.1:${port}/ok#again`,
   '--as-prefix',
   'dup',
 ]);
 check(
   dup.code === 2 &&
     /would both be saved as 'dup-/.test(dup.out) &&
-    /\/ok\?page=2/.test(dup.out) &&
+    /\/ok#again/.test(dup.out) &&
     /--as-prefix/.test(dup.out) &&
     !readdirSync(path.join(project, '.juxtapose/snaps')).some((f) => f.startsWith('dup')),
   'urls that slug to one name are refused (2) naming both, before any capture',
@@ -174,14 +178,36 @@ const mixed = await run([
   '--as-prefix',
   'mixed',
 ]);
+const mixedHuman = await run(
+  [
+    `http://127.0.0.1:${port}/ok`,
+    `http://127.0.0.1:${port}/missing`,
+    `http://127.0.0.1:${port}/ok-two`,
+    '--as-prefix',
+    'mixed',
+  ],
+  {},
+  false,
+);
 const jx = JSON.parse(mixed.out.split('\n').find((l) => l.startsWith('{')));
 check(
   mixed.code === 3 &&
     jx.snaps.length === 3 &&
     existsSync(jx.snaps[0].image) &&
     /HTTP 404/.test(jx.snaps[1].error) &&
+    /2 of 3 pages written; 1 failed/.test(mixedHuman.out) &&
+    /retry: jux snap .*\/missing --as mixed-missing/.test(mixedHuman.out) &&
     existsSync(jx.snaps[2].image),
   'a failing page in a set exits 3, is reported with its error, and the others are written',
+);
+
+const stale = await run([`http://127.0.0.1:${port}/ok`, '--as-prefix', 'mixed']);
+check(
+  stale.code === 0 &&
+    !readdirSync(path.join(project, '.juxtapose/snaps')).some((f) =>
+      f.startsWith('mixed-ok-two'),
+    ),
+  'a re-run of a prefix removes its stale snaps',
 );
 
 const asMulti = await run([

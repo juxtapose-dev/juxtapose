@@ -43,7 +43,8 @@ approve
 
 snap
   --as <name>                    name for this snap (default: from the url)
-  --as-prefix <p>                several urls: name each <p>-<slug>, one browser launch
+  --as-prefix <p>                several urls: name each <p>-<slug> (slug = path), one browser
+                                 launch; first removes older <p>-* snaps
   --viewport <WxH>               default 1280x800
   --wait-for <selector>          wait for this selector before capture
   --mask <selector>              cover before capture (repeatable)
