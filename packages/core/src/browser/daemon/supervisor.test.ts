@@ -529,6 +529,10 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         ['Target.attachToBrowserTarget', {}],
         ['Target.exposeDevToolsProtocol', { targetId: pb.targetId }],
         ['Browser.close', {}],
+        // Task 12 re-review: no context id means the empty default context.
+        ['Storage.getCookies', {}],
+        ['Storage.clearCookies', {}],
+        ['Storage.getCookies', { browserContextId: pa.browserContextId }],
       ] as [string, object][])
         await refusedBy(b.send(method, params, pb.sessionId));
       // Allowed with owned ids.

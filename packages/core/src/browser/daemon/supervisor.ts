@@ -95,7 +95,7 @@ const BROWSER_SESSION_ALLOW: Readonly<Record<string, readonly IdKey[]>> = {
 
 /**
  * On a page session the client owns, every domain is its own page's, except
- * Target.* and Browser.*, which reach the browser from any session
+ * Storage.* (needs an owned browserContextId) and Target.* and Browser.*, which reach the browser from any session
  * (setDiscoverTargets there reports every target; Browser.close closes the
  * browser). Those pass only from this list, with owned ids as above.
  */
@@ -390,6 +390,10 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
       if (domain === 'Target' || domain === 'Browser') {
         required = PAGE_SESSION_ALLOW[method];
         if (!required) return no(browserWideWhy(method));
+      } else if (domain === 'Storage') {
+        // Same rule as the browser session: Storage.* without a context id
+        // acts on the empty default context.
+        required = ['browserContextId'];
       } else required = [];
     }
     if (method === 'Target.createTarget' && params['browserContextId'] === undefined)
