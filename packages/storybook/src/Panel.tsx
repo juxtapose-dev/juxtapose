@@ -9,7 +9,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { styled, Badge, Button, EmptyTabContent, Loader } from './storybook.js';
-// Deep import on purpose: '@juxtapose/core' reaches sharp and playwright
+// Deep import on purpose: '@juxtapose/core' reaches sharp and the browser driver
 // through the capture modules, and this file is bundled for the browser.
 import { formatPercent } from '@juxtapose/core/format';
 import type { DiffResult, DiffStatus } from '@juxtapose/core';

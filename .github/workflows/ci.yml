@@ -61,7 +61,7 @@ jobs:
       - run: pnpm build
 
       - name: Install Chromium
-        run: pnpm --filter @juxtapose/cli exec playwright install --with-deps chromium
+        run: node packages/cli/dist/index.js browser install
 
       - name: Build example workbenches
         run: |
@@ -139,7 +139,7 @@ jobs:
       - run: pnpm build
 
       - name: Install Chromium
-        run: pnpm --filter @juxtapose/cli exec playwright install --with-deps chromium
+        run: node packages/cli/dist/index.js browser install
 
       - name: Build the example workbench
         run: pnpm --filter example-storybook build

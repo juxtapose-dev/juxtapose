@@ -6,10 +6,10 @@ pnpm build
 pnpm test
 ```
 
-Node 20+ and pnpm 9+. Capturing anything also needs Chromium:
+Node 22.2+ and pnpm 9+. Capturing anything also needs the pinned browser (a one-time ~100 MB download):
 
 ```bash
-pnpm --filter @juxtapose/cli exec playwright install chromium
+npx -p @juxtapose/cli jux browser install
 ```
 
 ## Checks

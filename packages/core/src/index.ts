@@ -114,8 +114,16 @@ export {
   juxCacheDir,
   noBrowserMessage,
   NO_BROWSER_MESSAGE,
+  type ChromeSource,
+  type ResolvedChrome,
 } from './browser/resolve.js';
-export { installChrome } from './browser/install.js';
+export {
+  installChrome,
+  proxyReexecArgs,
+  stderrProgress,
+  type InstallOptions,
+  type InstallResult,
+} from './browser/install.js';
 export { CHROME_VERSION } from './browser/pins.js';
 export { assertCssSelector } from './browser/selectors.js';
 export {

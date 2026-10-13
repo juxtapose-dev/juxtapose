@@ -34,6 +34,7 @@ export interface SnapFlags {
   viewport?: string;
   'wait-for'?: string;
   mask?: string[];
+  chrome?: string;
 }
 
 interface Written {
@@ -134,7 +135,7 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
   let captured: Awaited<ReturnType<typeof snapPages>>;
   let browser: Browser | undefined;
   try {
-    browser = await acquireBrowser();
+    browser = await acquireBrowser({ chrome: flags.chrome });
     captured = await snapPages({
       urls,
       browser,
@@ -314,8 +315,11 @@ export async function writeSnap(
 
 /** The next step depends on what broke: a missing browser and a down server
  *  need different commands. Anything else shows its message alone. */
-function captureHint(message: string): string {
-  if (/jux: no browser|could not launch the browser|does not exist/.test(message))
+export function captureHint(message: string): string {
+  // The core messages (noBrowserMessage, launch failures) already name the
+  // install step; repeating it would print it twice.
+  if (/jux browser install/.test(message)) return '';
+  if (/could not launch the browser|does not exist/.test(message))
     return '. Run `npx -p @juxtapose/cli jux browser install`, or set JUX_CHROME=<path>, then retry.';
   if (
     /ERR_CONNECTION_REFUSED|ECONNREFUSED|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE/.test(

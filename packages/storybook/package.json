@@ -24,6 +24,9 @@
     "./preset": "./preset.js",
     "./package.json": "./package.json"
   },
+  "engines": {
+    "node": ">=22.2.0"
+  },
   "files": [
     "dist",
     "manager.js",

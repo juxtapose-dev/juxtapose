@@ -19,6 +19,9 @@
     ".": "./dist/index.js",
     "./package.json": "./package.json"
   },
+  "engines": {
+    "node": ">=22.2.0"
+  },
   "files": [
     "dist"
   ],
@@ -26,8 +29,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@juxtapose/core": "workspace:*",
-    "playwright": "^1.48.0"
+    "@juxtapose/core": "workspace:*"
   },
   "repository": {
     "type": "git",

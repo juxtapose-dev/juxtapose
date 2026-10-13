@@ -13,6 +13,11 @@ import path from 'node:path';
 import {
   approveCapture,
   acquireBrowser,
+  CHROME_VERSION,
+  installChrome,
+  juxCacheDir,
+  resolveChrome,
+  stderrProgress,
   encodeStoryId,
   runCapture,
   alwaysAncestor,
@@ -78,7 +83,14 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
   const baseUrl = ctx.origin ?? server!.url;
   let browser;
   try {
-    browser = await acquireBrowser();
+    if (!resolveChrome({ flag: flags.chrome })) {
+      say(`Downloading chrome-headless-shell ${CHROME_VERSION} (~100 MB, once)…`);
+      await installChrome({
+        cacheDir: juxCacheDir(),
+        onProgress: flags.json ? undefined : stderrProgress(),
+      });
+    }
+    browser = await acquireBrowser({ chrome: flags.chrome });
   } catch (err) {
     process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
     await server?.close();
