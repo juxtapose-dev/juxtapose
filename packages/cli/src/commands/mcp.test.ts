@@ -57,10 +57,14 @@ class Client {
   private readonly waiting = new Map<number, (r: Rpc) => void>();
   private next = 1;
 
-  constructor(project: string) {
-    this.child = spawn(process.execPath, [CLI, 'mcp', '--project', project], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+  constructor(project: string, extraArgs: string[] = []) {
+    this.child = spawn(
+      process.execPath,
+      [CLI, 'mcp', '--project', project, ...extraArgs],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    );
     this.exited = new Promise((r) => this.child.once('exit', r));
     this.child.stderr.on('data', (d: Buffer) => (this.stderr += d.toString()));
     createInterface({ input: this.child.stdout }).on('line', (line) => {
@@ -616,7 +620,9 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
   }, 30_000);
 
   test('4 snaps in parallel are byte-identical to the same 4 taken one at a time', async () => {
-    const c = new Client(project);
+    // The default pool is half the cores (2 on a 4-core CI runner), which
+    // cannot overlap 4 snaps; ask for 4 so the overlap assertion means something.
+    const c = new Client(project, ['--concurrency', '4']);
     await handshake(c);
     const pages = [1, 2, 3, 4].map((n) => `${base}p/${n}`);
     const viewport = { width: 480, height: 320 };
