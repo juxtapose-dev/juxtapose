@@ -4,6 +4,9 @@ import { createServer } from 'node:http';
 import { LOGO, pageHtml } from './page.mjs';
 
 export function startCorpusServer() {
+  // path name -> operator actually rendered, so a check can change what one
+  // URL serves between a "before" and an "after" snap (the edit an agent makes).
+  const overrides = new Map();
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
       const url = new URL(req.url, 'http://localhost');
@@ -21,7 +24,7 @@ export function startCorpusServer() {
       try {
         if (!m) throw new Error(`not found: ${url.pathname}`);
         res.writeHead(200, { 'content-type': 'text/html' });
-        res.end(pageHtml(m[1]));
+        res.end(pageHtml(overrides.get(m[1]) ?? m[1]));
       } catch (e) {
         res.writeHead(404);
         res.end(e.message);
@@ -32,6 +35,7 @@ export function startCorpusServer() {
       resolve({
         url: `http://127.0.0.1:${server.address().port}`,
         close: () => server.close(),
+        serveAs: (name, operator) => overrides.set(name, operator),
       });
     });
   });

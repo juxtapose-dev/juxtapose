@@ -195,6 +195,61 @@ check(
   'a missing .webp path says no file at <path>',
 );
 
+// --prefix: pair by slug, verdict each page, list the unpaired (Review Focus 4).
+// Before: three pages. Then the "edit": /op/color now serves the padding page
+// and /op/padding is not snapped again, so after = one identical, one changed,
+// one missing.
+const base = `${server.url}/op`;
+await jux([
+  'snap',
+  `${base}/noop`,
+  `${base}/color`,
+  `${base}/padding`,
+  '--as-prefix',
+  'p1',
+]);
+server.serveAs('color', 'padding');
+await jux(['snap', `${base}/noop`, `${base}/color`, '--as-prefix', 'p2']);
+const set = await jux(['diff', '--prefix', 'p1', 'p2', '--json']);
+const vs = JSON.parse(set.out);
+const bySlug = Object.fromEntries(
+  vs.pages.map((p) => [p.slug.replace(/^.*-op-/, ''), p]),
+);
+check(
+  set.code === 1 &&
+    vs.schema === 'juxtapose.verdict-set/v1' &&
+    vs.pages.length === 2 &&
+    bySlug.noop.verdict.classification === 'identical' &&
+    bySlug.color.verdict.classification !== 'identical' &&
+    vs.missing.length === 1 &&
+    vs.missing[0].slug.endsWith('-op-padding') &&
+    vs.missing[0].want.startsWith('p2-') &&
+    vs.summary.identical === 1 &&
+    vs.summary.different === 1 &&
+    vs.summary.missing === 1,
+  '--prefix verdicts the paired pages and lists the unpaired one',
+);
+const human2 = await jux(['diff', '--prefix', 'p1', 'p2']);
+check(
+  /^3 pages: 1 changed, 1 identical; missing p2: .*-op-padding\n/.test(human2.out) &&
+    /no p2-.*jux snap <url> --as p2-/.test(human2.out) &&
+    human2.out.indexOf('changed') < human2.out.indexOf('next: jux diff p1-'),
+  '--prefix human output leads with the page summary and says which snap to take',
+);
+// An all-identical set is clean (0).
+await jux(['snap', `${base}/noop`, '--as-prefix', 'q1']);
+await jux(['snap', `${base}/noop`, '--as-prefix', 'q2']);
+const clean = await jux(['diff', '--prefix', 'q1', 'q2']);
+check(
+  clean.code === 0 && /^1 page: 1 identical\n/.test(clean.out),
+  'an all-identical --prefix set exits 0',
+);
+const noset = await jux(['diff', '--prefix', 'zz', 'yy']);
+check(
+  noset.code === 2 && /--as-prefix zz/.test(noset.err),
+  'unknown prefixes are usage (2) with the next command',
+);
+
 server.close();
 rmSync(project, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);

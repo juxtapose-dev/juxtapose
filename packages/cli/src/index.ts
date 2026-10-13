@@ -18,8 +18,8 @@ Usage
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
   jux handoff <storyId>          print an agent prompt for one failing story
-  jux snap <url> [options]       capture one page: pixels + structure, no workbench
-  jux diff <a> <b> [--json]      what changed between two snaps: tier-0 verdict, no browser
+  jux snap <url>… [options]      capture pages: pixels + structure, no workbench
+  jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix)
   jux --version                  print installed package versions
 
 Common options
@@ -43,19 +43,23 @@ approve
 
 snap
   --as <name>                    name for this snap (default: from the url)
+  --as-prefix <p>                several urls: name each <p>-<slug>, one browser launch
   --viewport <WxH>               default 1280x800
   --wait-for <selector>          wait for this selector before capture
   --mask <selector>              cover before capture (repeatable)
 
 diff
   <a>, <b>                       snap names (from --as), or paths to .webp files
+  --prefix                       pair <a>-<slug> with <b>-<slug> and verdict every page
   --json                         the verdict as juxtapose.verdict/v1 JSON (byte-stable)
-  exit 0 identical · 1 different · 2 usage · 3 could not read an input
+  --prefix output is juxtapose.verdict-set/v1: one verdict per page plus the unpaired
+  exit 0 identical · 1 different or unpaired · 2 usage · 3 could not read an input
+snap exit: 0 all written · 2 usage · 3 browser or any page failed (the rest are still written)
 
 The agent loop, no workbench needed:
-  jux snap http://localhost:5173/settings --as before
+  jux snap http://localhost:5173/ http://localhost:5173/settings --as-prefix before
   # …edit code…
-  jux snap http://localhost:5173/settings --as after && jux diff before after --json
+  jux snap http://localhost:5173/ http://localhost:5173/settings --as-prefix after && jux diff --prefix before after
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -89,6 +93,8 @@ async function main(argv: string[]): Promise<number> {
       story: { type: 'string', multiple: true },
       run: { type: 'string' },
       as: { type: 'string' },
+      'as-prefix': { type: 'string' },
+      prefix: { type: 'boolean', default: false },
       viewport: { type: 'string' },
       'wait-for': { type: 'string' },
       mask: { type: 'string', multiple: true },
@@ -119,7 +125,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case 'snap': {
       const { snapCommand } = await import('./commands/snap.js');
-      return snapCommand(positionals[0], values as never);
+      return snapCommand(positionals, values as never);
     }
     case 'diff': {
       const { diffCommand } = await import('./commands/diff.js');

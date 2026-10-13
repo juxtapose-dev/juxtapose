@@ -2,7 +2,7 @@
 // tier-0 verdict out, no browser. Exit 0 identical, 1 different, 2 usage,
 // 3 when an input exists but cannot be read.
 
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   compareSnaps,
@@ -19,6 +19,7 @@ export interface DiffFlags {
   json?: boolean;
   project?: string;
   crops?: boolean;
+  prefix?: boolean;
 }
 
 export type ReadSnap =
@@ -82,7 +83,7 @@ export async function diffCommand(
     return EXIT.usage;
   }
   try {
-    return await diffTwo(a, b, flags);
+    return await (flags.prefix ? diffPrefix(a, b, flags) : diffTwo(a, b, flags));
   } catch (err) {
     // sharp failing to decode a .webp, or anything else unforeseen: a tool
     // failure, distinct from "different" so a script never approves on it.
@@ -134,4 +135,108 @@ async function diffTwo(a: string, b: string, flags: DiffFlags): Promise<number> 
     flags.json ? JSON.stringify(verdict) + '\n' : formatVerdict(verdict),
   );
   return verdict.classification === 'identical' ? EXIT.clean : EXIT.review;
+}
+
+export interface PrefixPairing {
+  pairs: Array<{ slug: string; a: string; b: string }>;
+  missing: Array<{ slug: string; have: string; want: string }>;
+}
+
+/** Pair `<a>-<slug>.webp` with `<b>-<slug>.webp`, sorted by slug. */
+export function pairByPrefix(files: string[], a: string, b: string): PrefixPairing {
+  const slugs = (p: string) =>
+    new Set(
+      files
+        .filter((f) => f.startsWith(`${p}-`) && f.endsWith('.webp'))
+        .map((f) => f.slice(p.length + 1, -'.webp'.length)),
+    );
+  const sa = slugs(a);
+  const sb = slugs(b);
+  // Code-unit order, so the output is the same on every machine.
+  const all = [...new Set([...sa, ...sb])].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
+  const pairs: PrefixPairing['pairs'] = [];
+  const missing: PrefixPairing['missing'] = [];
+  for (const slug of all) {
+    if (sa.has(slug) && sb.has(slug))
+      pairs.push({ slug, a: `${a}-${slug}`, b: `${b}-${slug}` });
+    else if (sa.has(slug))
+      missing.push({ slug, have: `${a}-${slug}`, want: `${b}-${slug}` });
+    else missing.push({ slug, have: `${b}-${slug}`, want: `${a}-${slug}` });
+  }
+  return { pairs, missing };
+}
+
+interface PageVerdict {
+  slug: string;
+  a: string;
+  b: string;
+  verdict: StructuralVerdict;
+}
+
+async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<number> {
+  const dir = snapsDir(flags.project);
+  const pa = snapName(a, a);
+  const pb = snapName(b, b);
+  const files = await readdir(dir).catch(() => [] as string[]);
+  const { pairs, missing } = pairByPrefix(files, pa, pb);
+  if (pairs.length === 0 && missing.length === 0) {
+    process.stderr.write(
+      `jux diff: no snaps named '${pa}-*' or '${pb}-*' in ${dir}. Run \`jux snap <url>… --as-prefix ${pa}\` first.\n`,
+    );
+    return EXIT.usage;
+  }
+  const pages: PageVerdict[] = [];
+  for (const p of pairs) {
+    const loaded = await loadSides(dir, p.a, p.b);
+    if ('code' in loaded) return loaded.code; // already explained
+    const [sa, sb] = loaded.sides;
+    const { verdict } = await compareSnaps(sa, sb, {
+      command: `jux diff ${p.a} ${p.b} --crops`,
+    });
+    pages.push({ ...p, verdict });
+  }
+  const summary = {
+    identical: pages.filter((p) => p.verdict.classification === 'identical').length,
+    different: pages.filter((p) => p.verdict.classification !== 'identical').length,
+    missing: missing.length,
+  };
+  process.stdout.write(
+    flags.json
+      ? JSON.stringify({ schema: 'juxtapose.verdict-set/v1', pages, missing, summary }) +
+          '\n'
+      : formatPrefixSet(pages, missing, summary, pa, pb),
+  );
+  return summary.different === 0 && summary.missing === 0 ? EXIT.clean : EXIT.review;
+}
+
+/** Page-level summary first, then what changed, then the quiet pages. */
+function formatPrefixSet(
+  pages: PageVerdict[],
+  missing: PrefixPairing['missing'],
+  summary: { identical: number; different: number; missing: number },
+  pa: string,
+  pb: string,
+): string {
+  const total = pages.length + missing.length;
+  const parts: string[] = [];
+  if (summary.different) parts.push(`${summary.different} changed`);
+  if (summary.identical) parts.push(`${summary.identical} identical`);
+  let head = `${total} page${total === 1 ? '' : 's'}: ${parts.join(', ') || 'none paired'}`;
+  for (const prefix of [pb, pa]) {
+    const slugs = missing
+      .filter((m) => m.want === `${prefix}-${m.slug}`)
+      .map((m) => m.slug);
+    if (slugs.length) head += `; missing ${prefix}: ${slugs.join(', ')}`;
+  }
+  const out = [head, ''];
+  for (const p of pages.filter((x) => x.verdict.classification !== 'identical')) {
+    out.push(`${p.slug}: ${formatVerdict(p.verdict).trimEnd()}`, '');
+  }
+  for (const p of pages.filter((x) => x.verdict.classification === 'identical'))
+    out.push(`${p.slug}: ${p.verdict.summary}`);
+  for (const m of missing)
+    out.push(
+      `${m.slug}: no ${m.want} — run \`jux snap <url> --as ${m.want}\` (or re-run the --as-prefix snap for both sides)`,
+    );
+  return out.join('\n').trimEnd() + '\n';
 }
