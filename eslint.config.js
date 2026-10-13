@@ -57,6 +57,45 @@ export default tseslint.config(
     },
   },
 
+  // The browser driver is a self-contained unit: it may use Node built-ins and
+  // its own files, never the rest of core, so it can move to its own package
+  // with a `git mv`. One `..` leaves browser/ from its top level, two from
+  // daemon/. Tests and fixtures are exempt.
+  {
+    files: ['packages/core/src/browser/*.ts'],
+    ignores: ['**/*.test.ts', '**/__tests__/**', '**/__fixtures__/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: '^\\.\\./',
+              message: 'browser/ must not import from the rest of core.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['packages/core/src/browser/daemon/*.ts'],
+    ignores: ['**/*.test.ts', '**/__tests__/**', '**/__fixtures__/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: '^\\.\\./\\.\\./',
+              message: 'browser/ must not import from the rest of core.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Examples are plain JSX consumed by a bundler, not part of the build.
   {
     files: ['examples/**'],

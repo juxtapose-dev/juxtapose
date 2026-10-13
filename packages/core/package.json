@@ -22,6 +22,7 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js",
+    "./browser": "./dist/browser/index.js",
     "./format": "./dist/report/format.js",
     "./package.json": "./package.json"
   },

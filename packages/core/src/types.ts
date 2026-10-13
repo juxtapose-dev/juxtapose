@@ -1,3 +1,4 @@
+import type { Viewport } from './browser/types.js';
 // Core data model. Deliberately free of any platform (Storybook/Ladle) types —
 // adapters map their world onto these.
 
@@ -31,10 +32,8 @@ export interface StoryParams {
   liveCapture?: boolean;
 }
 
-export interface Viewport {
-  width: number;
-  height: number;
-}
+// Lives with the browser driver, which must not import from the rest of core.
+export type { Viewport } from './browser/types.js';
 
 /** One capturable story, normalised across platforms. */
 export interface StoryManifest {

@@ -4,7 +4,7 @@ import {
   deterministicLaunchOptions,
   DETERMINISTIC_CHROMIUM_ARGS,
   PARITY_CHROMIUM_ARGS,
-} from './launch.js';
+} from './flags.js';
 import { SPIKE_ARGS } from './__fixtures__/spike-args.js';
 
 describe('deterministicLaunchOptions', () => {
