@@ -88,6 +88,19 @@ class Client {
     return r.result as unknown as ToolResult;
   }
 
+  /** Several requests in one write, so the server reads them in one chunk. */
+  requestMany(calls: Array<{ name: string; arguments: unknown }>): Array<Promise<Rpc>> {
+    const replies: Array<Promise<Rpc>> = [];
+    const lines: string[] = [];
+    for (const c of calls) {
+      const id = this.next++;
+      replies.push(new Promise<Rpc>((resolve) => this.waiting.set(id, resolve)));
+      lines.push(JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: c }));
+    }
+    this.child.stdin.write(lines.join('\n') + '\n');
+    return replies;
+  }
+
   send(msg: unknown): void {
     this.child.stdin.write(JSON.stringify(msg) + '\n');
   }
@@ -211,6 +224,14 @@ describe('jux mcp confinement', () => {
       expect(s.isError).toBe(true);
       expect(text(s)).toMatch(/'project' must be/);
     }
+    // jux's own .juxtapose directory is not a project, at any depth.
+    mkdirSync(path.join(project, '.juxtapose', 'snaps'), { recursive: true });
+    mkdirSync(path.join(project, 'packages', 'web', '.juxtapose'), { recursive: true });
+    for (const p of ['.juxtapose', '.juxtapose/snaps', 'packages/web/.juxtapose']) {
+      const r = await c.call('diff', { a: 'x', b: 'y', project: p });
+      expect(r.isError).toBe(true);
+      expect(text(r)).toMatch(/not be inside a \.juxtapose directory/);
+    }
     // Inside is fine: the error is now about the missing snap, not the project.
     for (const p of ['packages/web', path.join(project, 'packages'), '.']) {
       const r = await c.call('diff', { a: 'x', b: 'y', project: p });
@@ -304,6 +325,28 @@ describe('jux mcp lifecycle', () => {
     // Nothing answered the two responses: only the 3 errors and the ping.
     expect(replies).toHaveLength(4);
     await c.close();
+  });
+
+  test('a request id already in flight is refused with -32600; the first call still answers', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    const call = (n: number) =>
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'dup',
+        method: 'tools/call',
+        params: { name: 'diff', arguments: { a: `x${n}`, b: 'y' } },
+      });
+    c.child.stdin.write(`${call(1)}\n${call(2)}\n`);
+    await new Promise((r) => setTimeout(r, 1000));
+    const replies = c.lines
+      .map((l) => JSON.parse(l) as Rpc)
+      .filter((m) => m.id === 'dup');
+    expect(replies).toHaveLength(2);
+    expect(replies.find((m) => m.error)?.error?.code).toBe(-32600);
+    const ok = replies.find((m) => m.result)?.result as unknown as ToolResult;
+    expect(text(ok)).toMatch(/no snap named 'x1'/);
+    expect(await c.close()).toBe(0);
   });
 
   test('SIGTERM exits promptly with 143, SIGINT with 130', async () => {
@@ -620,6 +663,35 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     }
     // Four different pages, so a mix-up between parallel calls cannot hide.
     expect(hashes.size).toBe(4);
+  }, 60_000);
+
+  test('conflicting calls start in arrival order: a diff sent before a snap of its name reads the old snap', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    const viewport = { width: 400, height: 240 };
+    expect(
+      (await c.call('snap', { url: `${base}p/1`, as: 'ord-ref', viewport })).isError,
+    ).toBe(false);
+    for (let round = 0; round < 5; round++) {
+      expect(
+        (await c.call('snap', { url: `${base}p/1`, as: 'ord', viewport })).isError,
+      ).toBe(false);
+      // One write: the server reads both before either is planned. The diff
+      // resolves its project and imports diff.js; the snap must still wait.
+      const [diff, snap] = c.requestMany([
+        { name: 'diff', arguments: { a: 'ord-ref', b: 'ord' } },
+        { name: 'snap', arguments: { url: `${base}p/2`, as: 'ord', viewport } },
+      ]);
+      const d = (await diff).result as unknown as ToolResult;
+      expect(JSON.parse(text(d)), `round ${round}`).toMatchObject({
+        classification: 'identical',
+      });
+      expect(((await snap).result as unknown as ToolResult).isError).toBe(false);
+    }
+    // And the snap did land: the same diff now sees page 2.
+    const after = await c.call('diff', { a: 'ord-ref', b: 'ord' });
+    expect(JSON.parse(text(after))).not.toMatchObject({ classification: 'identical' });
+    expect(await c.close()).toBe(0);
   }, 60_000);
 
   test('run, approve and a cancelled run that leaves the last run in place', async () => {

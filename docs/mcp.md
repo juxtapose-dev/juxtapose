@@ -216,19 +216,20 @@ stories, are not errors.
 A `snap` of several URLs where one page fails returns `isError: true` and still
 includes the JSON for the pages it wrote.
 
-A `project` outside the server's root, including through a symbolic link, and
+A `project` outside the server's root, including through a symbolic link, or
+inside a `.juxtapose` directory, and
 a `diff` reference that is not a snap name are tool errors. Nothing is read or
 written.
 
 Protocol problems are JSON-RPC errors:
 
-| Code     | Meaning                                                                |
-| -------- | ---------------------------------------------------------------------- |
-| `-32700` | The line is not JSON.                                                  |
-| `-32600` | Not a valid request, such as an `id` that is not a string or a number. |
-| `-32601` | Unknown method.                                                        |
-| `-32602` | Unknown tool, or `arguments` is not an object.                         |
-| `-32603` | Internal error.                                                        |
+| Code     | Meaning                                                                                                         |
+| -------- | --------------------------------------------------------------------------------------------------------------- |
+| `-32700` | The line is not JSON.                                                                                           |
+| `-32600` | Not a valid request, such as an `id` that is not a string or a number, or the `id` of a call still in progress. |
+| `-32601` | Unknown method.                                                                                                 |
+| `-32602` | Unknown tool, or `arguments` is not an object.                                                                  |
+| `-32603` | Internal error.                                                                                                 |
 
 ## Protocol
 
@@ -259,7 +260,8 @@ Two calls overlap only when neither writes what the other reads or writes:
 - `snap` calls with different names run in parallel. Two `snap` calls with the
   same name run one after the other. A prefix covers every name that starts
   with it and a `-`: `asPrefix: "before"` and `as: "before-home"` take turns.
-- At most 4 `snap` calls capture at once. Each one uses its own browser
+- By default, at most 4 `snap` calls capture at once (fewer on small
+  machines). Each one uses its own browser
   context, so parallel snaps share no cookies, storage or page. A snap taken in
   parallel is byte-identical to the same snap taken alone. To change the limit,
   see [Snap concurrency](#snap-concurrency).
@@ -270,11 +272,13 @@ Two calls overlap only when neither writes what the other reads or writes:
 - Snaps and diffs in different `project` directories never wait for each
   other. `run` and `approve` still wait for everything.
 
-Calls that must take turns start in the order the server receives them. A call
-that is waiting holds back every later call that conflicts with it, so a `run`
-behind a stream of `snap` calls still gets its turn. A call that conflicts
-with nothing before it starts at once, even if it arrived after a call that is
-waiting.
+Calls that conflict start in the order the server reads them from stdin,
+including calls sent in one write: a `diff` sent before a `snap` of the same
+name reads the snap as it was before that `snap`. A call that is waiting holds
+back every later call that conflicts with it, so a `run` behind a stream of
+`snap` calls still gets its turn. A call that conflicts with nothing before it
+starts as soon as the server has checked its arguments and every earlier call's
+arguments, even if it arrived after a call that is waiting.
 
 When you cancel a call with `notifications/cancelled`, the server does not
 answer it. A call that has not started never runs. A call that is running
@@ -285,7 +289,8 @@ stops starting new stories and writes no report, so `check`, `handoff` and
 
 ### Snap concurrency
 
-The server captures at most 4 snaps at once by default. To change that, set
+By default, the server captures at most half as many snaps at once as the
+machine has CPU cores, from 1 up to 4. To change that, set
 `mcp.concurrency` in `juxtapose.config.json`:
 
 ```json
@@ -295,7 +300,8 @@ The server captures at most 4 snaps at once by default. To change that, set
 ```
 
 The `--concurrency` flag overrides the file for one server, for example
-`jux mcp --concurrency 2`. Both take a whole number from 1 to 16; any other
+`jux mcp --concurrency 2`. Both take a whole number from 1 to 16, and are not
+limited by the core count; any other
 value stops the server with exit code 2 before it reads any input. The server
 reads the config from its `--project` directory once, at startup.
 

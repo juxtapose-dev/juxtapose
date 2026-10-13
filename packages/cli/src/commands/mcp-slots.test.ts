@@ -1,9 +1,32 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_SNAP_SLOTS, SNAP_SLOTS, resolveSnapSlots } from './mcp.js';
+import { availableParallelism } from 'node:os';
+import { MAX_SNAP_SLOTS, defaultSnapSlots, resolveSnapSlots } from './mcp.js';
 
 describe('resolveSnapSlots', () => {
-  it('defaults to SNAP_SLOTS with neither a flag nor config', () => {
-    expect(resolveSnapSlots(undefined, undefined)).toEqual({ slots: SNAP_SLOTS });
+  it('defaults to half the cores, at least 1 and at most 4, with neither a flag nor config', () => {
+    for (const [cores, slots] of [
+      [1, 1],
+      [2, 1],
+      [3, 1],
+      [4, 2],
+      [7, 3],
+      [8, 4],
+      [15, 4],
+      [64, 4],
+    ])
+      expect(resolveSnapSlots(undefined, undefined, cores)).toEqual({ slots });
+    expect(resolveSnapSlots(undefined, undefined)).toEqual({
+      slots: defaultSnapSlots(availableParallelism()),
+    });
+  });
+  it('names the default for this machine in the range error', () => {
+    expect(resolveSnapSlots('0', undefined, 4)).toEqual({
+      error: expect.stringContaining('(default 2)'),
+    });
+  });
+  it('an explicit value is not capped by the core count', () => {
+    expect(resolveSnapSlots('8', undefined, 2)).toEqual({ slots: 8 });
+    expect(resolveSnapSlots(undefined, 16, 2)).toEqual({ slots: 16 });
   });
   it('takes mcp.concurrency from the config', () => {
     expect(resolveSnapSlots(undefined, 8)).toEqual({ slots: 8 });

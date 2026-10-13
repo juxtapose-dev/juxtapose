@@ -343,7 +343,8 @@ export interface ProjectConfig {
   storage?: StorageConfig;
   /** `jux mcp` settings. */
   mcp?: {
-    /** Snap calls that may capture at once (1-16). Default 4; the
+    /** Snap calls that may capture at once (1-16). Default: half the CPU
+     *  cores, 1 to 4; the
      *  `--concurrency` flag overrides it. */
     concurrency?: number;
   };

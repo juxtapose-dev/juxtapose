@@ -255,6 +255,53 @@ describe('Scheduler', () => {
     expect(h.s.size).toEqual({ held: 1, waiting: 0 });
   });
 
+  test("requests aborted together are never granted, even by each other's withdrawal", async () => {
+    // A shutdown aborts every call in one loop. Withdrawing the first pumps
+    // the queue before the second's abort listener runs; the second must not
+    // be granted in that gap.
+    const h = harness();
+    void h.request('hold', snap(name('a')));
+    const c1 = new AbortController();
+    const c2 = new AbortController();
+    void h.request('run', EXCLUSIVE, c1.signal);
+    void h.request('diff', diff(name('x'), name('y')), c2.signal);
+    await settle();
+    for (const c of [c1, c2]) c.abort();
+    expect(await h.outcome('run')).toBe(false);
+    expect(await h.outcome('diff')).toBe(false);
+    expect(h.granted).toEqual(['hold']);
+    expect(h.s.size).toEqual({ held: 1, waiting: 0 });
+  });
+
+  test('a ticket keeps its place while the caller plans: later conflicting requests wait', async () => {
+    const h = harness();
+    const t = h.s.ticket();
+    void h.request('later', snap(name('a')));
+    await settle();
+    // Planning: the ticket's locks are unknown, so nothing after it may pass.
+    expect(h.granted).toEqual([]);
+    const first = t.acquire(diff(name('a'), name('b')));
+    expect(await first).toBeTypeOf('function');
+    await settle();
+    // The diff (arrived first) holds; the snap of `a` waits for it.
+    expect(h.granted).toEqual([]);
+    (await first)!();
+    await settle();
+    expect(h.granted).toEqual(['later']);
+  });
+
+  test('a cancelled ticket stops holding its place', async () => {
+    const h = harness();
+    const t = h.s.ticket();
+    void h.request('later', snap(name('a')));
+    await settle();
+    expect(h.granted).toEqual([]);
+    t.cancel();
+    await settle();
+    expect(h.granted).toEqual(['later']);
+    expect(() => t.acquire(EXCLUSIVE)).toThrow(/already used/);
+  });
+
   test('overlapping multi-key sets never deadlock: every request completes', async () => {
     // Dining philosophers: each request needs two adjacent keys, in opposite
     // orders. Lock-at-a-time would deadlock; all-or-nothing cannot.

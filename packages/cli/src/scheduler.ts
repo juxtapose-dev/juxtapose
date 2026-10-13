@@ -68,10 +68,20 @@ export function setsConflict(a: LockSet, b: LockSet): boolean {
 }
 
 /** One request. Its own object, so two requests passing the same LockSet
- *  (EXCLUSIVE) are still two holders. */
+ *  (EXCLUSIVE) are still two holders. `set` is null while the caller is still
+ *  working out its locks (a ticket not yet presented). */
 interface Waiter {
-  set: LockSet;
-  grant: (release: () => void) => void;
+  set: LockSet | null;
+  signal?: AbortSignal;
+  grant?: (release: (() => void) | null) => void;
+}
+
+/** A place in line, taken before the caller knows its locks. */
+export interface Ticket {
+  /** Present the locks; resolves as Scheduler.acquire does. Call once. */
+  acquire(set: LockSet, signal?: AbortSignal): Promise<(() => void) | null>;
+  /** Give up the place without acquiring (the call failed validation). */
+  cancel(): void;
 }
 
 export class Scheduler {
@@ -81,31 +91,74 @@ export class Scheduler {
 
   constructor(private readonly slots: Record<string, number> = {}) {}
 
+  /** Take a place in line now, synchronously, and present the locks later.
+   *
+   *  `jux mcp` works out a call's locks asynchronously (it resolves the
+   *  `project` argument's real path), so calls would otherwise enter the
+   *  queue in the order their planning finished, not the order they arrived:
+   *  a diff sent before a snap of the same name could read the new snap.
+   *  Until a ticket presents its locks it conflicts with everything, so no
+   *  later request overtakes it; planning is a realpath and a cached import. */
+  ticket(): Ticket {
+    const waiter: Waiter = { set: null };
+    this.queue.push(waiter);
+    let used = false;
+    return {
+      acquire: (set, signal) => {
+        if (used) throw new Error('ticket already used');
+        used = true;
+        return this.present(waiter, set, signal);
+      },
+      cancel: () => {
+        if (used) return;
+        used = true;
+        this.withdraw(waiter);
+      },
+    };
+  }
+
   /** Resolves with a release function once every lock in `set` is granted,
    *  or null if `signal` aborts first (the request is withdrawn and never
    *  holds anything). Release exactly once, when the work has settled. */
   acquire(set: LockSet, signal?: AbortSignal): Promise<(() => void) | null> {
-    if (signal?.aborted) return Promise.resolve(null);
+    return this.ticket().acquire(set, signal);
+  }
+
+  private present(
+    waiter: Waiter,
+    set: LockSet,
+    signal?: AbortSignal,
+  ): Promise<(() => void) | null> {
+    if (signal?.aborted) {
+      this.withdraw(waiter);
+      return Promise.resolve(null);
+    }
     return new Promise((resolve) => {
-      const waiter: Waiter = {
-        set,
-        grant: (release) => {
-          signal?.removeEventListener('abort', onAbort);
-          resolve(release);
-        },
-      };
       const onAbort = () => {
-        const i = this.queue.indexOf(waiter);
-        if (i < 0) return; // already granted; the holder releases
-        this.queue.splice(i, 1);
-        resolve(null);
-        // A withdrawn waiter may have been the one blocking later requests.
-        this.pump();
+        if (this.queue.includes(waiter)) this.withdraw(waiter);
+        // else already granted; the holder releases
+      };
+      waiter.set = set;
+      waiter.signal = signal;
+      waiter.grant = (release) => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve(release);
       };
       signal?.addEventListener('abort', onAbort, { once: true });
-      this.queue.push(waiter);
       this.pump();
     });
+  }
+
+  private withdraw(waiter: Waiter): void {
+    const i = this.queue.indexOf(waiter);
+    if (i < 0) return;
+    this.queue.splice(i, 1);
+    waiter.grant?.(null);
+    // A withdrawn waiter may have been the one blocking later requests. The
+    // pump waits a microtask: a shutdown aborts every call in one synchronous
+    // loop, and pumping inside the first abort would grant a later call whose
+    // own abort() has not run yet. By the microtask, it has, and pump skips it.
+    queueMicrotask(() => this.pump());
   }
 
   /** Requests holding or waiting, for tests and diagnostics. */
@@ -117,11 +170,17 @@ export class Scheduler {
     const blocked: Waiter[] = [];
     for (let i = 0; i < this.queue.length;) {
       const w = this.queue[i];
-      if (this.grantable(w.set, blocked)) {
+      // Aborted but not yet withdrawn: never grant a cancelled request.
+      if (w.signal?.aborted) {
+        this.queue.splice(i, 1);
+        w.grant!(null);
+        continue;
+      }
+      if (w.set && this.grantable(w.set, blocked)) {
         this.queue.splice(i, 1);
         this.take(w);
         let released = false;
-        w.grant(() => {
+        w.grant!(() => {
           if (released) return;
           released = true;
           this.give(w);
@@ -135,9 +194,10 @@ export class Scheduler {
   }
 
   private grantable(set: LockSet, earlierWaiting: Waiter[]): boolean {
-    for (const h of this.held) if (setsConflict(set, h.set)) return false;
+    for (const h of this.held) if (setsConflict(set, h.set!)) return false;
     // Arrival order among conflicting requests: this is the writer preference.
-    for (const e of earlierWaiting) if (setsConflict(set, e.set)) return false;
+    // A ticket still planning (set null) conflicts with everything.
+    for (const e of earlierWaiting) if (!e.set || setsConflict(set, e.set)) return false;
     if (set.slot !== undefined) {
       const limit = this.slots[set.slot] ?? Infinity;
       if ((this.inUse.get(set.slot) ?? 0) >= limit) return false;
@@ -146,14 +206,14 @@ export class Scheduler {
   }
 
   private take(w: Waiter): void {
-    const { set } = w;
+    const set = w.set!;
     this.held.add(w);
     if (set.slot !== undefined)
       this.inUse.set(set.slot, (this.inUse.get(set.slot) ?? 0) + 1);
   }
 
   private give(w: Waiter): void {
-    const { set } = w;
+    const set = w.set!;
     this.held.delete(w);
     if (set.slot !== undefined) this.inUse.set(set.slot, this.inUse.get(set.slot)! - 1);
   }

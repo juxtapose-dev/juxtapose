@@ -24,7 +24,7 @@ Usage
   jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix)
   jux mcp [--project <dir>] [--concurrency <n>]
                                  MCP server on stdio for coding agents: snap, diff, run, check, handoff, approve
-                                 (--concurrency: snaps at once, 1-16, default 4)
+                                 (--concurrency: snaps at once, 1-16, default half the cores up to 4)
   jux --version                  print installed package versions
 
 Common options

@@ -14,6 +14,7 @@
 // like the dependency-free CDP driver: the surface is five methods.
 
 import { realpathSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { readFile, realpath } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
@@ -46,21 +47,30 @@ export interface McpFlags {
  *  machine (capture/pool.ts), so a larger value is a mistake, not a tuning. */
 export const MAX_SNAP_SLOTS = 16;
 
+/** The default snap pool: half the cores, at least 1 and at most SNAP_SLOTS.
+ *  Half, because Chrome rasterizes on the CPU and the dev server being
+ *  captured, the editor and the agent share the machine. */
+export function defaultSnapSlots(cores: number = availableParallelism()): number {
+  return Math.min(SNAP_SLOTS, Math.max(1, Math.floor(cores / 2)));
+}
+
 /** The snap pool size: `--concurrency`, else `mcp.concurrency` from the
- *  project config, else SNAP_SLOTS. Each must be a whole number in
+ *  project config, else defaultSnapSlots. Each must be a whole number in
  *  1..MAX_SNAP_SLOTS; the error names the source that is wrong. */
 export function resolveSnapSlots(
   flag: string | undefined,
   config: unknown,
+  cores: number = availableParallelism(),
 ): { slots: number } | { error: string } {
-  const range = `a whole number from 1 to ${MAX_SNAP_SLOTS} (default ${SNAP_SLOTS})`;
+  const fallback = defaultSnapSlots(cores);
+  const range = `a whole number from 1 to ${MAX_SNAP_SLOTS} (default ${fallback})`;
   if (flag !== undefined) {
     const n = /^\d+$/.test(flag) ? Number(flag) : NaN;
     return n >= 1 && n <= MAX_SNAP_SLOTS
       ? { slots: n }
       : { error: `--concurrency must be ${range}` };
   }
-  if (config === undefined) return { slots: SNAP_SLOTS };
+  if (config === undefined) return { slots: fallback };
   return Number.isInteger(config) &&
     (config as number) >= 1 &&
     (config as number) <= MAX_SNAP_SLOTS
@@ -199,6 +209,9 @@ const INSTRUCTIONS =
 class ArgError extends Error {}
 class UnknownTool extends Error {}
 
+const CANCELLED = 'jux: cancelled before it started';
+const SHUTTING_DOWN = 'jux: the server is shutting down';
+
 const str = (args: Args, key: string, required = false): string | undefined => {
   const v = args[key];
   if (v === undefined || v === null) {
@@ -233,7 +246,9 @@ interface Planned {
   exec: (signal?: AbortSignal) => Promise<ToolResult>;
 }
 
-/** At most this many snap calls capture at once; more wait for a slot.
+/** The most snap calls the default lets capture at once (defaultSnapSlots
+ *  takes half the cores, up to this); more wait for a slot. `--concurrency`
+ *  and `mcp.concurrency` set it outright.
  *
  *  Each snap opens its own browser context in the one session browser, and
  *  Chrome rasterizes on the CPU (browser/flags.ts), so parallel snaps share
@@ -246,12 +261,12 @@ interface Planned {
  *
  *  8 snap calls at once, by slot limit (wall / median capture time):
  *  1: 2109 / 222 ms, 2: 1055 / 223, 4: 604 / 242, 8: 338 / 266. A snap is
- *  mostly settle waits, so on this machine 8 was faster still; 4 is the
- *  limit anyway because a call may carry many urls (one slot, several pages),
+ *  mostly settle waits, so on this machine 8 was faster still; the default
+ *  stops at 4 anyway because a call may carry many urls (one slot, several pages),
  *  the capture pool measured CPU contention turning into settle timeouts at
  *  16 workers on 10 cores (capture/pool.ts), and an agent's dev server and
- *  editor share the machine. Revisit it with a measurement on a machine with
- *  fewer cores. */
+ *  editor share the machine. The config sets it higher where that is
+ *  measured to help. */
 export const SNAP_SLOTS = 4;
 
 /** One server: the tool handlers, the scheduler and the session browser.
@@ -259,6 +274,7 @@ export const SNAP_SLOTS = 4;
 export class McpServer {
   private browser: Promise<Browser> | null = null;
   private lending: Promise<Browser> | null = null;
+  private closed = false;
   private readonly project: string;
   private readonly scheduler: Scheduler;
 
@@ -270,11 +286,11 @@ export class McpServer {
     // machine where the root itself sits under a symlink (macOS /tmp).
     const root = path.resolve(flags.project ?? process.cwd());
     try {
-      this.project = realpathSync(root);
+      this.project = realpathSync.native(root);
     } catch {
       this.project = root;
     }
-    this.scheduler = new Scheduler({ snap: opts.snapSlots ?? SNAP_SLOTS });
+    this.scheduler = new Scheduler({ snap: opts.snapSlots ?? defaultSnapSlots() });
   }
 
   /** The session browser, re-acquired if it died (a crash, or `jux browser
@@ -285,6 +301,9 @@ export class McpServer {
    *  call and keep only the last; the others' processes and temp profiles
    *  would outlive the session. */
   private lend = (): Promise<Browser> => {
+    // After close(), a straggling call must not launch a browser that nothing
+    // will ever close.
+    if (this.closed) return Promise.reject(new Error(SHUTTING_DOWN));
     if (!this.lending) {
       const p = this.reacquire();
       this.lending = p;
@@ -303,6 +322,7 @@ export class McpServer {
     // Dead but not closed: close() still reaps a private launch's process and
     // deletes its temp profile, which a crash leaves behind.
     if (current) await current.close().catch(() => {});
+    if (this.closed) throw new Error(SHUTTING_DOWN);
     const next = acquireBrowser({
       chrome: this.flags.chrome,
       noDaemon: this.flags['no-daemon'] === true,
@@ -316,6 +336,10 @@ export class McpServer {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
+    // A reacquire in progress lands in this.browser; wait for it so it is the
+    // one closed below, not one that outlives the session.
+    await this.lending?.catch(() => {});
     const b = this.browser ? await this.browser.catch(() => null) : null;
     this.browser = null;
     await b?.close().catch(() => {});
@@ -326,15 +350,25 @@ export class McpServer {
    *  until it settles: only run can stop early, and leftover snap or diff
    *  work must not overlap a call that touches the same files. */
   async call(name: string, args: Args, signal?: AbortSignal): Promise<ToolResult> {
+    // The place in line is taken now, before planning awaits anything, so
+    // conflicting calls are granted in the order they arrived.
+    const ticket = this.scheduler.ticket();
     let planned: Planned;
     try {
       planned = await this.plan(name, args);
     } catch (err) {
+      ticket.cancel();
       if (err instanceof UnknownTool) throw err;
       return errorResult(err instanceof Error ? err.message : String(err));
     }
-    const release = await this.scheduler.acquire(planned.locks, signal);
-    if (!release) return errorResult('jux: cancelled before it started');
+    const release = await ticket.acquire(planned.locks, signal);
+    if (!release) return errorResult(CANCELLED);
+    // Granted in the same turn as its signal aborted (a shutdown aborts every
+    // call in one loop): it was cancelled before it started, so it must not.
+    if (signal?.aborted) {
+      release();
+      return errorResult(CANCELLED);
+    }
     try {
       return await planned.exec(signal);
     } catch (err) {
@@ -409,6 +443,10 @@ export class McpServer {
       throw new ArgError(
         `'project' must be the server's project (${this.project}) or a directory inside it; restart the server with --project to use another`,
       );
+    // jux's own scratch and baselines: a project there would put snaps and
+    // crops among the files run and approve own, outside any lock.
+    if (path.relative(this.project, real).split(path.sep).includes('.juxtapose'))
+      throw new ArgError(`'project' must not be inside a .juxtapose directory; got ${p}`);
     return real;
   }
 
@@ -824,6 +862,19 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
   }
 
   const onCall = (id: string | number, msg: unknown) => {
+    // Ids must be unique per session. A second call under an id still in
+    // flight would take over its cancellation entry, so cancelling one would
+    // cancel the other, and the first to finish would delete both.
+    if (pending.has(id)) {
+      send(
+        rpcError(
+          id,
+          -32600,
+          `request id ${JSON.stringify(id)} is already in use by a call in progress`,
+        ),
+      );
+      return;
+    }
     const controller = new AbortController();
     pending.set(id, controller);
     const { signal } = controller;
