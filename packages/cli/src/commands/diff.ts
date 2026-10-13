@@ -5,6 +5,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  compareCodeUnits,
   compareSnaps,
   decodeStructure,
   describeDeltas,
@@ -12,6 +13,7 @@ import {
   type StructuralVerdict,
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
+import { shellQuote } from '../shell-quote.js';
 import { snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 
@@ -32,11 +34,7 @@ export type ReadSnap =
  *  not decode is a tool failure: it is not something the agent can reason
  *  around, so it is reported as one rather than silently dropped. */
 export async function readSnap(dir: string, ref: string): Promise<ReadSnap> {
-  // An explicit .webp path is deliberately unconfined: it is the user's own
-  // argument on their own machine, not a name derived into a snaps/ path.
-  const image = ref.endsWith('.webp')
-    ? path.resolve(ref)
-    : path.join(dir, `${snapName(ref, ref)}.webp`);
+  const image = imagePath(dir, ref);
   const bytes = await readFile(image).catch(() => null);
   if (!bytes) return { kind: 'missing', image };
   // Cheap magic-number check so a truncated or foreign file is attributed to
@@ -55,6 +53,15 @@ export async function readSnap(dir: string, ref: string): Promise<ReadSnap> {
   } catch (err) {
     return { kind: 'corrupt', file: sidecar, error: (err as Error).message };
   }
+}
+
+/** A snap name's image in the snaps dir, or an explicit `.webp` path. The
+ *  path is deliberately unconfined: it is the user's own argument on their
+ *  own machine, not a name derived into a snaps/ path. */
+function imagePath(dir: string, ref: string): string {
+  return ref.endsWith('.webp')
+    ? path.resolve(ref)
+    : path.join(dir, `${snapName(ref, ref)}.webp`);
 }
 
 export function formatVerdict(v: StructuralVerdict): string {
@@ -83,12 +90,15 @@ export async function diffCommand(
     return EXIT.usage;
   }
   if (flags.crops) {
-    // Tier-3 crops land in a later release; until then name the pixels to open.
+    // Tier-3 crops land in a later release. Until then the verdict's own
+    // `next:` command still has to work, so it names the pixels to open and
+    // succeeds: it did what this version can. Exit 2 here sent an agent that
+    // followed `next:` into a usage error.
     const dir = snapsDir(flags.project);
-    process.stderr.write(
-      `jux diff: --crops is not available in this version; open the images instead:\n  ${path.join(dir, `${snapName(a, a)}.webp`)}\n  ${path.join(dir, `${snapName(b, b)}.webp`)}\n`,
+    process.stdout.write(
+      `open these to compare; crops arrive in a later release\n  ${imagePath(dir, a)}\n  ${imagePath(dir, b)}\n`,
     );
-    return EXIT.usage;
+    return EXIT.clean;
   }
   try {
     return await (flags.prefix ? diffPrefix(a, b, flags) : diffTwo(a, b, flags));
@@ -96,7 +106,7 @@ export async function diffCommand(
     // sharp failing to decode a .webp, or anything else unforeseen: a tool
     // failure, distinct from "different" so a script never approves on it.
     process.stderr.write(
-      `jux diff: failed: ${(err as Error).message}. Re-take both snaps with \`jux snap <url> --as ${a}\` / \`--as ${b}\` and retry.\n`,
+      `jux diff: failed: ${(err as Error).message}. Re-take both snaps with \`jux snap <url> --as ${shellQuote(a)}\` / \`--as ${shellQuote(b)}\` and retry.\n`,
     );
     return EXIT.failure;
   }
@@ -118,10 +128,10 @@ async function loadSides(
     if (r.kind === 'missing') {
       return {
         code: EXIT.usage,
-        failure: { code: 'snap-missing', file: path.relative(dir, r.image) },
+        failure: { code: 'snap-missing', file: path.basename(r.image) },
         message: ref.endsWith('.webp')
           ? `jux diff: no file at ${r.image}. Check the path, or take it with \`jux snap <url> --as <name>\`.\n`
-          : `jux diff: no snap named '${ref}' in ${dir}. Run \`jux snap <url> --as ${ref}\` first.\n`,
+          : `jux diff: no snap named '${ref}' in ${dir}. Run \`jux snap <url> --as ${shellQuote(ref)}\` first.\n`,
       };
     }
     if (r.kind === 'corrupt') {
@@ -129,9 +139,9 @@ async function loadSides(
         code: EXIT.failure,
         failure: {
           code: r.file.endsWith('.webp') ? 'image-undecodable' : 'sidecar-undecodable',
-          file: path.relative(dir, r.file),
+          file: path.basename(r.file),
         },
-        message: `jux diff: cannot read ${r.file} (${r.error}). Delete it or re-take the snap with \`jux snap <url> --as ${ref}\`.\n`,
+        message: `jux diff: cannot read ${r.file} (${r.error}). Delete it or re-take the snap with \`jux snap <url> --as ${shellQuote(ref)}\`.\n`,
       };
     }
   }
@@ -147,7 +157,7 @@ async function diffTwo(a: string, b: string, flags: DiffFlags): Promise<number> 
   }
   const [sa, sb] = loaded.sides;
   const { verdict } = await compareSnaps(sa, sb, {
-    command: `jux diff ${a} ${b} --crops`,
+    command: `jux diff ${shellQuote(a)} ${shellQuote(b)} --crops`,
   });
   process.stdout.write(
     flags.json ? JSON.stringify(verdict) + '\n' : formatVerdict(verdict),
@@ -171,7 +181,7 @@ export function pairByPrefix(files: string[], a: string, b: string): PrefixPairi
   const sa = slugs(a);
   const sb = slugs(b);
   // Code-unit order, so the output is the same on every machine.
-  const all = [...new Set([...sa, ...sb])].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
+  const all = [...new Set([...sa, ...sb])].sort(compareCodeUnits);
   const pairs: PrefixPairing['pairs'] = [];
   const missing: PrefixPairing['missing'] = [];
   for (const slug of all) {
@@ -193,12 +203,21 @@ interface PageVerdict {
 
 /** Stable, machine-readable reasons a pair could not be compared. No OS error
  *  text ever reaches the JSON: it varies by platform and leaks paths. */
-type SetFailureCode = 'snap-missing' | 'sidecar-undecodable' | 'image-undecodable';
+type SetFailureCode =
+  | 'snap-missing'
+  | 'sidecar-undecodable'
+  | 'image-undecodable'
+  /** Both images passed the magic-number check and the decoder still threw:
+   *  its error cannot say which side, so `file` is null. */
+  | 'pair-undecodable';
 
 interface SetFailure {
   code: SetFailureCode;
-  /** Relative to the snaps dir. */
-  file: string;
+  /** The snap file's basename (always directly in the snaps dir), never a
+   *  relative path: `path.relative` prints backslashes on Windows, and this
+   *  field is documented as machine-stable. Null when no one file is at
+   *  fault. */
+  file: string | null;
 }
 
 /** `errors[]` entry in `juxtapose.verdict-set/v1`. */
@@ -227,7 +246,7 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
   const { pairs, missing } = pairByPrefix(files, pa, pb);
   if (pairs.length === 0 && missing.length === 0) {
     process.stderr.write(
-      `jux diff: no snaps named '${pa}-*' or '${pb}-*' in ${dir}. Run \`jux snap <url>… --as-prefix ${pa}\` first.\n`,
+      `jux diff: no snaps named '${pa}-*' or '${pb}-*' in ${dir}. Run \`jux snap <url>… --as-prefix ${shellQuote(pa)}\` first.\n`,
     );
     return EXIT.usage;
   }
@@ -247,17 +266,17 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
       }
       const [sa, sb] = loaded.sides;
       const { verdict } = await compareSnaps(sa, sb, {
-        command: `jux diff ${p.a} ${p.b} --crops`,
+        command: `jux diff ${shellQuote(p.a)} ${shellQuote(p.b)} --crops`,
       });
       pages.push({ ...p, verdict });
     } catch (err) {
       // The magic-number check already caught foreign files, so this is a
-      // decoder failure the error cannot pin to a side: name both images.
+      // decoder failure the error cannot pin to a side.
       failures.push({
         slug: p.slug,
-        code: 'image-undecodable',
-        file: `${p.a}.webp, ${p.b}.webp`,
-        message: `jux diff: failed: ${err instanceof Error ? err.message : String(err)}. Re-take both with \`jux snap <url> --as ${p.a}\` / \`--as ${p.b}\`.`,
+        code: 'pair-undecodable',
+        file: null,
+        message: `jux diff: failed: ${err instanceof Error ? err.message : String(err)}. Re-take both with \`jux snap <url> --as ${shellQuote(p.a)}\` / \`--as ${shellQuote(p.b)}\`.`,
       });
     }
   }
@@ -314,7 +333,7 @@ function formatPrefixSet(
   // that is the usual reason one side has no snap for it.
   for (const m of missing)
     out.push(
-      `${m.slug}: no ${m.want}. A changed host or path is the usual cause; re-run \`jux snap <url>… --as-prefix ${m.want === `${pb}-${m.slug}` ? pb : pa}\` with the same paths, or take just this one with \`jux snap <url> --as ${m.want}\`.`,
+      `${m.slug}: no ${m.want}. A changed host or path is the usual cause; re-run \`jux snap <url>… --as-prefix ${shellQuote(m.want === `${pb}-${m.slug}` ? pb : pa)}\` with the same paths, or take just this one with \`jux snap <url> --as ${shellQuote(m.want)}\`.`,
     );
   return out.join('\n').trimEnd() + '\n';
 }

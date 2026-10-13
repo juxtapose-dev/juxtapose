@@ -18,6 +18,7 @@ import {
   type Viewport,
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
+import { shellQuote } from '../shell-quote.js';
 import { prefixSlugs, snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 
@@ -191,13 +192,6 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
     }
   }
   return failed > 0 ? EXIT.failure : EXIT.clean;
-}
-
-const SHELL_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
-
-/** Single-quote a value for a POSIX shell unless it is plainly safe. */
-function shellQuote(v: string): string {
-  return SHELL_SAFE.test(v) ? v : `'${v.replaceAll("'", "'\\''")}'`;
 }
 
 /**

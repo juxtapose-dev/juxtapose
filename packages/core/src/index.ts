@@ -65,6 +65,7 @@ export {
 export { structuralDiff, type StructuralDiffInput } from './diff/structural.js';
 export { compareSnaps, type SnapSide, type SnapComparison } from './diff/compare.js';
 export { describeDelta, describeDeltas } from './diff/structural/summary.js';
+export { compareCodeUnits } from './diff/structural/deltas.js';
 
 // Driving a run.
 export {

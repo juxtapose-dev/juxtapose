@@ -6,7 +6,7 @@
 // Run after `pnpm build`: node scripts/check-diff.mjs
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { startCorpusServer } from './structural-corpus/server.mjs';
@@ -130,10 +130,22 @@ check(
   'one argument is usage (2) with the next command',
 );
 
+// The verdict's own `next:` command must work: until crops exist it names
+// the two images and succeeds.
 const crops = await jux(['diff', 'before', 'after', '--crops']);
 check(
-  crops.code === 2 && /not available/.test(crops.err) && /before\.webp/.test(crops.err),
-  '--crops says it is unavailable and names the images',
+  crops.code === 0 &&
+    /^open these to compare; crops arrive in a later release\n {2}\S*before\.webp\n {2}\S*after\.webp\n$/.test(
+      crops.out,
+    ),
+  '--crops names both images to open and exits 0',
+);
+
+// A name that needs quoting is quoted in the command a hint prints.
+const spaced = await jux(['diff', 'no such snap', 'before']);
+check(
+  spaced.code === 2 && /`jux snap <url> --as 'no such snap'`/.test(spaced.err),
+  'a missing-snap hint quotes a name with spaces',
 );
 
 // Exit 3: inputs that exist but cannot be read are tool failures, never
@@ -296,6 +308,21 @@ check(
     Object.keys(vq.errors[0]).join() === 'slug,code,file' &&
     vq.summary.errored === 1,
   'one unreadable pair is an error entry, the rest still verdict, exit 3',
+);
+
+// Both images pass the magic-number check and one still fails to decode: the
+// decoder cannot say which, so the entry names no file.
+copyFileSync(path.join(snaps, 'before.webp'), path.join(snaps, 'pc-x.webp'));
+writeFileSync(
+  path.join(snaps, 'pd-x.webp'),
+  Buffer.concat([Buffer.from('RIFF\0\0\0\0WEBP', 'latin1'), Buffer.alloc(64)]),
+);
+const pair = await jux(['diff', '--prefix', 'pc', 'pd', '--json']);
+const vp2 = JSON.parse(pair.out || '{}');
+check(
+  pair.code === 3 &&
+    JSON.stringify(vp2.errors) === '[{"slug":"x","code":"pair-undecodable","file":null}]',
+  'an undecodable pair neither side owns is pair-undecodable with file null',
 );
 
 server.close();
