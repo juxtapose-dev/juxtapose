@@ -64,4 +64,6 @@ export {
   CI_ENV_VARS,
   type WarmOptions,
   type SpawnArgs,
+  type StopResult,
+  type CommandReader,
 } from './daemon/client.js';

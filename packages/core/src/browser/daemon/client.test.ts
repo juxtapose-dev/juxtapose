@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import net from 'node:net';
-import { execFileSync, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chmod, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,6 +12,7 @@ import {
   daemonStatus,
   spawnSupervisor,
   stopDaemon,
+  type CommandReader,
   type SpawnArgs,
 } from './client.js';
 import {
@@ -458,7 +459,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
           ).toBe('Pacific/Honolulu');
           await browser.close();
         } finally {
-          expect(await stopDaemon(opts)).toBe(true);
+          expect(await stopDaemon(opts)).toEqual({ outcome: 'stopped' });
         }
       }),
     20_000,
@@ -509,4 +510,155 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
         await d.stop();
       }
     }));
+  it('a wedged daemon whose command line cannot be read is not signalled or replaced', () =>
+    withCache(async (cache) => {
+      const paths = daemonPaths(cache, keyOf());
+      await ensureDaemonDirs(paths);
+      const socks: net.Socket[] = [];
+      const server = net.createServer((c) => socks.push(c)); // accepts, never says hello
+      await new Promise<void>((r) => server.listen(paths.socket, r));
+      await chmod(paths.socket, 0o600);
+      const victim = spawn('sleep', ['60'], { stdio: 'ignore' });
+      await plantState(paths, victim.pid!);
+      const old = new Date(Date.now() - 60_000);
+      await utimes(paths.state, old, old);
+      const d = inProcessDaemon();
+      try {
+        const { browser, warm } = await connectWarmBrowser({
+          executablePath: chrome!.path,
+          stateDir: cache,
+          spawnDaemon: d.spawnDaemon,
+          readCommand: async () => null,
+        });
+        expect(warm).toBe(false);
+        expect(d.count()).toBe(0);
+        expect(pidAlive(victim.pid!)).toBe(true);
+        expect(await readState(paths)).not.toBeNull();
+        await browser.close();
+      } finally {
+        victim.kill('SIGKILL');
+        await d.stop();
+        for (const c of socks) c.destroy();
+        await new Promise<void>((r) => server.close(() => r()));
+      }
+    }));
+
+  it(
+    'a foreign socket and no state: gives up after the child exits 0, says so, falls back',
+    () =>
+      withCache(async (cache) => {
+        const paths = daemonPaths(cache, keyOf());
+        await ensureDaemonDirs(paths);
+        const server = await listener(paths.socket);
+        await chmod(paths.socket, 0o600);
+        const written: string[] = [];
+        const orig = process.stderr.write.bind(process.stderr);
+        vi.spyOn(process.stderr, 'write').mockImplementation(((
+          c: string | Uint8Array,
+        ) => {
+          if (String(c).startsWith('jux: something else')) written.push(String(c));
+          else orig(c);
+          return true;
+        }) as typeof process.stderr.write);
+        try {
+          const t0 = Date.now();
+          const { browser, warm } = await connectWarmBrowser({
+            executablePath: chrome!.path,
+            stateDir: cache,
+            // A supervisor that loses the race to whatever holds the socket exits 0.
+            spawnDaemon: () => spawn(process.execPath, ['-e', ''], { stdio: 'ignore' }),
+            connectTimeoutMs: 5000,
+          });
+          const waited = Date.now() - t0;
+          expect(warm).toBe(false);
+          expect(waited).toBeLessThan(2500);
+          expect(written).toEqual([
+            `jux: something else is listening on ${paths.socket}; using a private browser. Remove it or set JUX_STATE_DIR.\n`,
+          ]);
+          await browser.close();
+        } finally {
+          await server.close();
+        }
+      }),
+    20_000,
+  );
+});
+
+describe('process verification and stop', () => {
+  const key = daemonKey({
+    binary: '/fake/chrome',
+    version: CHROME_VERSION,
+    args: [],
+    env: process.env,
+  });
+  const opts = (cache: string, readCommand: CommandReader) => ({
+    executablePath: '/fake/chrome',
+    stateDir: cache,
+    readCommand,
+  });
+  async function withLiveState(
+    fn: (cache: string, paths: DaemonPaths, pid: number) => Promise<void>,
+  ) {
+    await withCache(async (cache) => {
+      const paths = daemonPaths(cache, key);
+      await ensureDaemonDirs(paths);
+      const child = spawn('sleep', ['60'], { stdio: 'ignore' });
+      await writeState(paths, {
+        pid: child.pid!,
+        socket: paths.socket,
+        binary: '/fake/chrome',
+        version: CHROME_VERSION,
+        key,
+        startedAt: new Date().toISOString(),
+        idleMinutes: 10,
+      });
+      try {
+        await fn(cache, paths, child.pid!);
+      } finally {
+        child.kill('SIGKILL');
+      }
+    });
+  }
+
+  it('ours (/proc or ps said supervisor-main for this key): SIGTERM, state cleared', () =>
+    withLiveState(async (cache, paths, pid) => {
+      const r = await stopDaemon(
+        opts(cache, async () => `node /x/supervisor-main.js {"key":"${key}"}`),
+      );
+      expect(r).toEqual({ outcome: 'stopped' });
+      for (let i = 0; i < 40 && pidAlive(pid); i++) await sleep(50);
+      expect(pidAlive(pid)).toBe(false);
+      expect(await readState(paths)).toBeNull();
+    }));
+
+  it('not ours (a reused pid): not signalled, state cleared, "none"', () =>
+    withLiveState(async (cache, paths, pid) => {
+      const r = await stopDaemon(opts(cache, async () => 'vim notes.txt'));
+      expect(r).toEqual({ outcome: 'none' });
+      expect(pidAlive(pid)).toBe(true);
+      expect(await readState(paths)).toBeNull();
+    }));
+
+  it('cannot verify (no /proc, ps ENOENT): nothing signalled, state and socket kept', () =>
+    withLiveState(async (cache, paths, pid) => {
+      const server = await listener(paths.socket);
+      try {
+        const r = await stopDaemon(opts(cache, async () => null));
+        expect(r).toEqual({ outcome: 'unverified', pid });
+        expect(pidAlive(pid)).toBe(true);
+        expect(await readState(paths)).not.toBeNull();
+        expect(existsSync(paths.socket)).toBe(true);
+      } finally {
+        await server.close();
+      }
+    }));
+
+  it('the default reader reads this process via /proc, else ps, and says "" for a dead pid', async () => {
+    const { defaultReadCommand } = await import('./client.js');
+    const me = await defaultReadCommand(process.pid);
+    expect(me).toContain('node');
+    // The sandbox may lack both /proc and ps; then null is the honest answer.
+    const dead = await defaultReadCommand(2 ** 22 - 1);
+    expect(dead === '' || dead === null).toBe(true);
+  });
 });

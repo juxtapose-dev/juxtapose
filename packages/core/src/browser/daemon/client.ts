@@ -18,7 +18,7 @@
 // BrowserDiedError exactly as for a private Chrome that died (PR 1).
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { lstat, stat } from 'node:fs/promises';
+import { lstat, readFile, stat } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,9 +56,17 @@ export interface WarmOptions {
   env?: NodeJS.ProcessEnv;
   idleMinutes?: number;
   /** Test seam: start a daemon for these args with this env. Default: a detached supervisor-main. */
-  spawnDaemon?: (args: SpawnArgs, env: NodeJS.ProcessEnv) => void;
+  spawnDaemon?: (args: SpawnArgs, env: NodeJS.ProcessEnv) => ChildProcess | void;
   connectTimeoutMs?: number;
+  /** Test seam: see CommandReader. */
+  readCommand?: CommandReader;
 }
+
+/**
+ * The command line of a pid, '' when no such process exists, null when this
+ * machine gives no way to read it (no /proc and no ps).
+ */
+export type CommandReader = (pid: number) => Promise<string | null>;
 
 const DEFAULT_IDLE_MINUTES = 10;
 const DEFAULT_CONNECT_TIMEOUT_MS = 2000;
@@ -77,6 +85,9 @@ const HOLDER_GRACE_MS = 3000;
  */
 const HEARTBEAT_STALE_MS = 10_000;
 const POLL_MS = 50;
+
+/** A start that exited 0 but left no state this long after is a foreign socket, not a slow winner. */
+const FOREIGN_SETTLE_MS = 500;
 
 const DEFAULT_ENTRY = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -116,7 +127,10 @@ export function daemonIdleMinutes(env: NodeJS.ProcessEnv): number | undefined {
   return n > 0 ? n : undefined;
 }
 
-type StatusOptions = Pick<WarmOptions, 'executablePath' | 'stateDir' | 'args' | 'env'>;
+type StatusOptions = Pick<
+  WarmOptions,
+  'executablePath' | 'stateDir' | 'args' | 'env' | 'readCommand'
+>;
 
 function keyFor(opts: StatusOptions): string {
   return daemonKey({
@@ -228,19 +242,26 @@ export function spawnSupervisor(
 /** What became of a daemon this client spawned; `failed` set when it cannot come up. */
 interface SpawnWatch {
   failed: string | null;
+  /** When the child exited 0: a lost start race (Ruling 21) or a foreign socket. */
+  exitedCleanAt: number | null;
 }
 
-function defaultSpawn(args: SpawnArgs, env: NodeJS.ProcessEnv, watch: SpawnWatch): void {
-  const child = spawnSupervisor(args, env);
+function watchChild(child: ChildProcess, watch: SpawnWatch): void {
   // An async spawn failure is an 'error' event; unhandled, it would crash jux.
   child.on('error', (e) => (watch.failed ??= `spawn failed: ${e.message}`));
-  // Exit 0 is a lost start race (Ruling 21): the winner is coming, keep polling.
   child.on('exit', (code, signal) => {
-    if (code !== 0) watch.failed ??= `daemon exited (${signal ?? `code ${code}`})`;
+    if (code === 0) watch.exitedCleanAt = Date.now();
+    else watch.failed ??= `daemon exited (${signal ?? `code ${code}`})`;
   });
 }
 
-type Outcome = { browser: Browser; warm: true } | { why: string };
+function defaultSpawn(args: SpawnArgs, env: NodeJS.ProcessEnv, watch: SpawnWatch): void {
+  watchChild(spawnSupervisor(args, env), watch);
+}
+
+type Outcome =
+  | { browser: Browser; warm: true }
+  | { why: string; /** Said on stderr even without JUX_DEBUG. */ notice?: string };
 
 function wrap(p: { connection: CdpConnection; product: string }): Outcome {
   const { connection } = p;
@@ -263,12 +284,46 @@ function usable(s: DaemonState, key: string, opts: WarmOptions): boolean {
   );
 }
 
-function commandLine(pid: number): Promise<string> {
+/** Linux: /proc/<pid>/cmdline, NUL-separated. */
+async function procCommand(pid: number): Promise<string | null> {
+  try {
+    return (await readFile(`/proc/${pid}/cmdline`, 'utf8')).replace(/\0/g, ' ').trim();
+  } catch (e) {
+    // No such pid is an answer only when /proc is really there.
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT')
+      return (await stat('/proc/self').catch(() => null)) ? '' : null;
+    return null;
+  }
+}
+
+function psCommand(pid: number): Promise<string | null> {
   return new Promise((resolve) =>
     execFile('ps', ['-o', 'command=', '-p', String(pid)], (err, out) =>
-      resolve(err ? '' : out),
+      // ps missing (ENOENT) cannot say; a non-zero exit is "no such process".
+      resolve(err ? (typeof err.code === 'string' ? null : '') : out),
     ),
   );
+}
+
+export const defaultReadCommand: CommandReader = async (pid) => {
+  if (process.platform === 'linux') {
+    const c = await procCommand(pid);
+    if (c !== null) return c;
+  }
+  return psCommand(pid);
+};
+
+type Ownership = 'ours' | 'foreign' | 'unknown';
+
+/** Is `pid` our supervisor-main for `key`? 'unknown' when its command line cannot be read. */
+async function ownership(
+  pid: number,
+  key: string,
+  read: CommandReader = defaultReadCommand,
+): Promise<Ownership> {
+  const cmd = await read(pid);
+  if (cmd === null) return 'unknown';
+  return cmd.includes('supervisor-main') && cmd.includes(key) ? 'ours' : 'foreign';
 }
 
 /**
@@ -276,11 +331,16 @@ function commandLine(pid: number): Promise<string> {
  * heartbeat is over 10 s old and the pid really is our supervisor-main for
  * this key (not a reused pid, which we must never signal).
  */
-async function wedged(s: DaemonState, paths: DaemonPaths, key: string): Promise<boolean> {
+async function wedged(
+  s: DaemonState,
+  paths: DaemonPaths,
+  key: string,
+  read?: CommandReader,
+): Promise<boolean> {
   const st = await stat(paths.state).catch(() => null);
   if (!st || Date.now() - st.mtimeMs <= HEARTBEAT_STALE_MS) return false;
-  const cmd = await commandLine(s.pid);
-  return cmd.includes('supervisor-main') && cmd.includes(key);
+  // Unverifiable is not replaceable: we never signal what we cannot identify.
+  return (await ownership(s.pid, key, read)) === 'ours';
 }
 
 async function killWedged(pid: number): Promise<void> {
@@ -316,7 +376,7 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
       if (p.kind === 'ok') return wrap(p);
       if (p.kind === 'refused') return { why: `daemon refused: ${p.reason}` };
       if (p.kind === 'timeout') {
-        if (!(await wedged(existing, paths, key)))
+        if (!(await wedged(existing, paths, key, opts.readCommand)))
           return {
             why: `daemon pid ${existing.pid} did not answer in ${PROBE_TIMEOUT_MS} ms`,
           };
@@ -344,7 +404,7 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
       if (!watch) {
         release = await acquireLock(paths);
         if (release) {
-          watch = { failed: null };
+          watch = { failed: null, exitedCleanAt: null };
           const args: SpawnArgs = {
             executablePath: opts.executablePath,
             args: opts.args ?? [],
@@ -353,14 +413,26 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
             idleMinutes: opts.idleMinutes ?? DEFAULT_IDLE_MINUTES,
           };
           try {
-            if (opts.spawnDaemon) opts.spawnDaemon(args, env);
-            else defaultSpawn(args, env, watch);
+            if (opts.spawnDaemon) {
+              const child = opts.spawnDaemon(args, env);
+              if (child) watchChild(child, watch);
+            } else defaultSpawn(args, env, watch);
           } catch (e) {
             return { why: `spawn failed: ${e instanceof Error ? e.message : String(e)}` };
           }
         }
       }
       if (watch?.failed) return { why: watch.failed };
+      if (
+        watch?.exitedCleanAt &&
+        Date.now() - watch.exitedCleanAt >= FOREIGN_SETTLE_MS &&
+        !(await readState(paths)) &&
+        (await lstat(paths.socket).catch(() => null))
+      )
+        return {
+          why: `something else is listening on ${paths.socket}`,
+          notice: `jux: something else is listening on ${paths.socket}; using a private browser. Remove it or set JUX_STATE_DIR.`,
+        };
       const elapsed = Date.now() - start;
       if (elapsed >= budget) {
         // Past the budget, only another client's launch in progress is worth
@@ -402,7 +474,8 @@ export async function connectWarmBrowser(
     outcome = { why: e instanceof Error ? e.message : String(e) };
   }
   if ('browser' in outcome) return outcome;
-  if ((opts.env ?? process.env).JUX_DEBUG)
+  if (outcome.notice) process.stderr.write(`${outcome.notice}\n`);
+  else if ((opts.env ?? process.env).JUX_DEBUG)
     process.stderr.write(
       `jux: warm browser unavailable (${outcome.why.replace(/\s+/g, ' ')}); launching a private browser\n`,
     );
@@ -421,16 +494,25 @@ export async function daemonStatus(opts: StatusOptions): Promise<DaemonState | n
   return s;
 }
 
-/** SIGTERM the supervisor (it closes Chrome and clears its state); true if one was running. */
-export async function stopDaemon(opts: StatusOptions): Promise<boolean> {
+/**
+ * What `stopDaemon` did: `none` (nothing running, or the state named a pid
+ * that is not ours and was cleared), `stopped`, or `unverified` (a live pid
+ * whose command line could not be read: nothing is signalled or removed).
+ */
+export type StopResult =
+  { outcome: 'none' | 'stopped' } | { outcome: 'unverified'; pid: number };
+
+/** SIGTERM the supervisor (it closes Chrome and clears its state). */
+export async function stopDaemon(opts: StatusOptions): Promise<StopResult> {
   const s = await daemonStatus(opts);
   // An in-process supervisor (tests) shares our pid: signalling it would kill us.
-  if (!s || s.pid === process.pid) return false;
+  if (!s || s.pid === process.pid) return { outcome: 'none' };
   // A reused pid is somebody else's process: signal only our supervisor-main.
-  const cmd = await commandLine(s.pid);
-  if (!cmd.includes('supervisor-main') || !cmd.includes(s.key)) {
+  const who = await ownership(s.pid, s.key, opts.readCommand);
+  if (who === 'unknown') return { outcome: 'unverified', pid: s.pid };
+  if (who === 'foreign') {
     await clearState(pathsFor(opts));
-    return false;
+    return { outcome: 'none' };
   }
   try {
     process.kill(s.pid, 'SIGTERM');
@@ -439,5 +521,5 @@ export async function stopDaemon(opts: StatusOptions): Promise<boolean> {
   }
   for (let i = 0; i < 40 && pidAlive(s.pid); i++) await sleep(50);
   await clearState(pathsFor(opts));
-  return true;
+  return { outcome: 'stopped' };
 }

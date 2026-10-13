@@ -118,6 +118,8 @@ export {
   CI_ENV_VARS,
   type WarmOptions,
   type SpawnArgs,
+  type StopResult,
+  type CommandReader,
 } from './browser/daemon/client.js';
 export { daemonSupported, type DaemonState } from './browser/daemon/state.js';
 export {

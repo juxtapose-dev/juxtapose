@@ -20,6 +20,7 @@ import {
   resolveChrome,
   stderrProgress,
   stopDaemon,
+  type CommandReader,
   type ChromeSource,
   type DaemonState,
   type InstallOptions,
@@ -43,6 +44,8 @@ export interface BrowserCommandIo {
   /** The node flags this process accepts, and the argv to re-run (`process.argv.slice(1)`). */
   nodeFlags?: ReadonlySet<string>;
   argv: string[];
+  /** Test seam: how a pid's command line is read when verifying the warm browser. */
+  readCommand?: CommandReader;
 }
 
 const defaultIo = (): BrowserCommandIo => ({
@@ -172,6 +175,7 @@ function warmOptions(chrome: ResolvedChrome, io: BrowserCommandIo) {
     stateDir: juxStateDir({ env: io.env }),
     env: io.env,
     idleMinutes: daemonIdleMinutes(io.env),
+    readCommand: io.readCommand,
   };
 }
 
@@ -327,8 +331,17 @@ async function daemonCommand(
   }
   if (sub === 'stop') {
     // Nothing to stop without a browser: no daemon can be running for it.
-    const stopped =
-      r.chrome && daemonSupported() ? await stopDaemon(warmOptions(r.chrome, io)) : false;
+    const result =
+      r.chrome && daemonSupported()
+        ? await stopDaemon(warmOptions(r.chrome, io))
+        : { outcome: 'none' as const };
+    if (result.outcome === 'unverified') {
+      io.writeErr(
+        `jux: pid ${result.pid} is running but could not be verified as the warm browser (no /proc or ps to read its command line); not stopping it\n`,
+      );
+      return EXIT.failure;
+    }
+    const stopped = result.outcome === 'stopped';
     const d = daemonReport(null, daemonAllowed(io));
     io.write(
       json
