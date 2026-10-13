@@ -3,7 +3,7 @@
 // nondeterminism left in this path becomes a false failure somewhere.
 
 import sharp from 'sharp';
-import type { Page } from '../browser/page.js';
+import { emulatedMedia, type Page } from '../browser/page.js';
 import { assertCssSelector } from '../browser/selectors.js';
 import type { Platform } from '../platform.js';
 import type {
@@ -58,6 +58,8 @@ export interface CaptureDeps {
    * decides one. `JUXTAPOSE_NO_STRUCTURE=1` turns it off for A/B timing.
    */
   structure?: boolean;
+  /** Something the user should know that doesn't fail the story. */
+  onWarning?: (message: string) => void;
 }
 
 /** Per-page memo: skip work that only needs doing once per page. */
@@ -95,24 +97,40 @@ export async function captureStory(
   assertSelectors(params);
 
   await ensureViewport(page, effectiveViewport);
-  // Before showStory, on every capture, so the story renders in its scheme
-  // from the first frame. Only a variant sets it: a default capture resets
-  // to light, which is what stops a pooled page carrying a dark variant's
-  // scheme into the next story. Memoized, so it costs nothing when unchanged.
-  await ensureColorScheme(
-    page,
-    story.variant !== undefined ? (params.colorScheme ?? 'light') : 'light',
-  );
+
+  // Only a variant sets a scheme: a default capture resets to light, which is
+  // what stops a pooled page carrying a dark variant's scheme into the next
+  // story.
+  const scheme: ColorScheme =
+    story.variant !== undefined ? (params.colorScheme ?? 'light') : 'light';
 
   // Arm before triggering the render, or the observer misses the mutations it
   // exists to watch.
   //
   // A story that wants animations running can't reuse a page whose stylesheet
-  // already froze them, so force the cold path for those.
+  // already froze them, so force the cold path for those. Likewise a scheme
+  // change: an app that reads matchMedia once at boot keeps the old scheme
+  // across a warm switch (measured: card then card__dark captured both light,
+  // the reverse both dark). Decided before the scheme is applied, against
+  // what the page booted under.
   const warm =
     deps.warmSwitch === true &&
     warmPages.get(page) === deps.baseUrl &&
+    pageColorScheme.get(page) === scheme &&
     !(params.animations === 'play' && styleInjected.has(page));
+
+  // Before showStory, on every capture, so the story renders in its scheme
+  // from the first frame. Memoized, so it costs nothing when unchanged.
+  const schemeChanged = pageColorScheme.has(page) && pageColorScheme.get(page) !== scheme;
+  await ensureColorScheme(page, scheme);
+  // A variant shares its story's URL, and a URL differing only in its
+  // fragment is a same-document navigation: the cold path below would not
+  // reload, and an app that read the scheme at boot would keep the old one.
+  // Blank the page so the story boots fresh under the new scheme.
+  if (schemeChanged && warmPages.has(page)) {
+    await page.goto('about:blank');
+    warmPages.delete(page);
+  }
   if (warm) await armSettle(page);
 
   const switched =
@@ -167,6 +185,11 @@ export async function captureStory(
     // preview carries (Storybook). Honour it as a skip.
     if (story.variant !== undefined && live.variants?.[story.variant] === false) {
       return null;
+    }
+    if (story.variant !== undefined && liveOverrideDiffers(story, live)) {
+      deps.onWarning?.(
+        `jux: ${story.storyId}: the story's own '${story.variant}' variant, declared in its live parameters, is ignored for now; story-level variants are read at enumeration in a later release`,
+      );
     }
 
     // Viewport is the one param that cannot be applied retroactively — the
@@ -248,6 +271,18 @@ export async function captureStory(
   };
 }
 
+/** Whether the live preview declares this variant with settings other than
+ *  the ones it was expanded with: Storybook keeps story-level variants out of
+ *  index.json, so they only surface here, after the capture set is fixed. */
+function liveOverrideDiffers(story: StoryManifest, live: StoryParams): boolean {
+  const spec = story.variant !== undefined ? live.variants?.[story.variant] : undefined;
+  if (spec === undefined || spec === false || typeof spec !== 'object') return false;
+  const expanded: Record<string, unknown> = story.variantParams ?? {};
+  return Object.entries(spec).some(
+    ([k, v]) => k !== 'extends' && JSON.stringify(v) !== JSON.stringify(expanded[k]),
+  );
+}
+
 const sameViewport = (a: Viewport, b: Viewport) =>
   a.width === b.width && a.height === b.height;
 
@@ -262,7 +297,8 @@ async function ensureViewport(page: Page, viewport: Viewport): Promise<void> {
 /** Media emulation is a CDP round-trip too; skip it when nothing changed. */
 async function ensureColorScheme(page: Page, scheme: ColorScheme): Promise<void> {
   if (pageColorScheme.get(page) === scheme) return;
-  await page.setColorScheme(scheme);
+  if (page.setColorScheme) await page.setColorScheme(scheme);
+  else await page.send('Emulation.setEmulatedMedia', emulatedMedia(scheme));
   pageColorScheme.set(page, scheme);
 }
 

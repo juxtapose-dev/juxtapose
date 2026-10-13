@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { captureStory } from './capture.js';
 import type { Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
-import type { StoryManifest } from '../types.js';
+import type { StoryManifest, StoryParams } from '../types.js';
 
 function recordingPage(): Page & { calls: string[] } {
   const calls: string[] = [];
@@ -22,7 +22,9 @@ function recordingPage(): Page & { calls: string[] } {
     waitForSelector: rec('waitForSelector', undefined),
     addStyleTag: rec('addStyleTag', undefined),
     setViewportSize: rec('setViewportSize', undefined),
-    setColorScheme: rec('setColorScheme', undefined),
+    setColorScheme: async (scheme: 'light' | 'dark') => {
+      calls.push(`setColorScheme:${scheme}`);
+    },
     screenshot: rec('screenshot', Buffer.alloc(0)),
     send: rec('send', {} as never),
     onMainResponse: () => () => {},
@@ -149,16 +151,68 @@ describe('captureStory with variants', () => {
     await capture(page, variant, p);
     await capture(page, plain, p);
     await capture(page, plain, p);
-    const relevant = page.calls.filter((c) => c === 'setColorScheme' || c === 'goto');
+    const relevant = page.calls.filter(
+      (c) => c.startsWith('setColorScheme') || c === 'goto',
+    );
     // dark before the first navigation; light before the second; nothing on
     // the third because the page is already light.
     expect(relevant).toEqual([
-      'setColorScheme',
+      'setColorScheme:dark',
       'goto',
-      'setColorScheme',
+      'setColorScheme:light',
+      // The scheme changed on a page holding a story: blanked first, so a
+      // same-URL story boots fresh rather than navigating in-document.
+      'goto',
       'goto',
       'goto',
     ]);
+  });
+
+  it('falls back to raw CDP media emulation on a Page without setColorScheme', async () => {
+    const page = recordingPage();
+    const sent: unknown[] = [];
+    delete (page as Partial<Page>).setColorScheme;
+    page.send = (async (method: string, params?: object) => {
+      sent.push([method, params]);
+      return {};
+    }) as Page['send'];
+    await capture(page, variant, spyPlatform([]));
+    expect(sent[0]).toEqual([
+      'Emulation.setEmulatedMedia',
+      {
+        media: '',
+        features: [
+          { name: 'prefers-color-scheme', value: 'dark' },
+          { name: 'prefers-reduced-motion', value: 'no-preference' },
+          { name: 'forced-colors', value: 'none' },
+          { name: 'prefers-contrast', value: 'no-preference' },
+        ],
+      },
+    ]);
+  });
+
+  it('warns when the live preview declares the variant differently', async () => {
+    const warnings: string[] = [];
+    const run = (live: StoryParams) =>
+      captureStory(
+        recordingPage(),
+        variant,
+        {
+          platform: { ...platform, readLiveParams: async () => live },
+          baseUrl: 'x',
+          structure: false,
+          onWarning: (m) => warnings.push(m),
+        },
+        { width: 10, height: 10 },
+      ).catch(() => null);
+    // Same settings as expanded: nothing to say.
+    await run({ variants: { dark: { colorScheme: 'dark' } } });
+    // Another variant's declaration is not this capture's concern.
+    await run({ variants: { mobile: { viewport: { width: 1, height: 1 } } } });
+    expect(warnings).toEqual([]);
+    await run({ variants: { dark: { colorScheme: 'dark', delay: 50 } } });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("btn__dark: the story's own 'dark' variant");
   });
 
   it("a story's live opt-out of a variant skips that capture", async () => {

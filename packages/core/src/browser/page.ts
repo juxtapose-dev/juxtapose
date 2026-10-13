@@ -66,9 +66,11 @@ export interface Page {
   setViewportSize(viewport: Viewport): Promise<void>;
   /**
    * Re-apply the fixed media emulation with this `prefers-color-scheme`.
+   * Optional so a Page implemented outside core still type-checks; core
+   * falls back to the raw CDP call when it is absent.
    * @internal Core sets it per capture for variants; adapters must not.
    */
-  setColorScheme(scheme: 'light' | 'dark'): Promise<void>;
+  setColorScheme?(scheme: 'light' | 'dark'): Promise<void>;
   screenshot(opts?: { mask?: string[] }): Promise<Buffer>;
   /**
    * Raw CDP on this page's session, for DOMSnapshot.
@@ -248,7 +250,7 @@ const metricsOverride = (
 
 // Only the color scheme varies (per-story variants); every other feature is
 // pinned for every capture.
-const emulatedMedia = (
+export const emulatedMedia = (
   scheme: 'light' | 'dark',
 ): Protocol.Emulation.SetEmulatedMediaRequest => ({
   media: '',

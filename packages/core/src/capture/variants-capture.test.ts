@@ -122,3 +122,74 @@ describe.skipIf(!chrome)('variant capture in Chrome', () => {
     }
   });
 });
+
+// An app that reads matchMedia once at boot, as many theme providers do. A
+// warm switch re-renders without a reload, so it would keep the scheme the
+// page booted under: before the fix, card then card__dark captured both
+// light and the reverse both dark.
+const BOOT_ONCE = `<!doctype html><body style="margin:0"><script>
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+document.body.style.background = dark ? 'rgb(10,10,10)' : 'rgb(250,250,250)';
+window.__render = (id) => { document.body.dataset.story = id; };
+</script></body>`;
+
+describe.skipIf(!chrome)('variant capture with warm switching', () => {
+  let bootServer: Server;
+  let bootBase: string;
+  beforeAll(async () => {
+    bootServer = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(BOOT_ONCE);
+    });
+    await new Promise<void>((r) => bootServer.listen(0, '127.0.0.1', r));
+    bootBase = `http://127.0.0.1:${(bootServer.address() as { port: number }).port}/`;
+  });
+  afterAll(() => {
+    bootServer.closeAllConnections();
+    bootServer.close();
+  });
+
+  const warmPlatform = (): Platform => ({
+    ...platform,
+    showStory: async (page, id) => {
+      await page.goto(`${bootBase}#${id}`);
+    },
+    switchStory: async (page, id) => {
+      await page.evaluate(
+        (i) => (window as unknown as { __render(i: string): void }).__render(i),
+        id,
+      );
+      return true;
+    },
+  });
+
+  it.each([
+    [
+      ['card', 'card__dark'],
+      ['light', 'dark'],
+    ],
+    [
+      ['card__dark', 'card'],
+      ['dark', 'light'],
+    ],
+  ])('%j captures %j: a scheme change forces a cold load', async (order, want) => {
+    const browser = await Browser.launch({ executablePath: chrome!.path });
+    try {
+      const got: string[] = [];
+      for await (const o of capturePool(order.map(pick), {
+        browser,
+        platform: warmPlatform(),
+        baseUrl: bootBase,
+        viewport: { width: 50, height: 50 },
+        concurrency: 1,
+        warmSwitch: true,
+      })) {
+        if (!o.snapshot) throw o.error ?? new Error('no snapshot');
+        got.push((await topLeft(o.snapshot.image)) < 128 ? 'dark' : 'light');
+      }
+      expect(got).toEqual(want);
+    } finally {
+      await browser.close();
+    }
+  });
+});
