@@ -88,12 +88,14 @@ export function cropBox(
   frame: { width: number; height: number },
 ): ChangedRegion {
   // Clamping alone would drag a region left of / above the frame back to the
-  // origin and crop something unrelated, so outside means no box.
+  // origin and crop something unrelated, so outside means no box. The edges
+  // are exclusive: a region starting at x == width covers no pixel. A
+  // zero-area region counts as one px, so (0, 0, 0, 0) is still inside.
   if (
-    r.x + r.width < 0 ||
-    r.y + r.height < 0 ||
-    r.x > frame.width ||
-    r.y > frame.height
+    r.x + Math.max(1, r.width) <= 0 ||
+    r.y + Math.max(1, r.height) <= 0 ||
+    r.x >= frame.width ||
+    r.y >= frame.height
   ) {
     return { x: 0, y: 0, width: 0, height: 0 };
   }

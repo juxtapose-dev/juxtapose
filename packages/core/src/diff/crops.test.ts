@@ -71,6 +71,21 @@ test('a region at the edge is clamped to the frame', () => {
   ).toEqual({ x: 185, y: 89, width: 15, height: 11 });
 });
 
+// A region that starts exactly at the right or bottom edge covers no frame
+// pixel; clamping it pulled in the last few columns, which did not change.
+test('a region starting at x == frame.width or y == frame.height is outside', () => {
+  const frame = { width: 200, height: 100 };
+  const none = { x: 0, y: 0, width: 0, height: 0 };
+  expect(cropBox({ x: 200, y: 10, width: 10, height: 10 }, frame)).toEqual(none);
+  expect(cropBox({ x: 10, y: 100, width: 10, height: 10 }, frame)).toEqual(none);
+  // and one ending exactly at the left edge
+  expect(cropBox({ x: -10, y: 10, width: 10, height: 10 }, frame)).toEqual(none);
+  // one px inside is still a box
+  expect(cropBox({ x: 199, y: 10, width: 10, height: 10 }, frame).width).toBeGreaterThan(
+    0,
+  );
+});
+
 test('a tiny region gets at least a 16px box', () => {
   const box = cropBox(
     { x: 100, y: 50, width: 2, height: 1 },
@@ -86,7 +101,18 @@ test('a box longer than 512px is scaled down so the longer side is 512', async (
   const b = await frame(1280, 800, { x: 0, y: 0, w: 640, h: 400 });
   const [c] = await renderCrops(a, b, [{ x: 0, y: 0, width: 1280, height: 800 }]);
   const side = (c.width - 4) / 2;
-  expect(Math.max(side, c.height)).toBeLessThanOrEqual(MAX_CROP_SIDE);
+  expect(side).toBe(MAX_CROP_SIDE);
+  expect(c.height).toBe(320); // 800 × 0.4
+  expect(c.width).toBe(MAX_CROP_SIDE * 2 + 4);
+  // The red quadrant (640×400 page px) is 256×160 on the current side, and
+  // the reduction keeps the split where it was: red inside, white outside,
+  // and the baseline side all white.
+  const right = side + 4;
+  expect(await pixel(c.png, right + 100, 80)).toEqual([220, 38, 38]);
+  expect(await pixel(c.png, right + 250, 155)).toEqual([220, 38, 38]);
+  expect(await pixel(c.png, right + 262, 80)).toEqual([255, 255, 255]);
+  expect(await pixel(c.png, right + 100, 166)).toEqual([255, 255, 255]);
+  expect(await pixel(c.png, 100, 80)).toEqual([255, 255, 255]);
 });
 
 test('no regions → one strip of the whole frame', async () => {
@@ -136,6 +162,15 @@ test('images of different sizes crop the overlap and never throw', async () => {
   const crops = await renderCrops(a, b, []);
   expect(crops).toHaveLength(1);
   expect(crops[0].box).toEqual({ x: 0, y: 0, width: 200, height: 100 });
+  // Both halves come from the overlap: the baseline is all white; the
+  // current side shows b's red square (10..30) at scale 2, and white past it.
+  const c = crops[0];
+  expect(c.scale).toBe(2);
+  const right = 200 * 2 + 4;
+  expect(await pixel(c.png, 40, 40)).toEqual([255, 255, 255]);
+  expect(await pixel(c.png, 399, 199)).toEqual([255, 255, 255]);
+  expect(await pixel(c.png, right + 40, 40)).toEqual([220, 38, 38]);
+  expect(await pixel(c.png, right + 399, 199)).toEqual([255, 255, 255]);
   // a region entirely outside the overlap is skipped, not an error
   const outside = await renderCrops(a, b, [{ x: 300, y: 500, width: 10, height: 10 }]);
   expect(outside).toEqual([]);
