@@ -8,6 +8,7 @@ import path from 'node:path';
 import { encodeStoryId, hashImage, type RunReport } from '@juxtapose/core';
 import { resolveContext, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
+import { stdio, type Session } from '../io.js';
 
 /** Hash of what the run captured, or undefined if the image is gone. Undefined
  *  blocks: an approval that can't be confirmed is not an approval. */
@@ -26,7 +27,10 @@ async function capturedHash(
   }
 }
 
-export async function checkCommand(flags: CommonFlags): Promise<number> {
+export async function checkCommand(
+  flags: CommonFlags,
+  { io = stdio }: Session = {},
+): Promise<number> {
   const ctx = await resolveContext(flags);
 
   const runDir = flags.run
@@ -34,7 +38,7 @@ export async function checkCommand(flags: CommonFlags): Promise<number> {
     : await latestRunDir(ctx.projectRoot);
 
   if (!runDir) {
-    process.stderr.write('jux: no run found. Run `jux run` first.\n');
+    io.err('jux: no run found. Run `jux run` first.\n');
     return 1;
   }
 
@@ -61,7 +65,7 @@ export async function checkCommand(flags: CommonFlags): Promise<number> {
   }
 
   if (ctx.json) {
-    process.stdout.write(
+    io.out(
       JSON.stringify({
         ok: blocking.length === 0,
         blocking: blocking.map((r) => ({ storyId: r.storyId, status: r.status })),
@@ -69,13 +73,13 @@ export async function checkCommand(flags: CommonFlags): Promise<number> {
       }) + '\n',
     );
   } else if (blocking.length === 0) {
-    process.stdout.write('jux: all stories approved\n');
+    io.out('jux: all stories approved\n');
   } else {
-    process.stdout.write(
+    io.out(
       `jux: ${blocking.length} ${blocking.length === 1 ? 'story needs' : 'stories need'} review\n`,
     );
     for (const r of blocking.slice(0, 20)) {
-      process.stdout.write(`  ${r.status.padEnd(6)} ${r.storyId}\n`);
+      io.out(`  ${r.status.padEnd(6)} ${r.storyId}\n`);
     }
   }
 

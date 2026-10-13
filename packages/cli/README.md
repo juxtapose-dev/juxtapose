@@ -25,8 +25,11 @@ affected.
 | `jux check`         | exit non-zero if anything still needs review — for CI |
 | `jux handoff <id>`  | print an agent-ready prompt for one failing story     |
 | `jux browser`       | `install`, `status`, `path`, `start` or `stop`        |
+| `jux mcp`           | MCP server on stdio for coding agents; [docs][mcp]    |
 
-All commands accept `--json`.
+All commands accept `--json`. `jux mcp` returns the same JSON as tool results.
+
+[mcp]: https://github.com/juxtapose-dev/juxtapose/blob/main/docs/mcp.md
 
 The browser is `chrome-headless-shell` 151.0.7922.34, installed once by
 `jux browser install` (an existing Playwright cache of the same build is

@@ -22,6 +22,7 @@ Usage
   jux snap <url>… [options]      capture pages: pixels + structure, no workbench
   jux browser install|path|status|start|stop  manage the pinned and warm browser (install downloads once, ~100 MB)
   jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix)
+  jux mcp [--project <dir>]      MCP server on stdio for coding agents: snap, diff, run, check, handoff, approve
   jux --version                  print installed package versions
 
 Common options
@@ -133,6 +134,10 @@ async function main(argv: string[]): Promise<number> {
       const { diffCommand } = await import('./commands/diff.js');
       return diffCommand(positionals[0], positionals[1], values as never);
     }
+    case 'mcp': {
+      const { mcpCommand } = await import('./commands/mcp.js');
+      return mcpCommand(values as never, selfVersion());
+    }
     default:
       process.stderr.write(
         `jux: unknown command '${command}'.${suggest(command)} Run \`jux --help\`.\n`,
@@ -150,6 +155,7 @@ const COMMANDS = [
   'snap',
   'diff',
   'browser',
+  'mcp',
 ];
 
 function distance(a: string, b: string): number {
@@ -175,6 +181,16 @@ function suggest(command: string): string {
   return best.d <= 2 ? ` Did you mean '${best.c}'?` : '';
 }
 
+function selfVersion(): string {
+  // Our own package.json is not reachable through the exports map, so read it
+  // relative to this file — dist/index.js sits one level below it.
+  return (
+    JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+      version: string;
+    }
+  ).version;
+}
+
 /**
  * Report every juxtapose package, not just the CLI.
  *
@@ -185,12 +201,7 @@ function suggest(command: string): string {
 function versions(): string {
   const require = createRequire(import.meta.url);
 
-  // Our own package.json is not reachable through the exports map, so read it
-  // relative to this file — dist/index.js sits one level below it.
-  const self = JSON.parse(
-    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-  ) as { version: string };
-  const lines = [`${'@juxtapose/cli'.padEnd(30)} ${self.version}`];
+  const lines = [`${'@juxtapose/cli'.padEnd(30)} ${selfVersion()}`];
 
   const names = [
     '@juxtapose/core',
