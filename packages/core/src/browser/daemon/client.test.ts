@@ -2,13 +2,26 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import net from 'node:net';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  buildIdentity,
+  clearStaleState,
   connectWarmBrowser,
   daemonEnabled,
+  daemonIdleMinutes,
+  daemonKeyFor,
   daemonStatus,
   spawnSupervisor,
   stopDaemon,
@@ -77,6 +90,118 @@ describe('daemonEnabled', () => {
   });
 });
 
+describe('daemonIdleMinutes', () => {
+  it('accepts finite minutes in [1, 35000] and nothing else', () => {
+    const idle = (v: string | undefined) =>
+      daemonIdleMinutes({ JUX_BROWSER_IDLE_MINUTES: v });
+    expect(idle('1')).toBe(1);
+    expect(idle('35000')).toBe(35000);
+    expect(idle('2.5')).toBe(2.5);
+    for (const v of ['Infinity', '1e9', '35001', '0', '0.5', '-1', 'abc', '', undefined])
+      expect(idle(v), String(v)).toBeUndefined();
+  });
+});
+
+describe('daemon key', () => {
+  it('covers the full Chrome command line, the jux build and the binary on disk', () =>
+    withCache(async (dir) => {
+      const bin = path.join(dir, 'chrome');
+      await writeFile(bin, 'v1');
+      const base = { executablePath: bin, env: {} };
+      const k = daemonKeyFor(base, 'jux-a');
+      expect(daemonKeyFor(base, 'jux-a')).toBe(k);
+      // Extra args and a different jux version or supervisor build: new socket.
+      expect(daemonKeyFor({ ...base, args: ['--lang=de'] }, 'jux-a')).not.toBe(k);
+      expect(daemonKeyFor(base, 'jux-b')).not.toBe(k);
+      // An in-place update of the binary (same path): size and mtime change.
+      await writeFile(bin, 'v2-longer');
+      expect(daemonKeyFor(base, 'jux-a')).not.toBe(k);
+    }));
+
+  it('includes HOME and XDG_CONFIG_HOME (fontconfig reads both)', () => {
+    const fp = { binary: '/c', version: 'v', args: [], uid: 1 };
+    const k = daemonKey({ ...fp, env: {} });
+    expect(daemonKey({ ...fp, env: { HOME: '/tmp/h' } })).not.toBe(k);
+    expect(daemonKey({ ...fp, env: { XDG_CONFIG_HOME: '/tmp/x' } })).not.toBe(k);
+  });
+
+  it('the build identity follows relative imports from the entry', () =>
+    withCache(async (dir) => {
+      const entry = path.join(dir, 'supervisor-main.js');
+      await writeFile(entry, "import { x } from './sub/dep.js';\n");
+      await writeFile(path.join(dir, 'unrelated.js'), 'a');
+      await mkdir(path.join(dir, 'sub'));
+      await writeFile(path.join(dir, 'sub', 'dep.js'), "export * from '../leaf.js';\n");
+      await writeFile(path.join(dir, 'leaf.js'), 'export const x = 1;\n');
+      const a = buildIdentity(entry);
+      await writeFile(path.join(dir, 'unrelated.js'), 'b');
+      expect(buildIdentity(entry)).toBe(a);
+      await writeFile(path.join(dir, 'leaf.js'), 'export const x = 2;\n');
+      expect(buildIdentity(entry)).not.toBe(a);
+    }));
+});
+
+describe('spawnSupervisor', () => {
+  it('drops NODE_OPTIONS, keeps the render env, and runs in the state dir', () =>
+    withCache(async (dir) => {
+      const entry = path.join(dir, 'entry.mjs');
+      const out = path.join(dir, 'out.json');
+      await writeFile(
+        entry,
+        `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(out)}, JSON.stringify({ opts: process.env.NODE_OPTIONS ?? null, tz: process.env.TZ, cwd: process.cwd() }));\n`,
+      );
+      const stateDir = path.join(dir, 'state');
+      await mkdir(stateDir);
+      const child = spawnSupervisor(
+        { executablePath: '/c', args: [], stateDir, key: 'k', idleMinutes: 1 },
+        { ...process.env, NODE_OPTIONS: '--cpu-prof', TZ: 'Asia/Tokyo' },
+        entry,
+      );
+      await new Promise((r) => child.once('exit', r));
+      const got = JSON.parse(await readFile(out, 'utf8'));
+      expect(got).toEqual({
+        opts: null,
+        tz: 'Asia/Tokyo',
+        cwd: await realpath(stateDir),
+      });
+    }));
+});
+
+describe('clearStaleState', () => {
+  const state = (paths: DaemonPaths, pid: number, startedAt: string) =>
+    writeState(paths, {
+      pid,
+      socket: paths.socket,
+      binary: '/c',
+      version: CHROME_VERSION,
+      key: 'k',
+      startedAt,
+      idleMinutes: 10,
+    });
+
+  it('removes only the daemon it was asked about, and never a live socket', () =>
+    withCache(async (cache) => {
+      const paths = daemonPaths(cache, 'k');
+      await state(paths, 111, 'old');
+      const old = (await readState(paths))!;
+      // A successor replaced the state since it was read: both files are its.
+      await state(paths, 222, 'new');
+      const server = await listener(paths.socket);
+      try {
+        await clearStaleState(paths, old);
+        expect((await readState(paths))?.pid).toBe(222);
+        expect(existsSync(paths.socket)).toBe(true);
+        // The same daemon, but something answers on the socket: the state goes
+        // (it named a dead daemon), the listener's socket stays.
+        await clearStaleState(paths, (await readState(paths))!);
+        expect(await readState(paths)).toBeNull();
+        expect(existsSync(paths.socket)).toBe(true);
+      } finally {
+        await server.close();
+      }
+    }));
+});
+
 /** An in-process "daemon" so the test does not fork: the spawn hook starts a supervisor. */
 function inProcessDaemon() {
   let spawned = 0;
@@ -112,7 +237,7 @@ async function withCache(fn: (cache: string) => Promise<void>) {
 }
 
 const keyOf = (env: NodeJS.ProcessEnv = process.env) =>
-  daemonKey({ binary: chrome!.path, version: CHROME_VERSION, args: [], env });
+  daemonKeyFor({ executablePath: chrome!.path, env });
 
 /** A state file for `pid` that is otherwise ours: right key, binary, version. */
 async function plantState(paths: DaemonPaths, pid: number, socket = paths.socket) {
@@ -490,6 +615,108 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       }
     }));
 
+  it('a different Chrome arg list gets its own daemon, never the other one', () =>
+    withCache(async (cache) => {
+      const spawnedWith: string[][] = [];
+      const d = inProcessDaemon();
+      const spawnDaemon = (a: SpawnArgs) => {
+        spawnedWith.push(a.args);
+        d.spawnDaemon(a);
+      };
+      try {
+        const a = await connectWarmBrowser({
+          executablePath: chrome!.path,
+          stateDir: cache,
+          spawnDaemon,
+        });
+        const b = await connectWarmBrowser({
+          executablePath: chrome!.path,
+          stateDir: cache,
+          args: ['--lang=de'],
+          spawnDaemon,
+        });
+        expect(a.warm && b.warm).toBe(true);
+        expect(spawnedWith).toEqual([[], ['--lang=de']]);
+        const page = await (
+          await b.browser.newContext({ viewport: { width: 100, height: 100 } })
+        ).newPage();
+        expect(await page.evaluate(() => navigator.language)).toBe('de');
+        await a.browser.close();
+        await b.browser.close();
+      } finally {
+        await d.stop();
+      }
+    }));
+
+  it.skipIf(!built)(
+    'a supervisor still starting keeps the spawn lock: a later client waits for it instead of spawning another',
+    () =>
+      withCache(async (cache) => {
+        // A cold Chrome (first launch after a download, a loaded CI box)
+        // outlasting the 2 s budget, shortened here to a 300 ms budget.
+        const slow = path.join(cache, 'slow-supervisor-main.mjs');
+        await writeFile(
+          slow,
+          `await new Promise((r) => setTimeout(r, 1200));\nawait import(${JSON.stringify(builtMain)});\n`,
+        );
+        let spawned = 0;
+        const opts = {
+          executablePath: chrome!.path,
+          stateDir: cache,
+          connectTimeoutMs: 300,
+          spawnDaemon: (a: SpawnArgs, e: NodeJS.ProcessEnv) => {
+            spawned++;
+            return spawnSupervisor(a, e, slow);
+          },
+        };
+        try {
+          const a = await connectWarmBrowser(opts);
+          expect(a.warm).toBe(false); // gave up before its daemon was up
+          await a.browser.close();
+          // A's 300 ms are over; before the fix its lock was gone here.
+          const b = await connectWarmBrowser(opts);
+          expect(b.warm).toBe(true);
+          expect(spawned).toBe(1);
+          await b.browser.close();
+          // Up and listening: the supervisor dropped the lock it was handed.
+          expect(existsSync(daemonPaths(cache, keyOf()).lock)).toBe(false);
+        } finally {
+          await stopDaemon(opts);
+        }
+      }),
+    20_000,
+  );
+
+  it('stop never removes the files of a live daemon it judged "not ours"', () =>
+    withCache(async (cache) => {
+      const paths = daemonPaths(cache, keyOf());
+      const d = inProcessDaemon();
+      const victim = spawn('sleep', ['60'], { stdio: 'ignore' });
+      try {
+        const { browser } = await connectWarmBrowser({
+          executablePath: chrome!.path,
+          stateDir: cache,
+          spawnDaemon: d.spawnDaemon,
+        });
+        await browser.close();
+        // A state naming another live pid in front of a daemon that answers:
+        // what a wrapper entry without "supervisor-main" in argv looks like.
+        await plantState(paths, victim.pid!);
+        const r = await stopDaemon({
+          executablePath: chrome!.path,
+          stateDir: cache,
+          readCommand: async () => 'node /x/wrapper.js',
+        });
+        expect(r).toMatchObject({ outcome: 'unverified', pid: victim.pid });
+        expect(pidAlive(victim.pid!)).toBe(true);
+        expect((await readState(paths))?.pid).toBe(victim.pid);
+        expect(existsSync(paths.socket)).toBe(true);
+      } finally {
+        victim.kill('SIGKILL');
+        await d.stop();
+      }
+    }));
+
   it('a daemon that dies mid-run disconnects the browser (BrowserDiedError path)', () =>
     withCache(async (cache) => {
       const d = inProcessDaemon();
@@ -585,12 +812,7 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
 });
 
 describe('process verification and stop', () => {
-  const key = daemonKey({
-    binary: '/fake/chrome',
-    version: CHROME_VERSION,
-    args: [],
-    env: process.env,
-  });
+  const key = daemonKeyFor({ executablePath: '/fake/chrome' });
   const opts = (cache: string, readCommand: CommandReader) => ({
     executablePath: '/fake/chrome',
     stateDir: cache,
@@ -639,12 +861,18 @@ describe('process verification and stop', () => {
       expect(await readState(paths)).toBeNull();
     }));
 
+  it('status is "not running" for a live pid with nothing on the socket (a reused pid)', () =>
+    withLiveState(async (cache, paths) => {
+      expect(await daemonStatus(opts(cache, async () => null))).toBeNull();
+      expect(await readState(paths)).toBeNull();
+    }));
+
   it('cannot verify (no /proc, ps ENOENT): nothing signalled, state and socket kept', () =>
     withLiveState(async (cache, paths, pid) => {
       const server = await listener(paths.socket);
       try {
         const r = await stopDaemon(opts(cache, async () => null));
-        expect(r).toEqual({ outcome: 'unverified', pid });
+        expect(r).toMatchObject({ outcome: 'unverified', pid });
         expect(pidAlive(pid)).toBe(true);
         expect(await readState(paths)).not.toBeNull();
         expect(existsSync(paths.socket)).toBe(true);

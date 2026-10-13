@@ -37,7 +37,9 @@ Outside CI, `jux snap`, `jux run` and `jux init` keep one browser warm in the
 background between invocations (idle exit after 10 minutes; byte-identical
 captures). `--no-daemon` or `JUX_NO_DAEMON=1` turns it off for a command; it is
 also off in CI and on Windows. `jux browser start|stop|status` manage it, and
-`JUX_STATE_DIR` moves its socket and state apart from `JUX_CACHE_DIR`. See the
+`JUX_STATE_DIR` moves its socket and state apart from `JUX_CACHE_DIR`. The
+warm browser keeps the system fonts and time zone it started with, so after you
+install fonts or change the system time zone, run `jux browser stop`. See the
 [main README](https://github.com/juxtapose-dev/juxtapose#browser) for details.
 
 Reviewing diffs inside Storybook? Add

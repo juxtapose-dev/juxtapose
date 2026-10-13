@@ -58,8 +58,10 @@ viewport. For flat UI renders lossless is usually smaller anyway.
 **The warm-browser daemon must stay byte-identical to a fresh launch.**
 `check:determinism` runs both ways: the default is a fresh launch per run
 (`JUX_NO_DAEMON=1`), and `env -u CI pnpm check:determinism --daemon` captures
-through the daemon and fails if it never started. Run both after touching
-`browser/`.
+through the daemon and fails unless every story matches a fresh-launch
+reference and every run really connected to the daemon. Run both after
+touching `browser/`. The daemon key covers jux's own Chrome flags and build, so
+a rebuilt jux never reuses a daemon running the old ones.
 
 ## Verify against a real build, not just unit tests
 

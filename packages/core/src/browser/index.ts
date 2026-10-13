@@ -60,6 +60,7 @@ export {
   connectWarmBrowser,
   daemonEnabled,
   daemonStatus,
+  startDaemon,
   stopDaemon,
   CI_ENV_VARS,
   type WarmOptions,

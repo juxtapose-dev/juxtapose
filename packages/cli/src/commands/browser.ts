@@ -7,7 +7,6 @@ import {
   CHROME_PINS,
   CHROME_VERSION,
   chromePlatform,
-  connectWarmBrowser,
   daemonEnabled,
   daemonIdleMinutes,
   daemonStatus,
@@ -18,6 +17,7 @@ import {
   noBrowserMessage,
   proxyReexecArgs,
   resolveChrome,
+  startDaemon,
   stderrProgress,
   stopDaemon,
   type CommandReader,
@@ -307,8 +307,7 @@ export async function browserCommand(
       return await daemonCommand(sub, flag, json, io);
     } catch (err) {
       // e.g. a state dir whose socket path is too long: say what to set.
-      io.writeErr(`${errorMessage(err)}\n`);
-      return EXIT.failure;
+      return daemonFailure(sub, json, io, errorMessage(err));
     }
   }
 
@@ -318,6 +317,30 @@ export async function browserCommand(
   return EXIT.usage;
 }
 
+/**
+ * A failed start or stop: the message on stderr, or under --json one object on
+ * stdout, so `JSON.parse` of the output never meets an empty string.
+ */
+function daemonFailure(
+  sub: 'start' | 'stop',
+  json: boolean,
+  io: BrowserCommandIo,
+  error: string,
+  extra: Record<string, unknown> = {},
+): number {
+  if (json)
+    io.write(
+      JSON.stringify({
+        ok: false,
+        [sub === 'start' ? 'started' : 'stopped']: false,
+        error: error.replace(/^jux: /, ''),
+        ...extra,
+      }) + '\n',
+    );
+  else io.writeErr(`${error}\n`);
+  return EXIT.failure;
+}
+
 async function daemonCommand(
   sub: 'start' | 'stop',
   flag: string | undefined,
@@ -325,66 +348,64 @@ async function daemonCommand(
   io: BrowserCommandIo,
 ): Promise<number> {
   const r = resolveOrExplain(flag, io);
-  if ('error' in r) {
-    io.writeErr(`${r.error}\n`);
-    return EXIT.failure;
-  }
+  if ('error' in r) return daemonFailure(sub, json, io, r.error);
   if (sub === 'stop') {
     // Nothing to stop without a browser: no daemon can be running for it.
     const result =
       r.chrome && daemonSupported()
         ? await stopDaemon(warmOptions(r.chrome, io))
         : { outcome: 'none' as const };
-    if (result.outcome === 'unverified') {
-      io.writeErr(
-        `jux: pid ${result.pid} is running but could not be verified as the warm browser (no /proc or ps to read its command line); not stopping it\n`,
+    if (result.outcome === 'unverified')
+      return daemonFailure(
+        sub,
+        json,
+        io,
+        `jux: pid ${result.pid} is running but could not be verified as the warm browser (${result.reason}); not stopping it`,
+        { pid: result.pid },
       );
-      return EXIT.failure;
-    }
     const stopped = result.outcome === 'stopped';
     const d = daemonReport(null, daemonAllowed(io));
     io.write(
       json
-        ? JSON.stringify({ stopped, daemon: d }) + '\n'
+        ? JSON.stringify({ ok: true, stopped, daemon: d }) + '\n'
         : `jux: ${stopped ? 'stopped the warm browser' : 'no warm browser running'}\n`,
     );
     return EXIT.clean;
   }
-  if (!r.chrome) {
-    io.writeErr(`${noBrowserMessage()}\n`);
-    return EXIT.failure;
-  }
+  if (!r.chrome) return daemonFailure(sub, json, io, noBrowserMessage());
+  // Running means it answered a hello, not that its pid is alive (a reused
+  // pid after a reboot is not a warm browser).
   const before = await daemonStatus(warmOptions(r.chrome, io));
   if (before) {
     const d = daemonReport(before, true);
     io.write(
       json
-        ? JSON.stringify({ started: false, daemon: d }) + '\n'
+        ? JSON.stringify({ ok: true, started: false, daemon: d }) + '\n'
         : `jux: ${daemonLine(d)} (already running)\n`,
     );
     return EXIT.clean;
   }
-  if (!daemonAllowed(io)) {
-    io.writeErr(
-      'jux: the warm browser is off here (JUX_NO_DAEMON, a CI variable, or an unsupported platform).\n',
+  if (!daemonAllowed(io))
+    return daemonFailure(
+      sub,
+      json,
+      io,
+      'jux: the warm browser is off here (JUX_NO_DAEMON, a CI variable, or an unsupported platform).',
     );
-    return EXIT.failure;
-  }
-  // Same path as every capture: connect (spawning if needed), then let go.
-  // The daemon outlives this process; a fallback private launch does not.
-  const { browser, warm } = await connectWarmBrowser(warmOptions(r.chrome, io));
-  await browser.close();
-  const after = warm ? await daemonStatus(warmOptions(r.chrome, io)) : null;
-  if (!after) {
-    io.writeErr(
-      'jux: the warm browser could not start; captures will launch a private browser. Re-run with JUX_DEBUG=1 for the reason.\n',
+  // The capture path's connect-or-spawn, minus its private-launch fallback:
+  // a failed start reports why instead of launching a Chrome to close it.
+  const result = await startDaemon(warmOptions(r.chrome, io));
+  if ('error' in result)
+    return daemonFailure(
+      sub,
+      json,
+      io,
+      `jux: the warm browser could not start (${result.error}); captures will launch a private browser.`,
     );
-    return EXIT.failure;
-  }
-  const d = daemonReport(after, true);
+  const d = daemonReport(result.state, true);
   io.write(
     json
-      ? JSON.stringify({ started: true, daemon: d }) + '\n'
+      ? JSON.stringify({ ok: true, started: true, daemon: d }) + '\n'
       : `jux: started the ${daemonLine(d)}\n`,
   );
   return EXIT.clean;

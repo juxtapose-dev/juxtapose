@@ -8,9 +8,14 @@
 //
 // Losing the start race to another daemon (Ruling 21) exits 0: the client
 // that spawned us connects to the winner.
+//
+// The spawning client hands us its launch lock (handOffLock). We remove it
+// once we are listening with our state written, or once start failed, so
+// clients that arrive while Chrome is still starting wait for us instead of
+// spawning another supervisor. If we crash, our dead pid makes it stale.
 
 import { startSupervisor, SupervisorLostRace } from './supervisor.js';
-import { daemonPaths } from './state.js';
+import { daemonPaths, releaseLockHeldBy } from './state.js';
 
 interface MainArgs {
   executablePath: string;
@@ -35,19 +40,23 @@ function parseArgs(raw: string | undefined): MainArgs {
   return a as MainArgs;
 }
 
+let paths: ReturnType<typeof daemonPaths> | null = null;
 try {
   const args = parseArgs(process.argv[2]);
+  paths = daemonPaths(args.stateDir, args.key);
   const sup = await startSupervisor({
     executablePath: args.executablePath,
     args: args.args,
-    paths: daemonPaths(args.stateDir, args.key),
+    paths,
     key: args.key,
     idleMinutes: args.idleMinutes,
     onExit: () => process.exit(0),
   });
+  await releaseLockHeldBy(paths, process.pid);
   for (const sig of ['SIGTERM', 'SIGINT'] as const)
     process.on(sig, () => void sup.stop());
 } catch (e) {
+  if (paths) await releaseLockHeldBy(paths, process.pid).catch(() => {});
   if (e instanceof SupervisorLostRace) process.exit(0);
   process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
   process.exit(1);

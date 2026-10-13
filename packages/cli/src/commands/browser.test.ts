@@ -325,4 +325,20 @@ describe('jux browser start|stop|status (warm browser)', () => {
     expect(await browserCommand(['start'], false, h.io)).toBe(3);
     expect(h.err()).toMatch(/warm browser is off/);
   });
+
+  it.skipIf(!chrome)(
+    'start --json failures are a JSON object on stdout with the same exit code',
+    async () => {
+      const off = harness({ env: { ...process.env, JUX_NO_DAEMON: '1' } });
+      expect(await browserCommand(['start', '--json'], false, off.io)).toBe(3);
+      expect(JSON.parse(off.out())).toMatchObject({
+        ok: false,
+        started: false,
+        error: expect.stringMatching(/warm browser is off/),
+      });
+      const none = harness();
+      expect(await browserCommand(['start', '--json'], false, none.io)).toBe(3);
+      expect(JSON.parse(none.out())).toMatchObject({ ok: false, started: false });
+    },
+  );
 });

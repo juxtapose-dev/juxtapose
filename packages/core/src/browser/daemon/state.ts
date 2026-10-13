@@ -21,6 +21,7 @@ import {
   rm,
   stat,
   unlink,
+  writeFile,
 } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -39,9 +40,17 @@ export interface DaemonState {
 
 export interface Fingerprint {
   binary: string;
+  /**
+   * Size and mtime of the binary: an auto-updating Chrome behind --chrome or
+   * JUX_CHROME is replaced in place, same path and same pin.
+   */
+  binaryId?: string;
   version: string;
+  /** The full Chrome command line the supervisor launches with. */
   args: string[];
   env: NodeJS.ProcessEnv;
+  /** This jux build: package version plus a hash of the supervisor's code. */
+  jux?: string;
   uid?: number;
 }
 
@@ -64,8 +73,13 @@ export interface DirIdentity {
 const LOCK_STALE_MS = 30_000;
 // sun_path is 104 bytes on macOS, 108 on Linux; stay under both.
 const MAX_SOCKET_BYTES = 100;
-// Everything that can change fonts, locale formatting or text shaping.
+// Everything that can change fonts, locale formatting or text shaping. HOME
+// and XDG_CONFIG_HOME are here because fontconfig on Linux reads
+// ~/.fonts, ~/.fonts.conf and $XDG_CONFIG_HOME/fontconfig/fonts.conf (hinting,
+// antialiasing, aliases); the uid alone does not pin them.
 const RENDER_ENV = [
+  'HOME',
+  'XDG_CONFIG_HOME',
   'TZ',
   'LANG',
   'LC_ALL',
@@ -94,7 +108,15 @@ export function daemonKey(fp: Fingerprint): string {
   const env = RENDER_ENV.map((k) => `${k}=${fp.env[k] ?? ''}`).join('\n');
   return createHash('sha256')
     .update(
-      [fp.binary, fp.version, JSON.stringify(fp.args), env, String(uid)].join('\n\n'),
+      [
+        fp.binary,
+        fp.binaryId ?? '',
+        fp.version,
+        JSON.stringify(fp.args),
+        env,
+        fp.jux ?? '',
+        String(uid),
+      ].join('\n\n'),
     )
     .digest('hex')
     .slice(0, 16);
@@ -273,8 +295,7 @@ export async function acquireLock(
     // created. Losing the guard means someone else is reclaiming: report held.
     const guard = `${paths.lock}.reclaim`;
     try {
-      if (await lockIsStale(guard).catch(() => false))
-        await unlink(guard).catch(() => {});
+      await removeIfStale(guard);
       await (await open(guard, 'wx', 0o600)).close();
     } catch {
       return null;
@@ -296,18 +317,52 @@ export async function acquireLock(
     } finally {
       await fh.close();
     }
-    return async () => {
-      // Never remove a lock someone else took over (we were deemed stale).
-      const holder = Number.parseInt(
-        await readFile(paths.lock, 'utf8').catch(() => ''),
-        10,
-      );
-      if (holder === process.pid) await unlink(paths.lock).catch(() => {});
-    };
+    // Never remove a lock someone else took over (we were deemed stale) or
+    // one handed to a supervisor.
+    return () => releaseLockHeldBy(paths, process.pid);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') return null;
     throw err;
   }
+}
+
+/**
+ * Unlink a crashed reclaimer's guard, but only the file that was judged
+ * stale: two racers that both judged the old guard stale used to unlink each
+ * other's fresh one and both "hold" it. Comparing the inode before unlinking
+ * shrinks that to the few microseconds between the second lstat and the
+ * unlink. POSIX has no compare-and-unlink and Node exposes no flock, so it
+ * cannot close entirely; a second holder then only means a second
+ * supervisor, which loses on EADDRINUSE (Ruling 21) and exits.
+ */
+async function removeIfStale(file: string): Promise<void> {
+  const before = await lstat(file).catch(() => null);
+  if (!before || !(await lockIsStale(file).catch(() => false))) return;
+  const now = await lstat(file).catch(() => null);
+  if (now && now.ino === before.ino && now.dev === before.dev)
+    await unlink(file).catch(() => {});
+}
+
+async function lockHolder(paths: DaemonPaths): Promise<number> {
+  return Number.parseInt(await readFile(paths.lock, 'utf8').catch(() => ''), 10);
+}
+
+/**
+ * Pass a lock this process holds to `pid` (the supervisor it just spawned).
+ * The lock then lives as long as the supervisor's start, not the client's
+ * 2 s patience: with a 2.5 s cold Chrome the client used to release it
+ * mid-start and the next client spawned a second supervisor (review probe
+ * race.mjs: "spawned 2"). A holder that dies is still reclaimed (dead pid).
+ */
+export async function handOffLock(paths: DaemonPaths, pid: number): Promise<boolean> {
+  if ((await lockHolder(paths)) !== process.pid) return false;
+  await writeFile(paths.lock, String(pid));
+  return true;
+}
+
+/** Remove the lock if `pid` holds it: the supervisor once listening (or failed). */
+export async function releaseLockHeldBy(paths: DaemonPaths, pid: number): Promise<void> {
+  if ((await lockHolder(paths)) === pid) await unlink(paths.lock).catch(() => {});
 }
 
 export function pidAlive(pid: number): boolean {

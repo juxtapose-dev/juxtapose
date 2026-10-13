@@ -126,12 +126,11 @@ jobs:
       - name: Determinism (Storybook)
         run: node scripts/check-determinism.mjs examples/storybook 3
 
-      # Vue is here to keep "works with Storybook" honest: the adapter is
-      # renderer-agnostic, and this is what would catch it if that stopped
-      # being true.
       # The warm browser must be byte-identical to a fresh launch. CI variables
-      # turn the daemon off, so this step removes them; the check fails if the
-      # daemon did not start. It is stopped afterwards so the job leaves no Chrome.
+      # turn the daemon off, so this step removes them. The script captures
+      # once with a fresh launch, starts the daemon, and fails if any warm run
+      # differs from that reference or fell back to a private browser. It is
+      # stopped afterwards so the job leaves no Chrome.
       - name: Determinism (Storybook, warm browser)
         run: env -u CI -u GITHUB_ACTIONS node scripts/check-determinism.mjs --daemon examples/storybook 3
 
@@ -139,6 +138,9 @@ jobs:
         if: always()
         run: node packages/cli/dist/index.js browser stop
 
+      # Vue is here to keep "works with Storybook" honest: the adapter is
+      # renderer-agnostic, and this is what would catch it if that stopped
+      # being true.
       - name: Determinism (Storybook, Vue)
         run: node scripts/check-determinism.mjs examples/storybook-vue 3
 

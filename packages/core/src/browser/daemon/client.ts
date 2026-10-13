@@ -18,24 +18,28 @@
 // BrowserDiedError exactly as for a private Chrome that died (PR 1).
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { lstat, readFile, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
+import { lstat, readFile, rm, stat } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chromeArgs } from '../../capture/launch.js';
 import { Browser } from '../browser.js';
 import { CdpConnection } from '../cdp.js';
 import { CHROME_VERSION } from '../pins.js';
 import { SocketTransport } from '../transport.js';
 import {
   acquireLock,
-  clearState,
   daemonKey,
   daemonPaths,
   ensureDaemonDirs,
+  handOffLock,
   lockHeld,
   pidAlive,
   readState,
   recheckDaemonDirs,
+  releaseLockHeldBy,
   type DaemonPaths,
   type DaemonState,
 } from './state.js';
@@ -88,6 +92,14 @@ const POLL_MS = 50;
 
 /** A start that exited 0 but left no state this long after is a foreign socket, not a slow winner. */
 const FOREIGN_SETTLE_MS = 500;
+/**
+ * `jux browser start` asked for a daemon and has nothing else to do, so it
+ * waits for a cold Chrome (first launch after a download, Gatekeeper's scan)
+ * rather than reporting failure at the 2 s capture budget.
+ */
+const START_TIMEOUT_MS = 30_000;
+/** setTimeout clamps anything over 2^31-1 ms (~35791 min) to 1 ms. */
+const MAX_IDLE_MINUTES = 35_000;
 
 const DEFAULT_ENTRY = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -121,10 +133,17 @@ export function daemonEnabled(env: NodeJS.ProcessEnv, flagNoDaemon = false): boo
   return !CI_ENV_VARS.some((v) => truthy(env[v]));
 }
 
-/** JUX_BROWSER_IDLE_MINUTES when it is a positive number, else the default (undefined). */
+/**
+ * JUX_BROWSER_IDLE_MINUTES within [1, 35000], else the default (undefined).
+ * The upper bound is setTimeout's: 100000 minutes overflowed to a 1 ms idle
+ * timer and the daemon quit as soon as its last client left. Infinity used to
+ * pass too, became null in the spawn JSON, and every supervisor exited 1.
+ */
 export function daemonIdleMinutes(env: NodeJS.ProcessEnv): number | undefined {
-  const n = Number(env.JUX_BROWSER_IDLE_MINUTES);
-  return n > 0 ? n : undefined;
+  const raw = env.JUX_BROWSER_IDLE_MINUTES;
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 1 && n <= MAX_IDLE_MINUTES ? n : undefined;
 }
 
 type StatusOptions = Pick<
@@ -132,14 +151,97 @@ type StatusOptions = Pick<
   'executablePath' | 'stateDir' | 'args' | 'env' | 'readCommand'
 >;
 
-function keyFor(opts: StatusOptions): string {
+/** Stands in for the per-launch profile directory in the keyed command line. */
+const PROFILE_PLACEHOLDER = '<profile>';
+
+/**
+ * Size and mtime of the binary. An auto-updating Chrome behind --chrome or
+ * JUX_CHROME is replaced in place under the same path and pin; without this a
+ * daemon started before the update kept rendering with the old build while
+ * `--no-daemon` and CI used the new one. For our own pinned download it
+ * changes only on a reinstall, which is a new daemon either way.
+ */
+function binaryIdentity(file: string): string {
+  try {
+    const st = statSync(file);
+    return `${st.size}:${st.mtimeMs}`;
+  } catch {
+    return '';
+  }
+}
+
+const RELATIVE_IMPORT = /(?:\bfrom|\bimport)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
+
+/**
+ * A hash of `entry` and every file it reaches through relative imports. The
+ * supervisor that serves a client is whichever build spawned it; after a
+ * rebuild or an upgrade the supervisor's flags, allowlist or protocol can
+ * differ from this client's, and reusing it would render with the old code.
+ * A missing file hashes as missing (vitest runs the .ts sources, where the
+ * .js entry does not exist).
+ */
+export function buildIdentity(entry: string): string {
+  const hash = createHash('sha256');
+  const seen = new Set<string>();
+  const queue = [path.resolve(entry)];
+  while (queue.length > 0) {
+    const file = queue.shift()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    let src: string;
+    try {
+      src = readFileSync(file, 'utf8');
+    } catch {
+      hash.update(`${file}\0missing\0`);
+      continue;
+    }
+    hash.update(`${path.basename(file)}\0${src}\0`);
+    for (const m of src.matchAll(RELATIVE_IMPORT))
+      queue.push(path.resolve(path.dirname(file), m[1]!));
+  }
+  return hash.digest('hex').slice(0, 16);
+}
+
+function packageVersion(): string {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+    ) as { version?: unknown };
+    return typeof pkg.version === 'string' ? pkg.version : '';
+  } catch {
+    return '';
+  }
+}
+
+let juxIdentityCache: string | undefined;
+
+/** `<@juxtapose/core version>+<build hash of the supervisor entry>`, computed once. */
+export function juxIdentity(): string {
+  return (juxIdentityCache ??= `${packageVersion()}+${buildIdentity(DEFAULT_ENTRY)}`);
+}
+
+/**
+ * The daemon key for these options. It covers everything a fresh launch
+ * would render with: the binary (path, size, mtime), the pin, the full Chrome
+ * command line jux would launch, the render env and this jux build. Keys that
+ * differ name different sockets, so a daemon from an older jux or other
+ * flags is never reused; it idles out.
+ */
+export function daemonKeyFor(
+  opts: Pick<WarmOptions, 'executablePath' | 'args' | 'env'>,
+  jux: string = juxIdentity(),
+): string {
   return daemonKey({
     binary: opts.executablePath,
+    binaryId: binaryIdentity(opts.executablePath),
     version: CHROME_VERSION,
-    args: opts.args ?? [],
+    args: chromeArgs({ userDataDir: PROFILE_PLACEHOLDER, args: opts.args }),
     env: opts.env ?? process.env,
+    jux,
   });
 }
+
+const keyFor = (opts: StatusOptions): string => daemonKeyFor(opts);
 
 function pathsFor(opts: StatusOptions): DaemonPaths {
   return daemonPaths(opts.stateDir, keyFor(opts));
@@ -223,17 +325,25 @@ async function probe(paths: DaemonPaths, timeoutMs: number): Promise<Probe> {
  * whatever env this process happens to have. Detached in its own process
  * group with stdio ignored: it outlives this jux, and a Ctrl-C to this
  * terminal must not reach it.
+ *
+ * NODE_OPTIONS is not a render input and is dropped: VS Code's debug
+ * terminal (`--require …/bootloader.js`), `--inspect` or `--cpu-prof` would
+ * otherwise attach to a process that lives for hours, and `--cpu-prof` would
+ * write a profile into the project when it finally exits. The cwd is the
+ * state dir for the same reason: not the project that happened to start it.
  */
 export function spawnSupervisor(
   args: SpawnArgs,
   env: NodeJS.ProcessEnv,
   entry = DEFAULT_ENTRY,
 ): ChildProcess {
+  const { NODE_OPTIONS: _dropped, ...childEnv } = env;
   const child = spawn(process.execPath, [entry, JSON.stringify(args)], {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
-    env,
+    cwd: args.stateDir,
+    env: childEnv,
   });
   child.unref();
   return child;
@@ -253,10 +363,6 @@ function watchChild(child: ChildProcess, watch: SpawnWatch): void {
     if (code === 0) watch.exitedCleanAt = Date.now();
     else watch.failed ??= `daemon exited (${signal ?? `code ${code}`})`;
   });
-}
-
-function defaultSpawn(args: SpawnArgs, env: NodeJS.ProcessEnv, watch: SpawnWatch): void {
-  watchChild(spawnSupervisor(args, env), watch);
 }
 
 type Outcome =
@@ -354,6 +460,42 @@ async function killWedged(pid: number): Promise<void> {
   for (let i = 0; i < 20 && pidAlive(pid); i++) await sleep(POLL_MS);
 }
 
+/** True when something accepts a connection on `socket` (a full backlog counts). */
+function socketLive(socket: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = net.connect(socket);
+    const done = (live: boolean) => {
+      clearTimeout(timer);
+      s.destroy();
+      resolve(live);
+    };
+    const timer = setTimeout(() => done(true), PROBE_TIMEOUT_MS);
+    s.once('connect', () => done(true));
+    s.once('error', () => done(false));
+  });
+}
+
+/**
+ * Remove the files of the daemon `s` describes, and nothing newer. The state
+ * goes only if it still names the same pid and start time: between our read
+ * and this call another client may have spawned a replacement that wrote its
+ * own (the review traced `jux browser stop` deleting a new daemon's files
+ * while the old one's Chrome took 5 s to close, orphaning the new one). The
+ * socket goes only if it is the path that state named and nothing listens on
+ * it, compared by inode so a socket bound meanwhile is left alone.
+ */
+export async function clearStaleState(paths: DaemonPaths, s: DaemonState): Promise<void> {
+  const now = await readState(paths);
+  if (!now || now.pid !== s.pid || now.startedAt !== s.startedAt) return;
+  await rm(paths.state, { force: true });
+  if (s.socket !== paths.socket) return;
+  const before = await lstat(paths.socket).catch(() => null);
+  if (!before?.isSocket() || (await socketLive(paths.socket))) return;
+  const after = await lstat(paths.socket).catch(() => null);
+  if (after && after.ino === before.ino && after.dev === before.dev)
+    await rm(paths.socket, { force: true });
+}
+
 async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
   const env = opts.env ?? process.env;
   const key = keyFor(opts);
@@ -366,7 +508,7 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
     if (!pidAlive(existing.pid) || existing.socket !== paths.socket) {
       // SIGKILLed daemon, a reboot, or a state naming a socket we would never
       // connect to (Ruling 24): nothing to reuse.
-      await clearState(paths);
+      await clearStaleState(paths, existing);
     } else if (!usable(existing, key, opts)) {
       // Never reuse a daemon with another fingerprint (Ruling 7), and never
       // remove a live process's files.
@@ -383,12 +525,14 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
         await killWedged(existing.pid);
       }
       // Dead (the pid was reused by an unrelated process) or killed as wedged.
-      await clearState(paths);
+      await clearStaleState(paths, existing);
     }
   }
 
   let watch: SpawnWatch | null = null;
   let release: (() => Promise<void>) | null = null;
+  /** The supervisor pid our lock was handed to, if any. */
+  let handedTo: number | null = null;
   try {
     for (;;) {
       const s = await readState(paths);
@@ -412,13 +556,22 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
             key,
             idleMinutes: opts.idleMinutes ?? DEFAULT_IDLE_MINUTES,
           };
+          let child: ChildProcess | void;
           try {
-            if (opts.spawnDaemon) {
-              const child = opts.spawnDaemon(args, env);
-              if (child) watchChild(child, watch);
-            } else defaultSpawn(args, env, watch);
+            child = opts.spawnDaemon
+              ? opts.spawnDaemon(args, env)
+              : spawnSupervisor(args, env);
           } catch (e) {
             return { why: `spawn failed: ${e instanceof Error ? e.message : String(e)}` };
+          }
+          if (child) {
+            watchChild(child, watch);
+            // The lock now lives as long as the supervisor's start, not as
+            // long as this client waits (see handOffLock).
+            if (child.pid !== undefined && (await handOffLock(paths, child.pid))) {
+              handedTo = child.pid;
+              release = null;
+            }
           }
         }
       }
@@ -444,6 +597,14 @@ async function connectOrSpawn(opts: WarmOptions): Promise<Outcome> {
     }
   } finally {
     if (release) await release();
+    else if (
+      handedTo !== null &&
+      (watch?.failed ||
+        watch?.exitedCleanAt ||
+        // Up before the hand-off landed: it found no lock of its own to drop.
+        (await readState(paths))?.pid === handedTo)
+    )
+      await releaseLockHeldBy(paths, handedTo);
   }
 }
 
@@ -473,45 +634,114 @@ export async function connectWarmBrowser(
   } catch (e) {
     outcome = { why: e instanceof Error ? e.message : String(e) };
   }
-  if ('browser' in outcome) return outcome;
+  const debug = (opts.env ?? process.env).JUX_DEBUG;
+  if ('browser' in outcome) {
+    // Positive evidence for check:determinism --daemon: a run whose clients
+    // all fell back privately prints none of these.
+    if (debug) process.stderr.write('jux: using the warm browser\n');
+    return outcome;
+  }
   if (outcome.notice) process.stderr.write(`${outcome.notice}\n`);
-  else if ((opts.env ?? process.env).JUX_DEBUG)
+  else if (debug)
     process.stderr.write(
       `jux: warm browser unavailable (${outcome.why.replace(/\s+/g, ' ')}); launching a private browser\n`,
     );
   return privateLaunch(opts);
 }
 
-/** The running daemon for this fingerprint, or null (a dead one's files are cleared). */
+/**
+ * Start (or find) the daemon without a private fallback: `jux browser start`
+ * must not launch and close a whole Chrome just to report that the daemon
+ * could not start.
+ */
+export async function startDaemon(
+  opts: WarmOptions,
+): Promise<{ state: DaemonState } | { error: string }> {
+  let outcome: Outcome;
+  try {
+    outcome = await connectOrSpawn({ connectTimeoutMs: START_TIMEOUT_MS, ...opts });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+  if (!('browser' in outcome)) return { error: outcome.why };
+  await outcome.browser.close();
+  const s = await daemonStatus(opts);
+  return s ? { state: s } : { error: 'the warm browser exited right after starting' };
+}
+
+/**
+ * The running daemon for this fingerprint, or null. Running means it answered
+ * a hello on our socket, not that its pid is alive: after a reboot the pid
+ * can belong to anything, and `start` used to report "already running" for a
+ * daemon that did not exist. A dead daemon's files are cleared.
+ */
 export async function daemonStatus(opts: StatusOptions): Promise<DaemonState | null> {
-  const paths = pathsFor(opts);
+  const key = keyFor(opts);
+  const paths = daemonPaths(opts.stateDir, key);
   const s = await readState(paths);
   if (!s) return null;
-  if (!pidAlive(s.pid)) {
-    await clearState(paths);
+  if (!pidAlive(s.pid) || s.socket !== paths.socket) {
+    await clearStaleState(paths, s);
     return null;
   }
-  return s;
+  if (s.key !== key) return null;
+  const p = await probe(paths, PROBE_TIMEOUT_MS);
+  if (p.kind === 'ok') {
+    p.connection.close();
+    return s;
+  }
+  // Nothing listens: the pid was reused. A timeout or refusal is a live
+  // listener we cannot use; its files are not ours to remove.
+  if (p.kind === 'dead') await clearStaleState(paths, s);
+  return null;
 }
 
 /**
  * What `stopDaemon` did: `none` (nothing running, or the state named a pid
- * that is not ours and was cleared), `stopped`, or `unverified` (a live pid
- * whose command line could not be read: nothing is signalled or removed).
+ * that is not ours and nothing listened on its socket), `stopped`, or
+ * `unverified` (a live pid we could not confirm as ours: nothing is signalled
+ * or removed).
  */
 export type StopResult =
-  { outcome: 'none' | 'stopped' } | { outcome: 'unverified'; pid: number };
+  | { outcome: 'none' | 'stopped' }
+  | { outcome: 'unverified'; pid: number; reason: string };
 
 /** SIGTERM the supervisor (it closes Chrome and clears its state). */
 export async function stopDaemon(opts: StatusOptions): Promise<StopResult> {
-  const s = await daemonStatus(opts);
+  const paths = pathsFor(opts);
+  const s = await readState(paths);
+  if (!s) return { outcome: 'none' };
+  if (!pidAlive(s.pid)) {
+    await clearStaleState(paths, s);
+    return { outcome: 'none' };
+  }
   // An in-process supervisor (tests) shares our pid: signalling it would kill us.
-  if (!s || s.pid === process.pid) return { outcome: 'none' };
+  if (s.pid === process.pid) return { outcome: 'none' };
   // A reused pid is somebody else's process: signal only our supervisor-main.
   const who = await ownership(s.pid, s.key, opts.readCommand);
-  if (who === 'unknown') return { outcome: 'unverified', pid: s.pid };
+  if (who === 'unknown')
+    return {
+      outcome: 'unverified',
+      pid: s.pid,
+      reason: 'no /proc or ps to read its command line',
+    };
   if (who === 'foreign') {
-    await clearState(pathsFor(opts));
+    // A false "foreign" (a wrapper entry whose command line lacks
+    // supervisor-main) must not delete a live daemon's files: it would keep
+    // running, unreachable, with its Chrome. Only a socket nobody answers on
+    // proves the pid was reused.
+    const p =
+      s.socket === paths.socket
+        ? await probe(paths, PROBE_TIMEOUT_MS)
+        : ({ kind: 'dead' } as Probe);
+    if (p.kind === 'ok') p.connection.close();
+    if (p.kind !== 'dead')
+      return {
+        outcome: 'unverified',
+        pid: s.pid,
+        reason: 'its command line is not the warm browser, yet its socket is live',
+      };
+    await clearStaleState(paths, s);
     return { outcome: 'none' };
   }
   try {
@@ -520,6 +750,9 @@ export async function stopDaemon(opts: StatusOptions): Promise<StopResult> {
     // already gone
   }
   for (let i = 0; i < 40 && pidAlive(s.pid); i++) await sleep(50);
-  await clearState(pathsFor(opts));
+  // The supervisor clears its own files on the way out. If it is still
+  // closing Chrome, they are still its; once it is gone, only its own are
+  // removed, never a successor's.
+  if (!pidAlive(s.pid)) await clearStaleState(paths, s);
   return { outcome: 'stopped' };
 }
