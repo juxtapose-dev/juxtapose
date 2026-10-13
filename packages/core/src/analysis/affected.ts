@@ -22,7 +22,7 @@ interface ViteManifestEntry {
   dynamicImports?: string[];
 }
 
-type ViteManifest = Record<string, ViteManifestEntry>;
+export type ViteManifest = Record<string, ViteManifestEntry>;
 
 export interface AffectedOptions {
   projectRoot: string;
@@ -58,6 +58,19 @@ const LOCKFILES = new Set([
   'bun.lockb',
 ]);
 
+/** A root lockfile: dependencies changed, so every story may render
+ *  differently. A nested package.json (a fixture) is not one. */
+export function isLockfileChange(file: string): boolean {
+  const base = file.split('/').pop() ?? file;
+  return LOCKFILES.has(base) && !file.includes('/');
+}
+
+/** Anything under a platform config dir (`.storybook`, `.ladle`) reaches
+ *  every story. */
+export function isConfigChange(file: string, configDirs: string[]): boolean {
+  return configDirs.some((dir) => file === dir || file.startsWith(dir + '/'));
+}
+
 export async function resolveAffected(
   stories: StoryManifest[],
   sinceCommit: string | null,
@@ -74,13 +87,9 @@ export async function resolveAffected(
   if (changed.length === 0) return { stories: [], reason: 'no-changes' };
 
   for (const file of changed) {
-    const base = file.split('/').pop() ?? file;
-    if (LOCKFILES.has(base) && !file.includes('/')) {
-      return { stories, reason: 'dependency-changed' };
-    }
-    if (opts.configDirs.some((dir) => file === dir || file.startsWith(dir + '/'))) {
+    if (isLockfileChange(file)) return { stories, reason: 'dependency-changed' };
+    if (isConfigChange(file, opts.configDirs))
       return { stories, reason: 'config-changed' };
-    }
   }
 
   const manifest = opts.buildDir ? await loadViteManifest(opts.buildDir) : null;
@@ -154,6 +163,17 @@ export async function resolveAffectedFromPaths(
   });
 }
 
+/** Vite's `imports[]` holds chunk keys, not source paths; this is the map
+ *  both graph directions resolve an edge through. A chunk with no `src` (a
+ *  bundled component chunk in a Storybook build) has no entry. */
+export function keyToSrc(manifest: ViteManifest): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const [key, entry] of Object.entries(manifest)) {
+    if (entry.src) map.set(key, entry.src);
+  }
+  return map;
+}
+
 /**
  * Build `imported → importers` from Vite's manifest.
  *
@@ -161,17 +181,14 @@ export async function resolveAffectedFromPaths(
  * means mapping key → src first.
  */
 function buildReverseGraph(manifest: ViteManifest): Map<string, Set<string>> {
-  const keyToSrc = new Map<string, string>();
-  for (const [key, entry] of Object.entries(manifest)) {
-    if (entry.src) keyToSrc.set(key, entry.src);
-  }
+  const srcOf = keyToSrc(manifest);
 
   const reverse = new Map<string, Set<string>>();
   for (const entry of Object.values(manifest)) {
     const importer = entry.src;
     if (!importer) continue;
     for (const key of [...(entry.imports ?? []), ...(entry.dynamicImports ?? [])]) {
-      const imported = keyToSrc.get(key) ?? key;
+      const imported = srcOf.get(key) ?? key;
       let set = reverse.get(imported);
       if (!set) reverse.set(imported, (set = new Set()));
       set.add(importer);
@@ -196,7 +213,7 @@ function walkDependents(reverse: Map<string, Set<string>>, seeds: string[]): Set
   return seen;
 }
 
-async function loadViteManifest(buildDir: string): Promise<ViteManifest | null> {
+export async function loadViteManifest(buildDir: string): Promise<ViteManifest | null> {
   for (const rel of ['.vite/manifest.json', 'manifest.json']) {
     try {
       return JSON.parse(await readFile(path.join(buildDir, rel), 'utf8')) as ViteManifest;
@@ -207,7 +224,7 @@ async function loadViteManifest(buildDir: string): Promise<ViteManifest | null> 
   return null;
 }
 
-function gitChangedFiles(sinceCommit: string, cwd: string): string[] | null {
+export function gitChangedFiles(sinceCommit: string, cwd: string): string[] | null {
   try {
     const out = execFileSync('git', ['diff', '--name-only', `${sinceCommit}..HEAD`], {
       cwd,
@@ -222,6 +239,19 @@ function gitChangedFiles(sinceCommit: string, cwd: string): string[] | null {
   }
 }
 
-function toPosixRelative(root: string, abs: string): string {
+/** The repository root, which git's paths are relative to. Null outside a
+ *  repository or without git. */
+export function gitTopLevel(cwd: string): string | null {
+  try {
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd,
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+export function toPosixRelative(root: string, abs: string): string {
   return path.relative(root, abs).split(path.sep).join('/');
 }

@@ -31,6 +31,7 @@ import {
   resolveMinDiffPercent,
 } from '../diff/diff.js';
 import { phases, type Phases } from './phases.js';
+import type { CauseIndex } from '../analysis/cause.js';
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
@@ -54,6 +55,8 @@ export interface RunOptions {
   /** Collects per-phase wall time. Pass one to fold in phases the caller timed
    *  itself (enumerate, affected, launch); omit and one is made internally. */
   phases?: Phases;
+  /** From `jux run --since`: consulted only for a story that failed. */
+  cause?: CauseIndex;
 }
 
 export interface RunArtifact {
@@ -117,8 +120,12 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     results.push(await judge(outcome.snapshot, outcome.story, manifest, opts, p));
   }
 
-  // Diffing happens inside the loop, so subtract it to leave capture alone.
-  p.add('capture', Date.now() - captureStarted - (p.timings.diff ?? 0));
+  // Diffing and cause tracing happen inside the loop; subtract both to
+  // leave capture alone.
+  p.add(
+    'capture',
+    Date.now() - captureStarted - (p.timings.diff ?? 0) - (p.timings.cause ?? 0),
+  );
 
   const summary = tally(results);
 
@@ -214,7 +221,7 @@ async function judge(
   // baseline sidecar is read only here, so a green run never touches one. A
   // manifest hash is not a file: read the store, and treat anything
   // unreadable as absent. This code runs only on a hash mismatch.
-  const structural = await tryStructural(opts.store, story.storyId, snapshot, diff);
+  const structural = await tryStructural(opts, story, snapshot, diff, p);
 
   return {
     ...base,
@@ -240,22 +247,33 @@ async function readBaselineStructure(
 }
 
 /** Structure explains a failure, never decides one, so nothing in here may
- *  fail the story: a missing, corrupt or malformed sidecar, or a bug in the
- *  diff, yields no verdict and the pixel result stands. */
+ *  fail the story: a missing, corrupt or malformed sidecar, a cause index
+ *  that throws, or a bug in the diff, yields no verdict (or one without a
+ *  cause) and the pixel result stands. */
 async function tryStructural(
-  store: BaselineStore,
-  storyId: string,
+  opts: RunOptions,
+  story: StoryManifest,
   snapshot: Snapshot,
   pixels: Pick<DiffOutput, 'changedRegions' | 'dimensionMismatch'>,
+  p: Phases,
 ): Promise<StructuralVerdict | undefined> {
   if (!snapshot.structure) return undefined;
+  let cause: Awaited<ReturnType<CauseIndex['causeFor']>> | undefined;
+  if (opts.cause) {
+    try {
+      cause = await p.time('cause', () => opts.cause!.causeFor(story.componentPath));
+    } catch {
+      cause = undefined;
+    }
+  }
   try {
     return structuralDiff({
-      baseline: await readBaselineStructure(store, storyId),
+      baseline: await readBaselineStructure(opts.store, story.storyId),
       current: snapshot.structure,
       imagesIdentical: false,
       pixels,
-      escalate: { command: `jux handoff ${storyId}` },
+      escalate: { command: `jux handoff ${story.storyId}` },
+      ...(cause ? { cause } : {}),
     });
   } catch {
     return undefined;

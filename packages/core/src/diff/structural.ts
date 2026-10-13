@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto';
 import type { DiffOutput } from './diff.js';
 import type {
+  Cause,
   ChangedRegion,
   Classification,
   Delta,
@@ -34,11 +35,19 @@ export interface StructuralDiffInput {
   pixels: Pick<DiffOutput, 'changedRegions' | 'dimensionMismatch'>;
   /** The exact tier-3 command; core does not know how the CLI is spelled. */
   escalate: { command: string };
+  /** From `jux run --since`; `jux diff` has no changed-file set. */
+  cause?: Cause;
 }
 
 export const MAX_DELTAS = 20;
 /** JSON.stringify(verdict).length never exceeds this. */
 export const MAX_VERDICT = 1500;
+/** `cause.files` is capped here as well as in the index: the budget is a
+ *  guarantee for any input. */
+export const MAX_CAUSE_FILES = 5;
+/** Longest `cause.files[].path`. The tail is kept: the file name is what a
+ *  reader greps for; a 10-deep monorepo prefix is not. */
+export const MAX_CAUSE_PATH = 80;
 
 export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
   const { baseline, current, pixels, imagesIdentical } = input;
@@ -100,6 +109,9 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
   });
 
   const sig = signature(classification, facts);
+  // Fitted here, not trusted from the caller: the budget is a guarantee for
+  // any input, and the index's cap is a courtesy.
+  const cause = input.cause && fitCause(input.cause);
   // One literal, one key order: the CLI's byte-stability rests on it.
   const build = (ds: Delta[], regions: ChangedRegion[]): StructuralVerdict => ({
     schema: 'juxtapose.verdict/v1',
@@ -112,6 +124,7 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
     explained: cov.explained,
     unexplainedRegions: regions,
     flags,
+    ...(cause ? { cause } : {}),
     signature: sig,
     escalate: { command: input.escalate.command },
   });
@@ -168,4 +181,19 @@ function signature(classification: Classification, facts: Fact[]): string {
   return createHash('sha256')
     .update([classification, ...items].join('\n'))
     .digest('hex');
+}
+
+function fitCause(c: Cause): Cause {
+  return {
+    kind: c.kind,
+    files: c.files.slice(0, MAX_CAUSE_FILES).map((f) => ({
+      path: clipHead(f.path, MAX_CAUSE_PATH),
+      distance: f.distance,
+    })),
+  };
+}
+
+/** `…` plus the last `max - 1` code units. */
+function clipHead(s: string, max: number): string {
+  return s.length <= max ? s : '…' + s.slice(s.length - (max - 1));
 }

@@ -156,6 +156,25 @@ export type Flag =
    *  fold are invisible to both pixels and structure. */
   | 'below-fold';
 
+export type CauseKind =
+  /** At least one changed file is in the story's import closure. */
+  | 'in-closure'
+  /** A changed file reaches every story: a root lockfile or a platform config dir. */
+  | 'config'
+  /** The closure was traced and no changed file is in it: the strongest
+   *  "this is not your code" the tool can give, especially beside render-drift. */
+  | 'none-in-closure'
+  /** No --since, no manifest, git failed, or the story is not in the graph. */
+  | 'unknown';
+
+/** Why this story changed: the cheap link only (story → import closure →
+ *  changed files). Matched CSS rules and source lines are later rows. */
+export interface Cause {
+  kind: CauseKind;
+  /** At most 5, nearest first; posix paths relative to the project root. */
+  files: Array<{ path: string; distance: number }>;
+}
+
 /** Tier-0: what changed, in a few hundred characters, with whether it
  *  explains every changed pixel. The whole output of `jux diff`. */
 export interface StructuralVerdict {
@@ -176,6 +195,8 @@ export interface StructuralVerdict {
   /** The prefix that fits the 1,500-char verdict; `coverage` covers all. */
   unexplainedRegions: ChangedRegion[];
   flags: Flag[];
+  /** Present only in `jux run --since`; absent from `jux diff`. */
+  cause?: Cause;
   /** sha256 over the classification and the delta set with elements
    *  abstracted to role|tag, so two pages with the same change share one. */
   signature: string;

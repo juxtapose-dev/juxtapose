@@ -25,6 +25,8 @@ export type {
   StyleTag,
   Flag,
   StructuralVerdict,
+  Cause,
+  CauseKind,
   DiffStatus,
   DiffResult,
   RunReport,
@@ -92,9 +94,20 @@ export {
   type AffectedOptions,
   type AffectedResult,
 } from './analysis/affected.js';
+// Cause: the story's import closure intersected with the changed files.
+export {
+  buildCauseIndex,
+  prepareCause,
+  type CauseIndex,
+  type CauseSources,
+} from './analysis/cause.js';
 
 // Reporting on one.
-export { buildHandoffPrompt, type HandoffPayload } from './agent/handoff.js';
+export {
+  buildHandoffPrompt,
+  describeCause,
+  type HandoffPayload,
+} from './agent/handoff.js';
 export { buildComment, type CommentOptions } from './report/comment.js';
 export { buildHtmlReport, type HtmlReportOptions } from './report/html.js';
 export { formatPercent } from './report/format.js';

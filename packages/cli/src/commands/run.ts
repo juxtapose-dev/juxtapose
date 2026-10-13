@@ -5,6 +5,9 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import {
   buildComment,
+  describeCause,
+  prepareCause,
+  type DiffResult,
   buildHtmlReport,
   postComment,
   resolveArtifactUrl,
@@ -68,6 +71,17 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
     `jux: ${selection.stories.length}/${stories.length} stories to capture (${selection.reason})`,
   );
 
+  // Only with --since is there a changed-file set to trace. Lazy: the index
+  // reads git and the manifest on the first failing story, never on a green run.
+  const cause = flags.since
+    ? prepareCause({
+        projectRoot: ctx.projectRoot,
+        buildDir: ctx.buildDir,
+        sinceCommit: flags.since,
+        configDirs: [...ctx.platform.configDirs],
+      })
+    : undefined;
+
   if (selection.stories.length === 0) {
     const empty = emptyReport(ctx.projectRoot, stories.length);
     await emit(ctx.json, empty, ctx.projectRoot, p);
@@ -99,6 +113,7 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
         ? createAncestryCheck(ctx.projectRoot)
         : alwaysAncestor,
       phases: p,
+      ...(cause ? { cause } : {}),
       runId,
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
@@ -273,6 +288,7 @@ async function emit(
             ? ` ${r.error}`
             : '';
       process.stdout.write(`  ${r.status.padEnd(6)} ${r.storyId}${detail}\n`);
+      for (const line of explain(r)) process.stdout.write(`         ${line}\n`);
     }
     if (needsReview.length > 20) {
       process.stdout.write(`  …and ${needsReview.length - 20} more\n`);
@@ -302,4 +318,14 @@ function emptyReport(projectRoot: string, totalCount: number): RunReport {
     durationMs: 0,
     startedAt: new Date().toISOString(),
   };
+}
+
+/** What an agent reads first under a failing story: the cause (the same
+ *  sentence the handoff prints), then the structural summary. One line
+ *  each; the handoff has the rest. */
+function explain(r: DiffResult): string[] {
+  const v = r.structural;
+  if (!v) return [];
+  const why = v.cause && describeCause(v.cause);
+  return [...(why ? [`cause: ${why}`] : []), v.summary];
 }

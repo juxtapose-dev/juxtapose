@@ -98,7 +98,11 @@ function store(
   };
 }
 
-const run = (s: BaselineStore, storyId = 's') =>
+const run = (
+  s: BaselineStore,
+  storyId = 's',
+  extra: Partial<Parameters<typeof runCapture>[0]> = {},
+) =>
   runCapture({
     browser: {} as Browser,
     platform: { name: 'x' } as never,
@@ -109,6 +113,7 @@ const run = (s: BaselineStore, storyId = 's') =>
     runId: 'r',
     branch: 'b',
     commitSha: 'c',
+    ...extra,
   });
 
 test('a failing story with sidecars on both sides carries a verdict', async () => {
@@ -179,4 +184,33 @@ test('a dimension mismatch carries the error and still a verdict', async () => {
   } finally {
     dims.on = false;
   }
+});
+
+test('with a cause index, a failing verdict carries the cause', async () => {
+  const cause = {
+    kind: 'in-closure' as const,
+    files: [{ path: 'src/x.ts', distance: 1 }],
+  };
+  const causeFor = vi.fn(async () => cause);
+  const r = await run(store('ok'), 's', { cause: { causeFor } });
+  expect(r.results[0].structural?.cause).toEqual(cause);
+  expect(causeFor).toHaveBeenCalledWith('');
+});
+
+// Verification 5: the index is never consulted for a passing story.
+test('a passing story never asks the cause index', async () => {
+  const causeFor = vi.fn(async () => ({ kind: 'unknown' as const, files: [] }));
+  const r = await run(store('ok'), 'green', { cause: { causeFor } });
+  expect(r.results[0].status).toBe('pass');
+  expect(causeFor).not.toHaveBeenCalled();
+});
+
+test('a cause index that throws leaves the verdict without a cause, run intact', async () => {
+  const causeFor = vi.fn(async () => {
+    throw new Error('git exploded');
+  });
+  const r = await run(store('ok'), 's', { cause: { causeFor } });
+  expect(r.results[0].status).toBe('fail');
+  expect(r.results[0].structural?.classification).toBe('style-only');
+  expect(r.results[0].structural?.cause).toBeUndefined();
 });

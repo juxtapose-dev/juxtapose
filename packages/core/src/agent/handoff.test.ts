@@ -19,6 +19,25 @@ const base: HandoffPayload = {
   projectRoot: '/repo',
 };
 
+const fixture = JSON.parse(
+  readFileSync(
+    path.join(import.meta.dirname, '../diff/__fixtures__/structural-corpus.json'),
+    'utf8',
+  ),
+) as {
+  cases: Record<
+    string,
+    {
+      structure: StructureSnapshot;
+      pixels: {
+        mismatchPixels: number;
+        changedRegions: ChangedRegion[];
+        dimensionMismatch: boolean;
+      };
+    }
+  >;
+};
+
 describe('buildHandoffPrompt', () => {
   it('leads with structured data, not images', () => {
     const out = buildHandoffPrompt(base);
@@ -85,6 +104,49 @@ describe('buildHandoffPrompt', () => {
     const out = buildHandoffPrompt({ ...base, changedRegions: many });
     expect(out).toContain('and 38 more');
   });
+
+  it('leads with the cause when the run traced one', () => {
+    const v = structuralDiff({
+      baseline: fixture.cases.noop.structure,
+      current: fixture.cases.color.structure,
+      imagesIdentical: false,
+      pixels: fixture.cases.color.pixels,
+      escalate: { command: 'jux handoff x' },
+      cause: {
+        kind: 'in-closure',
+        files: [
+          { path: 'src/tokens.css', distance: 2 },
+          { path: 'src/Button.tsx', distance: 1 },
+        ],
+      },
+    });
+    const out = buildHandoffPrompt({ ...base, structural: v });
+    expect(out.indexOf('## Why')).toBeLessThan(
+      out.indexOf('## What changed (structure)'),
+    );
+    expect(out).toContain('`src/tokens.css` (2 imports away)');
+    expect(out).toContain('`src/Button.tsx` (1 import away)');
+    const none = buildHandoffPrompt({
+      ...base,
+      structural: { ...v, cause: { kind: 'none-in-closure', files: [] } },
+    });
+    expect(none).toContain(
+      "None of the files changed since the baseline is in this story's import closure",
+    );
+    const unknown = buildHandoffPrompt({
+      ...base,
+      structural: { ...v, cause: { kind: 'unknown', files: [] } },
+    });
+    expect(unknown).not.toContain('## Why');
+    // The cause does not depend on structure: with no baseline sidecar the
+    // structure section is replaced by a "re-approve" note, and `## Why` stays.
+    const noStructure = buildHandoffPrompt({
+      ...base,
+      structural: { ...v, deltas: [], flags: ['no-baseline-structure'] },
+    });
+    expect(noStructure).toContain('## Why');
+    expect(noStructure).toContain('No structure snapshot for the baseline');
+  });
 });
 
 describe('describeRegion', () => {
@@ -115,24 +177,6 @@ describe('describeRegion', () => {
     );
   });
 
-  const fixture = JSON.parse(
-    readFileSync(
-      path.join(import.meta.dirname, '../diff/__fixtures__/structural-corpus.json'),
-      'utf8',
-    ),
-  ) as {
-    cases: Record<
-      string,
-      {
-        structure: StructureSnapshot;
-        pixels: {
-          mismatchPixels: number;
-          changedRegions: ChangedRegion[];
-          dimensionMismatch: boolean;
-        };
-      }
-    >;
-  };
   const verdictFor = (name: string) =>
     structuralDiff({
       baseline: fixture.cases.noop.structure,

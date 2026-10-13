@@ -557,3 +557,49 @@ test('5,000-element tree pair (50 parents × 100 children, LCS path) diffs well 
   );
   expect(ms).toBeLessThan(250);
 });
+
+test('cause sits between flags and signature, and is absent when not given', () => {
+  const cause = {
+    kind: 'in-closure' as const,
+    files: [{ path: 'src/Button.tsx', distance: 1 }],
+  };
+  expect(Object.keys(verdict('color', { cause }))).toEqual([
+    'schema',
+    'classification',
+    'styleTags',
+    'summary',
+    'deltas',
+    'deltaCount',
+    'coverage',
+    'explained',
+    'unexplainedRegions',
+    'flags',
+    'cause',
+    'signature',
+    'escalate',
+  ]);
+  expect(verdict('color', { cause }).cause).toEqual(cause);
+  expect('cause' in verdict('color')).toBe(false);
+  // the signature is about the change, not about which files caused it
+  expect(verdict('color', { cause }).signature).toBe(verdict('color').signature);
+});
+
+// Review Focus 5
+test('cause fits the budget for any input: ≤5 files, paths ≤80 chars keeping the tail', () => {
+  const deep = (k: number) =>
+    `packages/${'very-long-workspace-name/'.repeat(10)}src/components/${k}/Button.tsx`;
+  const cause = {
+    kind: 'in-closure' as const,
+    files: Array.from({ length: 200 }, (_, k) => ({ path: deep(k), distance: k })),
+  };
+  const v = verdict('padding', { cause });
+  expect(v.cause?.files).toHaveLength(5);
+  for (const f of v.cause!.files) {
+    expect(f.path.length).toBeLessThanOrEqual(80);
+    expect(f.path).toMatch(/^…/);
+    expect(f.path).toMatch(/\/Button\.tsx$/);
+  }
+  expect(JSON.stringify(v).length).toBeLessThanOrEqual(1500);
+  expect(v.deltas.length).toBeGreaterThan(0);
+  expect(JSON.stringify(verdict('padding', { cause }))).toBe(JSON.stringify(v));
+});

@@ -8,7 +8,13 @@
 // Pure function. No I/O, no clipboard — string in, string out, so it is
 // trivially testable and callable from both the CLI and a server.
 
-import type { ChangedRegion, DiffStatus, StructuralVerdict, Viewport } from '../types.js';
+import type {
+  Cause,
+  ChangedRegion,
+  DiffStatus,
+  StructuralVerdict,
+  Viewport,
+} from '../types.js';
 import { describeDeltas } from '../diff/structural/summary.js';
 
 export interface HandoffPayload {
@@ -82,6 +88,8 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
           ? 'current'
           : undefined
       : undefined;
+  const why = v?.cause && describeCause(v.cause);
+  if (why) lines.push('## Why', '', why, '');
   if (v && missing) {
     lines.push(
       missing === 'baseline'
@@ -226,6 +234,25 @@ export function describeRegion(r: ChangedRegion, viewport: Viewport): string {
   const horizontal =
     cx < viewport.width / 3 ? 'left' : cx > (viewport.width * 2) / 3 ? 'right' : 'center';
   return `(${r.x}, ${r.y}) ${r.width}×${r.height}px — ${vertical}-${horizontal}, ${round(areaPct)}% of viewport`;
+}
+
+/** The one wording of a cause, shared by the handoff and the CLI's review
+ *  list. One sentence; undefined when there is nothing honest to say. */
+export function describeCause(c: Cause): string | undefined {
+  const away = (d: number) =>
+    d === 0 ? 'the story file itself' : `${d} import${d === 1 ? '' : 's'} away`;
+  switch (c.kind) {
+    case 'in-closure':
+      return `Changed files this story imports, nearest first: ${c.files
+        .map((f) => `\`${f.path}\` (${away(f.distance)})`)
+        .join(', ')}.`;
+    case 'config':
+      return `A change that reaches every story: ${c.files.map((f) => `\`${f.path}\``).join(', ')}. Expect other stories to fail the same way; the run's \`groups\` lists which.`;
+    case 'none-in-closure':
+      return "None of the files changed since the baseline is in this story's import closure. The cause is outside your diff: a dependency, an asset, the environment, or render drift.";
+    case 'unknown':
+      return undefined;
+  }
 }
 
 /**
