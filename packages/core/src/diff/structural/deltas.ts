@@ -67,17 +67,25 @@ export function computeFacts(
 ): Fact[] {
   const facts: Fact[] = [];
   const aToB = new Map(match.pairs);
+  /** Baseline index → its facts; and children whose only change was
+   *  following, so their rects can ride on an ancestor's fact. */
+  const byElement = new Map<number, Fact[]>();
+  const followers: Array<{ i: number; rects: StructureRect[] }> = [];
 
   for (const [i, j] of match.pairs) {
     const ea = a.elements[i];
     const eb = b.elements[j];
-    const fact = (delta: Delta): Fact => ({
-      delta,
-      rects: [ea.rect, eb.rect],
-      abstract: abstractLabel(eb),
-      order: j,
-      source: { side: 'baseline', index: i },
-    });
+    const fact = (delta: Delta): Fact => {
+      const f: Fact = {
+        delta,
+        rects: [ea.rect, eb.rect],
+        abstract: abstractLabel(eb),
+        order: j,
+        source: { side: 'baseline', index: i },
+      };
+      byElement.set(i, [...(byElement.get(i) ?? []), f]);
+      return f;
+    };
     // Every fact about a matched element carries ONE label, the baseline
     // side's. A button's label is its name, and its name is usually its text,
     // so the current side would read `button[name="Save changes"] text
@@ -143,13 +151,32 @@ export function computeFacts(
     // On the 12-item reorder probe the item's `span.meta moved down 222px`
     // read as a second change beside the item's own move, and in the corpus
     // `nested-reorder` case the five spans doubled the shift count (6 for 3).
-    // The ancestor that actually moved keeps its fact, and its rect contains
-    // the child's, so coverage loses nothing.
+    // The ancestor that actually moved keeps its fact. Its rect usually
+    // contains the child's, but an overflowing child's does not, so the
+    // child's rects are handed to that fact below and coverage loses nothing.
     const p = parentChange(a, b, i, j, aToB);
-    if ((dw !== 0 || dh !== 0) && !(p && p.dw === dw && p.dh === dh))
-      facts.push(fact({ kind: 'resized', el, dw, dh }));
-    if ((dx !== 0 || dy !== 0) && !(p && p.dx === dx && p.dy === dy))
-      facts.push(fact({ kind: 'moved', el, dx, dy }));
+    const resized = dw !== 0 || dh !== 0;
+    const moved = dx !== 0 || dy !== 0;
+    const followedSize = resized && p !== undefined && p.dw === dw && p.dh === dh;
+    const followedPos = moved && p !== undefined && p.dx === dx && p.dy === dy;
+    if (resized && !followedSize) facts.push(fact({ kind: 'resized', el, dw, dh }));
+    if (moved && !followedPos) facts.push(fact({ kind: 'moved', el, dx, dy }));
+    if ((followedSize || followedPos) && !byElement.has(i))
+      followers.push({ i, rects: [ea.rect, eb.rect] });
+  }
+
+  // Nearest baseline ancestor with a geometry fact: the move or resize the
+  // child followed. Walked on the baseline tree, the side `source` indexes.
+  for (const { i, rects } of followers) {
+    for (let k = a.elements[i].parent; k !== null; k = a.elements[k].parent) {
+      const own = byElement
+        .get(k)
+        ?.find((f) => f.delta.kind === 'moved' || f.delta.kind === 'resized');
+      if (own) {
+        own.rects.push(...rects);
+        break;
+      }
+    }
   }
 
   for (const j of match.added) {

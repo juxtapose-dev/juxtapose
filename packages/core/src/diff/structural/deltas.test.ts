@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
 import type { Delta, StructureSnapshot } from '../../types.js';
+import { computeCoverage } from './coverage.js';
 import { computeFacts } from './deltas.js';
 import { label } from './label.js';
 import { matchElements } from './match.js';
@@ -208,4 +209,52 @@ test('an element whose parent did not move keeps every move (inserted: 8, as bef
   // change.
   const d = deltas(snap('noop'), snap('inserted'));
   expect(d.filter((x) => x.kind === 'moved')).toHaveLength(8);
+});
+
+// Suppressing a following child must not lose its pixels. The parent's rect
+// usually contains the child's, but not when the child overflows it: then a
+// changed region over the child alone intersected no fact and was reported
+// unexplained. The suppressed child's rects ride on the ancestor's fact.
+test('a suppressed child that overflows its parent keeps its pixels explained', () => {
+  const a = snap('nested');
+  const row = a.elements.findIndex((e) => e.id === 'row-2');
+  const span = a.elements.findIndex((e) => e.parent === row && e.tag === 'span');
+  const base = structuredClone(a);
+  // The span hangs out past the row's right edge, as an overflowing badge would.
+  const r = base.elements[row].rect;
+  base.elements[span].rect = { x: r.x + r.w + 20, y: r.y, w: 30, h: r.h };
+  const cur = structuredClone(base);
+  for (const k of [row, span])
+    cur.elements[k].rect = { ...cur.elements[k].rect, y: cur.elements[k].rect.y + 10 };
+  const facts = computeFacts(base, cur, matchElements(base, cur));
+  expect(facts.map((f) => f.delta)).toEqual([
+    { kind: 'moved', el: 'div#row-2', dx: 0, dy: 10 },
+  ]);
+  const s = cur.elements[span].rect;
+  const cov = computeCoverage([{ x: s.x, y: s.y, width: s.w, height: s.h }], facts);
+  expect(cov.explained).toBe('full');
+  expect(facts[0].rects).toContainEqual(s);
+});
+
+test('a child that both moved and resized exactly with its parent is not listed', () => {
+  const a = snap('nested');
+  const b = structuredClone(a);
+  const row = b.elements.findIndex((e) => e.id === 'row-2');
+  const span = b.elements.findIndex((e) => e.parent === row && e.tag === 'span');
+  for (const k of [row, span]) {
+    const r = b.elements[k].rect;
+    b.elements[k].rect = { ...r, y: r.y + 10, w: r.w + 8 };
+  }
+  expect(deltas(a, b)).toEqual([
+    { kind: 'resized', el: 'div#row-2', dw: 8, dh: 0 },
+    { kind: 'moved', el: 'div#row-2', dx: 0, dy: 10 },
+  ]);
+  // Mixed: it followed the move but resized on its own, so only its resize is listed.
+  const r = b.elements[span].rect;
+  b.elements[span].rect = { ...r, w: r.w + 4 };
+  expect(deltas(a, b)).toEqual([
+    { kind: 'resized', el: 'div#row-2', dw: 8, dh: 0 },
+    { kind: 'moved', el: 'div#row-2', dx: 0, dy: 10 },
+    { kind: 'resized', el: 'span.meta', dw: 12, dh: 0 },
+  ]);
 });

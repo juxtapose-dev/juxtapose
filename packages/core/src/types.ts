@@ -195,6 +195,10 @@ export interface StructuralVerdict {
   /** At most 20, and only the prefix that keeps the whole verdict within
    *  1,500 chars; `deltaCount` is the total. */
   deltas: Delta[];
+  /** Counted after suppression: a child that only followed its parent's
+   *  move or resize, and a style inherited from where it originated, are not
+   *  deltas, nor is an added/removed element hidden by the other side's
+   *  truncation; a shift run counts once. */
   deltaCount: number;
   /** Fraction of changed-region area intersecting some delta's element. */
   coverage: number;
@@ -206,7 +210,8 @@ export interface StructuralVerdict {
   /** Present only in `jux run --since`; absent from `jux diff`. */
   cause?: Cause;
   /** sha256 over the classification and the delta set with elements
-   *  abstracted to role|tag, so two pages with the same change share one. */
+   *  abstracted to role|tag, so two pages with the same change share one.
+   *  Over the same post-suppression facts `deltaCount` counts. */
   signature: string;
   /** The exact command for tier-3 pixels. */
   escalate: { command: string };
