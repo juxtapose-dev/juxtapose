@@ -11,9 +11,11 @@
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  acquireBrowser,
   compareCodeUnits,
   encodeStructure,
   snapPages,
+  type Browser,
   type CaptureEnv,
   type SnapPageResult,
   type Viewport,
@@ -130,9 +132,12 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
   }
 
   let captured: Awaited<ReturnType<typeof snapPages>>;
+  let browser: Browser | undefined;
   try {
+    browser = await acquireBrowser();
     captured = await snapPages({
       urls,
+      browser,
       ...(viewport ? { viewport } : {}),
       params: {
         ...(flags['wait-for'] ? { waitForSelector: flags['wait-for'] } : {}),
@@ -146,6 +151,8 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
       `jux snap: could not launch the browser: ${errorMessage(err)}${captureHint(errorMessage(err))}\n`,
     );
     return EXIT.failure;
+  } finally {
+    await browser?.close().catch(() => {});
   }
   const { env, pages } = captured;
 
@@ -308,8 +315,8 @@ export async function writeSnap(
 /** The next step depends on what broke: a missing browser and a down server
  *  need different commands. Anything else shows its message alone. */
 function captureHint(message: string): string {
-  if (/Executable doesn't exist|Cannot find (package|module) 'playwright/i.test(message))
-    return '. Install the browser with `npx playwright install chromium`, then retry.';
+  if (/jux: no browser|could not launch the browser|does not exist/.test(message))
+    return '. Run `npx -p @juxtapose/cli jux browser install`, or set JUX_CHROME=<path>, then retry.';
   if (
     /ERR_CONNECTION_REFUSED|ECONNREFUSED|ERR_NAME_NOT_RESOLVED|ERR_ADDRESS_UNREACHABLE/.test(
       message,

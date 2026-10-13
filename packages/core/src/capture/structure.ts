@@ -11,7 +11,8 @@
 
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import type { Page } from 'playwright';
+import type { Page } from '../browser/page.js';
+import { queryAllExpression } from '../browser/selectors.js';
 import type {
   StructureElement,
   StructureRect,
@@ -493,11 +494,11 @@ export function decodeStructure(b: Buffer): StructureSnapshot {
  * Snapshot the page's structure. Never throws: a missing structure costs the
  * agent some explanation, a thrown error would cost the story its capture.
  *
- * Mask selectors are resolved with page.locator(), the same engine the
- * screenshot masks with, so they pierce open shadow roots and accept
- * Playwright-only selectors (text=, >>, :has-text). Matches get MASK_ATTR so
- * the normalizer collapses their subtree. querySelectorAll would silently
- * match nothing for those selectors and leak masked content into the sidecar.
+ * Mask selectors are resolved with the same CSS-over-open-shadow-roots query
+ * the screenshot masks with; Playwright-only syntax is rejected in
+ * captureStory before anything runs. Matches get MASK_ATTR so the normalizer
+ * collapses their subtree. A plain document.querySelectorAll would miss
+ * matches inside shadow roots and leak masked content into the sidecar.
  *
  * Fail closed: if marking fails, or any match lost its mark by the time the
  * snapshot returns (the page mutated in between), return undefined. Setting an
@@ -509,12 +510,31 @@ export async function captureStructure(
   viewport: Viewport,
   mask: readonly string[],
 ): Promise<StructureSnapshot | undefined> {
+  const mark = (sel: string) =>
+    page.evaluate<number>(
+      queryAllExpression(
+        sel,
+        "for (const el of els) el.setAttribute(a0, '1'); return els.length;",
+        MASK_ATTR,
+      ),
+    );
+  const verify = (sel: string) =>
+    page.evaluate<{ total: number; marked: number }>(
+      queryAllExpression(
+        sel,
+        'return { total: els.length, marked: els.filter((e) => e.hasAttribute(a0)).length };',
+        MASK_ATTR,
+      ),
+    );
   const unmark = () =>
     page
-      .locator(`[${MASK_ATTR}]`)
-      .evaluateAll((els, attr) => {
-        for (const el of els) el.removeAttribute(attr);
-      }, MASK_ATTR)
+      .evaluate(
+        queryAllExpression(
+          `[${MASK_ATTR}]`,
+          'for (const el of els) el.removeAttribute(a0);',
+          MASK_ATTR,
+        ),
+      )
       .catch(() => {});
 
   // How many elements each selector marked. Verification re-resolves the
@@ -524,10 +544,7 @@ export async function captureStructure(
   const markedCounts: number[] = [];
   try {
     for (const sel of mask) {
-      const n = await page.locator(sel).evaluateAll((els, attr) => {
-        for (const el of els) el.setAttribute(attr, '1');
-        return els.length;
-      }, MASK_ATTR);
+      const n = await mark(sel);
       markedCounts.push(typeof n === 'number' ? n : 0);
     }
   } catch {
@@ -536,33 +553,22 @@ export async function captureStructure(
   }
 
   try {
-    const cdp = await page.context().newCDPSession(page);
-    try {
-      const raw = (await cdp.send('DOMSnapshot.captureSnapshot', {
-        computedStyles: [...STRUCTURE_PROPS, 'visibility'],
-        includeDOMRects: true,
-        includePaintOrder: true,
-      })) as unknown as CdpSnapshot;
-      for (const [k, sel] of mask.entries()) {
-        const v = (await page.locator(sel).evaluateAll(
-          (els, attr) => ({
-            total: els.length,
-            marked: els.filter((e) => e.hasAttribute(attr)).length,
-          }),
-          MASK_ATTR,
-        )) as { total: number; marked: number } | undefined;
-        // Every current match still marked, and none of the marked ones gone.
-        const intact =
-          typeof v === 'object' &&
-          v !== null &&
-          v.marked === v.total &&
-          v.marked >= markedCounts[k];
-        if (!intact) return undefined;
-      }
-      return normalizeStructure(raw, viewport);
-    } finally {
-      await cdp.detach().catch(() => {});
+    const raw = (await page.send('DOMSnapshot.captureSnapshot', {
+      computedStyles: [...STRUCTURE_PROPS, 'visibility'],
+      includeDOMRects: true,
+      includePaintOrder: true,
+    })) as unknown as CdpSnapshot;
+    for (const [k, sel] of mask.entries()) {
+      const v = (await verify(sel)) as { total: number; marked: number } | undefined;
+      // Every current match still marked, and none of the marked ones gone.
+      const intact =
+        typeof v === 'object' &&
+        v !== null &&
+        v.marked === v.total &&
+        v.marked >= markedCounts[k];
+      if (!intact) return undefined;
     }
+    return normalizeStructure(raw, viewport);
   } catch {
     return undefined;
   } finally {

@@ -10,7 +10,7 @@
 // earns a field of its own rather than being folded into the browser version.
 
 import sharp from 'sharp';
-import type { Browser } from 'playwright';
+import type { Browser } from '../browser/browser.js';
 import type { CaptureEnv } from '../types.js';
 
 export type { CaptureEnv };

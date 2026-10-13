@@ -97,6 +97,23 @@ export {
   type SnapPageResult,
 } from './capture/snap.js';
 export { deterministicLaunchOptions, type LaunchOptions } from './capture/launch.js';
+export { chromeArgs, PARITY_CHROMIUM_ARGS } from './capture/launch.js';
+
+// The browser driver: our own CDP client over chrome-headless-shell. `Page` is
+// the seam adapters implement against; `acquireBrowser` is the one place that
+// decides where a Browser comes from.
+export { Browser, BrowserContext } from './browser/browser.js';
+export { TimeoutError, type Page } from './browser/page.js';
+export { acquireBrowser, type AcquireOptions } from './browser/acquire.js';
+export {
+  resolveChrome,
+  juxCacheDir,
+  noBrowserMessage,
+  NO_BROWSER_MESSAGE,
+} from './browser/resolve.js';
+export { installChrome } from './browser/install.js';
+export { CHROME_VERSION } from './browser/pins.js';
+export { assertCssSelector } from './browser/selectors.js';
 export {
   resolveAffected,
   resolveAffectedFromPaths,

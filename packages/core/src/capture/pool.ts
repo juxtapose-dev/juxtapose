@@ -2,7 +2,7 @@
 // complete. Used by both the CLI and the dev-server review API, which is why
 // it takes a Browser rather than owning one.
 
-import type { Browser } from 'playwright';
+import type { Browser } from '../browser/browser.js';
 import type { Platform } from '../platform.js';
 import type { Snapshot, StoryManifest, Viewport } from '../types.js';
 import { captureStory, type CaptureDeps } from './capture.js';
@@ -75,11 +75,9 @@ export async function* capturePool(
   };
 
   const workers = Array.from({ length: workerCount }, async () => {
-    const context = await opts.browser.newContext({
-      viewport: opts.viewport,
-      // No Retina. Quadruples buffer size for no diff signal.
-      deviceScaleFactor: 1,
-    });
+    // No Retina: it quadruples buffer size for no diff signal. deviceScaleFactor
+    // is pinned to 1 by the driver and `--force-device-scale-factor=1`.
+    const context = await opts.browser.newContext({ viewport: opts.viewport });
     const page = await context.newPage();
     const deps: CaptureDeps = {
       platform: opts.platform,

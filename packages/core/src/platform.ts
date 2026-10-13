@@ -2,7 +2,7 @@
 // reduces to the four operations below; Ladle and Histoire implement the same
 // four. `core` depends on this interface and never on a concrete platform.
 
-import type { Page } from 'playwright';
+import type { Page } from './browser/page.js';
 import type { StoryManifest, StoryParams } from './types.js';
 
 export interface EnumerateTarget {

@@ -10,10 +10,9 @@
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { chromium } from 'playwright';
 import {
   approveCapture,
-  deterministicLaunchOptions,
+  acquireBrowser,
   encodeStoryId,
   runCapture,
   alwaysAncestor,
@@ -29,6 +28,7 @@ import {
   type CommonFlags,
 } from '../context.js';
 import { serveStatic } from '../serve-static.js';
+import { EXIT } from '../exit-codes.js';
 
 const CONFIG_NAME = 'juxtapose.config.json';
 
@@ -76,7 +76,14 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
 
   const server = ctx.origin ? null : await serveStatic(ctx.buildDir!);
   const baseUrl = ctx.origin ?? server!.url;
-  const browser = await chromium.launch(deterministicLaunchOptions());
+  let browser;
+  try {
+    browser = await acquireBrowser();
+  } catch (err) {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    await server?.close();
+    return EXIT.failure;
+  }
 
   const runId = Date.now().toString(36);
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);

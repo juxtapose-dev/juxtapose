@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page } from '../browser/page.js';
 import { expect, test, vi } from 'vitest';
 import { createUrlPlatform } from './urls.js';
 

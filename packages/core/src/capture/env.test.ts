@@ -1,4 +1,4 @@
-import type { Browser } from 'playwright';
+import type { Browser } from '../browser/browser.js';
 import { expect, test } from 'vitest';
 import { captureEnv, describeEnvChange, sameEnv, type CaptureEnv } from './env.js';
 

@@ -7,7 +7,7 @@
 // Playwright's component-testing galleries are the exception that made
 // `showStory` an action rather than a URL — see Platform.showStory.
 
-import type { Page } from 'playwright';
+import type { Page } from './browser/page.js';
 
 /**
  * Build a `showStory` implementation from a URL builder.

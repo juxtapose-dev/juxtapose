@@ -5,7 +5,7 @@
 // nothing about a passing story, so they run only for stories that already
 // failed. On a green run this function never decodes a single image.
 
-import type { Browser } from 'playwright';
+import type { Browser } from '../browser/browser.js';
 import { captureEnv } from '../capture/env.js';
 import type { Platform } from '../platform.js';
 import type {

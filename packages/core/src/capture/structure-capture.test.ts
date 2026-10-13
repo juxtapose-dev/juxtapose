@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import type { Page } from 'playwright';
+import type { Page } from '../browser/page.js';
 import { expect, test, vi } from 'vitest';
 import { captureStructure, MASK_ATTR } from './structure.js';
 
@@ -16,31 +16,29 @@ function fakePage(opts: {
   send?: () => Promise<unknown>;
   evaluateAll?: (sel: string, call: number) => Promise<unknown>;
 }) {
-  const detach = vi.fn(async () => {});
   const calls: { sel: string; args: unknown[] }[] = [];
-  const evaluateAll = vi.fn(async (sel: string, ...args: unknown[]) => {
-    calls.push({ sel, args });
+  const send = vi.fn(opts.send ?? (async () => fixture.raw));
+  // Each mark/verify/unmark evaluate carries its selector as the
+  // JSON-encoded argument of the queryAll call, `(function (selector) {…})("sel")`;
+  // recover it for the assertions.
+  const evaluate = vi.fn(async (expr: string) => {
+    const m = /\}\)\(("(?:[^"\\]|\\.)*")\)/.exec(expr);
+    const sel = m ? (JSON.parse(m[1]) as string) : '';
+    calls.push({ sel, args: [MASK_ATTR] });
     return opts.evaluateAll ? opts.evaluateAll(sel, calls.length) : true;
   });
-  const locator = vi.fn((sel: string) => ({
-    evaluateAll: (_fn: unknown, ...args: unknown[]) => evaluateAll(sel, ...args),
-  }));
-  const newCDPSession = vi.fn(async () => ({
-    send: opts.send ?? (async () => fixture.raw),
-    detach,
-  }));
-  const page = {
-    locator,
-    context: () => ({ newCDPSession }),
-  } as unknown as Page;
-  return { page, detach, calls, newCDPSession };
+  const page = { evaluate, send } as unknown as Page;
+  return { page, calls, send };
 }
 
-test('returns a normalized snapshot and detaches the session', async () => {
-  const { page, detach } = fakePage({});
+test('returns a normalized snapshot', async () => {
+  const { page, send } = fakePage({});
   const s = await captureStructure(page, viewport, []);
   expect(s?.schema).toBe('juxtapose.structure/v1');
-  expect(detach).toHaveBeenCalled();
+  expect(send).toHaveBeenCalledWith(
+    'DOMSnapshot.captureSnapshot',
+    expect.objectContaining({ includeDOMRects: true }),
+  );
 });
 
 test('a CDP failure yields undefined, never a throw', async () => {
@@ -52,7 +50,7 @@ test('a CDP failure yields undefined, never a throw', async () => {
   await expect(captureStructure(page, viewport, [])).resolves.toBeUndefined();
 });
 
-test('masks are marked via locators, then unmarked by attribute', async () => {
+test('masks are marked via queryAll, then unmarked by attribute', async () => {
   const { page, calls } = fakePage({
     // calls 1-2 mark (one match each), 3-4 verify, 5 unmarks
     evaluateAll: async (_sel, call) =>
@@ -81,14 +79,14 @@ test('a CDP failure with a mask still unmarks', async () => {
 });
 
 test('mask marking failure returns undefined and never calls CDP', async () => {
-  const { page, newCDPSession, calls } = fakePage({
+  const { page, send, calls } = fakePage({
     evaluateAll: async (sel) => {
       if (sel === '.secret') throw new Error('Execution context was destroyed');
       return true;
     },
   });
   await expect(captureStructure(page, viewport, ['.secret'])).resolves.toBeUndefined();
-  expect(newCDPSession).not.toHaveBeenCalled();
+  expect(send).not.toHaveBeenCalled();
   expect(calls.at(-1)?.sel).toBe(`[${MASK_ATTR}]`);
 });
 
