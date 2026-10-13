@@ -20,6 +20,12 @@ current story or the whole suite, compare against the baseline four ways
 flicker), approve changes, and copy an agent-ready prompt describing exactly
 what moved.
 
+juxtapose also registers as a test provider: a **Visual** row in Storybook's
+testing module at the bottom of the sidebar, and Storybook's **Run tests**
+button runs the visual suite alongside your other tests. The test provider
+needs Storybook 8.5 or later and is checked against 8.6 and 10.6. On earlier
+versions the row doesn't appear; the panel works either way.
+
 Keyboard: `j`/`k` next and previous failing story, `a` approve, `1`–`4` view
 mode, `d` diff overlay, `u` dim unchanged areas.
 

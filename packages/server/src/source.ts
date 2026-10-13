@@ -270,6 +270,7 @@ export class RunDirSource implements ReviewSource {
     const variant = handoffVariant(result);
     const images = path.join(this.opts.runDir, 'images');
     const safe = encodeStoryId(storyId);
+    const baseline = this.locateBaseline(storyId);
 
     return buildHandoffPrompt({
       storyId,
@@ -287,7 +288,7 @@ export class RunDirSource implements ReviewSource {
         DEFAULT_VIEWPORT,
       componentPath: story?.componentPath ?? '',
       images: {
-        baseline: path.join(images, `${safe}-baseline.webp`),
+        baseline,
         current: path.join(images, `${safe}-current.webp`),
         diff:
           result.status === 'fail' ? path.join(images, `${safe}-diff.webp`) : undefined,
@@ -295,6 +296,25 @@ export class RunDirSource implements ReviewSource {
       projectRoot: this.opts.projectRoot,
       ...(variant ? { variant } : {}),
     });
+  }
+
+  /**
+   * The baseline image on disk, as `jux handoff` finds it.
+   *
+   * Baselines live in the store, not the run dir: a run writes only what it
+   * captured. The handoff used to point at `images/<id>-baseline.webp` in the
+   * run dir, which nothing writes (#115). A variant key locates the variant's
+   * own baseline. Absent when the store cannot say or there is no baseline
+   * yet, so the prompt never names a file that is not there.
+   */
+  private locateBaseline(storyId: string): string | undefined {
+    let file: string | undefined;
+    try {
+      file = this.opts.store.locate?.(storyId);
+    } catch {
+      return undefined;
+    }
+    return file !== undefined && existsSync(file) ? file : undefined;
   }
 
   async approve(storyId: string): Promise<void> {

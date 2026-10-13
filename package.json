@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:determinism": "node scripts/check-determinism.mjs examples/storybook 3",
+    "check:test-provider": "node scripts/check-test-provider.mjs examples/storybook",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish"
