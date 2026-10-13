@@ -155,6 +155,7 @@ export async function runCommand(
   }
 
   const runId = `${Date.now().toString(36)}`;
+  let warned = false;
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);
   try {
     // Inside the try, so a failed mkdir still closes the browser below.
@@ -177,6 +178,12 @@ export async function runCommand(
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
       onArtifact: (a) => writeArtifact(runDir, a),
+      // One line per run, not per capture: it is the same advice every time.
+      onWarning: (message) => {
+        if (warned) return;
+        warned = true;
+        io.err(`\n${message}\n`);
+      },
       onProgress: (done, total, storyId) => {
         if (!ctx.json) {
           io.err(`\r  ${done}/${total}  ${storyId.slice(0, 48).padEnd(48)}`);

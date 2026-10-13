@@ -54,6 +54,8 @@ export interface RunOptions {
   /** Receives each story's images so the caller decides where they land. */
   onArtifact?: (artifact: RunArtifact) => Promise<void>;
   onProgress?: (done: number, total: number, storyId: string) => void;
+  /** Non-fatal capture notices; the caller decides where they go. */
+  onWarning?: (message: string) => void;
   signal?: AbortSignal;
   /** Collects per-phase wall time. Pass one to fold in phases the caller timed
    *  itself (enumerate, affected, launch); omit and one is made internally. */
@@ -86,6 +88,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     warmSwitch: opts.config?.warmSwitch,
     viewport,
     onProgress: opts.onProgress,
+    ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
     signal: opts.signal,
   });
 
