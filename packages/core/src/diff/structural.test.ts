@@ -15,6 +15,7 @@ import {
 } from './structural.js';
 
 interface Case {
+  against: string;
   structure: StructureSnapshot;
   imagesIdentical: boolean;
   pixels: {
@@ -40,7 +41,7 @@ const { OPERATORS, checkVerdict } =
 const ESC = { command: 'jux diff noop x --crops' };
 const verdict = (name: string, over: Partial<StructuralDiffInput> = {}) =>
   structuralDiff({
-    baseline: fixture.cases.noop.structure,
+    baseline: fixture.cases[fixture.cases[name].against].structure,
     current: fixture.cases[name].structure,
     imagesIdentical: fixture.cases[name].imagesIdentical,
     pixels: fixture.cases[name].pixels,

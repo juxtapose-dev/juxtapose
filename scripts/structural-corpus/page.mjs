@@ -6,7 +6,7 @@
 
 /**
  * @typedef {{ css?: string; saveText?: string; banner?: string; logo?: string;
- *   removeRow?: boolean; canvasFill?: string; rowOrder?: number[] }} PageOptions
+ *   removeRow?: boolean; canvasFill?: string; rowOrder?: number[]; meta?: boolean }} PageOptions
  */
 
 const ROW_WORDS = ['one', 'two', 'three', 'four', 'five'];
@@ -35,7 +35,9 @@ export function render(o) {
     .map((n) =>
       o.removeRow && n === 1
         ? ''
-        : `<div class="row" id="row-${n}">Row ${ROW_WORDS[n - 1]}</div>`,
+        : // The span follows its text with no whitespace between, so the row's
+          // own text node is byte-identical with and without `meta`.
+          `<div class="row" id="row-${n}">Row ${ROW_WORDS[n - 1]}${o.meta ? `<span class="meta"> #${n}</span>` : ''}</div>`,
     )
     .join('\n  ')}
   <canvas id="chart" width="200" height="60"></canvas>
@@ -54,8 +56,9 @@ const style = (prop, tag) => ({
   delta: { kind: 'style', el: SAVE, prop },
 });
 
-/** Order matters only for reporting. `noop` is the baseline every other
- *  operator is diffed against. */
+/** Order matters only for reporting. `noop` is the baseline every operator
+ *  is diffed against unless it names another with `against`. An
+ *  expectation's `absent` is a RegExp no delta's `el`/`after` may match. */
 export const OPERATORS = [
   { name: 'noop', page: {}, expect: { classification: 'identical', noDeltas: true } },
   {
@@ -179,6 +182,32 @@ export const OPERATORS = [
     },
   },
   {
+    // Every row gains an inline span. Five `span.meta` are added, and since
+    // the label collides, each is scoped to its row (`span.meta in div#row-1`).
+    name: 'nested',
+    page: { meta: true },
+    expect: {
+      classification: 'element-added',
+      delta: { kind: 'added', el: 'span.meta in div#row-1' },
+    },
+  },
+  {
+    // The `reorder` operator on rows that each contain a span. The spans
+    // move because their rows do; they must not be listed, and the shift
+    // must count rows (3), not rows plus spans (6). Diffed against `nested`,
+    // not `noop`, so the spans exist on both sides.
+    name: 'nested-reorder',
+    against: 'nested',
+    page: { meta: true, rowOrder: [2, 3, 4, 1, 5] },
+    expect: {
+      classification: 'reflow',
+      delta: { kind: 'moved', el: 'div#row-1', dx: 0, dy: 111 },
+      shift: true,
+      absent: /^span\.meta/,
+      lead: 'reflow: div#row-1 moved down 111px; 3 elements after div#row-1 moved up 37px',
+    },
+  },
+  {
     name: 'canvas',
     page: { canvasFill: 'rgb(239, 68, 68)' },
     expect: { classification: 'unknown', flags: ['unexplained-pixels'], noDeltas: true },
@@ -223,6 +252,10 @@ export function checkVerdict(op, v) {
     problems.push('expected a shift delta');
   if (e.lead && !v.summary.startsWith(e.lead))
     problems.push(`summary does not lead with '${e.lead}': '${v.summary}'`);
+  if (e.absent) {
+    const hit = v.deltas.find((d) => e.absent.test(String('el' in d ? d.el : d.after)));
+    if (hit) problems.push(`unexpected delta ${JSON.stringify(hit)}`);
+  }
   if (op.name !== 'noop' && op.name !== 'canvas' && v.explained !== 'full')
     problems.push(`explained ${v.explained}`);
   return problems;

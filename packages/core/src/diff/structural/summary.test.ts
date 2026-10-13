@@ -59,7 +59,9 @@ function twoUnnamedRows(reparent = false): StructuralVerdict {
 /** Every delta shows up in the human lines: each element group's changes
  *  and each solo delta, counted by what they state. */
 function mentions(lines: string[], needle: RegExp): number {
-  return lines.join('\n').match(new RegExp(needle, 'g'))?.length ?? 0;
+  // Keep the needle's own flags (`m` for line anchors) and add `g` to count.
+  const flags = needle.flags.includes('g') ? needle.flags : needle.flags + 'g';
+  return lines.join('\n').match(new RegExp(needle.source, flags))?.length ?? 0;
 }
 
 test('two same-label siblings each changing stay two elements', () => {

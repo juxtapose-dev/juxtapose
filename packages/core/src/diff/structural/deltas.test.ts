@@ -149,3 +149,63 @@ test('labels prefer role+name, then id, then testid, then class, then a short pa
     }),
   ).toBe('div.card');
 });
+
+// Deferred from PR (b): a child whose box changed exactly as its parent's did
+// only followed it. On the 12-item reorder probe the item's `span.meta moved
+// down 222px` read as a second change beside the item's own move.
+test('a child that moved exactly with its parent is not listed (nested-reorder)', () => {
+  const d = deltas(snap('nested'), snap('nested-reorder'));
+  expect(d.some((x) => 'el' in x && x.el.startsWith('span.meta'))).toBe(false);
+  expect(d).toContainEqual({ kind: 'moved', el: 'div#row-1', dx: 0, dy: 111 });
+  // rows 1–4 moved; row 5, the canvas and every span did not get a fact
+  expect(d.filter((x) => x.kind === 'moved')).toHaveLength(4);
+});
+
+test('a child that moved differently from its parent is still listed', () => {
+  const a = snap('nested');
+  const b = structuredClone(a);
+  const row = b.elements.findIndex((e) => e.id === 'row-2');
+  const span = b.elements.findIndex((e) => e.parent === row && e.tag === 'span');
+  b.elements[row].rect = { ...b.elements[row].rect, y: b.elements[row].rect.y + 10 };
+  b.elements[span].rect = { ...b.elements[span].rect, y: b.elements[span].rect.y + 12 };
+  const d = deltas(a, b);
+  expect(d).toContainEqual({ kind: 'moved', el: 'div#row-2', dx: 0, dy: 10 });
+  expect(d).toContainEqual({ kind: 'moved', el: 'span.meta', dx: 0, dy: 12 });
+});
+
+test('a child resized exactly like its parent is not listed either', () => {
+  const a = snap('nested');
+  const b = structuredClone(a);
+  const row = b.elements.findIndex((e) => e.id === 'row-2');
+  const span = b.elements.findIndex((e) => e.parent === row && e.tag === 'span');
+  for (const k of [row, span])
+    b.elements[k].rect = { ...b.elements[k].rect, w: b.elements[k].rect.w + 8 };
+  const d = deltas(a, b);
+  expect(d).toEqual([{ kind: 'resized', el: 'div#row-2', dw: 8, dh: 0 }]);
+});
+
+test('a grandchild following a parent that itself followed is suppressed too', () => {
+  const a = snap('nested');
+  const b = structuredClone(a);
+  const main = b.elements.findIndex((e) => e.tag === 'main');
+  const row = b.elements.findIndex((e) => e.id === 'row-2');
+  const span = b.elements.findIndex((e) => e.parent === row && e.tag === 'span');
+  for (const k of [main, row, span])
+    b.elements[k].rect = { ...b.elements[k].rect, y: b.elements[k].rect.y + 10 };
+  const d = deltas(a, b);
+  // Compared on rects, not on facts: row-2's own move is suppressed and the
+  // span still reads as following it, so only `main` is listed.
+  const moved = d.filter(
+    (x): x is Extract<Delta, { kind: 'moved' }> => x.kind === 'moved',
+  );
+  expect(moved.map((x) => x.el)).toEqual(['main']);
+});
+
+test('an element whose parent did not move keeps every move (inserted: 8, as before)', () => {
+  // Measured before this change on the real `inserted` capture: the button,
+  // the img, five rows and the canvas move (8 facts); `main` resizes but
+  // does not move, so none of its children follows it. The count must not
+  // change.
+  const d = deltas(snap('noop'), snap('inserted'));
+  expect(d.filter((x) => x.kind === 'moved')).toHaveLength(8);
+});

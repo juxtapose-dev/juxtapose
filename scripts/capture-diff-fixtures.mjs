@@ -44,13 +44,17 @@ try {
 
   const cases = {};
   for (const op of OPERATORS) {
+    // The first `noop` capture is the base for everything that does not name
+    // its own baseline; `nested-reorder` is diffed against `nested`.
+    const against = op.against ? captured[op.against] : base;
     const { mismatchPixels, mismatchPercent, changedRegions, dimensionMismatch } =
-      await diffImages(base.image, captured[op.name].image);
+      await diffImages(against.image, captured[op.name].image);
     cases[op.name] = {
+      against: op.against ?? 'noop',
       structure: captured[op.name].structure,
       // Byte equality, the pass/fail authority — not "0 mismatch pixels":
       // `background` changes the bytes while pixelmatch marks nothing.
-      imagesIdentical: base.image.equals(captured[op.name].image),
+      imagesIdentical: against.image.equals(captured[op.name].image),
       pixels: { mismatchPixels, mismatchPercent, changedRegions, dimensionMismatch },
     };
   }

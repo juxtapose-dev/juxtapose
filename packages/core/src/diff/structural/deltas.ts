@@ -137,10 +137,19 @@ export function computeFacts(
 
     const dw = round(eb.rect.w - ea.rect.w);
     const dh = round(eb.rect.h - ea.rect.h);
-    if (dw !== 0 || dh !== 0) facts.push(fact({ kind: 'resized', el, dw, dh }));
     const dx = round(eb.rect.x - ea.rect.x);
     const dy = round(eb.rect.y - ea.rect.y);
-    if (dx !== 0 || dy !== 0) facts.push(fact({ kind: 'moved', el, dx, dy }));
+    // A child whose box changed exactly as its parent's did only followed it.
+    // On the 12-item reorder probe the item's `span.meta moved down 222px`
+    // read as a second change beside the item's own move, and in the corpus
+    // `nested-reorder` case the five spans doubled the shift count (6 for 3).
+    // The ancestor that actually moved keeps its fact, and its rect contains
+    // the child's, so coverage loses nothing.
+    const p = parentChange(a, b, i, j, aToB);
+    if ((dw !== 0 || dh !== 0) && !(p && p.dw === dw && p.dh === dh))
+      facts.push(fact({ kind: 'resized', el, dw, dh }));
+    if ((dx !== 0 || dy !== 0) && !(p && p.dx === dx && p.dy === dy))
+      facts.push(fact({ kind: 'moved', el, dx, dy }));
   }
 
   for (const j of match.added) {
@@ -202,6 +211,30 @@ function originatesHere(
   // Parents unmatched: nothing above to blame, so report here.
   if (aToB.get(pa) !== pb) return true;
   return effectiveStyle(a, pa, prop) === effectiveStyle(b, pb, prop);
+}
+
+/** How the matched parent's box changed; undefined when the parent is the
+ *  root or unmatched. Read off the rects, not off the facts, so a grandchild
+ *  still reads as following when its parent's own move was itself
+ *  suppressed. */
+function parentChange(
+  a: StructureSnapshot,
+  b: StructureSnapshot,
+  i: number,
+  j: number,
+  aToB: Map<number, number>,
+): { dx: number; dy: number; dw: number; dh: number } | undefined {
+  const pa = a.elements[i].parent;
+  const pb = b.elements[j].parent;
+  if (pa === null || pb === null || aToB.get(pa) !== pb) return undefined;
+  const ra = a.elements[pa].rect;
+  const rb = b.elements[pb].rect;
+  return {
+    dx: round(rb.x - ra.x),
+    dy: round(rb.y - ra.y),
+    dw: round(rb.w - ra.w),
+    dh: round(rb.h - ra.h),
+  };
 }
 
 export function sortFacts(facts: Fact[]): Fact[] {
