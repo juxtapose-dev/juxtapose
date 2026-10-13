@@ -23,9 +23,10 @@
 //   them and the sessions attached to those (including child sessions
 //   auto-attached under one of its sessions, defect 12). On the shared
 //   browser session only an allow-list of commands passes, each naming ids
-//   the client owns; on its own page sessions any domain passes except the
-//   Target/Browser commands that reach beyond that page. Events go only to
-//   their owner; events about nothing a client owns are dropped;
+//   the client owns; on its own page sessions only an allow-list of
+//   target-scoped domains passes, plus the few Target/Browser commands that
+//   stay within that page. Events go only to their owner; events about
+//   nothing a client owns are dropped;
 // - cleanup: when a client's socket closes, the contexts it still owns are
 //   disposed, which is what Chrome's disposeOnDetach would do had the client
 //   held the pipe itself. A context the client disposed itself leaves its set
@@ -63,9 +64,28 @@ const PROBE_TIMEOUT_MS = 2_000;
  * would let one stuck client exhaust the daemon every other client relies on.
  */
 const MAX_BACKLOG_CHARS = 256 * 1024 * 1024;
+/**
+ * setTimeout takes at most 2^31-1 ms (about 35,791 minutes); past that Node
+ * prints a TimeoutOverflowWarning to the detached daemon's invisible stderr
+ * and fires after 1 ms, so JUX_BROWSER_IDLE_MINUTES=100000 ("keep it warm")
+ * stopped the daemon the moment it started (PR #102 review).
+ */
+const MAX_IDLE_MINUTES = 35_000;
 
 type IdKey = 'targetId' | 'browserContextId' | 'sessionId';
 const ID_KEYS: readonly IdKey[] = ['targetId', 'browserContextId', 'sessionId'];
+
+/**
+ * Storage methods that take a browserContextId and, without one, act on the
+ * shared default context (every other Storage method ignores the id and acts
+ * on the session's own partition, or browser-wide). From any session they
+ * need an owned context id.
+ */
+const COOKIE_METHODS = [
+  'Storage.getCookies',
+  'Storage.setCookies',
+  'Storage.clearCookies',
+];
 
 /**
  * The browser session is shared by every client, so it takes only these
@@ -75,6 +95,11 @@ const ID_KEYS: readonly IdKey[] = ['targetId', 'browserContextId', 'sessionId'];
  * sends Browser.getVersion, Target.createBrowserContext/createTarget/
  * attachToTarget/closeTarget/disposeBrowserContext and Storage.clearCookies
  * here (browser.ts); the real-capture test proves none of them is refused.
+ *
+ * Storage is listed method by method, not as a prefix: with a decoy owned
+ * browserContextId, a prefix rule passed clearDataForOrigin (acts on the
+ * default partition) and setAttributionReportingLocalTestingMode (flips a
+ * browser-wide mode), neither of which looks at the id (PR #102 review).
  */
 const BROWSER_SESSION_ALLOW: Readonly<Record<string, readonly IdKey[]>> = {
   'Browser.getVersion': [],
@@ -91,13 +116,64 @@ const BROWSER_SESSION_ALLOW: Readonly<Record<string, readonly IdKey[]>> = {
   'Browser.getWindowForTarget': ['targetId'],
   'Browser.setDownloadBehavior': ['browserContextId'],
   'Browser.grantPermissions': ['browserContextId'],
+  ...Object.fromEntries(COOKIE_METHODS.map((m) => [m, ['browserContextId'] as const])),
 };
 
 /**
- * On a page session the client owns, every domain is its own page's, except
- * Storage.* (needs an owned browserContextId) and Target.* and Browser.*, which reach the browser from any session
- * (setDiscoverTargets there reports every target; Browser.close closes the
- * browser). Those pass only from this list, with owned ids as above.
+ * Domains whose commands on a page session act on that page (or its own
+ * context's partition) only. An allow-list, not a deny-list: some domains are
+ * browser singletons whichever session sends them. Tracing.start on A's page
+ * session made B's fail with "Tracing has already been started (possibly in
+ * another tab)" and put B's renderer activity in A's trace (PR #102 review);
+ * SystemInfo and Memory are the same kind. An unknown domain is refused until
+ * someone checks which kind it is.
+ *
+ * The driver sends Page, Runtime, Network, Log, Emulation, Storage
+ * (clearDataForOrigin) and DOMSnapshot on page sessions (page.ts,
+ * capture/structure.ts); the rest are the standard target-scoped domains.
+ *
+ * Storage: clearDataForOrigin without a context id clears this target's own
+ * partition. Refusing it (the old rule) silently broke resetBetweenPages, so
+ * a page read localStorage the previous page wrote: through the daemon the
+ * second page hashed 0bc8f889… against 89456235… from a fresh launch. Only
+ * the cookie methods fall back to the shared default context; they still
+ * need an owned browserContextId (COOKIE_METHODS).
+ */
+const PAGE_SESSION_DOMAINS: ReadonlySet<string> = new Set([
+  'Accessibility',
+  'Animation',
+  'Audits',
+  'CacheStorage',
+  'Console',
+  'CSS',
+  'Debugger',
+  'DOM',
+  'DOMDebugger',
+  'DOMSnapshot',
+  'DOMStorage',
+  'Emulation',
+  'Fetch',
+  'HeapProfiler',
+  'IndexedDB',
+  'Input',
+  'Inspector',
+  'IO',
+  'LayerTree',
+  'Log',
+  'Network',
+  'Overlay',
+  'Page',
+  'Performance',
+  'Profiler',
+  'Runtime',
+  'Security',
+  'Storage',
+]);
+
+/**
+ * Target.* and Browser.* reach the browser from any session (setDiscoverTargets
+ * there reports every target; Browser.close closes the browser), so on a page
+ * session they pass only from this list, with owned ids as above.
  */
 const PAGE_SESSION_ALLOW: Readonly<Record<string, readonly IdKey[]>> = {
   'Browser.getVersion': [],
@@ -153,13 +229,23 @@ interface Owner {
   client: Client;
   clientId: number;
   method: string;
-  params: Record<string, unknown>;
+  /**
+   * Only what onReply needs: the full params (a multi-MB evaluate source)
+   * stayed in `owners` forever when Chrome never answered.
+   */
+  browserContextId?: string;
+  /** The session the command went out on, so its detach can purge it. */
+  sessionId?: string;
 }
 
 export interface Supervisor {
   state: DaemonState;
   chromePid: number;
   stop(): Promise<void>;
+  /** Proxied commands still awaiting Chrome's reply; a leak test's yardstick. */
+  readonly inFlight: number;
+  /** Test seam: every context in the browser, unfiltered by owner. */
+  browserContextIds(): Promise<string[]>;
 }
 
 export interface SupervisorOptions {
@@ -197,6 +283,11 @@ async function socketIsLive(socketPath: string): Promise<boolean> {
 
 export async function startSupervisor(opts: SupervisorOptions): Promise<Supervisor> {
   const { paths } = opts;
+  if (!Number.isFinite(opts.idleMinutes) || opts.idleMinutes <= 0)
+    throw new Error(
+      `jux: idleMinutes must be a positive number, got ${opts.idleMinutes}`,
+    );
+  const idleMinutes = Math.min(opts.idleMinutes, MAX_IDLE_MINUTES);
   const dirs = await ensureDaemonDirs(paths);
   // Cheap first check: a live daemon means there is nothing to launch.
   if (await socketIsLive(paths.socket)) throw new SupervisorLostRace();
@@ -294,10 +385,22 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
             contextOwner.get(str(t['browserContextId']) ?? '') === c,
         );
         m = { ...m, result: { ...result, targetInfos: mine } };
+      } else if (
+        o.method === 'Target.getBrowserContexts' &&
+        Array.isArray(result['browserContextIds'])
+      ) {
+        // Same as getTargets: another client's context ids are not this one's
+        // to see. The default context is nobody's, so its id goes too.
+        const mine = (result['browserContextIds'] as unknown[]).filter(
+          (id) => contextOwner.get(str(id) ?? '') === c,
+        );
+        const rest: Params = { ...result, browserContextIds: mine };
+        delete rest['defaultBrowserContextId'];
+        m = { ...m, result: rest };
       }
     } else if (o.method === 'Target.disposeBrowserContext' && !c.gone) {
       // The dispose failed, so the context still exists: dispose it on drop after all.
-      const id = str(o.params['browserContextId']);
+      const id = o.browserContextId;
       if (id && contextOwner.get(id) === c) c.contexts.add(id);
     }
     deliver(c, { ...m, id: o.clientId });
@@ -319,8 +422,37 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     return context === undefined ? undefined : contextOwner.get(context);
   };
 
+  /**
+   * Chrome never answers a command in flight on a session whose target died
+   * (probe: Runtime.evaluate 'while(1){}', then dispose the context). Its
+   * owner entry would stay forever, one per hung story, in a daemon that
+   * lives for hours. The waiting client gets an error instead of its own
+   * send timeout.
+   */
+  const purgeSession = (sessionId: string) => {
+    for (const [id, o] of owners) {
+      if (o.sessionId !== sessionId) continue;
+      owners.delete(id);
+      if (!o.client.gone)
+        deliver(o.client, {
+          id: o.clientId,
+          sessionId,
+          error: {
+            code: -32001,
+            message: `jux: ${o.method}: session ${sessionId} detached before Chrome replied`,
+          },
+        });
+    }
+  };
+
   const onEvent = (m: RawMessage & { method: string }) => {
     const p = (m.params ?? {}) as Params;
+    // Before any owner check: entries of a client that is gone are purged
+    // too (dropClient does that as well, but this covers a late detach).
+    if (m.method === 'Target.detachedFromTarget') {
+      const s = str(p['sessionId']);
+      if (s !== undefined) purgeSession(s);
+    }
     let owner: Client | undefined;
     if (m.sessionId !== undefined) owner = sessionOwner.get(m.sessionId);
     // Browser-session events: only Target.* ones about a client's own
@@ -379,22 +511,19 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     };
     let required: readonly IdKey[] | undefined;
     if (sessionId === undefined) {
-      // Storage.* acts on one context when it names one (clearCookies does).
-      required =
-        BROWSER_SESSION_ALLOW[method] ??
-        (method.startsWith('Storage.') ? ['browserContextId'] : undefined);
+      required = BROWSER_SESSION_ALLOW[method];
       if (!required) return no(browserWideWhy(method));
     } else {
       if (sessionOwner.get(sessionId) !== c) return no(`session ${sessionId}`);
-      const domain = method.slice(0, method.indexOf('.'));
+      const domain = method.slice(0, Math.max(0, method.indexOf('.')));
       if (domain === 'Target' || domain === 'Browser') {
         required = PAGE_SESSION_ALLOW[method];
         if (!required) return no(browserWideWhy(method));
-      } else if (domain === 'Storage') {
-        // Same rule as the browser session: Storage.* without a context id
-        // acts on the empty default context.
+      } else if (COOKIE_METHODS.includes(method)) {
         required = ['browserContextId'];
-      } else required = [];
+      } else if (PAGE_SESSION_DOMAINS.has(domain)) {
+        required = [];
+      } else return no(`the browser (${domain || method} is not scoped to one page)`);
     }
     if (method === 'Target.createTarget' && params['browserContextId'] === undefined)
       return `${no('the default browser context')}; create one with Target.createBrowserContext`;
@@ -488,7 +617,15 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
       if (ctx !== undefined) c.contexts.delete(ctx);
     }
     const id = chrome.connection.allocateId();
-    owners.set(id, { client: c, clientId, method, params });
+    owners.set(id, {
+      client: c,
+      clientId,
+      method,
+      ...(method === 'Target.disposeBrowserContext'
+        ? { browserContextId: str(params['browserContextId']) }
+        : {}),
+      ...(sessionId !== undefined ? { sessionId } : {}),
+    });
     try {
       chrome.connection.sendRaw({
         id,
@@ -506,7 +643,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = null;
     if (clients.size > 0 || stopping) return;
-    idleTimer = setTimeout(() => void stop(), opts.idleMinutes * 60_000);
+    idleTimer = setTimeout(() => void stop(), idleMinutes * 60_000);
     idleTimer.unref();
   };
 
@@ -515,6 +652,9 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     c.gone = true;
     clearTimeout(c.helloTimer);
     c.backlog = [];
+    // Chrome may never answer this client's in-flight commands (its contexts
+    // are about to be disposed); nobody is left to hear them anyway.
+    for (const [id, o] of owners) if (o.client === c) owners.delete(id);
     for (const s of c.sessions) if (sessionOwner.get(s) === c) sessionOwner.delete(s);
     for (const t of c.targets) if (targetOwner.get(t) === c) targetOwner.delete(t);
     for (const [id, owner] of contextOwner) if (owner === c) contextOwner.delete(id);
@@ -628,7 +768,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     version: CHROME_VERSION,
     key: opts.key,
     startedAt: new Date().toISOString(),
-    idleMinutes: opts.idleMinutes,
+    idleMinutes,
   };
   try {
     await writeState(paths, state);
@@ -651,5 +791,18 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
   if (chrome.connection.closed) void stop();
   scheduleIdle();
 
-  return { state, chromePid: chrome.pid, stop };
+  return {
+    state,
+    chromePid: chrome.pid,
+    stop,
+    get inFlight() {
+      return owners.size;
+    },
+    browserContextIds: async () =>
+      (
+        await chrome.connection.send<{ browserContextIds: string[] }>(
+          'Target.getBrowserContexts',
+        )
+      ).browserContextIds,
+  };
 }

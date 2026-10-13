@@ -118,7 +118,7 @@ async function openPage(c: CdpConnection) {
 
 describe.skipIf(!chrome)('supervisor', () => {
   it('serves two clients, isolates sessions, and disposes a dead client’s contexts', () =>
-    withSupervisor(async ({ paths }) => {
+    withSupervisor(async ({ paths, sup }) => {
       expect((await readState(paths))?.pid).toBe(process.pid);
       const a = (await connect(paths.socket)).c;
       const b = (await connect(paths.socket)).c;
@@ -141,24 +141,33 @@ describe.skipIf(!chrome)('supervisor', () => {
       expect(r.result.value).toBe(42);
       expect(aSaw).toBeGreaterThan(0);
       expect(bSaw).toBe(0);
+      // Each client sees only its own contexts (and not the default one).
+      const own = await b.send<{ browserContextId: string }>(
+        'Target.createBrowserContext',
+      );
+      const seen = await b.send<{
+        browserContextIds: string[];
+        defaultBrowserContextId?: string;
+      }>('Target.getBrowserContexts');
+      expect(seen.browserContextIds).toEqual([own.browserContextId]);
+      expect(seen.defaultBrowserContextId).toBeUndefined();
+      expect(
+        (await a.send<{ browserContextIds: string[] }>('Target.getBrowserContexts'))
+          .browserContextIds,
+      ).toEqual([browserContextId]);
+      expect(await sup.browserContextIds()).toContain(browserContextId);
       a.close();
       // After a drops, its context is gone from the browser.
       for (let i = 0; i < 20; i++) {
-        const { browserContextIds } = await b.send<{ browserContextIds: string[] }>(
-          'Target.getBrowserContexts',
-        );
-        if (!browserContextIds.includes(browserContextId)) break;
+        if (!(await sup.browserContextIds()).includes(browserContextId)) break;
         await sleep(50);
       }
-      const { browserContextIds } = await b.send<{ browserContextIds: string[] }>(
-        'Target.getBrowserContexts',
-      );
-      expect(browserContextIds).not.toContain(browserContextId);
+      expect(await sup.browserContextIds()).not.toContain(browserContextId);
       b.close();
     }));
 
   it('a context the client disposed itself is not disposed twice (no error on drop)', () =>
-    withSupervisor(async ({ paths }) => {
+    withSupervisor(async ({ paths, sup }) => {
       const a = (await connect(paths.socket)).c;
       const { browserContextId } = await a.send<{ browserContextId: string }>(
         'Target.createBrowserContext',
@@ -166,10 +175,7 @@ describe.skipIf(!chrome)('supervisor', () => {
       await a.send('Target.disposeBrowserContext', { browserContextId });
       a.close();
       const b = (await connect(paths.socket)).c;
-      expect(
-        (await b.send<{ browserContextIds: string[] }>('Target.getBrowserContexts'))
-          .browserContextIds,
-      ).not.toContain(browserContextId);
+      expect(await sup.browserContextIds()).not.toContain(browserContextId);
       b.close();
     }));
 
@@ -512,6 +518,20 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         ['Storage.getCookies', {}],
         ['Storage.getCookies', { browserContextId: pa.browserContextId }],
         ['Storage.clearCookies', {}],
+        // Not a cookie method: the id is a decoy these ignore, acting on the
+        // default partition or browser-wide.
+        [
+          'Storage.clearDataForOrigin',
+          {
+            origin: 'http://x',
+            storageTypes: 'all',
+            browserContextId: pb.browserContextId,
+          },
+        ],
+        [
+          'Storage.setAttributionReportingLocalTestingMode',
+          { enabled: true, browserContextId: pb.browserContextId },
+        ],
         ['Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: '/tmp' }],
         ['Browser.grantPermissions', { permissions: ['geolocation'] }],
         ['Browser.getWindowForTarget', { targetId: pa.targetId }],
@@ -533,12 +553,23 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         ['Storage.getCookies', {}],
         ['Storage.clearCookies', {}],
         ['Storage.getCookies', { browserContextId: pa.browserContextId }],
+        ['Storage.setCookies', { cookies: [] }],
+        // Browser singletons whichever session sends them, and the unknown.
+        ['Tracing.start', { transferMode: 'ReportEvents' }],
+        ['SystemInfo.getProcessInfo', {}],
+        ['Memory.getBrowserSamplingProfile', {}],
+        ['NotADomain.method', {}],
+        ['nodot', {}],
       ] as [string, object][])
         await refusedBy(b.send(method, params, pb.sessionId));
       // Allowed with owned ids.
       await b.send('Browser.getVersion');
       await b.send('Storage.getCookies', { browserContextId: pb.browserContextId });
       await b.send('Storage.clearCookies', { browserContextId: pb.browserContextId });
+      await b.send('Storage.setCookies', {
+        cookies: [{ name: 'n', value: 'v', domain: 'x.test', path: '/' }],
+        browserContextId: pb.browserContextId,
+      });
       await b.send('Target.getTargetInfo', { targetId: pb.targetId });
       await b.send('Target.activateTarget', { targetId: pb.targetId });
       // Any domain on an owned page session.
@@ -603,12 +634,157 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
       { maxFrameChars: 1024 * 1024 },
     ));
 
+  it('a method from every domain the driver sends on a page session still passes', () =>
+    withSupervisor(async ({ paths }) => {
+      const a = (await connect(paths.socket)).c;
+      const { sessionId } = await openPage(a);
+      // grep of page.ts and capture/structure.ts: every page-session domain.
+      for (const [method, params] of [
+        ['Page.enable', {}],
+        ['Runtime.enable', {}],
+        ['Network.enable', {}],
+        ['Log.enable', {}],
+        ['Emulation.setFocusEmulationEnabled', { enabled: true }],
+        [
+          'Storage.clearDataForOrigin',
+          { origin: 'http://127.0.0.1', storageTypes: 'all' },
+        ],
+        ['DOMSnapshot.captureSnapshot', { computedStyles: [] }],
+        ['Fetch.disable', {}],
+      ] as [string, object][])
+        await a.send(method, params, sessionId);
+      a.close();
+    }));
+
+  it('in-flight commands Chrome never answers are purged on detach and on drop', () =>
+    withSupervisor(async ({ paths, sup }) => {
+      const a = (await connect(paths.socket)).c;
+      const pa = await openPage(a);
+      expect(sup.inFlight).toBe(0);
+      const hung = a.send('Runtime.evaluate', { expression: 'while(1){}' }, pa.sessionId);
+      const settled = hung.then(
+        () => 'resolved',
+        (e: unknown) => (e as Error).message,
+      );
+      await sleep(100);
+      expect(sup.inFlight).toBe(1);
+      // The target dies; Chrome never answers the evaluate (PR #102 probe).
+      await a.send('Target.disposeBrowserContext', {
+        browserContextId: pa.browserContextId,
+      });
+      for (let i = 0; i < 40 && sup.inFlight > 0; i++) await sleep(50);
+      expect(sup.inFlight).toBe(0);
+      expect(await settled).toMatch(/detached before Chrome replied/);
+
+      const b = await connect(paths.socket);
+      const pb = await openPage(b.c);
+      void b.c
+        .send('Runtime.evaluate', { expression: 'while(1){}' }, pb.sessionId)
+        .catch(() => {});
+      await sleep(100);
+      expect(sup.inFlight).toBe(1);
+      const gone = new Promise((r) => b.sock.once('close', r));
+      b.sock.destroy();
+      await gone;
+      for (let i = 0; i < 40 && sup.inFlight > 0; i++) await sleep(50);
+      expect(sup.inFlight).toBe(0);
+      a.close();
+    }));
+
+  it('idleMinutes past setTimeout’s range is clamped (no 1 ms exit); non-finite is refused', async () => {
+    // Unclamped, 100,000 min overflowed setTimeout to 1 ms: the daemon was
+    // gone before a client could connect.
+    await withSupervisor(async ({ paths, sup }) => {
+      await sleep(300);
+      expect(sup.state.idleMinutes).toBe(35_000);
+      const { c, outcome } = await connect(paths.socket);
+      expect(outcome).toBe('ready');
+      c.close();
+    }, 100_000);
+    for (const idleMinutes of [Number.NaN, Number.POSITIVE_INFINITY, 0])
+      await withPaths(async (paths) => {
+        await expect(
+          startSupervisor({
+            executablePath: chrome!.path,
+            paths,
+            key: 'test',
+            idleMinutes,
+          }),
+        ).rejects.toThrow(/idleMinutes must be a positive number/);
+      });
+  });
+
+  it('a page session clears its own origin (Storage.clearDataForOrigin) and a later page there sees empty storage', async () => {
+    const server = createServer((_req, res) => {
+      res.setHeader('content-type', 'text/html');
+      res.end('<!doctype html><p>origin</p>');
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const origin = `http://127.0.0.1:${(server.address() as net.AddressInfo).port}`;
+    try {
+      await withSupervisor(async ({ paths }) => {
+        const a = (await connect(paths.socket)).c;
+        const evalIn = async <T>(sessionId: string, expression: string) =>
+          (
+            await a.send<{ result: { value: T } }>(
+              'Runtime.evaluate',
+              { expression, returnByValue: true },
+              sessionId,
+            )
+          ).result.value;
+        const loaded = async (sessionId: string) => {
+          for (let i = 0; i < 100; i++) {
+            const ok = await evalIn<boolean>(
+              sessionId,
+              `document.readyState === 'complete' && location.origin === ${JSON.stringify(origin)}`,
+            );
+            if (ok) return;
+            await sleep(50);
+          }
+          throw new Error('page never loaded');
+        };
+        const first = await openPage(a);
+        await a.send('Page.navigate', { url: `${origin}/` }, first.sessionId);
+        await loaded(first.sessionId);
+        await evalIn(first.sessionId, `localStorage.x = 'LEAKED'`);
+        // jux's own between-page reset (page.ts clearOrigin): no context id,
+        // it acts on this target's own context.
+        await a.send(
+          'Storage.clearDataForOrigin',
+          { origin, storageTypes: 'all' },
+          first.sessionId,
+        );
+        const { targetId } = await a.send<{ targetId: string }>('Target.createTarget', {
+          url: `${origin}/`,
+          browserContextId: first.browserContextId,
+        });
+        const { sessionId } = await a.send<{ sessionId: string }>(
+          'Target.attachToTarget',
+          { targetId, flatten: true },
+        );
+        await loaded(sessionId);
+        expect(await evalIn<string | null>(sessionId, 'localStorage.getItem("x")')).toBe(
+          null,
+        );
+        a.close();
+      });
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  }, 30_000);
+
   it('a real capture through the supervisor needs nothing refused and matches a fresh launch byte for byte', async () => {
     const pages: Record<string, string> = {
       '/one':
         '<!doctype html><body style="margin:0;font:16px sans-serif"><h1>One</h1><div style="width:120px;height:40px;border-radius:8px;background:#36c"></div><script>localStorage.x=1</script></body>',
       '/two':
         '<!doctype html><body style="margin:0"><p>Two</p><input value="typed"></body>',
+      // Renders what /one left in localStorage. A fresh launch clears the
+      // origin between pages, so this reads "x=undefined"; through the daemon
+      // the page-session clearDataForOrigin was refused (and swallowed by
+      // resetBetweenPages), so it rendered "x=1" and hashed differently.
+      '/three':
+        '<!doctype html><body style="margin:0;font:16px sans-serif"><p id=o></p><script>o.textContent="x="+localStorage.x</script></body>',
     };
     const server = createServer((req, res) => {
       res.setHeader('content-type', 'text/html');
@@ -616,7 +792,7 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     const base = `http://127.0.0.1:${(server.address() as net.AddressInfo).port}`;
-    const urls = [`${base}/one`, `${base}/two`];
+    const urls = [`${base}/one`, `${base}/two`, `${base}/three`];
     const viewport = { width: 400, height: 300 };
     try {
       const fresh = await Browser.launch({ executablePath: chrome!.path });
@@ -632,6 +808,16 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         for (let run = 0; run < 2; run++) {
           const { c, outcome } = await connect(paths.socket);
           expect(outcome).toBe('ready');
+          // The driver swallows some failures (resetBetweenPages is best
+          // effort), so a refusal would not surface as an error: record them.
+          const refusals: string[] = [];
+          const send = c.send.bind(c);
+          c.send = ((...args: Parameters<typeof send>) =>
+            send(...args).catch((e: unknown) => {
+              if (e instanceof Error && /jux: .* refused/.test(e.message))
+                refusals.push(e.message);
+              throw e;
+            })) as typeof c.send;
           const { product } = await c.send<{ product: string }>('Browser.getVersion');
           const browser = Browser.fromConnection(c, {
             version: product,
@@ -641,7 +827,8 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
           await ctx.clearCookies();
           await ctx.close();
           const warm = await snapPages({ urls, viewport, browser });
-          expect(warm.pages.map((p) => p.error ?? null)).toEqual([null, null]);
+          expect(warm.pages.map((p) => p.error ?? null)).toEqual([null, null, null]);
+          expect(refusals).toEqual([]);
           expect(warm.pages.map((p) => sha256(p.snapshot!.image))).toEqual(freshHashes);
           expect(freshHashes.every((h) => /^[0-9a-f]{64}$/.test(h))).toBe(true);
           await browser.close();
