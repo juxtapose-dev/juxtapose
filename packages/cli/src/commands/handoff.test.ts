@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { GitBaselineStore, encodeStoryId } from '@juxtapose/core';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { shellQuote } from '../shell-quote.js';
 import { handoffCommand } from './handoff.js';
 
@@ -66,4 +66,50 @@ test('handoff points at the store baseline and a quoted crops command', async ()
     `\`jux diff ${shellQuote(baseline)} ${shellQuote(current)} --crops --project ${shellQuote(root)}\``,
   );
   expect(out).toContain(`'${root}'`); // the space forced quoting
+});
+
+test('a store whose locate throws just yields no baseline and no crops command', async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'jux-hand-'));
+  dirs.push(base);
+  await mkdir(path.join(base, 'storybook-static'), { recursive: true });
+  await writeFile(
+    path.join(base, 'storybook-static/index.json'),
+    JSON.stringify({ v: 5, entries: {} }),
+  );
+  const runDir = path.join(base, '.juxtapose/runs/r1');
+  await mkdir(path.join(runDir, 'images'), { recursive: true });
+  await writeFile(
+    path.join(runDir, 'report.json'),
+    JSON.stringify({
+      runId: 'r1',
+      results: [
+        {
+          storyId: 's--a',
+          status: 'fail',
+          mismatchPercent: 1,
+          mismatchPixels: 4,
+          changedRegions: [],
+        },
+      ],
+    }),
+  );
+  await writeFile(path.join(runDir, 'images', 's--a-current.webp'), 'current');
+  const spy = vi.spyOn(GitBaselineStore.prototype, 'locate').mockImplementation(() => {
+    throw new Error('boom');
+  });
+  let out = '';
+  const write = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((s: string) => (
+    (out += s),
+    true
+  )) as typeof process.stdout.write;
+  try {
+    expect(await handoffCommand('s--a', { project: base })).toBe(0);
+  } finally {
+    process.stdout.write = write;
+    spy.mockRestore();
+  }
+  expect(out).not.toContain('- baseline:');
+  expect(out).not.toContain('--crops');
+  expect(out).toContain('- current:');
 });

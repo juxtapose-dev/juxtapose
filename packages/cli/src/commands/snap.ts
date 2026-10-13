@@ -8,7 +8,7 @@
 // failed one is reported (with its error, in --json too) and the exit is 3:
 // the agent asked for all of them, so a partial set must not look like success.
 
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   compareCodeUnits,
@@ -22,7 +22,7 @@ import { EXIT } from '../exit-codes.js';
 import { shellQuote } from '../shell-quote.js';
 import { prefixSlugs, snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
-import { firstSymlink, symlinkRefusal } from '../symlink-guard.js';
+import { firstSymlink, symlinkRefusal, writeFresh } from '../symlink-guard.js';
 
 export interface SnapFlags {
   json?: boolean;
@@ -155,7 +155,7 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
   try {
     await mkdir(dir, { recursive: true });
     // Self-ignoring: snaps are scratch, never baselines.
-    await writeFile(path.join(dir, '.gitignore'), '*\n');
+    await writeFresh(path.join(dir, '.gitignore'), '*\n');
     // A smaller page set must not leave last run's snaps to pair with; the
     // dir is scratch, so this is safe. Done after capture so a failed launch
     // deletes nothing.
@@ -173,7 +173,7 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
     let problem = describeFailure(r);
     if (!problem) {
       try {
-        results.push(await write(dir, nameOf(r.url), r, env));
+        results.push(await writeSnap(dir, nameOf(r.url), r, env));
         continue;
       } catch (err) {
         problem = `could not write ${nameOf(r.url)} to ${dir}: ${errorMessage(err)}. Check the directory is writable, or pass --project <dir>.`;
@@ -251,7 +251,7 @@ export async function writeSnapSet(
   names: string[],
 ): Promise<void> {
   const sorted = [...new Set(names)].sort(compareCodeUnits);
-  await writeFile(setFile(dir, prefix), JSON.stringify({ names: sorted }) + '\n');
+  await writeFresh(setFile(dir, prefix), JSON.stringify({ names: sorted }) + '\n');
 }
 
 async function readSnapSet(dir: string, prefix: string): Promise<Set<string> | null> {
@@ -277,7 +277,7 @@ function describeFailure(r: SnapPageResult): string | null {
   return null;
 }
 
-async function write(
+export async function writeSnap(
   dir: string,
   name: string,
   r: SnapPageResult,
@@ -285,13 +285,13 @@ async function write(
 ): Promise<Written> {
   const snapshot = r.snapshot!;
   const image = path.join(dir, `${name}.webp`);
-  await writeFile(image, snapshot.image);
+  await writeFresh(image, snapshot.image);
   const s = snapshot.structure;
   const sidecar = path.join(dir, `${name}.structure.json.gz`);
   // A previous snap's sidecar under this name would otherwise sit beside the
   // new pixels, and a later diff would pair them (Ruling 7, for snaps).
   await rm(sidecar, { force: true });
-  if (s) await writeFile(sidecar, encodeStructure(s));
+  if (s) await writeFresh(sidecar, encodeStructure(s));
   return {
     url: r.url,
     name,

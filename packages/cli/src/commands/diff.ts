@@ -2,7 +2,7 @@
 // tier-0 verdict out, no browser. Exit 0 identical, 1 different, 2 usage,
 // 3 when an input exists but cannot be read.
 
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   compareCodeUnits,
@@ -19,7 +19,7 @@ import { EXIT } from '../exit-codes.js';
 import { shellQuote } from '../shell-quote.js';
 import { snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
-import { firstSymlink, symlinkRefusal } from '../symlink-guard.js';
+import { firstSymlink, symlinkRefusal, writeFresh } from '../symlink-guard.js';
 
 export interface DiffFlags {
   json?: boolean;
@@ -183,7 +183,7 @@ interface CropFile {
 }
 
 /** The tier-3 escalation: the verdict plus one strip per region, unexplained
- *  first, under .juxtapose/crops/<a>-vs-<b>/. The dir is emptied first so a
+ *  first, under .juxtapose/crops/<a>~vs~<b>/. The dir is emptied first so a
  *  stale crop from an earlier pair can never sit beside a fresh one. */
 async function writeCrops(
   a: string,
@@ -224,7 +224,7 @@ async function writeCrops(
   }
   // Self-ignoring, like the snaps dir: crops are scratch, never baselines.
   await mkdir(cropsRoot, { recursive: true });
-  await writeFile(path.join(cropsRoot, '.gitignore'), '*\n');
+  await writeFresh(path.join(cropsRoot, '.gitignore'), '*\n');
   // From the full coverage list, not the verdict's budget-fitted prefix: a
   // region the budget dropped from the verdict is still unexplained.
   const key = (r: ChangedRegion) => `${r.x},${r.y},${r.width},${r.height}`;
@@ -238,7 +238,7 @@ async function writeCrops(
   const files: CropFile[] = [];
   for (const [k, c] of crops.entries()) {
     const name = `crop-${k + 1}.png`;
-    await writeFile(path.join(absDir, name), c.png);
+    await writeFresh(path.join(absDir, name), c.png);
     files.push({
       file: `${relDir}/${name}`,
       region: c.region,
