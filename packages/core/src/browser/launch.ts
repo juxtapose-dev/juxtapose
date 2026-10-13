@@ -9,11 +9,12 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { rmSync } from 'node:fs';
-import { lstat, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { lstat, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromeArgs } from '../capture/launch.js';
 import { CdpConnection } from './cdp.js';
+import { ensurePrivateDir } from './private-dir.js';
 import { PipeTransport } from './transport.js';
 
 export type SpawnFn = typeof nodeSpawn;
@@ -141,16 +142,7 @@ export async function privateProfileRoot(
     new Error(
       `jux: refusing to use ${root}: ${why}. Remove it (rm -rf ${root}) and run jux again.`,
     );
-  await mkdir(root, { mode: 0o700 }).catch((e: NodeJS.ErrnoException) => {
-    if (e.code !== 'EEXIST') throw e;
-  });
-  const st = await lstat(root);
-  if (st.isSymbolicLink() || !st.isDirectory())
-    throw refuse('it is not a real directory');
-  if (uid !== undefined) {
-    if (st.uid !== uid) throw refuse('it is owned by another user');
-    if ((st.mode & 0o022) !== 0) throw refuse('it is writable by other users');
-  }
+  await ensurePrivateDir(root, uid, refuse);
   return root;
 }
 
