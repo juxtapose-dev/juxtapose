@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { noBrowserMessage } from '@juxtapose/core';
+import { acquireBrowser, noBrowserMessage } from '@juxtapose/core';
 import { captureHint, describeLaunchFailure } from './snap.js';
 
 it('the install step prints exactly once for a missing browser', () => {
@@ -27,3 +27,27 @@ it('wraps a core message without a doubled jux: prefix', () => {
     'jux snap: could not launch the browser: no browser. Run x',
   );
 });
+
+// Real core errors, not hand-written strings: core's launch failures carry
+// their own "could not launch the browser:", and the wrapped line once read
+// "could not launch the browser: could not launch the browser: … ready.. Run …".
+for (const chrome of ['/usr/bin/false', '/nope']) {
+  it.skipIf(process.platform === 'win32')(
+    `--chrome ${chrome}: one "could not launch the browser" and no ".."`,
+    async () => {
+      const err = await acquireBrowser({ chrome }).then(
+        async (b) => {
+          await b.close();
+          throw new Error('launched');
+        },
+        (e: Error) => e,
+      );
+      const line = describeLaunchFailure(err.message);
+      expect(line.startsWith('jux snap: could not launch the browser: ')).toBe(true);
+      expect(line.match(/could not launch the browser/g)).toHaveLength(1);
+      expect(line).not.toMatch(/\.\./);
+      expect(line.match(/jux browser install/g)).toHaveLength(1);
+    },
+    10_000,
+  );
+}

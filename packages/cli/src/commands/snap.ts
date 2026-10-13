@@ -271,11 +271,21 @@ async function readSnapSet(dir: string, prefix: string): Promise<Set<string> | n
   }
 }
 
-/** Core messages carry their own `jux: `; wrapped, that reads as a doubled prefix. */
-const stripJuxPrefix = (m: string): string => m.replace(/^jux: /, '');
+/** Core messages carry their own `jux: ` and, for launch failures, their own
+ *  "could not launch the browser: "; wrapped, both read doubled. */
+const stripJuxPrefix = (m: string): string =>
+  m.replace(/^jux: /, '').replace(/^could not launch the browser: /, '');
+
+/** The message plus its hint. The hint opens with ". ", so a message that
+ *  already ends in a period would print "ready.. Run". */
+function withHint(message: string): string {
+  const hint = captureHint(message);
+  const body = stripJuxPrefix(message);
+  return hint ? `${body.replace(/\.$/, '')}${hint}` : body;
+}
 
 export function describeLaunchFailure(message: string): string {
-  return `jux snap: could not launch the browser: ${stripJuxPrefix(message)}${captureHint(message)}`;
+  return `jux snap: could not launch the browser: ${withHint(message)}`;
 }
 
 function errorMessage(err: unknown): string {
@@ -283,8 +293,7 @@ function errorMessage(err: unknown): string {
 }
 
 function describeFailure(r: SnapPageResult): string | null {
-  if (r.error)
-    return `could not capture ${r.url}: ${stripJuxPrefix(r.error)}${captureHint(r.error)}`;
+  if (r.error) return `could not capture ${r.url}: ${withHint(r.error)}`;
   if (r.status !== null && (r.status < 200 || r.status >= 300)) {
     return `${r.url} returned HTTP ${r.status}; nothing written. Fix the route or URL, then retry.`;
   }
