@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { LOGO, pageHtml } from './page.mjs';
 
 export function startCorpusServer() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
       const url = new URL(req.url, 'http://localhost');
       if (url.pathname === '/logo-a.svg' || url.pathname === '/logo-b.svg') {
@@ -26,7 +26,9 @@ export function startCorpusServer() {
         res.writeHead(404);
         res.end(e.message);
       }
-    }).listen(0, '127.0.0.1', () => {
+    });
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
       resolve({
         url: `http://127.0.0.1:${server.address().port}`,
         close: () => server.close(),

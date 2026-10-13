@@ -46,10 +46,10 @@ export function matchElements(a: StructureSnapshot, b: StructureSnapshot): Eleme
     // A text edit changes a name-derived key, a toggled class changes a
     // class-derived one. Pair what is left by tag, in order, so those read as
     // `text`/`attr` deltas rather than removed + added.
-    const second = align(
-      first.leftA,
-      first.leftB,
-      (i, j) => a.elements[i].tag === b.elements[j].tag,
+    // Never across conflicting explicit identities: `div#row-1` removed and
+    // `div#banner` added are two different elements, not one edited one.
+    const second = align(first.leftA, first.leftB, (i, j) =>
+      sameKind(a.elements[i], b.elements[j]),
     );
     for (const [i, j] of [...first.matched, ...second.matched]) {
       pairs.push([i, j]);
@@ -64,6 +64,15 @@ export function matchElements(a: StructureSnapshot, b: StructureSnapshot): Eleme
   added.sort((x, y) => x - y);
   removed.sort((x, y) => x - y);
   return { pairs, added, removed };
+}
+
+/** Tag equal, and no explicit id or testId present on both sides and unequal. */
+function sameKind(x: StructureElement, y: StructureElement): boolean {
+  if (x.tag !== y.tag) return false;
+  if (x.id !== undefined && y.id !== undefined && x.id !== y.id) return false;
+  if (x.testId !== undefined && y.testId !== undefined && x.testId !== y.testId)
+    return false;
+  return true;
 }
 
 /** Children in document order, keyed by parent index; -1 is the root. */
@@ -133,7 +142,9 @@ function lcs(
 
 /** In-order pairing: each a takes the first unused b after the last pairing
  *  that is `same`. Linear-ish, order-preserving, and good enough for a parent
- *  with thousands of children where an exact LCS would cost seconds. */
+ *  with thousands of children where an exact LCS would cost seconds.
+ *  Failure mode: it never looks backwards, so a reordered list degrades to
+ *  many removed/added pairs instead of a minimal edit. */
 function greedy(
   ca: number[],
   cb: number[],

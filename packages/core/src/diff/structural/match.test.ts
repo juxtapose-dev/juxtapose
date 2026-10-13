@@ -67,6 +67,18 @@ test('a button whose text changed is still the same button (second pass by tag)'
   expect(m.removed).toEqual([]);
 });
 
+test('a replaced element with a different id is removed + added, not paired', () => {
+  const a = snap('noop');
+  const b = structuredClone(a);
+  const r1 = idx(b, 'row-1');
+  // swap div#row-1 for a div#banner: same tag, same parent, different id
+  b.elements[r1] = { ...b.elements[r1], id: 'banner' };
+  const m = matchElements(a, b);
+  expect(m.removed).toEqual([idx(a, 'row-1')]);
+  expect(m.added).toEqual([r1]);
+  expect(m.pairs).not.toContainEqual([idx(a, 'row-1'), r1]);
+});
+
 test('pairs are sorted by current index; added and removed ascending', () => {
   const m = matchElements(snap('noop'), snap('inserted'));
   const bs = m.pairs.map(([, j]) => j);
@@ -97,6 +109,10 @@ test('one of five identical anonymous siblings removed is one removed, not a cas
   };
   const m = matchElements(a, b);
   expect(m.removed).toHaveLength(1);
+  // Identical siblings carry no information about WHICH one went, so the LCS
+  // reports a fixed one (the last of the run, here the fifth). Pinned so a
+  // change in tie-breaking is deliberate; the count is what is reliable.
+  expect(m.removed).toEqual([a.elements.length - 1]);
   expect(m.added).toEqual([]);
   // the kept h1 is also a child of `parent`; count only the anonymous divs
   expect(
