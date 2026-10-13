@@ -603,3 +603,18 @@ test('cause fits the budget for any input: ≤5 files, paths ≤80 chars keeping
   expect(v.deltas.length).toBeGreaterThan(0);
   expect(JSON.stringify(verdict('padding', { cause }))).toBe(JSON.stringify(v));
 });
+
+// A clip that lands between the halves of a surrogate pair would leave a
+// lone surrogate, which is not valid UTF-8 and breaks a JSON consumer.
+test('cause paths are clipped on code point boundaries', () => {
+  for (const pad of ['', 'x']) {
+    const p = `src/${pad}${'😀'.repeat(60)}.tsx`;
+    const v = verdict('padding', {
+      cause: { kind: 'in-closure', files: [{ path: p, distance: 1 }] },
+    });
+    const clipped = v.cause!.files[0].path;
+    expect(clipped.length).toBeLessThanOrEqual(80);
+    expect(clipped.isWellFormed()).toBe(true);
+    expect(clipped).toMatch(/^…😀+\.tsx$/u);
+  }
+});

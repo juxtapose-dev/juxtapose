@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -37,11 +37,15 @@ afterAll(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+// The project is the repository root here, so git's path and the
+// project-relative path are the same string.
+const same = (files: string[] | null) =>
+  files && files.map((f) => ({ path: f, repoPath: f }));
 const index = (changedFiles: string[] | null, m: ViteManifest | null = manifest) =>
   buildCauseIndex({
     projectRoot: root,
     configDirs: ['.storybook'],
-    changedFiles,
+    changedFiles: same(changedFiles),
     manifest: m,
   });
 const button = () => path.join(root, 'src/Button.stories.tsx');
@@ -141,6 +145,81 @@ describe('buildCauseIndex', () => {
   it('an empty change set on a fully traced closure is none-in-closure', async () => {
     expect((await index([]).causeFor(card())).kind).toBe('none-in-closure');
   });
+
+  // An `imports[]` key with no manifest entry: the walk reaches a node it
+  // cannot look inside, which is as untraced as a src-less chunk.
+  it('a closure through a dangling import is unknown, never none-in-closure', async () => {
+    const dangling: ViteManifest = {
+      ...manifest,
+      'src/Card.stories.tsx': {
+        file: 'd.js',
+        src: 'src/Card.stories.tsx',
+        imports: ['_card', '_gone'],
+      },
+    };
+    expect((await index(['README.md'], dangling).causeFor(card())).kind).toBe('unknown');
+    expect((await index(['src/Card.tsx'], dangling).causeFor(card())).kind).toBe(
+      'in-closure',
+    );
+  });
+
+  // Ruling 8: the manifest is chunk-level. A module inlined into a chunk has
+  // no entry, so a changed source file the manifest never names could be
+  // inside any chunk, this story's included.
+  it('a changed source file no manifest entry names is unknown, never none-in-closure', async () => {
+    expect((await index(['src/inlined.ts']).causeFor(card())).kind).toBe('unknown');
+    expect((await index(['src/theme.css']).causeFor(card())).kind).toBe('unknown');
+    // A file the bundler never sees does not block the claim.
+    expect((await index(['docs/notes.md']).causeFor(card())).kind).toBe(
+      'none-in-closure',
+    );
+    // Named by the manifest but outside this closure: still honest.
+    expect((await index(['src/Button.tsx']).causeFor(card())).kind).toBe(
+      'none-in-closure',
+    );
+  });
+
+  // Two entries can share a src (a module that is both an entry and a
+  // dynamic import); the second must not erase the first's edges.
+  it('merges the edges of manifest entries that share a src', async () => {
+    const twice: ViteManifest = {
+      ...manifest,
+      _card2: { file: 'f.js', src: 'src/Card.stories.tsx', imports: ['_shared'] },
+    };
+    expect(await index(['src/Card.tsx'], twice).causeFor(card())).toEqual({
+      kind: 'in-closure',
+      files: [{ path: 'src/Card.tsx', distance: 1 }],
+    });
+    expect(await index(['src/shared.ts'], twice).causeFor(card())).toEqual({
+      kind: 'in-closure',
+      files: [{ path: 'src/shared.ts', distance: 1 }],
+    });
+  });
+
+  // In a monorepo the root lockfile is `../../pnpm-lock.yaml` to the project
+  // and `pnpm-lock.yaml` to git; only git's form says it is the root one.
+  it('a monorepo-root lockfile, package.json or tsconfig is config', async () => {
+    const nested = (repoPath: string) =>
+      buildCauseIndex({
+        projectRoot: root,
+        configDirs: ['.storybook'],
+        changedFiles: [{ path: `../../${repoPath}`, repoPath }],
+        manifest,
+      }).causeFor(card());
+    expect(await nested('pnpm-lock.yaml')).toEqual({
+      kind: 'config',
+      files: [{ path: '../../pnpm-lock.yaml', distance: 0 }],
+    });
+    expect((await nested('package.json')).kind).toBe('config');
+    expect((await nested('tsconfig.json')).kind).toBe('config');
+    expect((await nested('tsconfig.base.json')).kind).toBe('config');
+    // and at the project root itself
+    expect((await index(['tsconfig.json']).causeFor(card())).kind).toBe('config');
+    // a nested tsconfig (a fixture) is not one
+    expect((await index(['src/fixtures/tsconfig.json']).causeFor(card())).kind).toBe(
+      'none-in-closure',
+    );
+  });
 });
 
 // The real thing: examples/storybook's Vite manifest, copied by
@@ -156,11 +235,16 @@ describe('the real Storybook manifest', () => {
   ) as ViteManifest;
   const project = () => path.join(root, 'examples/storybook');
   const story = () => path.join(project(), 'stories/Button.stories.jsx');
+  // As prepareCause would hand them over: project-relative, plus git's
+  // form relative to this repository's root.
   const realIndex = (changedFiles: string[]) =>
     buildCauseIndex({
       projectRoot: project(),
       configDirs: ['.storybook'],
-      changedFiles,
+      changedFiles: changedFiles.map((f) => ({
+        path: f,
+        repoPath: path.posix.normalize(`examples/storybook/${f}`),
+      })),
       manifest: real,
     });
 
@@ -193,6 +277,34 @@ describe('the real Storybook manifest', () => {
   });
 });
 
+// A real repository with the project in a subdirectory, like
+// examples/storybook inside this repo: git says `app/src/Card.tsx`, the
+// manifest says `src/Card.tsx`.
+async function scratchRepo(m: ViteManifest, files: Record<string, string>) {
+  const repo = await mkdtemp(path.join(tmpdir(), 'jux-cause-git-'));
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+      cwd: repo,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  const project = path.join(repo, 'app');
+  const buildDir = path.join(project, 'build');
+  await mkdir(path.join(buildDir, '.vite'), { recursive: true });
+  await writeFile(path.join(buildDir, '.vite/manifest.json'), JSON.stringify(m));
+  const write = async (rel: string, body: string) => {
+    await mkdir(path.dirname(path.join(project, rel)), { recursive: true });
+    await writeFile(path.join(project, rel), body);
+  };
+  for (const [rel, body] of Object.entries(files)) await write(rel, body);
+  git('init', '-q');
+  git('add', '.');
+  git('commit', '-qm', 'one');
+  const index = (sinceCommit: string) =>
+    prepareCause({ projectRoot: project, buildDir, sinceCommit, configDirs: [] });
+  return { repo, project, git, write, index };
+}
+
 describe('prepareCause', () => {
   it('reads the manifest and git only on the first causeFor, and never throws', async () => {
     // No build dir, and a directory that is not a git repo: both reads fail
@@ -205,38 +317,87 @@ describe('prepareCause', () => {
     expect(await ix.causeFor(button())).toEqual({ kind: 'unknown', files: [] });
   });
 
+  // git's own complaints ("fatal: not a git repository", diff's usage text)
+  // went straight to the terminal through an inherited stderr. Checked in a
+  // child process, since an inherited fd never passes through this one.
+  it('says nothing on stderr outside a repository', async () => {
+    const hooks = path.join(root, 'load-ts.mjs');
+    await writeFile(
+      hooks,
+      `import { registerHooks } from 'node:module';
+registerHooks({
+  resolve(spec, ctx, next) {
+    try { return next(spec, ctx); } catch (e) {
+      if (spec.startsWith('.') && spec.endsWith('.js')) return next(spec.slice(0, -3) + '.ts', ctx);
+      throw e;
+    }
+  },
+});
+const { prepareCause } = await import(process.argv[2]);
+const ix = prepareCause({ projectRoot: process.argv[3], sinceCommit: 'HEAD~1', configDirs: [] });
+process.stdout.write(JSON.stringify(await ix.causeFor(process.argv[3] + '/x.ts')));
+`,
+    );
+    const outside = await mkdtemp(path.join(tmpdir(), 'jux-cause-norepo-'));
+    const r = spawnSync(
+      process.execPath,
+      [hooks, path.join(import.meta.dirname, 'cause.ts'), outside],
+      { encoding: 'utf8', env: { ...process.env, GIT_CEILING_DIRECTORIES: tmpdir() } },
+    );
+    await rm(outside, { recursive: true, force: true });
+    expect(r.stdout).toBe('{"kind":"unknown","files":[]}');
+    expect(r.stderr).toBe('');
+  });
+
   it('maps git top-level paths to the project root and traces the closure', async () => {
-    // A real repository with the project in a subdirectory, like
-    // examples/storybook inside this repo: git says `app/src/Card.tsx`, the
-    // manifest says `src/Card.tsx`.
-    const repo = await mkdtemp(path.join(tmpdir(), 'jux-cause-git-'));
-    const git = (...args: string[]) =>
-      execFileSync('git', args, {
-        cwd: repo,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
-    const project = path.join(repo, 'app');
-    const buildDir = path.join(project, 'build');
-    await mkdir(path.join(buildDir, '.vite'), { recursive: true });
-    await mkdir(path.join(project, 'src'), { recursive: true });
-    await writeFile(path.join(buildDir, '.vite/manifest.json'), JSON.stringify(manifest));
-    await writeFile(path.join(project, 'src/Card.tsx'), 'v1');
-    git('init', '-q');
-    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '.');
-    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'one');
-    await writeFile(path.join(project, 'src/Card.tsx'), 'v2');
-    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', 'two');
-    const ix = prepareCause({
-      projectRoot: project,
-      buildDir,
-      sinceCommit: 'HEAD~1',
-      configDirs: [],
-    });
-    expect(await ix.causeFor(path.join(project, 'src/Card.stories.tsx'))).toEqual({
+    const r = await scratchRepo(manifest, { 'src/Card.tsx': 'v1' });
+    await r.write('src/Card.tsx', 'v2');
+    r.git('commit', '-qam', 'two');
+    expect(
+      await r.index('HEAD~1').causeFor(path.join(r.project, 'src/Card.stories.tsx')),
+    ).toEqual({
       kind: 'in-closure',
       files: [{ path: 'src/Card.tsx', distance: 1 }],
     });
-    await rm(repo, { recursive: true, force: true });
+    await rm(r.repo, { recursive: true, force: true });
+  });
+
+  // Ruling 9: the agent asks before committing, so an edit still in the
+  // working tree (or a file not yet added) is a change.
+  it('counts uncommitted edits and untracked files', async () => {
+    const r = await scratchRepo(manifest, {
+      'src/Card.stories.tsx': 'v1',
+      'src/Button.stories.tsx': 'v1',
+    });
+    await r.write('src/Card.stories.tsx', 'v2');
+    await r.write('src/shared.ts', 'new and untracked');
+    const ix = r.index('HEAD');
+    expect(await ix.causeFor(path.join(r.project, 'src/Card.stories.tsx'))).toEqual({
+      kind: 'in-closure',
+      files: [{ path: 'src/Card.stories.tsx', distance: 0 }],
+    });
+    expect(await ix.causeFor(path.join(r.project, 'src/Button.stories.tsx'))).toEqual({
+      kind: 'in-closure',
+      files: [{ path: 'src/shared.ts', distance: 2 }],
+    });
+    await rm(r.repo, { recursive: true, force: true });
+  });
+
+  // Without -z, git quotes a non-ASCII or odd name (`"src/K\303\244rtchen..."`)
+  // and the quoted string matches no manifest src.
+  it('reads names with spaces and non-ASCII characters exactly', async () => {
+    const story = 'src/Kärtchen Liste.stories.tsx';
+    const comp = 'src/Kärtchen Liste.tsx';
+    const m: ViteManifest = {
+      [story]: { file: 'k.js', src: story, imports: ['_k'] },
+      _k: { file: 'l.js', src: comp },
+    };
+    const r = await scratchRepo(m, { [comp]: 'v1' });
+    await r.write(comp, 'v2');
+    expect(await r.index('HEAD').causeFor(path.join(r.project, story))).toEqual({
+      kind: 'in-closure',
+      files: [{ path: comp, distance: 1 }],
+    });
+    await rm(r.repo, { recursive: true, force: true });
   });
 });

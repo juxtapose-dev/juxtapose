@@ -2852,8 +2852,9 @@ Under the verdict table, change the `escalate.command` row to:
 
 ```
 | `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run. Arguments are shell-quoted when needed, and a `.webp` path argument appears verbatim, so a verdict for two absolute paths names this machine's paths |
-| `cause`              | only in `jux run --since`: `{ kind, files }` where `kind` is `in-closure` (a changed file is in this story's import closure; `files` lists up to 5, nearest first, as `{ path, distance }`, paths relative to the project root), `config` (a lockfile or platform config dir changed, so every story is affected), `none-in-closure` (the closure was fully traced and no changed file is in it — the strongest "this is not your code" the tool can give, especially beside `render-drift`) or `unknown` (no manifest, git failed, the story is not in the build graph, or the closure runs into a bundled chunk the manifest cannot see through). Bundled workbenches often give `unknown`: a Storybook build puts components into chunks with no source path, so a component edit is traceable only up to the chunk. A changed story file is still found |
 ```
+
+Task 2 (fix round 1) already added the `cause` row and the limit paragraph below the table ("`cause` follows the Vite build manifest…"); keep both, and only reconcile wording. The wording of each kind is `describeCause` in `packages/core/src/agent/handoff.ts`: `none-in-closure` reads "No changed file appears in this story's traced imports. The cause is likely outside your diff…" (never "not your code"), and `unknown` has a handoff sentence ("Cause unknown: …") while `jux run`'s review list prints nothing for it. `config` also covers a root `tsconfig*.json`; changed files include uncommitted edits and untracked files. Any skill text describing cause must match.
 
 After the "### Exit codes" section add:
 

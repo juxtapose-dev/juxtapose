@@ -65,6 +65,13 @@ export function isLockfileChange(file: string): boolean {
   return LOCKFILES.has(base) && !file.includes('/');
 }
 
+/** A root `tsconfig*.json`: compiler options reach every module, and the
+ *  manifest never names it, so without this a tsconfig edit beside a
+ *  component edit narrowed the run to that component's stories. */
+export function isTsconfigChange(file: string): boolean {
+  return !file.includes('/') && /^tsconfig(\..+)?\.json$/.test(file);
+}
+
 /** Anything under a platform config dir (`.storybook`, `.ladle`) reaches
  *  every story. */
 export function isConfigChange(file: string, configDirs: string[]): boolean {
@@ -88,6 +95,7 @@ export async function resolveAffected(
 
   for (const file of changed) {
     if (isLockfileChange(file)) return { stories, reason: 'dependency-changed' };
+    if (isTsconfigChange(file)) return { stories, reason: 'config-changed' };
     if (isConfigChange(file, opts.configDirs))
       return { stories, reason: 'config-changed' };
   }
@@ -224,16 +232,26 @@ export async function loadViteManifest(buildDir: string): Promise<ViteManifest |
   return null;
 }
 
+/** The files changed since `sinceCommit`, as git prints them: relative to
+ *  the repository top level, forward slashes. The working tree counts (an
+ *  agent asks before it commits), and so do untracked files that are not
+ *  ignored. Null when git cannot say. NUL-separated with no trimming, so a
+ *  name with a space, a newline or a non-ASCII character is read exactly;
+ *  without `-z` git quotes such names and the quoted form matches nothing. */
 export function gitChangedFiles(sinceCommit: string, cwd: string): string[] | null {
+  // A leading dash would be read as an option (`--output=<file>` writes one).
+  if (sinceCommit.startsWith('-')) return null;
   try {
-    const out = execFileSync('git', ['diff', '--name-only', `${sinceCommit}..HEAD`], {
+    const tracked = git(['diff', '--name-only', '-z', sinceCommit, '--'], cwd);
+    // `:/` and `--full-name`: the whole repository, top-level-relative, even
+    // when cwd is a subdirectory, matching `git diff`'s paths.
+    const untracked = git(
+      ['ls-files', '--others', '--exclude-standard', '-z', '--full-name', '--', ':/'],
       cwd,
-      encoding: 'utf8',
-    });
-    return out
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    );
+    return [...new Set([...tracked.split('\0'), ...untracked.split('\0')])].filter(
+      (f) => f.length > 0,
+    );
   } catch {
     return null;
   }
@@ -243,13 +261,27 @@ export function gitChangedFiles(sinceCommit: string, cwd: string): string[] | nu
  *  repository or without git. */
 export function gitTopLevel(cwd: string): string | null {
   try {
-    return execFileSync('git', ['rev-parse', '--show-toplevel'], {
-      cwd,
-      encoding: 'utf8',
-    }).trim();
+    // Only the line end: a directory name may itself end in a space.
+    return git(['rev-parse', '--show-toplevel'], cwd).replace(/\n$/, '');
   } catch {
     return null;
   }
+}
+
+const GIT_TIMEOUT_MS = 10_000;
+
+/** Every git call goes through here. Git's stderr is dropped: outside a
+ *  repository it printed "fatal: not a git repository" and `git diff`'s full
+ *  usage text to the user's terminal, for a failure the caller already
+ *  handles. The timeout bounds a git that hangs (a lock, a network
+ *  filesystem); a timeout is a failure like any other. */
+function git(args: string[], cwd: string): string {
+  return execFileSync('git', ['-c', 'core.quotePath=false', ...args], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: GIT_TIMEOUT_MS,
+  });
 }
 
 export function toPosixRelative(root: string, abs: string): string {

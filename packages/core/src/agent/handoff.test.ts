@@ -131,13 +131,17 @@ describe('buildHandoffPrompt', () => {
       structural: { ...v, cause: { kind: 'none-in-closure', files: [] } },
     });
     expect(none).toContain(
-      "None of the files changed since the baseline is in this story's import closure",
+      "No changed file appears in this story's traced imports. The cause is likely outside your diff",
     );
     const unknown = buildHandoffPrompt({
       ...base,
       structural: { ...v, cause: { kind: 'unknown', files: [] } },
     });
-    expect(unknown).not.toContain('## Why');
+    // Ruling 10: the handoff says why it cannot say; the CLI list stays quiet.
+    expect(unknown).toContain('## Why');
+    expect(unknown).toContain(
+      "Cause unknown: this build doesn't expose every changed file's place in the story's imports, so nothing can be inferred from it.",
+    );
     // The cause does not depend on structure: with no baseline sidecar the
     // structure section is replaced by a "re-approve" note, and `## Why` stays.
     const noStructure = buildHandoffPrompt({

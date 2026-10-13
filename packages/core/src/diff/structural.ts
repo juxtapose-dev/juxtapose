@@ -193,7 +193,12 @@ function fitCause(c: Cause): Cause {
   };
 }
 
-/** `…` plus the last `max - 1` code units. */
+/** `…` plus at most the last `max - 1` code units, never starting on the
+ *  low half of a surrogate pair: a lone surrogate is not valid UTF-8. */
 function clipHead(s: string, max: number): string {
-  return s.length <= max ? s : '…' + s.slice(s.length - (max - 1));
+  if (s.length <= max) return s;
+  let from = s.length - (max - 1);
+  const c = s.charCodeAt(from);
+  if (c >= 0xdc00 && c <= 0xdfff) from++;
+  return '…' + s.slice(from);
 }

@@ -5,12 +5,25 @@
 // not your code" the tool can give. Matched CSS rules and source lines are
 // later rows.
 //
-// "Not your code" is said only after a full trace. A Storybook build
-// bundles components into chunks that have no `src` in the manifest, so a
-// story's closure usually ends in an unresolved node; a changed file found
-// before that point is a hit, but no hit is `unknown`, never
-// `none-in-closure`. The first draft said "not your code" for a component
-// edit on examples/storybook, the worst answer the feature can give.
+// "Not your code" is said only after a full trace, and the manifest is
+// chunk-level, so a full trace needs two things:
+//
+// - Every node the walk reaches has its own manifest entry with a `src`. A
+//   Storybook build bundles components into chunks that have none, so a
+//   story's closure usually ends in an unresolved node; an `imports[]` key
+//   with no entry at all is the same. A changed file found before that point
+//   is a hit, but no hit is `unknown`. The first draft said "not your code"
+//   for a component edit on examples/storybook, the worst answer the
+//   feature can give.
+// - Every changed source or style file is some entry's `src`. A module
+//   Rollup inlined into a chunk has no entry of its own, so a changed file
+//   the manifest never names could sit inside any chunk, this story's
+//   included. Files the bundler never sees (Markdown, a fixture JSON) do not
+//   block the claim; they cannot be imported as code.
+//
+// Even then the claim is about the traced imports, not about every byte the
+// story renders (a stylesheet linked from preview-head, a public asset), so
+// the wording says "likely".
 //
 // Nothing here may fail a story. `prepareCause` reads git and the manifest
 // on the first `causeFor` call, once, inside try/catch; that call happens
@@ -26,6 +39,7 @@ import {
   gitTopLevel,
   isConfigChange,
   isLockfileChange,
+  isTsconfigChange,
   keyToSrc,
   loadViteManifest,
   toPosixRelative,
@@ -38,12 +52,20 @@ export interface CauseIndex {
   causeFor(componentPath: string): Promise<Cause>;
 }
 
+/** One changed file, in both forms the rules need. */
+export interface ChangedFile {
+  /** Posix, relative to the project root: what a manifest `src` holds. */
+  path: string;
+  /** As git prints it, relative to the repository top level. In a monorepo
+   *  only this form shows that `../../pnpm-lock.yaml` is the root lockfile. */
+  repoPath: string;
+}
+
 export interface CauseSources {
   projectRoot: string;
   configDirs: string[];
-  /** Posix paths relative to projectRoot (git's top-level-relative paths
-   *  already mapped); null when git could not say. */
-  changedFiles: string[] | null;
+  /** Null when git could not say. */
+  changedFiles: ChangedFile[] | null;
   manifest: ViteManifest | null;
 }
 
@@ -117,18 +139,32 @@ function projectRelative(
   files: string[] | null,
   topLevel: string | null,
   projectRoot: string,
-): string[] | null {
+): ChangedFile[] | null {
   if (files === null || topLevel === null) return null;
   const root = realpathSync(projectRoot);
-  return files.map((f) => toPosixRelative(root, path.join(topLevel, f)));
+  return files.map((repoPath) => ({
+    path: toPosixRelative(root, path.join(topLevel, repoPath)),
+    repoPath,
+  }));
 }
 
-/** src → the srcs (or bare chunk keys) it imports, static and dynamic. */
 interface ForwardGraph {
+  /** src → the srcs (or bare chunk keys) it imports, static and dynamic.
+   *  A node that is not a key here is one the walk cannot look inside. */
   edges: Map<string, string[]>;
-  /** Manifest keys with no `src`: a node here means the walk cannot see
-   *  through it. */
-  unresolved: Set<string>;
+}
+
+/** Extensions a bundler turns into modules: a changed file with one of these
+ *  that no manifest entry names may have been inlined into any chunk. */
+const BUNDLED = /\.(?:[cm]?js|jsx|tsx?|vue|svelte|css|scss|sass|less|styl|pcss|mdx)$/;
+
+/** Reaches every story: a root lockfile or tsconfig, or a workbench config
+ *  dir. Checked in both forms, since a monorepo's root files are only
+ *  recognisable in git's. */
+function isGlobalChange(f: ChangedFile, configDirs: string[]): boolean {
+  return [f.path, f.repoPath].some(
+    (p) => isLockfileChange(p) || isTsconfigChange(p) || isConfigChange(p, configDirs),
+  );
 }
 
 function causeOf(
@@ -140,7 +176,8 @@ function causeOf(
   // Same rule as resolveAffected: these reach every story, so the closure
   // is beside the point.
   const global = src.changedFiles
-    .filter((f) => isLockfileChange(f) || isConfigChange(f, src.configDirs))
+    .filter((f) => isGlobalChange(f, src.configDirs))
+    .map((f) => f.path)
     .sort(compareCodeUnits);
   if (global.length > 0) {
     return {
@@ -154,38 +191,36 @@ function causeOf(
   // closure was never traced, so "none of your files" would be a guess.
   if (!graph.edges.has(start)) return UNKNOWN;
   const reach = closure(graph.edges, start);
-  const changed = new Set(src.changedFiles);
+  const changed = new Set(src.changedFiles.map((f) => f.path));
   const files = [...reach]
     .filter(([file]) => changed.has(file))
     .map(([path, distance]) => ({ path, distance }))
     .sort((x, y) => x.distance - y.distance || compareCodeUnits(x.path, y.path))
     .slice(0, MAX_CAUSE_FILES);
   if (files.length > 0) return { kind: 'in-closure', files };
-  // No hit. Honest only if every node on the way had a src to look through.
-  for (const node of reach.keys()) if (graph.unresolved.has(node)) return UNKNOWN;
+  // No hit. Honest only if every node on the way had a src to look through,
+  // and no changed module could be hiding inlined in a chunk.
+  for (const node of reach.keys()) if (!graph.edges.has(node)) return UNKNOWN;
+  for (const f of changed) if (BUNDLED.test(f) && !graph.edges.has(f)) return UNKNOWN;
   return { kind: 'none-in-closure', files: [] };
 }
 
 /** Edges resolve through the same key → src map affected.ts's reverse graph
- *  uses; a key with no src is kept as a node (so the walk can report it as
- *  unresolved) with no outgoing edges. */
+ *  uses. A key with no src (a bundled chunk) or no entry at all stays a bare
+ *  key: reachable, never a key of `edges`. Entries that share a src (one
+ *  module emitted twice) merge their edges; overwriting dropped the first
+ *  entry's imports and could make a hit look like `none-in-closure`. */
 function buildForwardGraph(manifest: ViteManifest): ForwardGraph {
   const srcOf = keyToSrc(manifest);
   const edges = new Map<string, string[]>();
-  const unresolved = new Set<string>();
-  for (const [key, entry] of Object.entries(manifest)) {
-    if (!entry.src) {
-      unresolved.add(key);
-      continue;
-    }
-    edges.set(
-      entry.src,
-      [...(entry.imports ?? []), ...(entry.dynamicImports ?? [])].map(
-        (k) => srcOf.get(k) ?? k,
-      ),
+  for (const entry of Object.values(manifest)) {
+    if (!entry.src) continue;
+    const out = [...(entry.imports ?? []), ...(entry.dynamicImports ?? [])].map(
+      (k) => srcOf.get(k) ?? k,
     );
+    edges.set(entry.src, [...(edges.get(entry.src) ?? []), ...out]);
   }
-  return { edges, unresolved };
+  return { edges };
 }
 
 /** BFS distance from `start` to everything it reaches, `start` at 0. */

@@ -100,6 +100,7 @@ export {
   prepareCause,
   type CauseIndex,
   type CauseSources,
+  type ChangedFile,
 } from './analysis/cause.js';
 
 // Reporting on one.

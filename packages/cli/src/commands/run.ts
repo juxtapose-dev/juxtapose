@@ -322,10 +322,12 @@ function emptyReport(projectRoot: string, totalCount: number): RunReport {
 
 /** What an agent reads first under a failing story: the cause (the same
  *  sentence the handoff prints), then the structural summary. One line
- *  each; the handoff has the rest. */
+ *  each; the handoff has the rest. An `unknown` cause is left to the
+ *  handoff: under every story of a Storybook build it would be noise. */
 function explain(r: DiffResult): string[] {
   const v = r.structural;
   if (!v) return [];
-  const why = v.cause && describeCause(v.cause);
-  return [...(why ? [`cause: ${why}`] : []), v.summary];
+  const why =
+    v.cause && v.cause.kind !== 'unknown' ? [`cause: ${describeCause(v.cause)}`] : [];
+  return [...why, v.summary];
 }
