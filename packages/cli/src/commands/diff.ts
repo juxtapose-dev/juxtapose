@@ -178,7 +178,9 @@ interface CropFile {
   scale: number;
   width: number;
   height: number;
-  /** False for a region no delta explains (from the full coverage result). */
+  /** False for a region no delta explains (from the full coverage result).
+   *  A changed element's box is explained by its delta; the whole-frame
+   *  fallback says what the verdict's `explained` says. */
   explained: boolean;
 }
 
@@ -190,7 +192,7 @@ async function writeCrops(
   b: string,
   flags: DiffFlags,
   [sa, sb]: [SnapSide, SnapSide],
-  { verdict, pixels, unexplainedRegions: allUnexplained }: SnapComparison,
+  { verdict, pixels, unexplainedRegions: allUnexplained, elementRegions }: SnapComparison,
 ): Promise<number> {
   const root = path.resolve(flags.project ?? process.cwd());
   const dirName = cropDirName(a, b);
@@ -229,10 +231,21 @@ async function writeCrops(
   // region the budget dropped from the verdict is still unexplained.
   const key = (r: ChangedRegion) => `${r.x},${r.y},${r.width},${r.height}`;
   const unexplained = new Set(allUnexplained.map(key));
-  const regions = [
+  const marked = [
     ...allUnexplained,
     ...pixels.changedRegions.filter((r) => !unexplained.has(key(r))),
   ];
+  // Nothing marked. Below the pixel tolerance the deltas are the change, so
+  // crop the elements they name: the whole frame at 64% could not show the
+  // corpus background-colour change at all. The frame is the last resort (a
+  // size change, or deltas with no box).
+  const source: 'marked' | 'elements' | 'frame' =
+    marked.length > 0
+      ? 'marked'
+      : verdict.flags.includes('sub-threshold') && elementRegions.length > 0
+        ? 'elements'
+        : 'frame';
+  const regions = source === 'elements' ? elementRegions : marked;
   const crops = await renderCrops(sa.image, sb.image, regions);
   await mkdir(absDir, { recursive: true });
   const files: CropFile[] = [];
@@ -246,8 +259,11 @@ async function writeCrops(
       scale: c.scale,
       width: c.width,
       height: c.height,
-      // The whole-frame fallback marks nothing, so nothing is "explained".
-      explained: regions.length > 0 && !unexplained.has(key(c.region)),
+      // The frame fallback must not contradict the verdict it sits under.
+      explained:
+        source === 'marked'
+          ? !unexplained.has(key(c.region))
+          : source === 'elements' || verdict.explained === 'full',
     });
   }
   if (flags.json) {
@@ -264,13 +280,16 @@ async function writeCrops(
     const lines = [formatVerdict(verdict, { next: false }).trimEnd()];
     lines.push(
       '',
-      regions.length === 0
-        ? 'crops (baseline | current) — no region was marked, so this is the whole frame:'
-        : 'crops (baseline | current), unexplained first:',
+      source === 'elements'
+        ? 'crops (baseline | current) — the change is below the pixel tolerance, so these are the changed elements:'
+        : source === 'frame'
+          ? 'crops (baseline | current) — no region was marked, so this is the whole frame:'
+          : 'crops (baseline | current), unexplained first:',
     );
     for (const f of files) {
       const r = f.region;
-      const tag = f.explained ? '' : '  unexplained';
+      // Only a marked region can be unexplained; the fallbacks are not regions.
+      const tag = source === 'marked' && !f.explained ? '  unexplained' : '';
       lines.push(
         `  ${path.join(root, ...f.file.split('/'))}  (${r.width}×${r.height} at ${r.x},${r.y}, ${f.scale >= 1 ? `${f.scale}×` : `${Math.round(f.scale * 100)}%`})${tag}`,
       );

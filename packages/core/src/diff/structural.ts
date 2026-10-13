@@ -54,6 +54,10 @@ export const MAX_CAUSE_PATH = 80;
 export function structuralDiffWithCoverage(input: StructuralDiffInput): {
   verdict: StructuralVerdict;
   unexplainedRegions: ChangedRegion[];
+  /** One box per element the deltas name, in delta order: the union of its
+   *  old and new rects, rounded outward to whole px. What `--crops` shows
+   *  when the pixel diff marked nothing (sub-threshold). */
+  elementRegions: ChangedRegion[];
 } {
   const { baseline, current, pixels, imagesIdentical } = input;
   const comparable =
@@ -179,7 +183,40 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
   return {
     verdict: build(kept, fit(cov.unexplainedRegions)),
     unexplainedRegions: cov.unexplainedRegions,
+    elementRegions: elementRegions(facts),
   };
+}
+
+/** Facts are grouped by element identity (`source`), not label: two
+ *  `div.card`s are two boxes. A shift carries its anchor's source but its
+ *  run's rects, so it is a box of its own rather than swelling the anchor's.
+ *  Zero-area unions carry no pixels and are dropped. */
+function elementRegions(facts: Fact[]): ChangedRegion[] {
+  const boxes = new Map<string, { x0: number; y0: number; x1: number; y1: number }>();
+  for (const f of facts) {
+    const key = `${f.delta.kind === 'shift' ? 'shift:' : ''}${f.source.side}:${f.source.index}`;
+    for (const r of f.rects) {
+      const b = boxes.get(key);
+      const x0 = Math.floor(r.x);
+      const y0 = Math.floor(r.y);
+      const x1 = Math.ceil(r.x + r.w);
+      const y1 = Math.ceil(r.y + r.h);
+      boxes.set(
+        key,
+        b
+          ? {
+              x0: Math.min(b.x0, x0),
+              y0: Math.min(b.y0, y0),
+              x1: Math.max(b.x1, x1),
+              y1: Math.max(b.y1, y1),
+            }
+          : { x0, y0, x1, y1 },
+      );
+    }
+  }
+  return [...boxes.values()]
+    .map((b) => ({ x: b.x0, y: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0 }))
+    .filter((r) => r.width > 0 && r.height > 0);
 }
 
 /** The verdict alone; what every caller but `--crops` wants. */

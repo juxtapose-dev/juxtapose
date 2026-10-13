@@ -685,3 +685,33 @@ test('structuralDiffWithCoverage returns every unexplained region, even the ones
   expect(JSON.stringify(verdict).length).toBeLessThanOrEqual(MAX_VERDICT);
   expect(structuralDiff(input)).toEqual(verdict);
 });
+
+// `--crops` on a sub-threshold change has no marked region to crop. The
+// changed elements are the next best thing: a whole-frame strip at 64%
+// cannot show a background-color change on one button.
+test('elementRegions: each delta element’s rects, unioned per element, rounded outward, in delta order', () => {
+  const run = (name: string) =>
+    structuralDiffWithCoverage({
+      baseline: fixture.cases[fixture.cases[name].against].structure,
+      current: fixture.cases[name].structure,
+      imagesIdentical: fixture.cases[name].imagesIdentical,
+      pixels: fixture.cases[name].pixels,
+      escalate: ESC,
+    });
+  // background: one style delta on the button (16,69 65.38×44).
+  expect(run('background').elementRegions).toEqual([
+    { x: 16, y: 69, width: 66, height: 44 },
+  ]);
+  // padding: deltas run main resized, then the button's five, then a shift
+  // and the logo. The button's five give it one region (old 16,69 65.38×44 ∪
+  // new 16,65 73.38×52), and the shift's rows do not swell it.
+  const padding = run('padding');
+  expect(padding.verdict.deltas.map((d) => d.kind)[0]).toBe('resized');
+  expect(padding.elementRegions.slice(0, 2)).toEqual([
+    { x: 16, y: 16, width: 608, height: 370 },
+    { x: 16, y: 65, width: 74, height: 52 },
+  ]);
+  const keys = padding.elementRegions.map((r) => JSON.stringify(r));
+  expect(new Set(keys).size).toBe(keys.length);
+  expect(run('noop').elementRegions).toEqual([]);
+});

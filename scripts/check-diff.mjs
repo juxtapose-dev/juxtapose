@@ -193,13 +193,35 @@ check(
 await snap('background', 'bg');
 const cropsSub = await jux(['diff', 'before', 'bg', '--crops', '--json']);
 const vsub = JSON.parse(cropsSub.out);
+// A 64% whole-frame strip cannot show a colour change, and it was labelled
+// `explained: false` / "unexplained" beside `explained: "full"`. The crop is
+// the changed element: the button's rect, rounded outward, from the sidecar.
+const { gunzipSync } = await import('node:zlib');
+const bgStructure = JSON.parse(
+  gunzipSync(readFileSync(path.join(project, '.juxtapose/snaps/bg.structure.json.gz'))),
+);
+const btn = bgStructure.elements.find((e) => e.tag === 'button').rect;
+const btnRegion = {
+  x: Math.floor(btn.x),
+  y: Math.floor(btn.y),
+  width: Math.ceil(btn.x + btn.w) - Math.floor(btn.x),
+  height: Math.ceil(btn.y + btn.h) - Math.floor(btn.y),
+};
 check(
   cropsSub.code === 1 &&
     vsub.verdict.flags.includes('sub-threshold') &&
+    vsub.verdict.explained === 'full' &&
     vsub.crops.length === 1 &&
-    vsub.crops[0].box.x === 0 &&
-    vsub.crops[0].box.y === 0,
-  'a sub-threshold change crops the whole frame',
+    JSON.stringify(vsub.crops[0].region) === JSON.stringify(btnRegion) &&
+    vsub.crops[0].box.width < bgStructure.viewport.width / 2 &&
+    vsub.crops[0].explained === true,
+  'a sub-threshold change crops the changed element, explained as the verdict says',
+);
+const cropsSubHuman = await jux(['diff', 'before', 'bg', '--crops']);
+check(
+  /below the pixel tolerance/.test(cropsSubHuman.out) &&
+    !/unexplained$/m.test(cropsSubHuman.out),
+  'sub-threshold human crops: no "unexplained" tag on an explained change',
 );
 // Review Focus 2: different sizes crop the overlap.
 await jux(['snap', `${server.url}/op/noop`, '--as', 'small', '--viewport', '320x240']);
@@ -209,7 +231,7 @@ check(
   cropsDim.code === 1 &&
     vdim.verdict.classification === 'dimension-change' &&
     vdim.crops.length === 1 &&
-    vdim.crops[0].explained === false &&
+    vdim.crops[0].explained === (vdim.verdict.explained === 'full') &&
     vdim.crops[0].box.width === 320 &&
     vdim.crops[0].box.height === 240,
   'a dimension change crops the overlapping frame',

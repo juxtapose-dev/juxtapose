@@ -330,8 +330,11 @@ and `file` is a forward-slash path relative to the project root:
 - The pair's directory is emptied on every call, identical runs included, so
   a stale crop never sits beside a fresh one. `.juxtapose/crops/` ignores
   itself (it holds a `.gitignore`).
-- With no marked region (a sub-threshold change, a size change) the one crop
-  is the whole overlapping frame.
+- With no marked region below the pixel tolerance (`sub-threshold`), each
+  crop is one changed element, in delta order: the union of its old and new
+  boxes, `explained: true`. With no element box either (a size change), the
+  one crop is the whole overlapping frame, and its `explained` matches the
+  verdict's (`true` only when that is `full`).
 - It refuses, with exit 3, to write through a symlinked `.juxtapose`,
   `crops` or snaps path, or a symlinked file.
 - `--crops` takes one pair; combined with `--prefix` it exits 2. Run

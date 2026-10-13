@@ -111,7 +111,9 @@ It writes one PNG per changed region — baseline on the left, current on the
 right, unexplained regions first, enlarged, at most 512px a side, at most 8
 — to `.juxtapose/crops/before~vs~after/crop-N.png` and lists the paths (with
 `--json`, `crops[]` with `explained` per region and `dir`). It exits 1 when
-the pair differs and writes nothing when it is identical. Open those crops
+the pair differs and writes nothing when it is identical. Under
+`sub-threshold` no region was marked, so the crops are the changed elements
+instead. Open those crops
 with an image viewer or your Read tool. Do not open the full `.webp` snaps
 first; a crop is a fraction of the tokens and shows the exact pixels in
 question. `--crops` takes one pair: for a page set, pick the page and pass
