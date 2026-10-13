@@ -2,7 +2,6 @@
 '@juxtapose/core': minor
 '@juxtapose/cli': minor
 '@juxtapose/server': patch
-'@juxtapose/storybook': patch
 ---
 
 `jux run --since` says why a story changed: the verdict gains `cause`, the
