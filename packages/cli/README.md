@@ -37,6 +37,6 @@ reused; `JUX_CHROME=<path>` or `--chrome <path>` uses your own). Mask and
 Reviewing diffs inside Storybook? Add
 [`@juxtapose/storybook`](https://www.npmjs.com/package/@juxtapose/storybook).
 
-Full documentation: https://github.com/juxtapose-dev/juxtapose
+Full documentation: [juxtapose on GitHub](https://github.com/juxtapose-dev/juxtapose)
 
 MIT © Magic Factory LLC
