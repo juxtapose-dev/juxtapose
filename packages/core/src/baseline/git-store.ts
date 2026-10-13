@@ -113,7 +113,7 @@ export class GitBaselineStore implements BaselineStore {
     // the whole point of storing baselines in the repo.
     const sorted: BaselineManifest = { version: 1, baselines: {} };
     for (const id of Object.keys(manifest.baselines).sort()) {
-      sorted.baselines[id] = manifest.baselines[id];
+      sorted.baselines[id] = manifest.baselines[id]!; // id is one of its own keys
     }
     await writeFile(this.manifestPath, JSON.stringify(sorted, null, 2) + '\n');
   }

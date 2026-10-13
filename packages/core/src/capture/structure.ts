@@ -159,7 +159,8 @@ export interface CdpSnapshot {
     layout: {
       nodeIndex: number[];
       styles: number[][];
-      bounds: number[][];
+      /** DOM.Rectangle: [x, y, width, height]. */
+      bounds: Array<[number, number, number, number]>;
       paintOrders?: number[];
     };
   }>;
@@ -203,10 +204,15 @@ export function normalizeStructure(
   viewport: Viewport,
 ): StructureSnapshot {
   const doc = raw.documents[0];
+  // captureStructure's catch turns this into "no structure", as it did the
+  // TypeError this used to be.
+  if (!doc) throw new Error('DOMSnapshot.captureSnapshot returned no documents');
   const str = (i: number | undefined) =>
     i === undefined || i < 0 ? undefined : raw.strings[i];
+  // DOMSnapshot's arrays are parallel by protocol: nodes.* has one entry per
+  // node, layout.* one per layout row, and each styles row one value per
+  // requested property. The indexed reads marked `!` below rely on that.
   const { nodes, layout } = doc;
-  const styleIdx = STRUCTURE_PROPS.map((_, i) => i);
   // `visibility` is requested after STRUCTURE_PROPS and used only to filter.
   const visibilityIdx = STRUCTURE_PROPS.length;
 
@@ -229,7 +235,7 @@ export function normalizeStructure(
   const children = new Map<number, number[]>();
   const ownText = new Map<number, string>();
   for (let i = 0; i < nodes.nodeType.length; i++) {
-    const p = nodes.parentIndex[i];
+    const p = nodes.parentIndex[i]!;
     if (p < 0) continue;
     if (nodes.nodeType[i] === TEXT_NODE) {
       const t = str(nodes.nodeValue[i]) ?? '';
@@ -257,7 +263,7 @@ export function normalizeStructure(
     const tag = (str(nodes.nodeName[i]) ?? '').toLowerCase();
     if (tag === 'head' || tag === 'script' || tag === 'style') return;
     const a = attrs(i);
-    const siblings = children.get(nodes.parentIndex[i]) ?? [];
+    const siblings = children.get(nodes.parentIndex[i]!) ?? [];
     const sameTag = siblings.filter(
       (s) => (str(nodes.nodeName[s]) ?? '').toLowerCase() === tag,
     );
@@ -278,7 +284,7 @@ export function normalizeStructure(
       if (row === undefined) return; // no box: nothing to stand in for
       total++;
       if (elements.length < MAX_ELEMENTS) {
-        const [x, y, w, h] = layout.bounds[row];
+        const [x, y, w, h] = layout.bounds[row]!;
         elements.push({
           path,
           parent: keptParent,
@@ -288,21 +294,23 @@ export function normalizeStructure(
           styles: {},
         });
         effective.push(
-          keptParent === null ? { ...ROOT_INHERITED } : effective[keptParent],
+          // effective is pushed in lockstep with elements, so a kept parent's
+          // index is always in it.
+          keptParent === null ? { ...ROOT_INHERITED } : effective[keptParent]!,
         );
       }
       return; // never descend into a masked subtree
     }
 
     if (row === undefined) return; // display:none (or no box): drop the subtree
-    const values = layout.styles[row].map((s) => urlsToFileNames(str(s) ?? ''));
+    const values = layout.styles[row]!.map((s) => urlsToFileNames(str(s) ?? ''));
     if (values[visibilityIdx] === 'hidden' || values[visibilityIdx] === 'collapse') {
       // hidden boxes can still contain visible descendants (visibility: visible)
       for (const c of children.get(i) ?? []) visit(c, path, keptParent);
       return;
     }
 
-    const [x, y, w, h] = layout.bounds[row];
+    const [x, y, w, h] = layout.bounds[row]!;
     const rect: StructureRect = { x: round(x), y: round(y), w: round(w), h: round(h) };
     const offscreen =
       rect.x + rect.w <= 0 ||
@@ -316,12 +324,11 @@ export function normalizeStructure(
     if (keep) {
       total++;
       if (elements.length < MAX_ELEMENTS) {
-        const inherited = keptParent === null ? ROOT_INHERITED : effective[keptParent];
+        const inherited = keptParent === null ? ROOT_INHERITED : effective[keptParent]!;
         const styles: Record<string, string> = {};
         const eff: Record<string, string> = { ...inherited };
-        for (const k of styleIdx) {
-          const prop = STRUCTURE_PROPS[k];
-          const v = values[k];
+        for (const [k, prop] of STRUCTURE_PROPS.entries()) {
+          const v = values[k]!;
           if (INHERITED_PROPS.has(prop)) {
             eff[prop] = v;
             if (inherited[prop] !== v) styles[prop] = v;
@@ -418,7 +425,7 @@ function fileName(u: string): string {
   // A data: URI's "filename" is a slice of its payload: opaque, and as long as
   // the payload happens to be between slashes.
   if (/^data:/i.test(u.trim())) return 'data:';
-  return u.split(/[?#]/)[0].split('/').pop() ?? '';
+  return u.split(/[?#]/)[0]!.split('/').pop() ?? ''; // split returns >= 1 part
 }
 
 /** Computed values serialize url() tokens absolute: probe2 recorded
@@ -441,7 +448,17 @@ const collapse = (s: string) => s.replace(/\s+/g, ' ').trim();
 function parseContent(v: string | undefined): string {
   if (!v || v === 'none' || v === 'normal') return '';
   const m = /^"(.*)"$/.exec(v);
-  return m ? m[1] : v;
+  return m ? m[1]! : v; // the group is not optional
+}
+
+/** Element `index`, following a reference stored in the snapshot (a parent
+ *  pointer). Snapshots are read back from sidecars on disk, so a malformed one
+ *  says what is wrong instead of failing on a property of undefined; callers
+ *  already treat any throw as "no structural verdict". */
+export function elementAt(s: StructureSnapshot, index: number): StructureElement {
+  const el = s.elements[index];
+  if (!el) throw new Error(`structure snapshot has no element ${index}`);
+  return el;
 }
 
 /** The full value of `prop` for element `index`, reconstructing what the
@@ -451,8 +468,9 @@ export function effectiveStyle(
   index: number,
   prop: string,
 ): string {
-  const el = s.elements[index];
-  if (el.styles[prop] !== undefined) return el.styles[prop];
+  const el = elementAt(s, index);
+  const own = el.styles[prop];
+  if (own !== undefined) return own;
   if (INHERITED_PROPS.has(prop)) {
     return el.parent === null
       ? (ROOT_INHERITED[prop] ?? '')
@@ -565,7 +583,7 @@ export async function captureStructure(
         typeof v === 'object' &&
         v !== null &&
         v.marked === v.total &&
-        v.marked >= markedCounts[k];
+        v.marked >= markedCounts[k]!; // one count was pushed per mask selector
       if (!intact) return undefined;
     }
     return normalizeStructure(raw, viewport);

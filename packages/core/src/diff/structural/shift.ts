@@ -50,8 +50,9 @@ export function synthesizeShifts(facts: Fact[]): Fact[] {
     for (let k = 1; k <= g.length; k++) {
       if (
         k < g.length &&
-        pos.get(g[k])! === pos.get(g[k - 1])! + 1 &&
-        !causeBetween(anchorOrders, g[k - 1].order, g[k].order)
+        // 1 <= k < g.length: both members exist.
+        pos.get(g[k]!)! === pos.get(g[k - 1]!)! + 1 &&
+        !causeBetween(anchorOrders, g[k - 1]!.order, g[k]!.order)
       )
         continue;
       const run = g.slice(start, k);
@@ -86,8 +87,9 @@ export function synthesizeShifts(facts: Fact[]): Fact[] {
  *  the same cause: in `inserted` the logo drops off the button's line between
  *  the banner and the rows, and the rows moved because of the banner. */
 function collapse(run: Fact[], anchors: Fact[], moved: Fact[]): Fact | undefined {
-  const first = run[0];
-  const last = run[run.length - 1];
+  // Only runs of at least MIN_RUN reach here.
+  const first = run[0]!;
+  const last = run[run.length - 1]!;
   const d = first.delta as Extract<Delta, { kind: 'moved' }>;
   const other = moved.filter((f) => {
     const m = f.delta as Extract<Delta, { kind: 'moved' }>;
@@ -127,13 +129,15 @@ function collapse(run: Fact[], anchors: Fact[], moved: Fact[]): Fact | undefined
  *  read as the element. */
 function headOf(f: Fact, moved: Fact[]): Fact {
   const m = f.delta as Extract<Delta, { kind: 'moved' }>;
+  // f is always one of moved (an anchor drawn from it), so k starts in range
+  // and only walks down to 0.
   let k = moved.indexOf(f);
   while (k > 0) {
-    const p = moved[k - 1].delta as Extract<Delta, { kind: 'moved' }>;
+    const p = moved[k - 1]!.delta as Extract<Delta, { kind: 'moved' }>;
     if (p.dx !== m.dx || p.dy !== m.dy) break;
     k--;
   }
-  return moved[k];
+  return moved[k]!;
 }
 
 /** Some anchor sits strictly between two run members. An anchor at a
@@ -144,8 +148,9 @@ function causeBetween(orders: number[], lo: number, hi: number): boolean {
   let b = orders.length;
   while (a < b) {
     const m = (a + b) >> 1;
-    if (orders[m] <= lo) a = m + 1;
+    if (orders[m]! <= lo)
+      a = m + 1; // a <= m < b <= orders.length
     else b = m;
   }
-  return a < orders.length && orders[a] < hi;
+  return a < orders.length && orders[a]! < hi;
 }

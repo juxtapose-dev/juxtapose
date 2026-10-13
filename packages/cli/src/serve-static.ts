@@ -61,7 +61,8 @@ export async function serveStatic(dir: string): Promise<StaticServer> {
   const root = resolve(dir);
 
   const server: Server = createServer((req, res) => {
-    const urlPath = decodeURIComponent((req.url ?? '/').split('?')[0]);
+    // split always returns at least one element.
+    const urlPath = decodeURIComponent((req.url ?? '/').split('?')[0]!);
     const rel = normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
     let filePath = join(root, rel);
 

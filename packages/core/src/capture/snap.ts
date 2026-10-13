@@ -71,10 +71,11 @@ export async function snapPages(
         { id, url, ...(opts.params ? { params: opts.params } : {}) },
       ]);
       try {
+        // A url platform enumerates exactly the one entry it was given.
         const [story] = await platform.enumerate({ projectRoot: process.cwd() });
         const snapshot = await captureStory(
           page,
-          story,
+          story!,
           { platform, baseUrl: url },
           viewport,
         );
@@ -139,7 +140,8 @@ export async function snapPage(opts: SnapOptions): Promise<SnapResult> {
     ...(opts.viewport ? { viewport: opts.viewport } : {}),
     ...(opts.params ? { params: opts.params } : {}),
   });
-  const [r] = pages;
+  // snapPages pushes one result per url, success or failure.
+  const r = pages[0]!;
   if (!r.snapshot) throw new Error(r.error ?? 'jux: could not capture');
   return { snapshot: r.snapshot, env, status: r.status };
 }

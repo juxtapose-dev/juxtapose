@@ -66,10 +66,11 @@ async function route(
   // so take everything after the kind rather than splitting into fixed parts.
   const image = /^\/image\/([^/]+)\/(.+)$/.exec(path);
   if (method === 'GET' && image) {
-    const kind = image[1] as ImageKind;
+    // Both groups are non-optional, so a match always fills them.
+    const kind = image[1]! as ImageKind;
     if (!IMAGE_KINDS.has(kind)) return json(res, 400, { error: 'unknown image kind' });
 
-    const bytes = await source.image(kind, decodeURIComponent(image[2]));
+    const bytes = await source.image(kind, decodeURIComponent(image[2]!));
     if (!bytes) return json(res, 404, { error: 'no such image' });
 
     res.writeHead(200, {
@@ -85,7 +86,8 @@ async function route(
 
   const handoff = /^\/handoff\/(.+)$/.exec(path);
   if (method === 'GET' && handoff) {
-    const prompt = await source.handoff(decodeURIComponent(handoff[1]));
+    // Non-optional group: a match always fills it.
+    const prompt = await source.handoff(decodeURIComponent(handoff[1]!));
     if (prompt === null)
       return json(res, 404, { error: 'no such story in the last run' });
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });

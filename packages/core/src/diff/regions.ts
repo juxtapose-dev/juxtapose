@@ -29,7 +29,8 @@ const DEFAULT_GAP = 8;
  * replaced. Test for the red marking instead.
  */
 function isChanged(diff: Buffer, offset: number): boolean {
-  return diff[offset] > 200 && diff[offset + 1] < 100 && diff[offset + 2] < 100;
+  // The caller walks offsets inside the width * height * 4 RGBA buffer.
+  return diff[offset]! > 200 && diff[offset + 1]! < 100 && diff[offset + 2]! < 100;
 }
 
 /**
@@ -67,8 +68,8 @@ export function computeChangedRegions(
   const boxes: Box[] = [];
   for (const span of spans) {
     const touched: number[] = [];
-    for (let i = 0; i < boxes.length; i++) {
-      if (overlaps(span, boxes[i], gap)) touched.push(i);
+    for (const [i, box] of boxes.entries()) {
+      if (overlaps(span, box, gap)) touched.push(i);
     }
 
     if (touched.length === 0) {
@@ -76,7 +77,9 @@ export function computeChangedRegions(
       continue;
     }
 
-    const target = boxes[touched[0]];
+    // Every index in touched came from boxes, and splices below run
+    // back-to-front, so each still points at a live box.
+    const target = boxes[touched[0]!]!;
     target.x1 = Math.min(target.x1, span.x1);
     target.x2 = Math.max(target.x2, span.x2);
     target.y1 = Math.min(target.y1, span.y);
@@ -85,12 +88,13 @@ export function computeChangedRegions(
     // Fold any other boxes this span bridged into the first, back-to-front so
     // the splices don't shift indices we still need.
     for (let i = touched.length - 1; i >= 1; i--) {
-      const other = boxes[touched[i]];
+      const at = touched[i]!;
+      const other = boxes[at]!;
       target.x1 = Math.min(target.x1, other.x1);
       target.x2 = Math.max(target.x2, other.x2);
       target.y1 = Math.min(target.y1, other.y1);
       target.y2 = Math.max(target.y2, other.y2);
-      boxes.splice(touched[i], 1);
+      boxes.splice(at, 1);
     }
   }
 

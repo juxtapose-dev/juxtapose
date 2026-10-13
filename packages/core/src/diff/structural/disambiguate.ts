@@ -13,6 +13,7 @@
 // diff (`div.card (2nd)`). Both are properties of the page, not of the diff,
 // so the same change labels the same way on every run.
 
+import { elementAt } from '../../capture/structure.js';
 import type { StructureSnapshot } from '../../types.js';
 import type { Fact, Source } from './deltas.js';
 import { MAX_LABEL, clip, label } from './label.js';
@@ -27,7 +28,8 @@ export function disambiguate(
     baseline: undefined as number[] | undefined,
     current: undefined as number[] | undefined,
   };
-  const nthOf = (s: Source) => (nth[s.side] ??= ordinals(snap(s)))[s.index];
+  // ordinals has one entry per element, and a source indexes an element.
+  const nthOf = (s: Source) => (nth[s.side] ??= ordinals(snap(s)))[s.index]!;
   const key = (s: Source) => `${s.side}:${s.index}`;
   const labelOf = (f: Fact) => ('el' in f.delta ? f.delta.el : f.delta.after);
 
@@ -54,7 +56,8 @@ export function disambiguate(
       const suffix = ` (${ordinal(nthOf(s))})`;
       rename.set(
         key(s),
-        distinct ? scoped[k] : clip(l, MAX_LABEL - suffix.length) + suffix,
+        // distinct implies every scoped label is defined.
+        distinct ? scoped[k]! : clip(l, MAX_LABEL - suffix.length) + suffix,
       );
     }
   }
@@ -71,8 +74,8 @@ export function disambiguate(
 /** Label of the nearest ancestor that names itself (role+name, id, test id);
  *  a class or a path does not tell two siblings' parents apart. */
 function labelledAncestor(s: StructureSnapshot, index: number): string | undefined {
-  for (let p = s.elements[index].parent; p !== null; p = s.elements[p].parent) {
-    const e = s.elements[p];
+  for (let p = elementAt(s, index).parent; p !== null; p = elementAt(s, p).parent) {
+    const e = elementAt(s, p);
     if (e.tag === 'masked') continue;
     if ((e.role && e.name) || e.id !== undefined || e.testId !== undefined)
       return label(e);

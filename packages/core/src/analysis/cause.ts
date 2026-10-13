@@ -247,8 +247,8 @@ function buildForwardGraph(manifest: ViteManifest): ForwardGraph {
 function closure(edges: Map<string, string[]>, start: string): Map<string, number> {
   const dist = new Map<string, number>([[start, 0]]);
   const queue = [start];
-  for (let k = 0; k < queue.length; k++) {
-    const file = queue[k];
+  // The array iterator rereads length, so files pushed below are visited too.
+  for (const file of queue) {
     const d = dist.get(file)!;
     for (const next of edges.get(file) ?? []) {
       if (dist.has(next)) continue;

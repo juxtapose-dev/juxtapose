@@ -36,7 +36,7 @@ export function prefixSlugs(urls: string[]): Map<string, string> {
         : `${u.pathname}${u.search}${u.hash}`;
     const host = LOOPBACK.has(u.hostname) ? u.hostname : u.host;
     slugs.set(
-      urls[i],
+      urls[i]!, // parsed is urls.map(...), so the indices line up
       snapName(
         oneOrigin ? path : `${host}/${path}`,
         oneOrigin ? path : `${host}/${path}`,
