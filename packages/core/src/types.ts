@@ -58,6 +58,49 @@ export interface Snapshot {
   capturedAt: string;
   /** Wall time for this story's capture, ms. */
   durationMs: number;
+  /** Visible elements and their styles, from the same frame as `image`.
+   *  Absent when structure capture failed or was disabled — it explains a
+   *  failure, it never decides one. */
+  structure?: StructureSnapshot;
+}
+
+export interface StructureRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface StructureElement {
+  /** tag + (#id | [data-testid] | :nth-of-type) chain from <html>. */
+  path: string;
+  /** Index of the nearest kept ancestor in `elements`, null at the root. */
+  parent: number | null;
+  tag: string;
+  id?: string;
+  testId?: string;
+  classes?: string[];
+  role?: string;
+  name?: string;
+  text?: string;
+  src?: string;
+  rect: StructureRect;
+  paintOrder: number;
+  /** Compact: see effectiveStyle() in capture/structure.ts. */
+  styles: Record<string, string>;
+}
+
+export interface StructureSnapshot {
+  schema: 'juxtapose.structure/v1';
+  viewport: Viewport;
+  /** sha256 of the canonical JSON of `elements`. Equal ⇒ identical structure
+   *  and styles, so a pixel difference is render drift. */
+  structureHash: string;
+  /** Full document height, from CDP. Greater than viewport.height means part
+   *  of the page was never captured — PR (b)'s `below-fold` flag reads this. */
+  contentHeight: number;
+  elements: StructureElement[];
+  truncated?: { kept: number; total: number };
 }
 
 export interface ChangedRegion {
@@ -126,6 +169,9 @@ export interface ApprovalMeta {
   /** Absent on entries approved before this was recorded. Absent must not read
    *  as "matches": an unknown origin is unknown, not current. */
   env?: CaptureEnv;
+  /** structureHash of the approved capture's sidecar. Absent when the capture
+   *  had no structure, or was approved before sidecars existed. */
+  structureHash?: string;
 }
 
 export interface BaselineEntry extends ApprovalMeta {
@@ -141,10 +187,21 @@ export interface BaselineManifest {
   baselines: Record<string, BaselineEntry>;
 }
 
+/** One page for the `urls` platform. */
+export interface UrlEntry {
+  /** Stable id; used as the story id and for file names. */
+  id: string;
+  /** Absolute, or relative to --origin. */
+  url: string;
+  params?: StoryParams;
+}
+
 /** Project config, from juxtapose.config.{ts,js,json} or package.json#juxtapose. */
 export interface ProjectConfig {
   /** Which workbench. Autodetected when omitted. */
-  platform?: 'storybook' | 'ladle';
+  platform?: 'storybook' | 'ladle' | 'urls';
+  /** Pages to capture when `platform` is 'urls'. */
+  urls?: UrlEntry[];
   /** Where the built static workbench lives. */
   buildDir?: string;
   /** Capture against an already-running dev server instead of building. */
@@ -176,4 +233,7 @@ export interface BaselineStore {
   remove(storyId: string): Promise<void>;
   readManifest(): Promise<BaselineManifest>;
   writeManifest(manifest: BaselineManifest): Promise<void>;
+  /** Optional: stores that can hold the gzipped structure sidecar. */
+  putStructure?(storyId: string, gz: Buffer): Promise<void>;
+  getStructure?(storyId: string): Promise<Buffer | null>;
 }

@@ -42,6 +42,23 @@ export class GitBaselineStore implements BaselineStore {
     return path.join(this.imageDir, `${encodeStoryId(storyId)}.webp`);
   }
 
+  private structurePath(storyId: string): string {
+    return path.join(this.imageDir, `${encodeStoryId(storyId)}.structure.json.gz`);
+  }
+
+  async putStructure(storyId: string, gz: Buffer): Promise<void> {
+    await mkdir(this.imageDir, { recursive: true });
+    await writeFile(this.structurePath(storyId), gz);
+  }
+
+  async getStructure(storyId: string): Promise<Buffer | null> {
+    try {
+      return await readFile(this.structurePath(storyId));
+    } catch {
+      return null;
+    }
+  }
+
   async get(storyId: string): Promise<Buffer | null> {
     try {
       return await readFile(this.imagePath(storyId));
@@ -52,6 +69,9 @@ export class GitBaselineStore implements BaselineStore {
 
   async put(storyId: string, image: Buffer, meta: ApprovalMeta): Promise<void> {
     await mkdir(this.imageDir, { recursive: true });
+    // A previous baseline's sidecar must not outlive its pixels: a capture
+    // approved without structure would otherwise inherit the old one.
+    await rm(this.structurePath(storyId), { force: true });
     await writeFile(this.imagePath(storyId), image);
 
     const manifest = await this.readManifest();
@@ -61,6 +81,7 @@ export class GitBaselineStore implements BaselineStore {
 
   async remove(storyId: string): Promise<void> {
     await rm(this.imagePath(storyId), { force: true });
+    await rm(this.structurePath(storyId), { force: true });
     const manifest = await this.readManifest();
     delete manifest.baselines[storyId];
     await this.writeManifest(manifest);

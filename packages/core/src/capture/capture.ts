@@ -13,6 +13,7 @@ import {
   waitForPaint,
   waitForSelector,
 } from './settle.js';
+import { captureStructure } from './structure.js';
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 2000;
 
@@ -43,6 +44,12 @@ export interface CaptureDeps {
    * visual test that cries wolf is worse than a slow one.
    */
   warmSwitch?: boolean;
+  /**
+   * Capture the structure snapshot beside the pixels. Default true. It costs
+   * one CDP call per story (budget: < 30 ms) and explains failures; it never
+   * decides one. `JUXTAPOSE_NO_STRUCTURE=1` turns it off for A/B timing.
+   */
+  structure?: boolean;
 }
 
 /** Per-page memo: skip work that only needs doing once per page. */
@@ -159,6 +166,15 @@ export async function captureStory(
   // byte-exact hash reports as a failure.
   await waitForPaint(page);
 
+  // Structure from the same frame the screenshot is about to take: after the
+  // paint barrier, before the shutter, with nothing in between that could
+  // mutate the page.
+  const effective = params.viewport ?? effectiveViewport;
+  const structure =
+    deps.structure !== false && process.env.JUXTAPOSE_NO_STRUCTURE !== '1'
+      ? await captureStructure(page, effective, params.mask ?? [])
+      : undefined;
+
   // A selector matching nothing is not an error — a story that conditionally
   // renders the element shouldn't fail on the branch where it's absent.
   const png = await page.screenshot({
@@ -190,9 +206,10 @@ export async function captureStory(
     // The live params may have widened or narrowed this after first render,
     // so report what we actually captured at — the agent handoff computes
     // region area as a fraction of it.
-    viewport: params.viewport ?? effectiveViewport,
+    viewport: effective,
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
+    ...(structure ? { structure } : {}),
   };
 }
 

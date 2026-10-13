@@ -10,7 +10,13 @@ const Stamped = () => (
     <h3 style={{ margin: '0 0 8px' }}>Deploy succeeded</h3>
     <p style={{ margin: 0, color: '#64748b' }}>
       Finished at{' '}
-      <span data-testid="clock" style={{ display: 'inline-block', width: 200 }}>
+      {/* nowrap: the ISO timestamp wrapped to two lines depending on its digits,
+          changing the height of the masked box and its ancestors (18 vs 36 px). The box is wide enough that the text
+          never overflows the mask. */}
+      <span
+        data-testid="clock"
+        style={{ display: 'inline-block', width: 280, whiteSpace: 'nowrap' }}
+      >
         {new Date().toISOString()}
       </span>
     </p>

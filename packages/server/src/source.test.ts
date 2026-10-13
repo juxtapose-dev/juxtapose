@@ -1,6 +1,17 @@
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { watchTargets } from './source.js';
-import type { StoryManifest, StoryParams } from '@juxtapose/core';
+import { RunDirSource, watchTargets } from './source.js';
+import {
+  encodeStoryId,
+  encodeStructure,
+  GitBaselineStore,
+  type Platform,
+  type ProjectConfig,
+  type StoryManifest,
+  type StoryParams,
+} from '@juxtapose/core';
 
 const story = (storyId: string, params: StoryParams = {}): StoryManifest => ({
   storyId,
@@ -38,5 +49,41 @@ describe('watchTargets', () => {
 
   it('does not duplicate the trigger', () => {
     expect(watchTargets('a', [story('a')])).toEqual(['a']);
+  });
+});
+
+describe('RunDirSource.approve', () => {
+  // The panel's approval path must keep the run's structure sidecar, as
+  // `jux approve` does; before, it wrote the image only.
+  it('writes the structure sidecar and its hash', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'jux-src-'));
+    const runDir = path.join(root, 'run');
+    await mkdir(path.join(runDir, 'images'), { recursive: true });
+    const safe = encodeStoryId('a--b');
+    const gz = encodeStructure({
+      schema: 'juxtapose.structure/v1',
+      viewport: { width: 10, height: 10 },
+      structureHash: 'e'.repeat(64),
+      contentHeight: 10,
+      elements: [],
+    });
+    await writeFile(path.join(runDir, 'images', `${safe}-current.webp`), 'img');
+    await writeFile(path.join(runDir, 'images', `${safe}-current.structure.json.gz`), gz);
+    const store = new GitBaselineStore({ projectRoot: root });
+    const source = new RunDirSource({
+      projectRoot: root,
+      platform: {} as Platform,
+      store,
+      config: {} as ProjectConfig,
+      baseUrl: 'http://127.0.0.1:1',
+      runDir,
+      branch: 'main',
+      commitSha: 'abc',
+    });
+    await source.approve('a--b');
+    expect(await store.getStructure('a--b')).toEqual(gz);
+    expect((await store.readManifest()).baselines['a--b'].structureHash).toBe(
+      'e'.repeat(64),
+    );
   });
 });
