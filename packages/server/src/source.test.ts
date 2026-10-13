@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -203,6 +204,81 @@ describe('RunDirSource with variants', () => {
       'the `dark` variant of `card--a`, captured with colorScheme dark',
     );
     expect(text).toContain('/src/Card.tsx');
+  });
+});
+
+describe('RunDirSource.handoff baseline (#115)', () => {
+  // The prompt used to name `images/<id>-baseline.webp` in the run dir, which
+  // nothing writes; an agent following it found no file.
+  async function setup() {
+    const root = await mkdtemp(path.join(tmpdir(), 'jux-src-base-'));
+    const runDir = path.join(root, 'run');
+    await mkdir(runDir, { recursive: true });
+    const results: DiffResult[] = [
+      {
+        storyId: 'a',
+        status: 'fail',
+        mismatchPixels: 1,
+        mismatchPercent: 1,
+        changedRegions: [],
+        durationMs: 1,
+      },
+      {
+        storyId: 'a__dark',
+        baseStoryId: 'a',
+        variant: 'dark',
+        variantParams: { colorScheme: 'dark' },
+        status: 'fail',
+        mismatchPixels: 1,
+        mismatchPercent: 1,
+        changedRegions: [],
+        durationMs: 1,
+      },
+    ];
+    await writeFile(
+      path.join(runDir, 'report.json'),
+      JSON.stringify({ runId: 'r', results }),
+    );
+    const store = new GitBaselineStore({ projectRoot: root });
+    const platform = {
+      name: 'fake',
+      enumerate: async () => [story('a')],
+    } as unknown as Platform;
+    const s = new RunDirSource({
+      projectRoot: root,
+      platform,
+      store,
+      config: {} as ProjectConfig,
+      baseUrl: 'http://127.0.0.1:1',
+      runDir,
+      branch: 'main',
+      commitSha: 'abc',
+    });
+    return { s, store };
+  }
+
+  const baselineLine = (text: string | null) =>
+    /- baseline: `([^`]+)`/.exec(text ?? '')?.[1];
+
+  it("points at the variant's own baseline in the store, and the file exists", async () => {
+    const { s, store } = await setup();
+    for (const id of ['a', 'a__dark']) {
+      await mkdir(path.dirname(store.locate(id)), { recursive: true });
+      await writeFile(store.locate(id), id);
+    }
+    const file = baselineLine(await s.handoff('a__dark'));
+    expect(file).toBe(store.locate('a__dark'));
+    expect(file).not.toBe(store.locate('a'));
+    expect(existsSync(file ?? '')).toBe(true);
+    expect(baselineLine(await s.handoff('a'))).toBe(store.locate('a'));
+  });
+
+  it('names no baseline when there is none yet', async () => {
+    const { s } = await setup();
+    const text = await s.handoff('a');
+    expect(text).not.toBeNull();
+    expect(baselineLine(text)).toBeUndefined();
+    expect(text).not.toContain('-baseline.webp');
   });
 });
 
