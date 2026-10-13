@@ -90,9 +90,10 @@ and false diffs train people to ignore the tool. The pipeline, in order:
 
 1. **Viewport** — set only if changed from the last story on this page (skips a
    CDP round-trip).
-2. **Arm the observer** — a `MutationObserver` installed via `page.evaluate`
-   _before_ the render is triggered, so it is already watching when the story
-   mounts. It resolves after 150ms of no mutations, capped at 500ms.
+2. **Idle detector** — once per page, before its first navigation, an init
+   script (`Page.addScriptToEvaluateOnNewDocument`) wraps timers, animation
+   frames and posted messages and counts DOM mutations, so it is watching
+   before any page script runs. CDP `Network` events count requests in flight.
 3. **Navigate or switch** — cold `goto`/`showStory`, or warm channel switch.
 4. **Freeze animations** — inject CSS zeroing transitions/animations so
    spinners and shimmer don't randomize the frame. Opt out per story with
@@ -106,12 +107,16 @@ and false diffs train people to ignore the tool. The pipeline, in order:
 6. **Live params** — re-read `parameters.juxtapose` from the running preview,
    because Storybook drops custom parameters from its static index. Honours a
    late `skip`, and re-settles if the story declares its own viewport.
-7. **Quiescence** — `waitForSelector` if declared, then network drain and image
-   decode in a _single_ `page.evaluate` rather than three, then an optional
-   fixed `delay`.
+7. **Quiescence** — `waitForSelector` if declared, then the event-driven idle
+   wait (`capture/idle.ts`): two consecutive task hops with no pending short
+   timer, frame, message, font, in-viewport image or DOM change, and no counted
+   request in flight, capped at `settle.timeout` (default 1500 ms). At the cap
+   the story is captured and flagged `settle-timeout` with what was pending.
+   Then an optional fixed `delay`.
 8. **Paint barrier** — two nested rAFs plus an idle callback. A quiet DOM is
    not a painted frame; without this, captures intermittently catch an
-   intermediate one.
+   intermediate one. If the DOM, fonts, images or network moved during the
+   barrier, the idle wait and the barrier run once more within the cap.
 9. **Screenshot** → PNG → lossless WebP.
 
 Everything except steps 5 and 6 is platform-neutral and lives in `core`; those
