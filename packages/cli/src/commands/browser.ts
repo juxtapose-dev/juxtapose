@@ -415,7 +415,8 @@ async function daemonCommand(
       stoppedPids.length === 1
         ? `stopped the warm browser (pid ${stoppedPids[0]})`
         : `stopped ${stoppedPids.length} warm browsers (pids ${stoppedPids.join(', ')})`;
-    if (left.length > 0) {
+    const firstLeft = left[0];
+    if (firstLeft) {
       if (!json && stoppedPids.length > 0) io.write(`jux: ${stoppedText}\n`);
       const why = left.map((x) =>
         x.outcome === 'unverified'
@@ -425,7 +426,7 @@ async function daemonCommand(
       return daemonFailure(sub, json, io, `jux: ${why.join('; ')}`, {
         stopped: stoppedPids.length > 0,
         stoppedPids,
-        pid: left[0]!.pid,
+        pid: firstLeft.pid,
         notStopped: left,
       });
     }

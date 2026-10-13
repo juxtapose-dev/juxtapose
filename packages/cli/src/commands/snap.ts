@@ -261,9 +261,9 @@ function retryCommand(url: string, name: string, flags: SnapFlags): string {
 export async function clearPrefix(dir: string, prefix: string): Promise<void> {
   const listed = await readSnapSet(dir, prefix);
   for (const f of await readdir(dir)) {
-    const m = /^(.*)\.(webp|structure\.json\.gz)$/.exec(f);
-    if (!m || !m[1].startsWith(`${prefix}-`)) continue;
-    if (listed && !listed.has(m[1])) continue;
+    const name = /^(.*)\.(webp|structure\.json\.gz)$/.exec(f)?.[1];
+    if (name === undefined || !name.startsWith(`${prefix}-`)) continue;
+    if (listed && !listed.has(name)) continue;
     await rm(path.join(dir, f), { force: true });
   }
 }

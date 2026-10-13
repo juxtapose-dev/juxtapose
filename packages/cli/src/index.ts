@@ -161,26 +161,31 @@ const COMMANDS = [
 ];
 
 function distance(a: string, b: string): number {
+  // Every row has b.length + 1 cells and j stays within 1..b.length, so the
+  // indexed reads below are always in range.
   let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
   for (let i = 1; i <= a.length; i++) {
     const row = [i];
     for (let j = 1; j <= b.length; j++)
       row[j] = Math.min(
-        prev[j] + 1,
-        row[j - 1] + 1,
-        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+        prev[j]! + 1,
+        row[j - 1]! + 1,
+        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
       );
     prev = row;
   }
-  return prev[b.length];
+  return prev[b.length]!;
 }
 
 /** " Did you mean 'diff'?" when a command is within edit distance 2. */
 function suggest(command: string): string {
-  const best = COMMANDS.map((c) => ({ c, d: distance(command, c) })).sort(
-    (x, y) => x.d - y.d,
-  )[0];
-  return best.d <= 2 ? ` Did you mean '${best.c}'?` : '';
+  // The first closest command, as the stable sort used to pick.
+  let best: { c: string; d: number } | undefined;
+  for (const c of COMMANDS) {
+    const d = distance(command, c);
+    if (!best || d < best.d) best = { c, d };
+  }
+  return best && best.d <= 2 ? ` Did you mean '${best.c}'?` : '';
 }
 
 function selfVersion(): string {

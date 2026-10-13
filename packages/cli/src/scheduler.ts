@@ -169,7 +169,7 @@ export class Scheduler {
   private pump(): void {
     const blocked: Waiter[] = [];
     for (let i = 0; i < this.queue.length;) {
-      const w = this.queue[i];
+      const w = this.queue[i]!; // i < queue.length, checked by the loop
       // Aborted but not yet withdrawn: never grant a cancelled request.
       if (w.signal?.aborted) {
         this.queue.splice(i, 1);

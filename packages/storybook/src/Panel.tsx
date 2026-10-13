@@ -119,7 +119,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   // A faster poll while capturing, so the progress readout feels live.
   useEffect(() => {
     if (!progress.running && !bundle?.running) return;
-    const id = setInterval(async () => {
+    const tick = async () => {
       const p = await fetchProgress().catch(() => null);
       if (!p) return;
       setProgress({ done: p.done, total: p.total, running: p.running });
@@ -128,7 +128,8 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
         setVersion((v) => v + 1);
         void refresh();
       }
-    }, PROGRESS_POLL_MS);
+    };
+    const id = setInterval(() => void tick(), PROGRESS_POLL_MS);
     return () => clearInterval(id);
   }, [progress.running, bundle?.running, refresh]);
 

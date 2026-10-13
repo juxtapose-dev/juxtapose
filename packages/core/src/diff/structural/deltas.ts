@@ -11,6 +11,7 @@ import {
   INHERITED_PROPS,
   STRUCTURE_PROPS,
   effectiveStyle,
+  elementAt,
   round,
 } from '../../capture/structure.js';
 import type { Delta, StructureRect, StructureSnapshot } from '../../types.js';
@@ -72,9 +73,12 @@ export function computeFacts(
   const byElement = new Map<number, Fact[]>();
   const followers: Array<{ i: number; rects: StructureRect[] }> = [];
 
+  // Indices in `match` come from matchElements over these same element
+  // arrays, so they are in range by construction. Parent pointers are data
+  // read from a sidecar and go through elementAt.
   for (const [i, j] of match.pairs) {
-    const ea = a.elements[i];
-    const eb = b.elements[j];
+    const ea = a.elements[i]!;
+    const eb = b.elements[j]!;
     const fact = (delta: Delta): Fact => {
       const f: Fact = {
         delta,
@@ -168,7 +172,7 @@ export function computeFacts(
   // Nearest baseline ancestor with a geometry fact: the move or resize the
   // child followed. Walked on the baseline tree, the side `source` indexes.
   for (const { i, rects } of followers) {
-    for (let k = a.elements[i].parent; k !== null; k = a.elements[k].parent) {
+    for (let k = a.elements[i]!.parent; k !== null; k = elementAt(a, k).parent) {
       const own = byElement
         .get(k)
         ?.find((f) => f.delta.kind === 'moved' || f.delta.kind === 'resized');
@@ -180,7 +184,7 @@ export function computeFacts(
   }
 
   for (const j of match.added) {
-    const e = b.elements[j];
+    const e = b.elements[j]!;
     facts.push({
       delta: { kind: 'added', el: label(e), rect: e.rect },
       rects: [e.rect],
@@ -200,7 +204,7 @@ export function computeFacts(
     return -0.5;
   };
   for (const i of match.removed) {
-    const e = a.elements[i];
+    const e = a.elements[i]!;
     facts.push({
       delta: { kind: 'removed', el: label(e), rect: e.rect },
       rects: [e.rect],
@@ -229,8 +233,8 @@ function originatesHere(
   aToB: Map<number, number>,
   prop: string,
 ): boolean {
-  const ea = a.elements[i];
-  const eb = b.elements[j];
+  const ea = a.elements[i]!; // i, j: a matched pair
+  const eb = b.elements[j]!;
   if (ea.styles[prop] !== undefined || eb.styles[prop] !== undefined) return true;
   const pa = ea.parent;
   const pb = eb.parent;
@@ -251,11 +255,11 @@ function parentChange(
   j: number,
   aToB: Map<number, number>,
 ): { dx: number; dy: number; dw: number; dh: number } | undefined {
-  const pa = a.elements[i].parent;
-  const pb = b.elements[j].parent;
+  const pa = a.elements[i]!.parent; // i, j: a matched pair
+  const pb = b.elements[j]!.parent;
   if (pa === null || pb === null || aToB.get(pa) !== pb) return undefined;
-  const ra = a.elements[pa].rect;
-  const rb = b.elements[pb].rect;
+  const ra = elementAt(a, pa).rect;
+  const rb = elementAt(b, pb).rect;
   return {
     dx: round(rb.x - ra.x),
     dy: round(rb.y - ra.y),

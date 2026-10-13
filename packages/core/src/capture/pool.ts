@@ -109,7 +109,7 @@ export async function* capturePool(
         if (opts.signal?.aborted) break;
         const i = cursor++;
         if (i >= work.length) break;
-        const story = work[i];
+        const story = work[i]!; // i < work.length, checked above
 
         if (died || !session) {
           push({ story, error: died ?? new BrowserDiedError() });
@@ -183,7 +183,8 @@ function shuffle<T>(items: T[]): T[] {
   const out = items.slice();
   for (let i = out.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
+    // j <= i < out.length: both indices are in range.
+    [out[i], out[j]] = [out[j]!, out[i]!];
   }
   return out;
 }

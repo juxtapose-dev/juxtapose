@@ -48,8 +48,9 @@ export function matchElements(a: StructureSnapshot, b: StructureSnapshot): Eleme
     // `text`/`attr` deltas rather than removed + added.
     // Never across conflicting explicit identities: `div#row-1` removed and
     // `div#banner` added are two different elements, not one edited one.
+    // i and j come from childLists over these same element arrays.
     const second = align(first.leftA, first.leftB, (i, j) =>
-      sameKind(a.elements[i], b.elements[j]),
+      sameKind(a.elements[i]!, b.elements[j]!),
     );
     for (const [i, j] of [...first.matched, ...second.matched]) {
       pairs.push([i, j]);
@@ -119,22 +120,28 @@ function lcs(
   const m = cb.length;
   // L[i][j] = LCS length of ca[i..] and cb[j..]
   const L: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  // Every read below has i <= n and j <= m: L has n + 1 rows of m + 1 cells,
+  // and ca/cb are read only at i < n, j < m.
   for (let i = n - 1; i >= 0; i--) {
+    const row = L[i]!;
+    const below = L[i + 1]!;
     for (let j = m - 1; j >= 0; j--) {
-      L[i][j] = same(ca[i], cb[j])
-        ? L[i + 1][j + 1] + 1
-        : Math.max(L[i + 1][j], L[i][j + 1]);
+      row[j] = same(ca[i]!, cb[j]!)
+        ? below[j + 1]! + 1
+        : Math.max(below[j]!, row[j + 1]!);
     }
   }
   const out: Array<[number, number]> = [];
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (same(ca[i], cb[j])) {
-      out.push([ca[i], cb[j]]);
+    const ai = ca[i]!;
+    const bj = cb[j]!;
+    if (same(ai, bj)) {
+      out.push([ai, bj]);
       i++;
       j++;
-    } else if (L[i + 1][j] >= L[i][j + 1]) i++;
+    } else if (L[i + 1]![j]! >= L[i]![j + 1]!) i++;
     else j++;
   }
   return out;
@@ -154,9 +161,9 @@ function greedy(
   let j = 0;
   for (const i of ca) {
     let k = j;
-    while (k < cb.length && !same(i, cb[k])) k++;
+    while (k < cb.length && !same(i, cb[k]!)) k++; // k < cb.length
     if (k < cb.length) {
-      out.push([i, cb[k]]);
+      out.push([i, cb[k]!]);
       j = k + 1;
     }
   }

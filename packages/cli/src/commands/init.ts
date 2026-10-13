@@ -93,7 +93,9 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
           // The child's stdout is the install report; init's stdout stays its own.
           spawn: (cmd, args, env) =>
             spawnSync(cmd, args, { stdio: ['ignore', 2, 'inherit'], env }),
-          argv: [process.argv[1], 'browser', 'install'],
+          // argv[1] is the entry script; Node sets it whenever jux runs as a
+          // file, which is the only way this command is reached.
+          argv: [process.argv[1]!, 'browser', 'install'],
         },
         { force: false, json: flags.json === true },
       );

@@ -40,7 +40,7 @@ export function label(el: StructureElement): string {
 function clipPath(path: string): string {
   if (path.length <= MAX_LABEL) return path;
   const parts = path.split('>');
-  let out = parts[parts.length - 1];
+  let out = parts[parts.length - 1]!; // split returns at least one part
   for (let k = parts.length - 2; k >= 0; k--) {
     const next = `${parts[k]}>${out}`;
     if (next.length + 2 > MAX_LABEL) break;

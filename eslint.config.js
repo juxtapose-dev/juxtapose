@@ -2,6 +2,15 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import globals from 'globals';
 
+// Shipped package source: what the package tsconfigs compile.
+const TYPED_SRC = ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx'];
+const TYPED_SRC_IGNORES = [
+  '**/*.test.ts',
+  '**/*.test.tsx',
+  '**/__tests__/**',
+  '**/__fixtures__/**',
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -32,6 +41,7 @@ export default tseslint.config(
       // window shapes we probe are platform internals with no published
       // types. Casting through `unknown` to a local interface is the honest
       // way to express that, and it is already how the adapters do it.
+      // Package source makes this an error (below); elsewhere it warns.
       '@typescript-eslint/no-explicit-any': 'warn',
 
       // Empty catch is a deliberate, load-bearing pattern in the settle
@@ -46,6 +56,46 @@ export default tseslint.config(
     files: ['packages/core/src/capture/**', 'packages/adapter-*/src/**'],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
+    },
+  },
+
+  // Type-aware linting for shipped package source. Scoped to the files the
+  // package tsconfigs actually compile: tests, fixtures, scripts and examples
+  // are outside every project, so the type-aware rules cannot run there and
+  // they keep the syntax-only rules above.
+  //
+  // recommended-type-checked, minus the rules that still have hits on this
+  // codebase (counts when enabled): require-await 9, no-unsafe-assignment 5,
+  // unbound-method 2, no-unsafe-member-access 1, no-unsafe-argument 1,
+  // prefer-promise-reject-errors 1. Each is a cleanup of its own; turning one
+  // on means fixing its hits in the same change.
+  ...tseslint.configs.recommendedTypeChecked.map((config) => ({
+    ...config,
+    files: TYPED_SRC,
+    ignores: TYPED_SRC_IGNORES,
+  })),
+  {
+    files: TYPED_SRC,
+    ignores: TYPED_SRC_IGNORES,
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/await-thenable': 'error',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+      '@typescript-eslint/no-explicit-any': 'error',
+
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/prefer-promise-reject-errors': 'off',
     },
   },
 

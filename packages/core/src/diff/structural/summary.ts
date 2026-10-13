@@ -381,7 +381,10 @@ function contentForms(el: string, content: ContentDelta[]): LeadItem {
       consumed: some.reduce((n, p) => n + p.consumed, 0),
     });
   }
-  forms.push({ text: `${el} ${parts[0].name} changed`, consumed: parts[0].consumed });
+  // Callers pass non-empty content, and shorthand emits at least one part per
+  // change it is given (a collapsed box stands in for its absorbed longhands).
+  const first = parts[0]!;
+  forms.push({ text: `${el} ${first.name} changed`, consumed: first.consumed });
   return forms;
 }
 
@@ -461,7 +464,7 @@ function shorthand(changes: ContentDelta[], arrow = '→'): Part[] {
  *  `a b c b` → `a b c`. */
 function boxValue([t, r, b, l]: string[]): string {
   if (r === l) {
-    if (t === b) return t === r ? t : `${t} ${r}`;
+    if (t === b) return t === r ? t! : `${t} ${r}`; // BOXES sides are four longhands
     return `${t} ${r} ${b}`;
   }
   return `${t} ${r} ${b} ${l}`;

@@ -231,8 +231,7 @@ export class StorybookPlatform implements Platform {
           };
         };
         const render = w.__STORYBOOK_PREVIEW__?.storyRenders?.find((r) => r.id === id);
-        return (render?.story?.parameters?.juxtapose ?? undefined) as
-          StoryParams | undefined;
+        return render?.story?.parameters?.juxtapose ?? undefined;
       }, storyId)
       .catch(() => undefined);
   }

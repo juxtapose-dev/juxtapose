@@ -147,10 +147,12 @@ export function adjacentStory(
   if (pending.length === 0) return null;
 
   const index = pending.findIndex((r) => r.storyId === currentStoryId);
-  if (index === -1) return pending[0].storyId;
+  // pending is non-empty (checked above), and nextIndex is reduced mod its
+  // length, so neither index can miss.
+  if (index === -1) return pending[0]!.storyId;
   if (pending.length === 1) return null;
 
   const step = direction === 'next' ? 1 : -1;
   const nextIndex = (index + step + pending.length) % pending.length;
-  return pending[nextIndex].storyId;
+  return pending[nextIndex]!.storyId;
 }
