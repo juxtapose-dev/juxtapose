@@ -7,6 +7,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import {
   buildHandoffPrompt,
+  handoffVariant,
   encodeStoryId,
   parseRunReport,
   type HandoffPayload,
@@ -126,6 +127,7 @@ export async function handoffCommand(
       diff: result.status === 'fail' ? path.join(images, `${safe}-diff.webp`) : undefined,
     },
     projectRoot: ctx.projectRoot,
+    ...(handoffVariant(result) ? { variant: handoffVariant(result) } : {}),
   };
 
   io.out(buildHandoffPrompt(payload) + '\n');

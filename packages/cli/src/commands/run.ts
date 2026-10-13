@@ -20,8 +20,15 @@ import {
   encodeStoryId,
   encodeStructure,
   expandVariants,
+  captureLabel,
+  countStories,
+  hasVariants,
+  prepareCaptures,
+  platformStoryId,
   selectByStoryId,
   VariantConfigError,
+  DEFAULT_VIEWPORT,
+  type StoryManifest,
   formatPercent,
   formatPhases,
   phases,
@@ -65,57 +72,45 @@ export async function runCommand(
 
   const p = phases();
 
-  let stories;
-  try {
-    // One entry per capture: a story's variants are jobs like any other from
-    // here on, and the platform's own entries are the default captures.
-    stories = await p.time('enumerate', async () =>
-      expandVariants(
-        await ctx.platform.enumerate({
-          projectRoot: ctx.projectRoot,
-          buildDir: ctx.buildDir,
-          origin: ctx.origin,
-        }),
-        ctx.config.variants,
-      ),
-    );
-  } catch (err) {
-    if (!(err instanceof VariantConfigError)) throw err;
-    io.err(`${err.message}\n`);
-    return EXIT.usage;
-  }
+  const enumerated = await p.time('enumerate', () =>
+    ctx.platform.enumerate({
+      projectRoot: ctx.projectRoot,
+      buildDir: ctx.buildDir,
+      origin: ctx.origin,
+    }),
+  );
 
-  if (stories.length === 0) {
+  if (enumerated.length === 0) {
     io.err('jux: no stories found\n');
     return 1;
   }
 
-  // --story is explicit and wins over --all and affected analysis: a base id
-  // selects the story with all its variants, a capture key exactly one.
-  let selection: { stories: typeof stories; reason: string };
-  if (flags.story?.length) {
-    const { selected, unknown } = selectByStoryId(stories, flags.story);
-    if (unknown.length > 0) {
-      io.err(
-        `jux run: no story or capture with id ${unknown.map((id) => `'${id}'`).join(', ')}\n`,
-      );
-      return EXIT.usage;
-    }
-    selection = { stories: selected, reason: 'requested' };
-  } else
-    selection = flags.all
-      ? { stories, reason: 'no-baseline' as const }
+  // Expanded from the index first, before any browser exists, so a variant
+  // config error already visible there exits 2 without a launch. Discovery
+  // below may add a story's own variants.
+  let indexCaptures: StoryManifest[];
+  try {
+    indexCaptures = expandVariants(enumerated, ctx.config.variants);
+  } catch (err) {
+    return variantError(err, io);
+  }
+
+  // Affected analysis decides on stories, not captures: variants inherit
+  // their story's componentPath, so a story and its variants go together.
+  // --story is explicit and wins over --all and affected analysis; it is
+  // resolved after discovery, since a capture key may name a variant only
+  // the preview declares.
+  const affected = flags.story?.length
+    ? null
+    : flags.all
+      ? { stories: enumerated, reason: 'no-baseline' as const }
       : await p.time('affected', () =>
-          resolveAffected(stories, flags.since ?? null, {
+          resolveAffected(enumerated, flags.since ?? null, {
             projectRoot: ctx.projectRoot,
             configDirs: [...ctx.platform.configDirs],
             buildDir: ctx.buildDir,
           }),
         );
-
-  log(
-    `jux: ${selection.stories.length}/${stories.length} stories to capture (${selection.reason})`,
-  );
 
   // Only with --since is there a changed-file set to trace. Lazy: the index
   // reads git and the manifest on the first failing story, never on a green run.
@@ -128,8 +123,24 @@ export async function runCommand(
       })
     : undefined;
 
-  if (selection.stories.length === 0) {
-    const empty = emptyReport(ctx.projectRoot, stories.length);
+  const unknownStories = (captures: StoryManifest[]): string[] =>
+    selectByStoryId(captures, flags.story ?? []).unknown;
+  const reportUnknown = (unknown: string[]) => {
+    io.err(
+      `jux run: no story or capture with id ${unknown.map((id) => `'${id}'`).join(', ')}\n`,
+    );
+    return EXIT.usage;
+  };
+  // Without discovery the index is the whole capture set, so a mistyped id
+  // fails here, before a browser launches.
+  if (!affected && !ctx.platform.discoverParams) {
+    const unknown = unknownStories(indexCaptures);
+    if (unknown.length > 0) return reportUnknown(unknown);
+  }
+
+  if (affected && affected.stories.length === 0) {
+    log(`jux: 0/${indexCaptures.length} captures to take (${affected.reason})`);
+    const empty = emptyReport(ctx.projectRoot, indexCaptures.length);
     await emit(ctx.json, empty, ctx.projectRoot, p, io);
     return 0;
   }
@@ -158,6 +169,41 @@ export async function runCommand(
   let warned = false;
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);
   try {
+    // One entry per capture, with the params the preview declares that the
+    // index doesn't: a story's variants are jobs like any other from here on.
+    let stories = indexCaptures;
+    if (ctx.platform.discoverParams) {
+      try {
+        stories = await p.time('discover', () =>
+          prepareCaptures(enumerated, {
+            platform: ctx.platform,
+            browser,
+            baseUrl,
+            viewport: ctx.config.viewport ?? DEFAULT_VIEWPORT,
+            ...(ctx.config.variants ? { projectVariants: ctx.config.variants } : {}),
+            onWarning: (m) => io.err(`${m}\n`),
+          }),
+        );
+      } catch (err) {
+        return variantError(err, io);
+      }
+    }
+
+    let selection: StoryManifest[];
+    let reason: string;
+    if (affected) {
+      const ids = new Set(affected.stories.map((s) => s.storyId));
+      selection = stories.filter((s) => ids.has(platformStoryId(s)));
+      reason = affected.reason;
+    } else {
+      const { selected, unknown } = selectByStoryId(stories, flags.story ?? []);
+      if (unknown.length > 0) return reportUnknown(unknown);
+      selection = selected;
+      reason = 'requested';
+    }
+
+    log(`jux: ${selection.length}/${stories.length} captures to take (${reason})`);
+
     // Inside the try, so a failed mkdir still closes the browser below.
     await mkdir(path.join(runDir, 'images'), { recursive: true });
     const report = await runCapture({
@@ -165,7 +211,7 @@ export async function runCommand(
       platform: ctx.platform,
       store: ctx.store,
       baseUrl,
-      stories: selection.stories,
+      stories: selection,
       totalCount: stories.length,
       config: ctx.config,
       ancestry: isGitRepo(ctx.projectRoot)
@@ -343,7 +389,16 @@ async function emit(
     s.stale ? `${s.stale} stale` : null,
   ].filter(Boolean);
 
-  io.out(`\n${parts.join('  ·  ')}   (${(report.durationMs / 1000).toFixed(1)}s)\n`);
+  // With variants a row is a capture, not a story: say how many stories the
+  // captures cover. Without them the line reads exactly as it always has.
+  const across = hasVariants(report.results)
+    ? `   ${report.results.length} captures across ${countStories(report.results)} ${
+        countStories(report.results) === 1 ? 'story' : 'stories'
+      }`
+    : '';
+  io.out(
+    `\n${parts.join('  ·  ')}${across}   (${(report.durationMs / 1000).toFixed(1)}s)\n`,
+  );
 
   const timings = formatPhases(p);
   if (timings) io.out(`  ${timings}\n`);
@@ -360,7 +415,7 @@ async function emit(
           : r.error
             ? ` ${r.error}`
             : '';
-      io.out(`  ${r.status.padEnd(6)} ${r.storyId}${detail}\n`);
+      io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}${detail}\n`);
       for (const line of explain(r)) io.out(`         ${line}\n`);
     }
     if (needsReview.length > 20) {
@@ -416,4 +471,11 @@ function explain(r: DiffResult): string[] {
   const why =
     v.cause && v.cause.kind !== 'unknown' ? [`cause: ${describeCause(v.cause)}`] : [];
   return [...why, v.summary];
+}
+
+/** A variant declaration error is a usage error: exit 2 with its message. */
+function variantError(err: unknown, io: Io): number {
+  if (!(err instanceof VariantConfigError)) throw err;
+  io.err(`${err.message}\n`);
+  return EXIT.usage;
 }
