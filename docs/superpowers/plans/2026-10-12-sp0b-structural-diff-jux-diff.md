@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript (ESM, Node 22), vitest, sharp + pixelmatch (already in core), Playwright Chromium for fixture generation and scripts only, pnpm workspaces.
 
-**Spec:** `docs/specs/2026-10-12-sp0-structural-diff-agent-surface-design.md` — §3 (structural diff, verdict, flags incl. `below-fold`), §5 (`signature` only; `groups` is PR c), §6 (`jux diff`, multi-URL `snap`, `--prefix`, `jux run`, `jux handoff`), Verification 1, 2, 4, 5. Read it with this plan. PR (a) is on this branch at `759d906`; its code, not its plan, is the contract.
+**Spec:** `docs/specs/2026-10-12-sp0-structural-diff-agent-surface-design.md` — §3 (structural diff, verdict, flags incl. `below-fold`), §5 (`signature` only; `groups` is PR c), §6 (`jux diff`, multi-URL `snap`, `--prefix`, `jux run`, `jux handoff`), Verification 1, 2, 4, 5. Read it with this plan. PR (a) is squash-merged on main as `966f6e7` and this branch is rebased onto main `8efd520`; its code, not its plan, is the contract.
 
 ## Global Constraints
 
@@ -20,10 +20,11 @@
 - Schema strings: `'juxtapose.verdict/v1'` (one verdict) and `'juxtapose.verdict-set/v1'` (`--prefix` output). Documented in README with one real example.
 - Fixtures come from real Chromium output written by a committed script (`scripts/structural-corpus/*`, `scripts/capture-diff-fixtures.mjs`), never hand-written. A test may transform a real fixture (clone it 100×, blank a field) but never author one.
 - Snap names stay path-safe: every name the CLI derives from user input goes through `snapName()` (`packages/cli/src/snap-name.ts`).
-- CLI exit codes (owner decision, new commands only — `run`/`approve`/`check`/`handoff` are untouched; they migrate in PR H): **0** clean or identical, **1** changes found or needs review (a different verdict; a `--prefix` set with an unpaired page), **2** usage error (missing argument, unknown snap name, conflicting flags), **3** tool or environment failure (browser launch failed, a page could not be captured, an image that will not decode, a sidecar file present but undecodable, filesystem error, unexpected crash). `jux snap` is part of this unmerged stack and adopts the same codes: its per-page failures (unreachable host, non-2xx) move from 1 to 3 and `check-snap.mjs` is updated to pin them. A sidecar that is *absent* is not a failure: it degrades to `no-baseline-structure`/`no-current-structure` and the verdict's own code applies. Every code is pinned by a test or an end-to-end check.
+- CLI exit codes (owner decision, new commands only — `run`/`approve`/`check`/`handoff` are untouched; they migrate in PR H): **0** clean or identical, **1** changes found or needs review (a different verdict; a `--prefix` set with an unpaired page), **2** usage error (missing argument, unknown snap name, conflicting flags), **3** tool or environment failure (browser launch failed, a page could not be captured, an image that will not decode, a sidecar file present but undecodable, filesystem error, unexpected crash). `jux snap` is part of this unmerged stack and adopts the same codes: its per-page failures (unreachable host, non-2xx) move from 1 to 3 and `check-snap.mjs` is updated to pin them. A sidecar that is _absent_ is not a failure: it degrades to `no-baseline-structure`/`no-current-structure` and the verdict's own code applies. Every code is pinned by a test or an end-to-end check.
 - Errors: every user-facing error says what happened and the next command to run (e.g. `jux diff: no snap named 'before' in <dir>. Run \`jux snap <url> --as before\` first.`).
 - Help: `jux --help` gains a `diff` section and a 3-line before/edit/after example for both `diff` and multi-URL `snap`.
-- Performance: `structuralDiff` on a 5,000-element pair runs under 50 ms (test asserts < 250 ms with headroom and prints the measured number); multi-URL snap uses one browser, one context, one page; `jux diff` imports nothing from playwright and launches no browser (checked by `check-diff.mjs` with `PLAYWRIGHT_BROWSERS_PATH=/nonexistent`).
+- Performance: `structuralDiff` on a 5,000-element pair runs under 50 ms (tests warm up once, take the best of 3, assert < 250 ms and print the measured number); multi-URL snap uses one browser, one context, one page; `jux diff` imports nothing from playwright (the CLI lazy-imports each command inside its `switch`; `check-diff.mjs` runs it with `NODE_OPTIONS=--import <probe.mjs>` that makes any `require`/`import` of `playwright` throw, plus `PLAYWRIGHT_BROWSERS_PATH=/nonexistent`) and launches no browser.
+- Determinism of ordering: every comparator uses code-unit comparison (`a < b ? -1 : a > b ? 1 : 0`); `localeCompare` is never used.
 - Size: tier-0 JSON ≤ 1,500 chars for every corpus operator; the corpus script asserts it and prints the distribution.
 - Clean code: no dead options or unused flags; each module one responsibility; comments say why; typed throughout (no `any`, no untyped dicts where a named type fits).
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -38,8 +39,10 @@
   7. A second matching pass pairs leftover siblings by tag in order, so a button whose text changed (and so whose `role+name` key changed) reports `text` rather than `removed`+`added`.
   8. `no-current-structure` flag added beside `no-baseline-structure`: `jux diff` has no privileged side.
   9. `el` for an element with no role+name/id/testid/class is its `path` with the `html>body>` prefix and `:nth-of-type(1)` noise stripped.
-  10. `escalate.crops` carries the `--crops` command; the flag itself lands in PR (c). Until then `jux diff --crops` exits 2 naming both image paths to open instead.
-  11. Exit code 3 (tool/environment failure) for `snap` and `diff`, per the owner's decision; the spec's §6 "1 different or failed" is split into 1 (different) and 3 (failed). `jux snap`'s per-page failures move from 1 to 3 in the same stack.
+  10. `jux diff --crops` lands in PR (c). Until then the flag exits 2 naming both image paths to open instead.
+  11. Exit code 3 (tool/environment failure) for `snap` and `diff`, per the owner's decision; the spec's §6 "1 different or failed" is split into 1 (different) and 3 (failed). `jux snap`'s per-page failures move from 1 to 3 in the same stack; a rejected URL scheme (`file:`) is a bad argument and stays 2.
+  12. The verdict's `escalate: { crops }` is renamed `escalate: { command }`: it holds the next command to run — `jux diff <a> <b> --crops` in snap mode, `jux handoff <id>` in run mode — because core does not know which CLI surface produced the verdict.
+  13. Coverage is computed over changed-region area (a region is explained when it intersects a delta element's old or new rect), not per-pixel: the diff carries bounding boxes, and boxes are what the verdict reports back.
 
 ## Review Focus
 
@@ -72,22 +75,61 @@
   export type Delta =
     | { kind: 'text'; el: string; from: string; to: string }
     | { kind: 'style'; el: string; prop: string; from: string; to: string }
-    | { kind: 'attr'; el: string; attr: 'src' | 'role' | 'name'; from: string; to: string }
+    | {
+        kind: 'attr';
+        el: string;
+        attr: 'src' | 'role' | 'name';
+        from: string;
+        to: string;
+      }
     | { kind: 'added'; el: string; rect: StructureRect }
     | { kind: 'removed'; el: string; rect: StructureRect }
     | { kind: 'moved'; el: string; dx: number; dy: number }
     | { kind: 'resized'; el: string; dw: number; dh: number }
     | { kind: 'shift'; after: string; dx: number; dy: number; count: number };
-  export type Classification = 'identical' | 'render-drift' | 'dimension-change' | 'element-added' | 'element-removed' | 'reflow' | 'geometry' | 'text-only' | 'style-only' | 'attr-only' | 'mixed' | 'unknown';
+  export type Classification =
+    | 'identical'
+    | 'render-drift'
+    | 'dimension-change'
+    | 'element-added'
+    | 'element-removed'
+    | 'reflow'
+    | 'geometry'
+    | 'text-only'
+    | 'style-only'
+    | 'attr-only'
+    | 'mixed'
+    | 'unknown';
   export type StyleTag = 'color' | 'typography' | 'spacing' | 'border' | 'effects';
-  export type Flag = 'element-removed' | 'text-changed' | 'large-reflow' | 'unexplained-pixels' | 'structure-truncated' | 'no-baseline-structure' | 'no-current-structure' | 'below-fold';
-  export interface StructuralVerdict { schema: 'juxtapose.verdict/v1'; classification: Classification; styleTags: StyleTag[]; summary: string; deltas: Delta[]; deltaCount: number; coverage: number; explained: 'full' | 'partial' | 'none'; unexplainedRegions: ChangedRegion[]; flags: Flag[]; signature: string; escalate: { crops: string } }
+  export type Flag =
+    | 'element-removed'
+    | 'text-changed'
+    | 'large-reflow'
+    | 'unexplained-pixels'
+    | 'structure-truncated'
+    | 'no-baseline-structure'
+    | 'no-current-structure'
+    | 'below-fold';
+  export interface StructuralVerdict {
+    schema: 'juxtapose.verdict/v1';
+    classification: Classification;
+    styleTags: StyleTag[];
+    summary: string;
+    deltas: Delta[];
+    deltaCount: number;
+    coverage: number;
+    explained: 'full' | 'partial' | 'none';
+    unexplainedRegions: ChangedRegion[];
+    flags: Flag[];
+    signature: string;
+    escalate: { command: string };
+  }
   // DiffResult gains: structural?: StructuralVerdict;
   ```
 
 - Produces (match.ts): `matchElements(a: StructureSnapshot, b: StructureSnapshot): ElementMatch` where `interface ElementMatch { pairs: Array<[a: number, b: number]>; added: number[]; removed: number[] }` — `pairs` sorted by b index, `added` = b indices of unmatched subtree roots ascending, `removed` = a indices of unmatched subtree roots ascending; `identityKey(el: StructureElement): string`.
 - Produces (fixture): `packages/core/src/diff/__fixtures__/structural-corpus.json` = `{ viewport: Viewport; cases: Record<OperatorName, { structure: StructureSnapshot; pixels: { mismatchPixels: number; mismatchPercent: number; changedRegions: ChangedRegion[]; dimensionMismatch: boolean } }> }` where `pixels` is each case diffed against the `noop` case.
-- Produces (page.mjs): `OPERATORS: Array<{ name: string; page: PageOptions; expect: { classification: string; styleTags?: string[]; delta?: Partial<Delta>; flags?: string[]; noDeltas?: boolean } }>`, `pageHtml(name: string): string`; (server.mjs): `startCorpusServer(): Promise<{ url: string; close(): void }>` serving `/?op=<name>`, `/logo-a.svg`, `/logo-b.svg`.
+- Produces (page.mjs): `OPERATORS: Array<{ name: string; page: PageOptions; expect: Expectation }>` with `Expectation = { classification: string; styleTags?: string[]; delta?: Partial<Delta>; flags?: string[]; noDeltas?: boolean; shift?: boolean }`; `pageHtml(name: string): string`; `checkVerdict(op: Operator, v: StructuralVerdict): string[]` — the one expectation checker (empty array = pass), used by the Task 3 unit test and the Task 7 script; (server.mjs): `startCorpusServer(): Promise<{ url: string; close(): void }>` serving `/op/<name>`, `/logo-a.svg`, `/logo-b.svg`.
 
 - [ ] **Step 1: Add the types**
 
@@ -159,7 +201,7 @@ export interface StructuralVerdict {
    *  pages with the same change share one. */
   signature: string;
   /** The exact command for tier-3 pixels. */
-  escalate: { crops: string };
+  escalate: { command: string };
 }
 ```
 
@@ -232,37 +274,110 @@ const style = (prop, tag) => ({
  *  operator is diffed against. */
 export const OPERATORS = [
   { name: 'noop', page: {}, expect: { classification: 'identical', noDeltas: true } },
-  { name: 'color', page: { css: '.save { color: rgb(254, 240, 138); }' }, expect: style('color', 'color') },
-  { name: 'background', page: { css: '.save { background: rgb(29, 78, 216); }' }, expect: style('background-color', 'color') },
-  { name: 'padding', page: { css: '.save { padding: 12px 16px; }' }, expect: style('padding-top', 'spacing') },
-  { name: 'margin', page: { css: '.save { margin-bottom: 32px; }' }, expect: { ...style('margin-bottom', 'spacing'), shift: true } },
-  { name: 'font-size', page: { css: '.save { font-size: 20px; }' }, expect: style('font-size', 'typography') },
-  { name: 'font-weight', page: { css: '.save { font-weight: 400; }' }, expect: style('font-weight', 'typography') },
-  { name: 'line-height', page: { css: '.save { line-height: 40px; }' }, expect: style('line-height', 'typography') },
-  { name: 'letter-spacing', page: { css: '.save { letter-spacing: 2px; }' }, expect: style('letter-spacing', 'typography') },
-  { name: 'border-radius', page: { css: '.save { border-radius: 16px; }' }, expect: style('border-top-left-radius', 'border') },
-  { name: 'border-color', page: { css: '.save { border-color: rgb(220, 38, 38); }' }, expect: style('border-top-color', 'border') },
-  { name: 'box-shadow', page: { css: '.save { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }' }, expect: style('box-shadow', 'effects') },
-  { name: 'opacity', page: { css: '.save { opacity: 0.5; }' }, expect: style('opacity', 'effects') },
+  {
+    name: 'color',
+    page: { css: '.save { color: rgb(254, 240, 138); }' },
+    expect: style('color', 'color'),
+  },
+  {
+    name: 'background',
+    page: { css: '.save { background: rgb(29, 78, 216); }' },
+    expect: style('background-color', 'color'),
+  },
+  {
+    name: 'padding',
+    page: { css: '.save { padding: 12px 16px; }' },
+    expect: style('padding-top', 'spacing'),
+  },
+  {
+    name: 'margin',
+    page: { css: '.save { margin-bottom: 32px; }' },
+    expect: { ...style('margin-bottom', 'spacing'), shift: true },
+  },
+  {
+    name: 'font-size',
+    page: { css: '.save { font-size: 20px; }' },
+    expect: style('font-size', 'typography'),
+  },
+  {
+    name: 'font-weight',
+    page: { css: '.save { font-weight: 400; }' },
+    expect: style('font-weight', 'typography'),
+  },
+  {
+    name: 'line-height',
+    page: { css: '.save { line-height: 40px; }' },
+    expect: style('line-height', 'typography'),
+  },
+  {
+    name: 'letter-spacing',
+    page: { css: '.save { letter-spacing: 2px; }' },
+    expect: style('letter-spacing', 'typography'),
+  },
+  {
+    name: 'border-radius',
+    page: { css: '.save { border-radius: 16px; }' },
+    expect: style('border-top-left-radius', 'border'),
+  },
+  {
+    name: 'border-color',
+    page: { css: '.save { border-color: rgb(220, 38, 38); }' },
+    expect: style('border-top-color', 'border'),
+  },
+  {
+    name: 'box-shadow',
+    page: { css: '.save { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); }' },
+    expect: style('box-shadow', 'effects'),
+  },
+  {
+    name: 'opacity',
+    page: { css: '.save { opacity: 0.5; }' },
+    expect: style('opacity', 'effects'),
+  },
   {
     name: 'text',
     page: { saveText: 'Save changes' },
-    expect: { classification: 'text-only', delta: { kind: 'text', from: 'Save', to: 'Save changes' }, flags: ['text-changed'] },
+    expect: {
+      classification: 'text-only',
+      delta: { kind: 'text', from: 'Save', to: 'Save changes' },
+      flags: ['text-changed'],
+    },
   },
   {
     name: 'removed',
     page: { removeRow: true },
-    expect: { classification: 'element-removed', delta: { kind: 'removed', el: 'div#row-1' }, flags: ['element-removed'], shift: true },
+    expect: {
+      classification: 'element-removed',
+      delta: { kind: 'removed', el: 'div#row-1' },
+      flags: ['element-removed'],
+      shift: true,
+    },
   },
   {
     name: 'inserted',
-    page: { banner: '<div id="banner" style="height:40px;background:rgb(254,243,199)">Unsaved changes</div>' },
-    expect: { classification: 'element-added', delta: { kind: 'added', el: 'div#banner' }, shift: true },
+    page: {
+      banner:
+        '<div id="banner" style="height:40px;background:rgb(254,243,199)">Unsaved changes</div>',
+    },
+    expect: {
+      classification: 'element-added',
+      delta: { kind: 'added', el: 'div#banner' },
+      shift: true,
+    },
   },
   {
     name: 'img-src',
     page: { logo: '/logo-b.svg' },
-    expect: { classification: 'attr-only', delta: { kind: 'attr', el: 'img[name="Logo"]', attr: 'src', from: 'logo-a.svg', to: 'logo-b.svg' } },
+    expect: {
+      classification: 'attr-only',
+      delta: {
+        kind: 'attr',
+        el: 'img[name="Logo"]',
+        attr: 'src',
+        from: 'logo-a.svg',
+        to: 'logo-b.svg',
+      },
+    },
   },
   {
     name: 'canvas',
@@ -277,6 +392,41 @@ export function pageHtml(name) {
   return render(op.page);
 }
 
+const sameFields = (delta, want) =>
+  Object.entries(want).every(([k, v]) => delta[k] === v);
+
+/**
+ * Every way a verdict can disagree with an operator's expectation, as
+ * human-readable strings; empty means pass. The ONE checker: the unit test
+ * (Task 3) and the end-to-end script (Task 7) both call it, so they cannot
+ * drift apart.
+ * @param {typeof OPERATORS[number]} op
+ * @param {{ classification: string; styleTags: string[]; deltas: Array<Record<string, unknown>>; flags: string[]; explained: string }} v
+ * @returns {string[]}
+ */
+export function checkVerdict(op, v) {
+  const e = op.expect;
+  const problems = [];
+  if (v.classification !== e.classification)
+    problems.push(`classification ${v.classification} ≠ ${e.classification}`);
+  if (e.styleTags && JSON.stringify(v.styleTags) !== JSON.stringify(e.styleTags)) {
+    problems.push(
+      `styleTags ${JSON.stringify(v.styleTags)} ≠ ${JSON.stringify(e.styleTags)}`,
+    );
+  }
+  if (e.delta && !v.deltas.some((d) => sameFields(d, e.delta)))
+    problems.push(`missing delta ${JSON.stringify(e.delta)}`);
+  for (const f of e.flags ?? [])
+    if (!v.flags.includes(f)) problems.push(`missing flag ${f}`);
+  if (e.noDeltas && v.deltas.length)
+    problems.push(`expected no deltas, got ${v.deltas.length}`);
+  if (e.shift && !v.deltas.some((d) => d.kind === 'shift'))
+    problems.push('expected a shift delta');
+  if (op.name !== 'noop' && op.name !== 'canvas' && v.explained !== 'full')
+    problems.push(`explained ${v.explained}`);
+  return problems;
+}
+
 export const LOGO = (fill) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="6" fill="${fill}"/></svg>`;
 ```
@@ -284,7 +434,7 @@ export const LOGO = (fill) =>
 Create `scripts/structural-corpus/server.mjs`:
 
 ```js
-// Serves the corpus page on a random port: GET /?op=<name> renders that
+// Serves the corpus page on a random port: GET /op/<name> renders that
 // operator's page; two logos exist so an `src` swap changes real pixels.
 import { createServer } from 'node:http';
 import { LOGO, pageHtml } from './page.mjs';
@@ -295,12 +445,19 @@ export function startCorpusServer() {
       const url = new URL(req.url, 'http://localhost');
       if (url.pathname === '/logo-a.svg' || url.pathname === '/logo-b.svg') {
         res.writeHead(200, { 'content-type': 'image/svg+xml' });
-        res.end(LOGO(url.pathname === '/logo-a.svg' ? 'rgb(37, 99, 235)' : 'rgb(220, 38, 38)'));
+        res.end(
+          LOGO(url.pathname === '/logo-a.svg' ? 'rgb(37, 99, 235)' : 'rgb(220, 38, 38)'),
+        );
         return;
       }
+      // Operators live in the PATH, not the query: `jux snap` names a snap by
+      // a slug of host + path and drops the query, so `/?op=a` and `/?op=b`
+      // would collide on one file.
+      const m = /^\/op\/([a-z-]+)$/.exec(url.pathname);
       try {
+        if (!m) throw new Error(`not found: ${url.pathname}`);
         res.writeHead(200, { 'content-type': 'text/html' });
-        res.end(pageHtml(url.searchParams.get('op') ?? 'noop'));
+        res.end(pageHtml(m[1]));
       } catch (e) {
         res.writeHead(404);
         res.end(e.message);
@@ -345,22 +502,27 @@ const browser = await chromium.launch(deterministicLaunchOptions());
 const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
 const page = await context.newPage();
 
-const captured = {};
-for (const op of OPERATORS) {
-  const url = `${server.url}/?op=${op.name}`;
-  const platform = createUrlPlatform([{ id: op.name, url }]);
+const capture = async (name) => {
+  const url = `${server.url}/op/${name}`;
+  const platform = createUrlPlatform([{ id: name, url }]);
   const [story] = await platform.enumerate({ projectRoot: root });
   const snap = await captureStory(page, story, { platform, baseUrl: url }, viewport);
-  if (!snap?.structure) throw new Error(`no structure for ${op.name}`);
-  captured[op.name] = snap;
-}
+  if (!snap?.structure) throw new Error(`no structure for ${name}`);
+  return snap;
+};
+// The base is captured FIRST and again LAST: the fixture's `noop` case is the
+// second capture diffed against the first, so a non-zero noop is a real
+// determinism failure in the pipeline, not a diff of a buffer against itself.
+const base = await capture('noop');
+const captured = {};
+for (const op of OPERATORS) captured[op.name] = await capture(op.name);
 await browser.close();
 server.close();
 
 const cases = {};
 for (const op of OPERATORS) {
   const { mismatchPixels, mismatchPercent, changedRegions, dimensionMismatch } =
-    await diffImages(captured.noop.image, captured[op.name].image);
+    await diffImages(base.image, captured[op.name].image);
   cases[op.name] = {
     structure: captured[op.name].structure,
     pixels: { mismatchPixels, mismatchPercent, changedRegions, dimensionMismatch },
@@ -374,7 +536,7 @@ console.log(`wrote ${out}: ${Object.keys(cases).length} cases`);
 - [ ] **Step 4: Build and generate the fixture**
 
 Run: `pnpm --filter @juxtapose/core build && node scripts/capture-diff-fixtures.mjs && pnpm format`
-Expected: `wrote …/structural-corpus.json: 18 cases`. Sanity-check with `node -e "const f=require('./packages/core/src/diff/__fixtures__/structural-corpus.json'); for (const [k,v] of Object.entries(f.cases)) console.log(k, v.structure.elements.length, v.pixels.mismatchPixels)"` — `noop` must show 0 mismatch pixels and every other case > 0. If `noop` is non-zero the capture is nondeterministic; that is a PR (a) bug, stop and report it rather than working around it.
+Expected: `wrote …/structural-corpus.json: 18 cases`. Sanity-check with `node -e "const f=require('./packages/core/src/diff/__fixtures__/structural-corpus.json'); for (const [k,v] of Object.entries(f.cases)) console.log(k, v.structure.elements.length, v.pixels.mismatchPixels)"` — `noop` (the second capture of the base page against the first) must show 10 elements and 0 mismatch pixels, and every other case > 0. If `noop` is non-zero the capture pipeline is nondeterministic; that is a PR (a) bug, stop and report it rather than working around it.
 
 - [ ] **Step 5: Write the failing match tests**
 
@@ -389,10 +551,14 @@ import { identityKey, matchElements } from './match.js';
 
 // Real Chromium captures of the corpus page — scripts/capture-diff-fixtures.mjs.
 const fixture = JSON.parse(
-  readFileSync(path.join(import.meta.dirname, '../__fixtures__/structural-corpus.json'), 'utf8'),
+  readFileSync(
+    path.join(import.meta.dirname, '../__fixtures__/structural-corpus.json'),
+    'utf8',
+  ),
 ) as { cases: Record<string, { structure: StructureSnapshot }> };
 const snap = (name: string) => fixture.cases[name].structure;
-const idx = (s: StructureSnapshot, id: string) => s.elements.findIndex((e) => e.id === id);
+const idx = (s: StructureSnapshot, id: string) =>
+  s.elements.findIndex((e) => e.id === id);
 
 test('identical snapshots match every element and add/remove nothing', () => {
   const a = snap('noop');
@@ -424,12 +590,21 @@ test('a removed element is one removed, siblings after it stay matched', () => {
 });
 
 test('a button whose text changed is still the same button (second pass by tag)', () => {
-  const a = snap('noop');
-  const b = snap('text');
-  const ia = a.elements.findIndex((e) => e.testId === 'save');
-  const ib = b.elements.findIndex((e) => e.testId === 'save');
+  // The corpus button carries a data-testid, which outranks role+name in the
+  // key; strip it on both sides so the key really is the name-derived one.
+  const strip = (s: StructureSnapshot): StructureSnapshot => ({
+    ...s,
+    elements: s.elements.map((e) =>
+      e.testId === 'save' ? { ...e, testId: undefined } : e,
+    ),
+  });
+  const a = strip(snap('noop'));
+  const b = strip(snap('text'));
+  const ia = a.elements.findIndex((e) => e.tag === 'button');
+  const ib = b.elements.findIndex((e) => e.tag === 'button');
   // its identity key changed (name is the text) …
-  expect(identityKey(a.elements[ia])).not.toBe(identityKey(b.elements[ib]));
+  expect(identityKey(a.elements[ia])).toBe('button|button=Save');
+  expect(identityKey(b.elements[ib])).toBe('button|button=Save changes');
   // … but it is paired, not reported as removed + added
   const m = matchElements(a, b);
   expect(m.pairs).toContainEqual([ia, ib]);
@@ -457,29 +632,62 @@ test('one of five identical anonymous siblings removed is one removed, not a cas
     rect: { ...row.rect, y: row.rect.y + k * 30 },
   });
   base.elements = base.elements.filter((e) => e.parent !== parent || e.tag === 'h1');
-  const a: StructureSnapshot = { ...base, elements: [...base.elements, ...[1, 2, 3, 4, 5].map(anon)] };
-  const b: StructureSnapshot = { ...base, elements: [...base.elements, ...[1, 2, 4, 5].map(anon)] };
+  const a: StructureSnapshot = {
+    ...base,
+    elements: [...base.elements, ...[1, 2, 3, 4, 5].map(anon)],
+  };
+  const b: StructureSnapshot = {
+    ...base,
+    elements: [...base.elements, ...[1, 2, 4, 5].map(anon)],
+  };
   const m = matchElements(a, b);
   expect(m.removed).toHaveLength(1);
   expect(m.added).toEqual([]);
-  expect(m.pairs.filter(([i]) => a.elements[i].parent === parent)).toHaveLength(4);
+  // the kept h1 is also a child of `parent`; count only the anonymous divs
+  expect(
+    m.pairs.filter(
+      ([i]) => a.elements[i].parent === parent && a.elements[i].tag === 'div',
+    ),
+  ).toHaveLength(4);
 });
 
 test('a flat parent with thousands of children matches in bounded time', () => {
   const base = snap('noop');
   const row = base.elements[idx(base, 'row-2')];
   const many = (n: number, skip: number) =>
-    Array.from({ length: n }, (_, k) => ({ ...row, id: `r${k}`, path: `main>div#r${k}` }))
-      .filter((_, k) => k !== skip);
-  const a: StructureSnapshot = { ...base, elements: [base.elements[0], ...many(5000, -1).map((e) => ({ ...e, parent: 0 }))] };
-  const b: StructureSnapshot = { ...base, elements: [base.elements[0], ...many(5000, 2500).map((e) => ({ ...e, parent: 0 }))] };
-  const t = performance.now();
+    Array.from({ length: n }, (_, k) => ({
+      ...row,
+      id: `r${k}`,
+      path: `main>div#r${k}`,
+    })).filter((_, k) => k !== skip);
+  const a: StructureSnapshot = {
+    ...base,
+    elements: [base.elements[0], ...many(5000, -1).map((e) => ({ ...e, parent: 0 }))],
+  };
+  const b: StructureSnapshot = {
+    ...base,
+    elements: [base.elements[0], ...many(5000, 2500).map((e) => ({ ...e, parent: 0 }))],
+  };
   const m = matchElements(a, b);
-  const ms = performance.now() - t;
   expect(m.removed).toHaveLength(1);
   expect(m.pairs).toHaveLength(5000);
+  // Timing: one warm-up (JIT), then best of 3, so a cold run on a contended
+  // CI runner does not flake a bound that is 5× the real budget.
+  const ms = bestOf3(() => matchElements(a, b));
+  console.log(`matchElements 5000 flat children: ${ms.toFixed(1)} ms`);
   expect(ms).toBeLessThan(250);
 });
+
+function bestOf3(fn: () => unknown): number {
+  fn();
+  let best = Infinity;
+  for (let k = 0; k < 3; k++) {
+    const t = performance.now();
+    fn();
+    best = Math.min(best, performance.now() - t);
+  }
+  return best;
+}
 ```
 
 - [ ] **Step 6: Run to verify failure**
@@ -540,7 +748,11 @@ export function matchElements(a: StructureSnapshot, b: StructureSnapshot): Eleme
     // A text edit changes a name-derived key, a toggled class changes a
     // class-derived one. Pair what is left by tag, in order, so those read as
     // `text`/`attr` deltas rather than removed + added.
-    const second = align(first.leftA, first.leftB, (i, j) => a.elements[i].tag === b.elements[j].tag);
+    const second = align(
+      first.leftA,
+      first.leftB,
+      (i, j) => a.elements[i].tag === b.elements[j].tag,
+    );
     for (const [i, j] of [...first.matched, ...second.matched]) {
       pairs.push([i, j]);
       walk(i, j);
@@ -667,6 +879,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `packages/core/src/diff/structural/label.ts`
 - Create: `packages/core/src/diff/structural/deltas.ts`
 - Create: `packages/core/src/diff/structural/shift.ts`
+- Modify: `packages/core/src/capture/structure.ts:191` (`const round` → `export const round`, so the diff rounds the way the capture did instead of carrying a copy)
 - Test: `packages/core/src/diff/structural/deltas.test.ts`
 - Test: `packages/core/src/diff/structural/shift.test.ts`
 
@@ -688,7 +901,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     order: number;
   }
   export const KIND_RANK: Record<Delta['kind'], number>;
-  export function computeFacts(a: StructureSnapshot, b: StructureSnapshot, match: ElementMatch): Fact[]; // sorted by (order, KIND_RANK, prop)
+  export function computeFacts(
+    a: StructureSnapshot,
+    b: StructureSnapshot,
+    match: ElementMatch,
+  ): Fact[]; // sorted by (order, KIND_RANK, prop)
   ```
 
 - Produces (shift.ts): `synthesizeShifts(facts: Fact[]): Fact[]` — same ordering contract; `moved` facts that collapse are removed and one `shift` fact inserted at the anchor's order.
@@ -707,7 +924,10 @@ import { label } from './label.js';
 import { matchElements } from './match.js';
 
 const fixture = JSON.parse(
-  readFileSync(path.join(import.meta.dirname, '../__fixtures__/structural-corpus.json'), 'utf8'),
+  readFileSync(
+    path.join(import.meta.dirname, '../__fixtures__/structural-corpus.json'),
+    'utf8',
+  ),
 ) as { cases: Record<string, { structure: StructureSnapshot }> };
 const snap = (n: string) => fixture.cases[n].structure;
 const deltas = (a: StructureSnapshot, b: StructureSnapshot): Delta[] =>
@@ -759,19 +979,35 @@ test('added and removed carry the rect; descendants are not listed', () => {
 
 test('padding grows the button (resized) and moves what follows (moved)', () => {
   const d = vs('padding');
-  expect(d).toContainEqual(expect.objectContaining({ kind: 'resized', el: 'button[name="Save"]' }));
+  expect(d).toContainEqual(
+    expect.objectContaining({ kind: 'resized', el: 'button[name="Save"]' }),
+  );
   expect(d.filter((x) => x.kind === 'moved').length).toBeGreaterThanOrEqual(3);
 });
 
-test('an inherited change is reported once, where it originates', () => {
+test('an inherited change is reported once, where it originates — and without phantom border colours', () => {
   const a = snap('noop');
   const b = structuredClone(a);
   const main = b.elements.findIndex((e) => e.tag === 'main');
   b.elements[main].styles.color = 'rgb(1, 2, 3)';
   const d = deltas(a, b);
+  // main and the rows have no borders: currentColor must not surface as
+  // border-*-color deltas on any of them (the rows' 1px top border is set
+  // explicitly, so it is stored, not inherited from color).
   expect(d).toEqual([
-    { kind: 'style', el: 'main', prop: 'color', from: 'rgb(17, 24, 39)', to: 'rgb(1, 2, 3)' },
+    {
+      kind: 'style',
+      el: 'main',
+      prop: 'color',
+      from: 'rgb(17, 24, 39)',
+      to: 'rgb(1, 2, 3)',
+    },
   ]);
+});
+
+test('a text change is labelled from the baseline, not the new text', () => {
+  const d = vs('text').find((x) => x.kind === 'text')!;
+  expect(d.el).toBe('button[name="Save"]');
 });
 
 test('a masked element yields geometry only, never text or style', () => {
@@ -780,9 +1016,20 @@ test('a masked element yields geometry only, never text or style', () => {
   const i = a.elements.findIndex((e) => e.id === 'row-3');
   for (const s of [a, b]) {
     const e = s.elements[i];
-    s.elements[i] = { path: e.path, parent: e.parent, tag: 'masked', rect: e.rect, paintOrder: e.paintOrder, styles: {} };
+    s.elements[i] = {
+      path: e.path,
+      parent: e.parent,
+      tag: 'masked',
+      rect: e.rect,
+      paintOrder: e.paintOrder,
+      styles: {},
+    };
   }
-  b.elements[i].rect = { ...b.elements[i].rect, y: b.elements[i].rect.y + 10, w: b.elements[i].rect.w + 5 };
+  b.elements[i].rect = {
+    ...b.elements[i].rect,
+    y: b.elements[i].rect.y + 10,
+    w: b.elements[i].rect.w + 5,
+  };
   // a sneaky text/style on the masked stand-in must be ignored even if present
   (b.elements[i] as { text?: string }).text = 'leaked';
   b.elements[i].styles = { color: 'rgb(9, 9, 9)' };
@@ -792,18 +1039,32 @@ test('a masked element yields geometry only, never text or style', () => {
 });
 
 test('facts are ordered by current document position, then kind', () => {
-  const facts = computeFacts(snap('noop'), snap('padding'), matchElements(snap('noop'), snap('padding')));
+  const facts = computeFacts(
+    snap('noop'),
+    snap('padding'),
+    matchElements(snap('noop'), snap('padding')),
+  );
   const orders = facts.map((f) => f.order);
   expect(orders).toEqual([...orders].sort((x, y) => x - y));
 });
 
 test('labels prefer role+name, then id, then testid, then class, then a short path', () => {
   const s = snap('noop');
-  const by = (p: (e: StructureSnapshot['elements'][number]) => boolean) => label(s.elements.find(p)!);
+  const by = (p: (e: StructureSnapshot['elements'][number]) => boolean) =>
+    label(s.elements.find(p)!);
   expect(by((e) => e.testId === 'save')).toBe('button[name="Save"]');
   expect(by((e) => e.id === 'row-1')).toBe('div#row-1');
   expect(by((e) => e.tag === 'main')).toBe('main');
-  expect(label({ ...s.elements[0], id: undefined, role: undefined, name: undefined, classes: ['card', 'x'], tag: 'div' })).toBe('div.card');
+  expect(
+    label({
+      ...s.elements[0],
+      id: undefined,
+      role: undefined,
+      name: undefined,
+      classes: ['card', 'x'],
+      tag: 'div',
+    }),
+  ).toBe('div.card');
 });
 ```
 
@@ -871,8 +1132,9 @@ import {
   INHERITED_PROPS,
   STRUCTURE_PROPS,
   effectiveStyle,
+  round,
 } from '../../capture/structure.js';
-import type { Delta, StructureElement, StructureRect, StructureSnapshot } from '../../types.js';
+import type { Delta, StructureRect, StructureSnapshot } from '../../types.js';
 import { abstractLabel, label } from './label.js';
 import type { ElementMatch } from './match.js';
 
@@ -900,7 +1162,7 @@ export const KIND_RANK: Record<Delta['kind'], number> = {
 };
 
 const ATTRS = ['src', 'role', 'name'] as const;
-const round = (n: number) => Math.round(n * 100) / 100;
+const BORDER_COLOR = /^border-(top|right|bottom|left)-color$/;
 
 export function computeFacts(
   a: StructureSnapshot,
@@ -919,6 +1181,12 @@ export function computeFacts(
       abstract: abstractLabel(eb),
       order: j,
     });
+    // Text and attr deltas are labelled from the BASELINE side: a button's
+    // label is its name, and its name is usually its text, so labelling from
+    // the current side would read `button[name="Save changes"] text "Save"→
+    // "Save changes"` — the label would spoil the delta. Everything else is
+    // labelled from the current side, which is what the agent is looking at.
+    const elA = label(ea);
     const el = label(eb);
 
     // Masked stand-ins carry no content by construction; anything that leaks
@@ -926,7 +1194,7 @@ export function computeFacts(
     if (ea.tag !== 'masked' && eb.tag !== 'masked') {
       const ta = ea.text ?? '';
       const tb = eb.text ?? '';
-      if (ta !== tb) facts.push(fact({ kind: 'text', el, from: ta, to: tb }));
+      if (ta !== tb) facts.push(fact({ kind: 'text', el: elA, from: ta, to: tb }));
 
       for (const attr of ATTRS) {
         const from = ea[attr] ?? '';
@@ -934,14 +1202,20 @@ export function computeFacts(
         if (from === to) continue;
         // A name that is just the text restates the text delta.
         if (attr === 'name' && from === ta && to === tb) continue;
-        facts.push(fact({ kind: 'attr', el, attr, from, to }));
+        facts.push(fact({ kind: 'attr', el: elA, attr, from, to }));
       }
 
       for (const prop of STRUCTURE_PROPS) {
+        // An unstored border colour resolves to currentColor, so a plain
+        // `color` change would also report four phantom border-colour deltas
+        // on every borderless element. No border, no border-colour fact.
+        if (BORDER_COLOR.test(prop) && borderless(a, i, prop) && borderless(b, j, prop))
+          continue;
         const from = effectiveStyle(a, i, prop);
         const to = effectiveStyle(b, j, prop);
         if (from === to) continue;
-        if (INHERITED_PROPS.has(prop) && !originatesHere(a, b, i, j, aToB, prop)) continue;
+        if (INHERITED_PROPS.has(prop) && !originatesHere(a, b, i, j, aToB, prop))
+          continue;
         facts.push(fact({ kind: 'style', el, prop, from, to }));
       }
     }
@@ -986,6 +1260,11 @@ export function computeFacts(
   return sortFacts(facts);
 }
 
+/** That side of `border-<side>-color` has zero width on this element. */
+function borderless(s: StructureSnapshot, i: number, colorProp: string): boolean {
+  return effectiveStyle(s, i, colorProp.replace(/-color$/, '-width')) === '0px';
+}
+
 /** An inherited property changed on this element, not merely on an ancestor:
  *  either it stores its own value on a side, or its parents' effective values
  *  agree (so the difference starts here). */
@@ -1013,16 +1292,19 @@ export function sortFacts(facts: Fact[]): Fact[] {
     (x, y) =>
       x.order - y.order ||
       KIND_RANK[x.delta.kind] - KIND_RANK[y.delta.kind] ||
-      factKey(x.delta).localeCompare(factKey(y.delta)),
+      compareCodeUnits(factKey(x.delta), factKey(y.delta)),
   );
 }
 
 function factKey(d: Delta): string {
   return d.kind === 'style' ? d.prop : d.kind === 'attr' ? d.attr : '';
 }
-```
 
-(`StructureElement` is not needed in this file's imports; drop it if the linter flags it unused.)
+/** Byte-identical output across machines needs a locale-free order;
+ *  `localeCompare` is not one. */
+export const compareCodeUnits = (a: string, b: string): number =>
+  a < b ? -1 : a > b ? 1 : 0;
+```
 
 - [ ] **Step 5: Run the delta tests**
 
@@ -1043,7 +1325,10 @@ import { matchElements } from './match.js';
 import { synthesizeShifts } from './shift.js';
 
 const fixture = JSON.parse(
-  readFileSync(path.join(import.meta.dirname, '../__fixtures__/structural-corpus.json'), 'utf8'),
+  readFileSync(
+    path.join(import.meta.dirname, '../__fixtures__/structural-corpus.json'),
+    'utf8',
+  ),
 ) as { cases: Record<string, { structure: StructureSnapshot }> };
 const snap = (n: string) => fixture.cases[n].structure;
 const facts = (n: string): Fact[] => {
@@ -1053,40 +1338,61 @@ const facts = (n: string): Fact[] => {
 };
 const kinds = (fs: Fact[]) => fs.map((f) => f.delta.kind);
 
-test('an inserted banner collapses everything below it into one shift', () => {
+test('an inserted banner collapses the rows and canvas below it into one shift', () => {
+  // Measured on the real page: the button moves (0, −5) and the img
+  // (−69.83, +96) because it drops off the button's line; the five rows and
+  // the canvas move (0, +74). Only the latter six form a run.
   const fs = facts('inserted');
   const shifts = fs.filter((f) => f.delta.kind === 'shift');
   expect(shifts).toHaveLength(1);
-  expect(shifts[0].delta).toMatchObject({ kind: 'shift', after: 'div#banner', dx: 0, count: expect.any(Number) });
-  expect((shifts[0].delta as { dy: number }).dy).toBeGreaterThan(0);
-  expect(kinds(fs)).not.toContain('moved');
-  // the shift covers the moved elements' rects, so coverage can use it
-  expect(shifts[0].rects.length).toBeGreaterThanOrEqual(6);
+  expect(shifts[0].delta).toMatchObject({
+    kind: 'shift',
+    after: 'div#banner',
+    dx: 0,
+    dy: 74,
+    count: 6,
+  });
+  // the two odd moves stay as `moved`, nothing else does
+  const moved = fs
+    .filter((f) => f.delta.kind === 'moved')
+    .map((f) => (f.delta as { el: string }).el);
+  expect(moved).toEqual(['button[name="Save"]', 'img[name="Logo"]']);
+  // the shift covers the moved elements' rects (old and new), so coverage can use it
+  expect(shifts[0].rects).toHaveLength(12);
 });
 
 test('a removed row collapses the rows after it into one upward shift', () => {
+  // Measured: rows 2–5 and the canvas move (0, −37).
   const fs = facts('removed');
-  const shift = fs.find((f) => f.delta.kind === 'shift')!.delta as { after: string; dy: number };
-  expect(shift.after).toBe('div#row-1');
-  expect(shift.dy).toBeLessThan(0);
+  const shift = fs.find((f) => f.delta.kind === 'shift')!.delta;
+  expect(shift).toMatchObject({
+    kind: 'shift',
+    after: 'div#row-1',
+    dx: 0,
+    dy: -37,
+    count: 5,
+  });
+  expect(kinds(fs)).not.toContain('moved');
 });
 
 test('a margin change anchors the shift on the element with the style delta', () => {
+  // Measured: the rows and canvas move +20; the img, on the button's line, does not.
   const fs = facts('margin');
   expect(kinds(fs)).toContain('style');
-  const shift = fs.find((f) => f.delta.kind === 'shift')!.delta as { after: string };
-  expect(shift.after).toBe('button[name="Save"]');
+  const shift = fs.find((f) => f.delta.kind === 'shift')!.delta;
+  expect(shift).toMatchObject({ after: 'button[name="Save"]', dy: 20, count: 6 });
 });
 
 test('fewer than three equal moves stay as moved', () => {
-  const fs = facts('inserted').filter((f) => f.delta.kind !== 'shift');
   const a = snap('noop');
-  const b = snap('inserted');
+  const b = snap('removed');
   const raw = computeFacts(a, b, matchElements(a, b));
   const moved = raw.filter((f) => f.delta.kind === 'moved');
+  expect(moved.length).toBeGreaterThanOrEqual(3); // the run exists in the real data …
   const trimmed = [...raw.filter((f) => f.delta.kind !== 'moved'), ...moved.slice(0, 2)];
-  expect(kinds(synthesizeShifts(trimmed))).not.toContain('shift');
-  expect(fs.length).toBeGreaterThan(0);
+  const out = synthesizeShifts(trimmed); // … and with only two of it, no shift
+  expect(kinds(out)).not.toContain('shift');
+  expect(kinds(out).filter((k) => k === 'moved')).toHaveLength(2);
 });
 
 test('moves with no anchor before them are not collapsed', () => {
@@ -1131,7 +1437,9 @@ import { sortFacts, type Fact } from './deltas.js';
 const MIN_RUN = 3;
 
 export function synthesizeShifts(facts: Fact[]): Fact[] {
-  const anchors = facts.filter((f) => f.delta.kind !== 'moved' && f.delta.kind !== 'shift');
+  const anchors = facts.filter(
+    (f) => f.delta.kind !== 'moved' && f.delta.kind !== 'shift',
+  );
   const moved = facts.filter((f) => f.delta.kind === 'moved');
   if (moved.length < MIN_RUN) return facts;
 
@@ -1212,20 +1520,22 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 
-- Consumes: Task 1 `matchElements`; Task 2 `computeFacts`, `Fact`, `synthesizeShifts`, `SELF_PAINTING`, `label`.
+- Consumes: Task 1 `matchElements`, `checkVerdict` (test only); Task 2 `computeFacts`, `Fact`, `synthesizeShifts`, `SELF_PAINTING`.
 - Produces (coverage.ts): `computeCoverage(regions: ChangedRegion[], facts: Fact[]): { coverage: number; explained: 'full' | 'partial' | 'none'; unexplainedRegions: ChangedRegion[] }`; `intersects(r: ChangedRegion, rect: StructureRect): boolean`.
-- Produces (classify.ts): `classify(ctx: ClassifyContext): { classification: Classification; styleTags: StyleTag[] }`; `computeFlags(ctx: ClassifyContext, facts: Fact[], explained, classification): Flag[]`; `styleTagOf(prop: string): StyleTag`; where
+- Produces (classify.ts): `classify(ctx: ClassifyContext): { classification: Classification; styleTags: StyleTag[] }`; `computeFlags(ctx: ClassifyContext): Flag[]`; `styleTagOf(prop: string): StyleTag`; where
 
   ```ts
   export interface ClassifyContext {
-    baseline?: StructureSnapshot; current?: StructureSnapshot;
-    facts: Fact[]; explained: 'full' | 'partial' | 'none';
+    baseline?: StructureSnapshot;
+    current?: StructureSnapshot;
+    facts: Fact[];
+    explained: 'full' | 'partial' | 'none';
     unexplainedRegions: ChangedRegion[];
     pixels: { mismatchPixels: number; dimensionMismatch: boolean };
   }
   ```
 
-- Produces (summary.ts): `describeDelta(d: Delta): string`; `buildSummary(args: { classification; styleTags; deltas: Delta[]; deltaCount; regionCount; explained; flags; baseline?; current?; truncatedTail: number }): string` (≤ 300 chars).
+- Produces (summary.ts): `describeDelta(d: Delta): string`; `buildSummary(args: SummaryArgs): string` (≤ 300 chars) with `interface SummaryArgs { classification: Classification; styleTags: StyleTag[]; deltas: Delta[]; deltaCount: number; regionCount: number; explained: 'full' | 'partial' | 'none'; flags: Flag[]; baseline?: StructureSnapshot; current?: StructureSnapshot }`.
 - Produces (structural.ts):
 
   ```ts
@@ -1234,7 +1544,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     current?: StructureSnapshot;
     pixels: Pick<DiffOutput, 'mismatchPixels' | 'changedRegions' | 'dimensionMismatch'>;
     /** The exact tier-3 command; core does not know how the CLI is spelled. */
-    escalate: { crops: string };
+    escalate: { command: string };
   }
   export const MAX_DELTAS = 20;
   export function structuralDiff(input: StructuralDiffInput): StructuralVerdict;
@@ -1253,19 +1563,27 @@ import { MAX_DELTAS, structuralDiff, type StructuralDiffInput } from './structur
 
 interface Case {
   structure: StructureSnapshot;
-  pixels: { mismatchPixels: number; mismatchPercent: number; changedRegions: ChangedRegion[]; dimensionMismatch: boolean };
+  pixels: {
+    mismatchPixels: number;
+    mismatchPercent: number;
+    changedRegions: ChangedRegion[];
+    dimensionMismatch: boolean;
+  };
 }
 const fixture = JSON.parse(
-  readFileSync(path.join(import.meta.dirname, '__fixtures__/structural-corpus.json'), 'utf8'),
+  readFileSync(
+    path.join(import.meta.dirname, '__fixtures__/structural-corpus.json'),
+    'utf8',
+  ),
 ) as { viewport: { width: number; height: number }; cases: Record<string, Case> };
-// The same expectations the end-to-end corpus script asserts.
-const { OPERATORS } = (await import('../../../../scripts/structural-corpus/page.mjs')) as {
-  OPERATORS: Array<{
-    name: string;
-    expect: { classification: string; styleTags?: string[]; delta?: Record<string, unknown>; flags?: string[]; noDeltas?: boolean; shift?: boolean };
-  }>;
-};
-const ESC = { crops: 'jux diff noop x --crops' };
+// The same expectations — and the same checker — the end-to-end corpus
+// script uses, so the unit test and CI cannot drift apart.
+const { OPERATORS, checkVerdict } =
+  (await import('../../../../scripts/structural-corpus/page.mjs')) as {
+    OPERATORS: Array<{ name: string; expect: { classification: string } }>;
+    checkVerdict: (op: { name: string }, v: StructuralVerdict) => string[];
+  };
+const ESC = { command: 'jux diff noop x --crops' };
 const verdict = (name: string, over: Partial<StructuralDiffInput> = {}) =>
   structuralDiff({
     baseline: fixture.cases.noop.structure,
@@ -1278,21 +1596,20 @@ const verdict = (name: string, over: Partial<StructuralDiffInput> = {}) =>
 for (const op of OPERATORS) {
   test(`corpus operator '${op.name}' → ${op.expect.classification}`, () => {
     const v = verdict(op.name);
-    expect(v.classification).toBe(op.expect.classification);
-    if (op.expect.styleTags) expect(v.styleTags).toEqual(op.expect.styleTags);
-    if (op.expect.delta) expect(v.deltas).toContainEqual(expect.objectContaining(op.expect.delta));
-    for (const f of op.expect.flags ?? []) expect(v.flags).toContain(f);
-    if (op.expect.noDeltas) expect(v.deltas).toEqual([]);
-    if (op.expect.shift) expect(v.deltas.some((d) => d.kind === 'shift')).toBe(true);
-    if (op.name !== 'noop' && op.name !== 'canvas') expect(v.explained).toBe('full');
+    expect(checkVerdict(op, v)).toEqual([]);
     expect(JSON.stringify(v).length).toBeLessThanOrEqual(1500);
     expect(v.summary.length).toBeLessThanOrEqual(300);
   });
 }
 
-test('identical: no changed pixels, coverage 1, no flags beyond below-fold', () => {
+test('identical: no changed pixels, coverage 1, no flags (the page fits the viewport)', () => {
   const v = verdict('noop');
-  expect(v).toMatchObject({ classification: 'identical', coverage: 1, explained: 'full', deltaCount: 0 });
+  expect(v).toMatchObject({
+    classification: 'identical',
+    coverage: 1,
+    explained: 'full',
+    deltaCount: 0,
+  });
   expect(v.flags).toEqual([]);
   expect(v.summary).toMatch(/^identical/);
 });
@@ -1310,7 +1627,10 @@ test('hash equal, pixels elsewhere → render-drift', () => {
   const r = c.pixels.changedRegions[0];
   // move the region off the canvas onto the heading
   const h1 = c.structure.elements.find((e) => e.id === 'title')!.rect;
-  const pixels = { ...c.pixels, changedRegions: [{ ...r, x: h1.x, y: h1.y, width: 10, height: 10 }] };
+  const pixels = {
+    ...c.pixels,
+    changedRegions: [{ ...r, x: h1.x, y: h1.y, width: 10, height: 10 }],
+  };
   expect(verdict('canvas', { pixels }).classification).toBe('render-drift');
 });
 
@@ -1319,8 +1639,18 @@ test('the verdict JSON is byte-identical across calls and has a fixed key order'
   const b = JSON.stringify(verdict('inserted'));
   expect(a).toBe(b);
   expect(Object.keys(verdict('color'))).toEqual([
-    'schema', 'classification', 'styleTags', 'summary', 'deltas', 'deltaCount',
-    'coverage', 'explained', 'unexplainedRegions', 'flags', 'signature', 'escalate',
+    'schema',
+    'classification',
+    'styleTags',
+    'summary',
+    'deltas',
+    'deltaCount',
+    'coverage',
+    'explained',
+    'unexplainedRegions',
+    'flags',
+    'signature',
+    'escalate',
   ]);
 });
 
@@ -1335,7 +1665,12 @@ test('signature abstracts the element but keeps the values', () => {
   const j = a2.elements.findIndex((e) => e.testId === 'save');
   a2.elements[j].name = 'Submit';
   a2.elements[j].text = 'Submit';
-  const v2 = structuralDiff({ baseline: a2, current: b, pixels: fixture.cases.color.pixels, escalate: ESC });
+  const v2 = structuralDiff({
+    baseline: a2,
+    current: b,
+    pixels: fixture.cases.color.pixels,
+    escalate: ESC,
+  });
   expect(v2.signature).toBe(v1.signature);
   expect(verdict('background').signature).not.toBe(v1.signature);
   expect(v1.signature).toMatch(/^[0-9a-f]{64}$/);
@@ -1344,10 +1679,23 @@ test('signature abstracts the element but keeps the values', () => {
 test('deltas are capped at MAX_DELTAS; deltaCount keeps the total', () => {
   const a = fixture.cases.noop.structure;
   const b = structuredClone(a);
-  for (const e of b.elements) e.styles = { ...e.styles, opacity: '0.5' };
-  const v = structuralDiff({ baseline: a, current: b, pixels: fixture.cases.color.pixels, escalate: ESC });
+  // 10 elements × 3 non-inherited props = 30 deltas, past the cap of 20
+  for (const e of b.elements) {
+    e.styles = {
+      ...e.styles,
+      opacity: '0.5',
+      transform: 'matrix(1, 0, 0, 1, 1, 0)',
+      'box-shadow': 'rgb(0, 0, 0) 0px 1px 2px 0px',
+    };
+  }
+  const v = structuralDiff({
+    baseline: a,
+    current: b,
+    pixels: fixture.cases.color.pixels,
+    escalate: ESC,
+  });
   expect(v.deltas).toHaveLength(MAX_DELTAS);
-  expect(v.deltaCount).toBe(b.elements.length);
+  expect(v.deltaCount).toBe(b.elements.length * 3);
 });
 
 // Review Focus 3
@@ -1374,8 +1722,14 @@ test('missing structure but zero changed pixels is still identical', () => {
 
 // Review Focus 1
 test('different viewports → dimension-change naming both sizes, exit-worthy, no element blame', () => {
-  const current = { ...fixture.cases.color.structure, viewport: { width: 390, height: 844 } };
-  const v = verdict('color', { current, pixels: { mismatchPixels: 0, changedRegions: [], dimensionMismatch: true } });
+  const current = {
+    ...fixture.cases.color.structure,
+    viewport: { width: 390, height: 844 },
+  };
+  const v = verdict('color', {
+    current,
+    pixels: { mismatchPixels: 0, changedRegions: [], dimensionMismatch: true },
+  });
   expect(v.classification).toBe('dimension-change');
   expect(v.summary).toContain('640×480');
   expect(v.summary).toContain('390×844');
@@ -1390,7 +1744,12 @@ test('one side truncated → structure-truncated; the cut tail is a count, not d
     elements: a.elements.slice(0, a.elements.length - 3),
     truncated: { kept: a.elements.length - 3, total: a.elements.length },
   };
-  const v = structuralDiff({ baseline: a, current: b, pixels: fixture.cases.color.pixels, escalate: ESC });
+  const v = structuralDiff({
+    baseline: a,
+    current: b,
+    pixels: fixture.cases.color.pixels,
+    escalate: ESC,
+  });
   expect(v.flags).toContain('structure-truncated');
   expect(v.deltas.filter((d) => d.kind === 'removed')).toEqual([]);
   expect(v.summary).toMatch(/truncated/);
@@ -1402,17 +1761,30 @@ test('content taller than the viewport on either side → below-fold', () => {
   expect(verdict('color').flags).not.toContain('below-fold');
 });
 
-test('large-reflow when a shift is ≥10 elements or ≥50px', () => {
-  const a = fixture.cases.noop.structure;
-  const b = structuredClone(fixture.cases.inserted.structure);
-  const banner = b.elements.find((e) => e.id === 'banner')!;
-  const bump = 60;
-  for (const e of b.elements) if (e.rect.y > banner.rect.y) e.rect = { ...e.rect, y: e.rect.y + bump };
-  const v = structuralDiff({ baseline: a, current: b, pixels: fixture.cases.inserted.pixels, escalate: ESC });
+test('large-reflow only when a shift is ≥10 elements or |dy| ≥ 50px', () => {
+  // Measured: `removed` shifts 5 elements by −37 — under both thresholds.
+  expect(verdict('removed').flags).not.toContain('large-reflow');
+  // Push the same run 30px further (−67): past the px threshold.
+  const b = structuredClone(fixture.cases.removed.structure);
+  const row1y = fixture.cases.noop.structure.elements.find((e) => e.id === 'row-1')!.rect
+    .y;
+  for (const e of b.elements)
+    if (e.rect.y >= row1y) e.rect = { ...e.rect, y: e.rect.y - 30 };
+  const v = structuralDiff({
+    baseline: fixture.cases.noop.structure,
+    current: b,
+    pixels: fixture.cases.removed.pixels,
+    escalate: ESC,
+  });
+  expect(v.deltas).toContainEqual(
+    expect.objectContaining({ kind: 'shift', dy: -67, count: 5 }),
+  );
   expect(v.flags).toContain('large-reflow');
+  // Measured: `inserted` shifts 6 by +74 — past the px threshold on its own.
+  expect(verdict('inserted').flags).toContain('large-reflow');
 });
 
-test('escalate carries the caller\'s command verbatim', () => {
+test("escalate carries the caller's command verbatim", () => {
   expect(verdict('color').escalate).toEqual(ESC);
 });
 
@@ -1425,18 +1797,34 @@ test('5,000-element pair diffs well under budget', () => {
     elements: [
       ...base.elements,
       ...Array.from({ length: 5000 - base.elements.length }, (_, k) => ({
-        ...row, parent: main, id: `big-${k}`, path: `${base.elements[main].path}>div#big-${k}`,
-        rect: { ...row.rect, y: row.rect.y + k * 20 }, ...mut(k),
+        ...row,
+        parent: main,
+        id: `big-${k}`,
+        path: `${base.elements[main].path}>div#big-${k}`,
+        rect: { ...row.rect, y: row.rect.y + k * 20 },
+        ...mut(k),
       })),
     ],
   });
   const a = big(() => ({}));
   const b = big((k) => (k % 50 === 0 ? { text: `changed ${k}` } : {}));
-  const t = performance.now();
-  const v = structuralDiff({ baseline: a, current: b, pixels: fixture.cases.color.pixels, escalate: ESC });
-  const ms = performance.now() - t;
+  const run = () =>
+    structuralDiff({
+      baseline: a,
+      current: b,
+      pixels: fixture.cases.color.pixels,
+      escalate: ESC,
+    });
+  expect(run().deltaCount).toBeGreaterThan(50);
+  // One warm-up (JIT), then best of 3: a cold run on a contended CI runner
+  // must not flake a bound that is 5× the real budget.
+  let ms = Infinity;
+  for (let k = 0; k < 3; k++) {
+    const t = performance.now();
+    run();
+    ms = Math.min(ms, performance.now() - t);
+  }
   console.log(`structuralDiff 5000×5000: ${ms.toFixed(1)} ms (target < 50)`);
-  expect(v.deltaCount).toBeGreaterThan(50);
   expect(ms).toBeLessThan(250);
 });
 ```
@@ -1477,7 +1865,8 @@ export function intersects(r: ChangedRegion, rect: StructureRect): boolean {
 }
 
 export function computeCoverage(regions: ChangedRegion[], facts: Fact[]): Coverage {
-  if (regions.length === 0) return { coverage: 1, explained: 'full', unexplainedRegions: [] };
+  if (regions.length === 0)
+    return { coverage: 1, explained: 'full', unexplainedRegions: [] };
   const rects = facts.flatMap((f) => f.rects);
   let total = 0;
   let explained = 0;
@@ -1532,9 +1921,12 @@ const TAG_ORDER: StyleTag[] = ['color', 'typography', 'spacing', 'border', 'effe
 
 export function styleTagOf(prop: string): StyleTag {
   if (/^(padding|margin)-|^gap$/.test(prop)) return 'spacing';
-  if (/^border-.*-(width|radius)$/.test(prop) || /^border-.*-color$/.test(prop)) return 'border';
-  if (/^(font-|line-height|letter-spacing|text-|content$)/.test(prop)) return 'typography';
-  if (/^(opacity|transform|box-shadow|z-index|stroke-width)$/.test(prop)) return 'effects';
+  if (/^border-.*-(width|radius)$/.test(prop) || /^border-.*-color$/.test(prop))
+    return 'border';
+  if (/^(font-|line-height|letter-spacing|text-|content$)/.test(prop))
+    return 'typography';
+  if (/^(opacity|transform|box-shadow|z-index|stroke-width)$/.test(prop))
+    return 'effects';
   return 'color'; // color, background-*, fill, stroke
 }
 
@@ -1576,7 +1968,8 @@ export function classify(ctx: ClassifyContext): {
   if (primary[0] === 'style') return { classification: 'style-only', styleTags };
   if (primary[0] === 'attr') return { classification: 'attr-only', styleTags: none };
   if (kinds.has('shift')) return { classification: 'reflow', styleTags: none };
-  if (kinds.has('moved') || kinds.has('resized')) return { classification: 'geometry', styleTags: none };
+  if (kinds.has('moved') || kinds.has('resized'))
+    return { classification: 'geometry', styleTags: none };
   return { classification: 'unknown', styleTags: none };
 }
 
@@ -1617,7 +2010,13 @@ Create `packages/core/src/diff/structural/summary.ts`:
 // Deterministic prose. No model, no adjectives: the classification, the first
 // few deltas, and whether the pixels are accounted for. Hard cap 300 chars.
 
-import type { Classification, Delta, Flag, StructureSnapshot, StyleTag } from '../../types.js';
+import type {
+  Classification,
+  Delta,
+  Flag,
+  StructureSnapshot,
+  StyleTag,
+} from '../../types.js';
 
 export const MAX_SUMMARY = 300;
 const LEAD_DELTAS = 3;
@@ -1664,7 +2063,10 @@ export function buildSummary(a: SummaryArgs): string {
 
   if (a.classification === 'identical') {
     parts.push('identical: no changed pixels');
-  } else if (a.flags.includes('no-baseline-structure') || a.flags.includes('no-current-structure')) {
+  } else if (
+    a.flags.includes('no-baseline-structure') ||
+    a.flags.includes('no-current-structure')
+  ) {
     const side = a.flags.includes('no-baseline-structure') ? 'baseline' : 'current';
     parts.push(
       `${head}: no ${side} structure, so nothing explains the pixels; re-snap (or re-approve) with structure capture enabled`,
@@ -1679,7 +2081,8 @@ export function buildSummary(a: SummaryArgs): string {
     parts.push(`${head}: no structural change found`);
   } else {
     const lead = a.deltas.slice(0, LEAD_DELTAS).map(describeDelta).join('; ');
-    const more = a.deltaCount > LEAD_DELTAS ? ` (+${a.deltaCount - LEAD_DELTAS} more)` : '';
+    const more =
+      a.deltaCount > LEAD_DELTAS ? ` (+${a.deltaCount - LEAD_DELTAS} more)` : '';
     parts.push(`${head}: ${lead}${more}`);
   }
 
@@ -1729,7 +2132,7 @@ export interface StructuralDiffInput {
   current?: StructureSnapshot;
   pixels: Pick<DiffOutput, 'mismatchPixels' | 'changedRegions' | 'dimensionMismatch'>;
   /** The exact tier-3 command; core does not know how the CLI is spelled. */
-  escalate: { crops: string };
+  escalate: { command: string };
 }
 
 export const MAX_DELTAS = 20;
@@ -1749,7 +2152,9 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
   const facts: Fact[] = comparable
     ? synthesizeShifts(
         computeFacts(baseline, current, matchElements(baseline, current)).filter(
-          (f) => !(f.delta.kind === 'removed' && current.truncated) && !(f.delta.kind === 'added' && baseline.truncated),
+          (f) =>
+            !(f.delta.kind === 'removed' && current.truncated) &&
+            !(f.delta.kind === 'added' && baseline.truncated),
         ),
       )
     : [];
@@ -1761,7 +2166,10 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
     facts,
     explained: cov.explained,
     unexplainedRegions: cov.unexplainedRegions,
-    pixels: { mismatchPixels: pixels.mismatchPixels, dimensionMismatch: pixels.dimensionMismatch },
+    pixels: {
+      mismatchPixels: pixels.mismatchPixels,
+      dimensionMismatch: pixels.dimensionMismatch,
+    },
   };
   const { classification, styleTags } = classify(ctx);
   const flags = computeFlags(ctx);
@@ -1789,7 +2197,7 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
     unexplainedRegions: cov.unexplainedRegions,
     flags,
     signature: signature(facts),
-    escalate: { crops: input.escalate.crops },
+    escalate: { command: input.escalate.command },
   };
 }
 
@@ -1802,7 +2210,11 @@ function signature(facts: Fact[]): string {
       const d = f.delta;
       const rest =
         d.kind === 'text' || d.kind === 'style' || d.kind === 'attr'
-          ? [d.kind === 'style' ? d.prop : d.kind === 'attr' ? d.attr : 'text', d.from, d.to]
+          ? [
+              d.kind === 'style' ? d.prop : d.kind === 'attr' ? d.attr : 'text',
+              d.from,
+              d.to,
+            ]
           : d.kind === 'moved'
             ? ['moved', d.dx, d.dy]
             : d.kind === 'resized'
@@ -1821,7 +2233,7 @@ Export from `packages/core/src/index.ts`, after the structure-sidecar exports:
 
 ```ts
 // Structural diff: two sidecars + a pixel diff → the tier-0 verdict.
-export { structuralDiff, MAX_DELTAS, type StructuralDiffInput } from './diff/structural.js';
+export { structuralDiff, type StructuralDiffInput } from './diff/structural.js';
 export { describeDelta } from './diff/structural/summary.js';
 ```
 
@@ -1850,7 +2262,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `packages/core/src/index.ts` (export `compareSnaps`, `SnapSide`, `SnapComparison`)
 - Create: `packages/cli/src/exit-codes.ts`
 - Create: `packages/cli/src/commands/diff.ts`
-- Modify: `packages/cli/src/index.ts` (USAGE, option `crops`; `case 'diff'`)
+- Modify: `packages/cli/src/index.ts` (lazy command imports, USAGE, option `crops`; `case 'diff'`; crash exit 3)
+- Create: `scripts/structural-corpus/no-playwright.mjs`
 - Create: `scripts/check-diff.mjs`
 - Modify: `.github/workflows/ci.yml` (after `jux snap end to end`)
 
@@ -1860,12 +2273,23 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (compare.ts):
 
   ```ts
-  export interface SnapSide { image: Buffer; structure?: StructureSnapshot }
-  export interface SnapComparison { pixels: DiffOutput; verdict: StructuralVerdict }
-  export function compareSnaps(a: SnapSide, b: SnapSide, escalate: { crops: string }): Promise<SnapComparison>;
+  export interface SnapSide {
+    image: Buffer;
+    structure?: StructureSnapshot;
+  }
+  export interface SnapComparison {
+    pixels: DiffOutput;
+    verdict: StructuralVerdict;
+  }
+  export function compareSnaps(
+    a: SnapSide,
+    b: SnapSide,
+    escalate: { command: string },
+  ): Promise<SnapComparison>;
   ```
 
-- Produces (cli diff.ts): `diffCommand(a: string | undefined, b: string | undefined, flags: DiffFlags): Promise<number>` with `interface DiffFlags { json?: boolean; project?: string; crops?: boolean; prefix?: boolean }`; `readSnap(dir: string, name: string): Promise<ReadSnap>` where `type ReadSnap = { kind: 'ok'; side: SnapSide } | { kind: 'missing'; image: string } | { kind: 'corrupt'; file: string; error: string }` (an absent sidecar is `ok` with no `structure`; a sidecar that exists but will not gunzip/parse is `corrupt`); `snapsDir(project?: string): string`; `EXIT = { clean: 0, review: 1, usage: 2, failure: 3 } as const` in `packages/cli/src/exit-codes.ts` (new; used by `diff` and `snap` only). Stdout `--json`: the `StructuralVerdict` exactly. Human: the summary, then one `  - ` line per delta via `describeDelta`, then `flags:` line, then `escalate:` line. The `--prefix` branch is implemented in Task 6; here it returns 2 with `jux diff: --prefix is not available yet` — **no**: to avoid a dead option, do not add `prefix` to parseArgs until Task 6. Add only `crops` here.
+- Produces (cli diff.ts): `diffCommand(a: string | undefined, b: string | undefined, flags: DiffFlags): Promise<number>` with `interface DiffFlags { json?: boolean; project?: string; crops?: boolean; prefix?: boolean }`; `readSnap(dir: string, name: string): Promise<ReadSnap>` where `type ReadSnap = { kind: 'ok'; side: SnapSide } | { kind: 'missing'; image: string } | { kind: 'corrupt'; file: string; error: string }` (an absent sidecar is `ok` with no `structure`; a sidecar that exists but will not gunzip/parse is `corrupt`); `snapsDir(project?: string): string`; `EXIT = { clean: 0, review: 1, usage: 2, failure: 3 } as const` in `packages/cli/src/exit-codes.ts` (new; used by `diff` and `snap` only). Stdout `--json`: the `StructuralVerdict` exactly. Human: the summary, then one ` -` line per delta via `describeDelta`, then a `flags:` line, then a `next:` line with `escalate.command`. `prefix` is not added to `DiffFlags` or parseArgs until Task 6 (no dead options); only `crops` is added here.
+- Produces (cli index.ts): every command is lazy-imported inside the `switch` (`const { diffCommand } = await import('./commands/diff.js')`), so `jux diff` never loads playwright and every command starts faster; `main().catch` exits `EXIT.failure` (3) — the only behaviour change for existing commands.
 
 - [ ] **Step 1: Implement `compare.ts`**
 
@@ -1893,7 +2317,7 @@ export interface SnapComparison {
 export async function compareSnaps(
   a: SnapSide,
   b: SnapSide,
-  escalate: { crops: string },
+  escalate: { command: string },
 ): Promise<SnapComparison> {
   const pixels = await diffImages(a.image, b.image);
   const verdict = structuralDiff({
@@ -1971,7 +2395,9 @@ export type ReadSnap =
  *  not decode is a tool failure: it is not something the agent can reason
  *  around, so it is reported as one rather than silently dropped. */
 export async function readSnap(dir: string, ref: string): Promise<ReadSnap> {
-  const image = ref.endsWith('.webp') ? path.resolve(ref) : path.join(dir, `${snapName(ref, ref)}.webp`);
+  const image = ref.endsWith('.webp')
+    ? path.resolve(ref)
+    : path.join(dir, `${snapName(ref, ref)}.webp`);
   const bytes = await readFile(image).catch(() => null);
   if (!bytes) return { kind: 'missing', image };
   const sidecar = image.replace(/\.webp$/, '.structure.json.gz');
@@ -1987,9 +2413,10 @@ export async function readSnap(dir: string, ref: string): Promise<ReadSnap> {
 export function formatVerdict(v: StructuralVerdict): string {
   const lines = [v.summary];
   for (const d of v.deltas) lines.push(`  - ${describeDelta(d)}`);
-  if (v.deltaCount > v.deltas.length) lines.push(`  …and ${v.deltaCount - v.deltas.length} more`);
+  if (v.deltaCount > v.deltas.length)
+    lines.push(`  …and ${v.deltaCount - v.deltas.length} more`);
   if (v.flags.length) lines.push(`flags: ${v.flags.join(', ')}`);
-  if (v.classification !== 'identical') lines.push(`pixels: ${v.escalate.crops}`);
+  if (v.classification !== 'identical') lines.push(`pixels: ${v.escalate.command}`);
   return lines.join('\n') + '\n';
 }
 
@@ -2031,7 +2458,10 @@ async function loadSides(
   b: string,
 ): Promise<{ sides: [SnapSide, SnapSide] } | { code: number }> {
   const [ra, rb] = await Promise.all([readSnap(dir, a), readSnap(dir, b)]);
-  for (const [ref, r] of [[a, ra], [b, rb]] as const) {
+  for (const [ref, r] of [
+    [a, ra],
+    [b, rb],
+  ] as const) {
     if (r.kind === 'missing') {
       process.stderr.write(
         `jux diff: no snap named '${ref}' in ${dir}. Run \`jux snap <url> --as ${ref}\` first.\n`,
@@ -2053,20 +2483,63 @@ async function diffTwo(a: string, b: string, flags: DiffFlags): Promise<number> 
   const loaded = await loadSides(dir, a, b);
   if ('code' in loaded) return loaded.code;
   const [sa, sb] = loaded.sides;
-  const { verdict } = await compareSnaps(sa, sb, { crops: `jux diff ${a} ${b} --crops` });
-  process.stdout.write(flags.json ? JSON.stringify(verdict) + '\n' : formatVerdict(verdict));
+  const { verdict } = await compareSnaps(sa, sb, {
+    command: `jux diff ${a} ${b} --crops`,
+  });
+  process.stdout.write(
+    flags.json ? JSON.stringify(verdict) + '\n' : formatVerdict(verdict),
+  );
   return verdict.classification === 'identical' ? EXIT.clean : EXIT.review;
 }
 ```
 
 In `packages/cli/src/index.ts`:
 
-- import: `import { diffCommand } from './commands/diff.js';`
+- Remove the six static `import { xCommand } from './commands/x.js';` lines. Every command is imported inside the `switch` instead, so a command loads only its own dependencies — `run` and `init` import playwright at module scope, and without this `jux diff` would load a browser driver it never uses. Replace the `switch` with:
+
+  ```ts
+  switch (command) {
+    case 'init': {
+      const { initCommand } = await import('./commands/init.js');
+      return initCommand(values as never);
+    }
+    case 'run': {
+      const { runCommand } = await import('./commands/run.js');
+      return runCommand(values as never);
+    }
+    case 'approve': {
+      const { approveCommand } = await import('./commands/approve.js');
+      return approveCommand(values as never);
+    }
+    case 'check': {
+      const { checkCommand } = await import('./commands/check.js');
+      return checkCommand(values as never);
+    }
+    case 'handoff': {
+      const { handoffCommand } = await import('./commands/handoff.js');
+      return handoffCommand(positionals[0], values as never);
+    }
+    case 'snap': {
+      const { snapCommand } = await import('./commands/snap.js');
+      return snapCommand(positionals[0], values as never);
+    }
+    case 'diff': {
+      const { diffCommand } = await import('./commands/diff.js');
+      return diffCommand(positionals[0], positionals[1], values as never);
+    }
+    default:
+      process.stderr.write(`jux: unknown command '${command}'\n${USAGE}`);
+      return 2;
+  }
+  ```
+
+- `main().catch`: change `process.exit(1)` to `process.exit(3)` with the comment `// An unhandled throw is a tool failure, not "needs review".` — the only behaviour change to existing commands in this PR (usage stays 2, their own return codes are untouched). Add `import { EXIT } from './exit-codes.js';` and use `EXIT.failure` there.
 - USAGE, after the `snap` line in the command list: `  jux diff <a> <b> [--json]      what changed between two snaps: tier-0 verdict, no browser`
 - USAGE, after the `snap` section, add:
 
   ```
   diff
+    <a>, <b>                       snap names (from --as), or paths to .webp files
     --json                         the verdict as juxtapose.verdict/v1 JSON (byte-stable)
     exit 0 identical · 1 different · 2 usage · 3 could not read an input
 
@@ -2077,9 +2550,27 @@ In `packages/cli/src/index.ts`:
   ```
 
 - parseArgs options: `crops: { type: 'boolean', default: false },`
-- switch: `case 'diff': return diffCommand(positionals[0], positionals[1], values as never);`
 
 - [ ] **Step 3: Write the end-to-end check (Review Focus 3, exit codes, no browser)**
+
+Create `scripts/structural-corpus/no-playwright.mjs` — a module-customization hook that turns any resolution of playwright into a crash, so "jux diff imports nothing from playwright" is checked, not asserted. It is a resolve hook (not a `Module._load` patch) because core reaches playwright through an ESM `import('playwright')`, which never passes through the CJS loader:
+
+```js
+// NODE_OPTIONS=--import <this file>: registers itself as a resolve hook, so
+// any `import`/`import()` of the playwright package throws. A command that
+// must not touch the browser driver cannot then do so silently.
+import { register } from 'node:module';
+import { isMainThread } from 'node:worker_threads';
+
+if (isMainThread) register(import.meta.url);
+
+export async function resolve(specifier, context, next) {
+  if (/^playwright(-core)?(\/|$)/.test(specifier)) {
+    throw new Error(`no-playwright probe: '${specifier}' was loaded`);
+  }
+  return next(specifier, context);
+}
+```
 
 Create `scripts/check-diff.mjs`:
 
@@ -2092,13 +2583,14 @@ Create `scripts/check-diff.mjs`:
 // Run after `pnpm build`: node scripts/check-diff.mjs
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { startCorpusServer } from './structural-corpus/server.mjs';
 
 const exec = promisify(execFile);
 const cli = path.resolve(import.meta.dirname, '../packages/cli/dist/index.js');
+const probe = path.resolve(import.meta.dirname, 'structural-corpus/no-playwright.mjs');
 const project = mkdtempSync(path.join(tmpdir(), 'jux-diff-'));
 const server = await startCorpusServer();
 let failed = 0;
@@ -2117,7 +2609,8 @@ const jux = async (args, env = {}) => {
     return { code: e.code, out: e.stdout, err: e.stderr };
   }
 };
-const snap = (op, name, env) => jux(['snap', `${server.url}/?op=${op}`, '--as', name, '--json'], env);
+const snap = (op, name, env) =>
+  jux(['snap', `${server.url}/op/${op}`, '--as', name, '--json'], env);
 
 await snap('noop', 'before');
 await snap('noop', 'same');
@@ -2125,39 +2618,86 @@ await snap('color', 'after');
 await snap('color', 'bare', { JUXTAPOSE_NO_STRUCTURE: '1' });
 
 const same = await jux(['diff', 'before', 'same', '--json']);
-check(same.code === 0 && JSON.parse(same.out).classification === 'identical', 'identical snaps exit 0');
+check(
+  same.code === 0 && JSON.parse(same.out).classification === 'identical',
+  'identical snaps exit 0',
+);
 
-// No browser: the diff must not even try to find one.
+// No browser, and no browser DRIVER: the probe makes loading playwright a
+// crash (exit 3), so exit 1 here proves the import never happened.
 const noBrowser = await jux(['diff', 'before', 'after', '--json'], {
   PLAYWRIGHT_BROWSERS_PATH: '/nonexistent',
+  NODE_OPTIONS: `--import ${probe}`,
 });
-check(noBrowser.code === 1, 'different snaps exit 1 with no browser available');
+check(noBrowser.code === 1, 'different snaps exit 1 without loading playwright');
+const probeWorks = await jux(['snap', `${server.url}/op/noop`, '--as', 'probe'], {
+  NODE_OPTIONS: `--import ${probe}`,
+});
+check(
+  probeWorks.code === 3 && /no-playwright probe/.test(probeWorks.err),
+  'the probe itself fires for a command that does load playwright',
+);
+
+// Paths work as well as names.
+const byPath = await jux([
+  'diff',
+  path.join(project, '.juxtapose/snaps/before.webp'),
+  path.join(project, '.juxtapose/snaps/after.webp'),
+  '--json',
+]);
+check(
+  byPath.code === 1 && byPath.out === noBrowser.out,
+  '.webp paths give the same verdict as names',
+);
 const v = JSON.parse(noBrowser.out);
-check(v.schema === 'juxtapose.verdict/v1' && v.classification === 'style-only', 'verdict is versioned and classified');
-check(v.deltas.some((d) => d.kind === 'style' && d.prop === 'color'), 'verdict names the colour delta');
+check(
+  v.schema === 'juxtapose.verdict/v1' && v.classification === 'style-only',
+  'verdict is versioned and classified',
+);
+check(
+  v.deltas.some((d) => d.kind === 'style' && d.prop === 'color'),
+  'verdict names the colour delta',
+);
 check(v.explained === 'full', 'colour change fully explains the pixels');
 
 const again = await jux(['diff', 'before', 'after', '--json']);
 check(again.out === noBrowser.out, 'JSON is byte-identical across runs');
 
 const human = await jux(['diff', 'before', 'after']);
-check(/style-only \(color\)/.test(human.out) && /- button\[name="Save"\] color/.test(human.out), 'human output leads with the summary and lists deltas');
+check(
+  /style-only \(color\)/.test(human.out) &&
+    /- button\[name="Save"\] color/.test(human.out),
+  'human output leads with the summary and lists deltas',
+);
 
 const bare = await jux(['diff', 'before', 'bare', '--json']);
 const vb = JSON.parse(bare.out);
 check(
-  bare.code === 1 && vb.flags.includes('no-current-structure') && /re-snap/.test(vb.summary),
+  bare.code === 1 &&
+    vb.flags.includes('no-current-structure') &&
+    /re-snap/.test(vb.summary),
   'a side without a sidecar degrades and says how to fix it',
 );
 
 const missing = await jux(['diff', 'before', 'nope']);
-check(missing.code === 2 && /no snap named 'nope'/.test(missing.err) && /jux snap <url> --as nope/.test(missing.err), 'missing snap is usage (2) naming the fix');
+check(
+  missing.code === 2 &&
+    /no snap named 'nope'/.test(missing.err) &&
+    /jux snap <url> --as nope/.test(missing.err),
+  'missing snap is usage (2) naming the fix',
+);
 
 const one = await jux(['diff', 'before']);
-check(one.code === 2 && /jux snap <url> --as before/.test(one.err), 'one argument is usage (2) with the next command');
+check(
+  one.code === 2 && /jux snap <url> --as before/.test(one.err),
+  'one argument is usage (2) with the next command',
+);
 
 const crops = await jux(['diff', 'before', 'after', '--crops']);
-check(crops.code === 2 && /not available/.test(crops.err) && /before\.webp/.test(crops.err), '--crops says it is unavailable and names the images');
+check(
+  crops.code === 2 && /not available/.test(crops.err) && /before\.webp/.test(crops.err),
+  '--crops says it is unavailable and names the images',
+);
 
 // Exit 3: inputs that exist but cannot be read are tool failures, never
 // "different" — a script must not approve on them.
@@ -2165,36 +2705,42 @@ const snaps = path.join(project, '.juxtapose/snaps');
 await snap('color', 'corrupt');
 writeFileSync(path.join(snaps, 'corrupt.structure.json.gz'), 'not gzip');
 const corrupt = await jux(['diff', 'before', 'corrupt', '--json']);
-check(corrupt.code === 3 && /cannot read .*corrupt\.structure\.json\.gz/.test(corrupt.err) && /jux snap <url> --as corrupt/.test(corrupt.err), 'an undecodable sidecar exits 3 naming the file and the fix');
+check(
+  corrupt.code === 3 &&
+    /cannot read .*corrupt\.structure\.json\.gz/.test(corrupt.err) &&
+    /jux snap <url> --as corrupt/.test(corrupt.err),
+  'an undecodable sidecar exits 3 naming the file and the fix',
+);
 writeFileSync(path.join(snaps, 'badimg.webp'), 'not an image');
 const badimg = await jux(['diff', 'before', 'badimg', '--json']);
-check(badimg.code === 3 && /jux diff: failed/.test(badimg.err), 'an undecodable image exits 3');
+check(
+  badimg.code === 3 && /jux diff: failed/.test(badimg.err),
+  'an undecodable image exits 3',
+);
 
 server.close();
 rmSync(project, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);
 ```
 
-(Add `writeFileSync` to the `node:fs` import at the top of the script.)
-
 In `.github/workflows/ci.yml`, after the `jux snap end to end` step:
 
 ```yaml
-      - name: jux diff end to end
-        run: node scripts/check-diff.mjs
+- name: jux diff end to end
+  run: node scripts/check-diff.mjs
 ```
 
 - [ ] **Step 4: Build and run**
 
 Run: `pnpm build && pnpm typecheck && pnpm lint && node scripts/check-diff.mjs`
-Expected: every line `ok` — that script pins all four codes for `diff` (0 identical, 1 different, 2 missing name / unknown snap / `--crops`, 3 corrupt sidecar / undecodable image). Also confirm `grep -l playwright packages/cli/dist/commands/diff.js packages/core/dist/diff/compare.js` prints nothing.
+Expected: every line `ok` — that script pins all four codes for `diff` (0 identical, 1 different, 2 missing name / unknown snap / `--crops`, 3 corrupt sidecar / undecodable image) and proves playwright is never loaded. Also run `pnpm vitest run packages/cli` to confirm `check.test.ts` still passes with the lazy imports, and `node packages/cli/dist/index.js run --help >/dev/null; echo $?` prints 0.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 pnpm format
-git add packages/core packages/cli scripts/check-diff.mjs .github/workflows/ci.yml
-git commit -m "feat(cli): jux diff — tier-0 verdict for two snaps, no browser
+git add packages/core packages/cli scripts/check-diff.mjs scripts/structural-corpus/no-playwright.mjs .github/workflows/ci.yml
+git commit -m "feat(cli): jux diff — tier-0 verdict for two snaps, no browser; lazy command imports
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -2226,7 +2772,8 @@ import path from 'node:path';
 import { expect, test, vi } from 'vitest';
 import type { Browser } from 'playwright';
 import { encodeStructure } from '../capture/structure.js';
-import type { BaselineStore, StructureSnapshot } from '../types.js';
+import { hashImage } from '../baseline/status.js';
+import type { BaselineStore, ChangedRegion, StructureSnapshot } from '../types.js';
 import { runCapture } from './run.js';
 
 // Drive runCapture with a stubbed pool: we test the judge, not the browser.
@@ -2239,21 +2786,33 @@ vi.mock('../capture/pool.js', () => ({
 vi.mock('../capture/env.js', () => ({
   captureEnv: () => ({ browser: 'x', os: 'y', encoder: 'z' }),
 }));
-vi.mock('../diff/diff.js', async (orig) => ({
-  ...(await orig<typeof import('../diff/diff.js')>()),
-  diffImages: async () => ({
-    mismatchPixels: 10,
-    mismatchPercent: 0.1,
-    changedRegions: [{ x: 16, y: 60, width: 60, height: 30 }],
-    dimensionMismatch: false,
-  }),
-}));
-
+// The pixel diff is the real one from the fixture (the `color` operator
+// against the base), not a hand-written region list.
 const fixture = JSON.parse(
-  readFileSync(path.join(import.meta.dirname, '../diff/__fixtures__/structural-corpus.json'), 'utf8'),
-) as { cases: Record<string, { structure: StructureSnapshot }> };
+  readFileSync(
+    path.join(import.meta.dirname, '../diff/__fixtures__/structural-corpus.json'),
+    'utf8',
+  ),
+) as {
+  cases: Record<
+    string,
+    {
+      structure: StructureSnapshot;
+      pixels: {
+        mismatchPixels: number;
+        mismatchPercent: number;
+        changedRegions: ChangedRegion[];
+        dimensionMismatch: boolean;
+      };
+    }
+  >;
+};
 const BASE = fixture.cases.noop.structure;
 const CUR = fixture.cases.color.structure;
+vi.mock('../diff/diff.js', async (orig) => ({
+  ...(await orig<typeof import('../diff/diff.js')>()),
+  diffImages: async () => fixture.cases.color.pixels,
+}));
 
 function current(storyId: string) {
   return {
@@ -2266,7 +2825,10 @@ function current(storyId: string) {
   };
 }
 
-function store(sidecar: 'ok' | 'missing' | 'corrupt' | 'unsupported'): BaselineStore {
+const meta = { commit: 'c', approvedBy: 'a', approvedAt: 't' };
+function store(sidecar: 'ok' | 'missing' | 'corrupt' | 'unsupported'): BaselineStore & {
+  getStructure?: ReturnType<typeof vi.fn>;
+} {
   const base: BaselineStore = {
     get: async () => Buffer.from('baseline-bytes'),
     put: async () => {},
@@ -2274,8 +2836,14 @@ function store(sidecar: 'ok' | 'missing' | 'corrupt' | 'unsupported'): BaselineS
     readManifest: async () => ({
       version: 1,
       baselines: {
-        s: { hash: 'not-the-current-hash', commit: 'c', approvedBy: 'a', approvedAt: 't', structureHash: BASE.structureHash },
-        'no-current': { hash: 'nope', commit: 'c', approvedBy: 'a', approvedAt: 't' },
+        s: { ...meta, hash: 'not-the-current-hash', structureHash: BASE.structureHash },
+        'no-current': { ...meta, hash: 'nope' },
+        // hash equals the captured bytes: this story passes
+        green: {
+          ...meta,
+          hash: hashImage(Buffer.from('current-bytes')),
+          structureHash: BASE.structureHash,
+        },
       },
     }),
     writeManifest: async () => {},
@@ -2283,8 +2851,13 @@ function store(sidecar: 'ok' | 'missing' | 'corrupt' | 'unsupported'): BaselineS
   if (sidecar === 'unsupported') return base;
   return {
     ...base,
-    getStructure: async () =>
-      sidecar === 'ok' ? encodeStructure(BASE) : sidecar === 'corrupt' ? Buffer.from('zzz') : null,
+    getStructure: vi.fn(async () =>
+      sidecar === 'ok'
+        ? encodeStructure(BASE)
+        : sidecar === 'corrupt'
+          ? Buffer.from('zzz')
+          : null,
+    ),
   };
 }
 
@@ -2305,7 +2878,17 @@ test('a failing story with sidecars on both sides carries a verdict', async () =
   const r = await run(store('ok'));
   expect(r.results[0].status).toBe('fail');
   expect(r.results[0].structural?.classification).toBe('style-only');
-  expect(r.results[0].structural?.escalate.crops).toBe('jux diff s --crops'); // placeholder spelling checked below
+  // In run mode the next command is the handoff for this story.
+  expect(r.results[0].structural?.escalate.command).toBe('jux handoff s');
+});
+
+// Verification 5: a green story never reads a sidecar.
+test('a passing story never calls getStructure and carries no structural', async () => {
+  const s = store('ok');
+  const r = await run(s, 'green');
+  expect(r.results[0].status).toBe('pass');
+  expect(r.results[0].structural).toBeUndefined();
+  expect(s.getStructure).not.toHaveBeenCalled();
 });
 
 test('baseline sidecar missing (hash in manifest, no file) → no-baseline-structure, no throw', async () => {
@@ -2328,8 +2911,6 @@ test('no current structure → no structural at all', async () => {
   expect(r.results[0].structural).toBeUndefined();
 });
 ```
-
-Then fix the one placeholder in the first test: the `escalate.crops` string for a run result must name the story, and `jux diff` takes snap names, not story ids. Decide and encode it now: the run's escalate command is `jux handoff <storyId>` (the command that exists for a story) — change the assertion to `expect(r.results[0].structural?.escalate.crops).toBe('jux handoff s');`.
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -2357,7 +2938,7 @@ Replace the final `return { ...base, … }` of `judge` (after the `onArtifact` c
         baseline: await readBaselineStructure(opts.store, story.storyId),
         current: snapshot.structure,
         pixels: diff,
-        escalate: { crops: `jux handoff ${story.storyId}` },
+        escalate: { command: `jux handoff ${story.storyId}` },
       })
     : undefined;
 
@@ -2392,46 +2973,68 @@ Expected: PASS (both the new file and any existing run tests).
 
 - [ ] **Step 5: Extend the handoff tests**
 
-Append to `packages/core/src/agent/handoff.test.ts` inside `describe('buildHandoffPrompt')`:
+Add to the imports of `packages/core/src/agent/handoff.test.ts`:
 
 ```ts
-  const structural = {
-    schema: 'juxtapose.verdict/v1' as const,
-    classification: 'style-only' as const,
-    styleTags: ['color' as const],
-    summary: 'style-only (color): button[name="Save"] color rgb(255, 255, 255)→rgb(254, 240, 138). 1 region, fully explained.',
-    deltas: [
-      { kind: 'style' as const, el: 'button[name="Save"]', prop: 'color', from: 'rgb(255, 255, 255)', to: 'rgb(254, 240, 138)' },
-    ],
-    deltaCount: 1,
-    coverage: 1,
-    explained: 'full' as const,
-    unexplainedRegions: [],
-    flags: ['text-changed' as const],
-    signature: 'a'.repeat(64),
-    escalate: { crops: 'jux handoff components-button--primary' },
-  };
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { structuralDiff } from '../diff/structural.js';
+import type { ChangedRegion, StructureSnapshot } from '../types.js';
+```
 
-  it('leads with the tier-0 summary, deltas and flags, before the pixel figures', () => {
-    const out = buildHandoffPrompt({ ...base, structural });
-    expect(out.indexOf(structural.summary)).toBeLessThan(out.indexOf('mismatchPercent'));
-    expect(out).toContain('- button[name="Save"] color rgb(255, 255, 255)→rgb(254, 240, 138)');
-    expect(out).toContain('Flags: text-changed');
-    expect(out.indexOf('Flags:')).toBeLessThan(out.indexOf('## Images'));
+and append inside `describe('buildHandoffPrompt')` — the verdicts are produced by `structuralDiff` from the real corpus fixture, never written by hand:
+
+```ts
+const fixture = JSON.parse(
+  readFileSync(
+    path.join(import.meta.dirname, '../diff/__fixtures__/structural-corpus.json'),
+    'utf8',
+  ),
+) as {
+  cases: Record<
+    string,
+    {
+      structure: StructureSnapshot;
+      pixels: {
+        mismatchPixels: number;
+        changedRegions: ChangedRegion[];
+        dimensionMismatch: boolean;
+      };
+    }
+  >;
+};
+const verdictFor = (name: string) =>
+  structuralDiff({
+    baseline: fixture.cases.noop.structure,
+    current: fixture.cases[name].structure,
+    pixels: fixture.cases[name].pixels,
+    escalate: { command: 'jux handoff components-button--primary' },
   });
 
-  it('tells the agent to compare the deltas with what it intended, and when to look at pixels', () => {
-    const out = buildHandoffPrompt({ ...base, structural });
-    expect(out).toMatch(/compare .*against what you intended/i);
-    const partial = buildHandoffPrompt({ ...base, structural: { ...structural, explained: 'partial' as const, flags: ['unexplained-pixels' as const] } });
-    expect(partial).toContain('not fully explained');
-  });
+it('leads with the tier-0 summary, deltas and flags, before the pixel figures', () => {
+  const structural = verdictFor('text'); // text-only, flag text-changed
+  const out = buildHandoffPrompt({ ...base, structural });
+  expect(out.indexOf(structural.summary)).toBeLessThan(out.indexOf('mismatchPercent'));
+  expect(out).toContain('- button[name="Save"] text "Save"→"Save changes"');
+  expect(out).toContain('Flags: text-changed');
+  expect(out.indexOf('Flags:')).toBeLessThan(out.indexOf('## Images'));
+});
 
-  it('without a verdict the prompt is unchanged in shape', () => {
-    const out = buildHandoffPrompt(base);
-    expect(out).not.toContain('## What changed (structure)');
-    expect(out).toContain('## What changed');
-  });
+it('tells the agent to compare the deltas with what it intended, and when to look at pixels', () => {
+  const out = buildHandoffPrompt({ ...base, structural: verdictFor('color') });
+  expect(out).toMatch(/compare .*against what you intended/i);
+  expect(out).not.toContain('not fully explained');
+  const canvas = verdictFor('canvas'); // unknown, unexplained-pixels
+  expect(canvas.explained).toBe('none');
+  const partial = buildHandoffPrompt({ ...base, structural: canvas });
+  expect(partial).toContain('not fully explained');
+});
+
+it('without a verdict the prompt is unchanged in shape', () => {
+  const out = buildHandoffPrompt(base);
+  expect(out).not.toContain('## What changed (structure)');
+  expect(out).toContain('## What changed');
+});
 ```
 
 - [ ] **Step 6: Run to verify failure, then implement**
@@ -2450,55 +3053,57 @@ In `packages/core/src/agent/handoff.ts`:
 
 - In `buildHandoffPrompt`, replace the block from `lines.push('## What changed');` through the closing of the JSON block (`lines.push('```'); lines.push('');`) with:
 
-  ```ts
-    if (p.structural) {
-      const v = p.structural;
-      lines.push('## What changed (structure)');
-      lines.push('');
-      lines.push(v.summary);
-      lines.push('');
-      for (const d of v.deltas) lines.push(`- ${describeDelta(d)}`);
-      if (v.deltaCount > v.deltas.length) {
-        lines.push(`- …and ${v.deltaCount - v.deltas.length} more (see the diff data file)`);
-      }
-      lines.push('');
-      if (v.flags.length) {
-        lines.push(`Flags: ${v.flags.join(', ')}`);
-        lines.push('');
-      }
+  ````ts
+  if (p.structural) {
+    const v = p.structural;
+    lines.push('## What changed (structure)');
+    lines.push('');
+    lines.push(v.summary);
+    lines.push('');
+    for (const d of v.deltas) lines.push(`- ${describeDelta(d)}`);
+    if (v.deltaCount > v.deltas.length) {
       lines.push(
-        'Compare these deltas against what you intended to change. If every delta is',
-        'one you meant, this is the change you made.',
+        `- …and ${v.deltaCount - v.deltas.length} more (see the diff data file)`,
       );
-      if (v.explained !== 'full') {
-        lines.push(
-          `The pixels are not fully explained (coverage ${v.coverage}): something changed`,
-          'that the DOM and styles do not account for — canvas, image content, or',
-          'rendering drift. Inspect the images below before deciding.',
-        );
-      }
+    }
+    lines.push('');
+    if (v.flags.length) {
+      lines.push(`Flags: ${v.flags.join(', ')}`);
       lines.push('');
     }
-
-    lines.push(p.structural ? '## Pixels' : '## What changed');
-    lines.push('');
-    lines.push('```json');
     lines.push(
-      JSON.stringify(
-        {
-          storyId: p.storyId,
-          mismatchPercent: round(p.mismatchPercent),
-          mismatchPixels: p.mismatchPixels,
-          viewport: p.viewport,
-          regionCount: p.changedRegions.length,
-        },
-        null,
-        2,
-      ),
+      'Compare these deltas against what you intended to change. If every delta is',
+      'one you meant, this is the change you made.',
     );
-    lines.push('```');
+    if (v.explained !== 'full') {
+      lines.push(
+        `The pixels are not fully explained (coverage ${v.coverage}): something changed`,
+        'that the DOM and styles do not account for — canvas, image content, or',
+        'rendering drift. Inspect the images below before deciding.',
+      );
+    }
     lines.push('');
-  ```
+  }
+
+  lines.push(p.structural ? '## Pixels' : '## What changed');
+  lines.push('');
+  lines.push('```json');
+  lines.push(
+    JSON.stringify(
+      {
+        storyId: p.storyId,
+        mismatchPercent: round(p.mismatchPercent),
+        mismatchPixels: p.mismatchPixels,
+        viewport: p.viewport,
+        regionCount: p.changedRegions.length,
+      },
+      null,
+      2,
+    ),
+  );
+  lines.push('```');
+  lines.push('');
+  ````
 
 In `packages/cli/src/commands/handoff.ts`, add `structural: result.structural,` to the object written to `diffDataPath` (after `changedRegions`) and `...(result.structural ? { structural: result.structural } : {}),` to `payload` after `diffDataPath`.
 
@@ -2549,9 +3154,20 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces (core):
 
   ```ts
-  export interface SnapPagesOptions { urls: string[]; viewport?: Viewport; params?: StoryParams }
-  export interface SnapPageResult { url: string; snapshot?: Snapshot; status: number | null; error?: string }
-  export function snapPages(opts: SnapPagesOptions): Promise<{ env: CaptureEnv; pages: SnapPageResult[] }>;
+  export interface SnapPagesOptions {
+    urls: string[];
+    viewport?: Viewport;
+    params?: StoryParams;
+  }
+  export interface SnapPageResult {
+    url: string;
+    snapshot?: Snapshot;
+    status: number | null;
+    error?: string;
+  }
+  export function snapPages(
+    opts: SnapPagesOptions,
+  ): Promise<{ env: CaptureEnv; pages: SnapPageResult[] }>;
   // snapPage(opts: SnapOptions): Promise<SnapResult> unchanged in signature and behaviour.
   ```
 
@@ -2565,12 +3181,20 @@ Create `packages/cli/src/commands/diff-prefix.test.ts`:
 import { expect, test } from 'vitest';
 import { pairByPrefix } from './diff.js';
 
-const files = ['before-home.webp', 'before-settings.webp', 'after-home.webp', 'before-home.structure.json.gz', 'other.webp'];
+const files = [
+  'before-home.webp',
+  'before-settings.webp',
+  'after-home.webp',
+  'before-home.structure.json.gz',
+  'other.webp',
+];
 
 test('pairs snaps by slug under two prefixes and lists the unpaired', () => {
   const r = pairByPrefix(files, 'before', 'after');
   expect(r.pairs).toEqual([{ slug: 'home', a: 'before-home', b: 'after-home' }]);
-  expect(r.missing).toEqual([{ slug: 'settings', have: 'before-settings', want: 'after-settings' }]);
+  expect(r.missing).toEqual([
+    { slug: 'settings', have: 'before-settings', want: 'after-settings' },
+  ]);
 });
 
 test('an after-only slug is also missing, pointing at the before name', () => {
@@ -2661,7 +3285,12 @@ export async function snapPages(
       ]);
       try {
         const [story] = await platform.enumerate({ projectRoot: process.cwd() });
-        const snapshot = await captureStory(page, story, { platform, baseUrl: url }, viewport);
+        const snapshot = await captureStory(
+          page,
+          story,
+          { platform, baseUrl: url },
+          viewport,
+        );
         if (!snapshot) throw new Error('page declared skip');
         pages.push({ url, snapshot, status });
       } catch (err) {
@@ -2711,6 +3340,7 @@ import {
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
 import { snapName } from '../snap-name.js';
+import { snapsDir } from './diff.js';
 
 export interface SnapFlags {
   json?: boolean;
@@ -2723,6 +3353,7 @@ export interface SnapFlags {
 }
 
 interface Written {
+  url: string;
   name: string;
   image: string;
   structure: string | null;
@@ -2735,7 +3366,9 @@ interface Written {
 
 export async function snapCommand(urls: string[], flags: SnapFlags): Promise<number> {
   if (urls.length === 0) {
-    process.stderr.write('jux snap: missing <url>. Example: `jux snap http://localhost:5173/ --as before`\n');
+    process.stderr.write(
+      'jux snap: missing <url>. Example: `jux snap http://localhost:5173/ --as before`\n',
+    );
     return EXIT.usage;
   }
   if (urls.length > 1 && flags.as) {
@@ -2762,9 +3395,33 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
     viewport = { width: Number(m[1]), height: Number(m[2]) };
   }
 
-  const prefix = flags['as-prefix'] ? snapName(flags['as-prefix'], flags['as-prefix']) : undefined;
+  const prefix = flags['as-prefix']
+    ? snapName(flags['as-prefix'], flags['as-prefix'])
+    : undefined;
   const nameOf = (url: string) =>
     prefix ? `${prefix}-${snapName(url)}` : snapName(url, flags.as);
+
+  // Validate every url before launching anything: a bad argument is a usage
+  // error, and names derive from host + path, so two urls differing only by
+  // query would silently overwrite each other.
+  const seen = new Map<string, string>();
+  for (const url of urls) {
+    if (!/^https?:\/\//i.test(url)) {
+      process.stderr.write(
+        `jux snap: '${url}' is not an http(s) url; snap a served page, e.g. http://localhost:5173/\n`,
+      );
+      return EXIT.usage;
+    }
+    const name = nameOf(url);
+    const prior = seen.get(name);
+    if (prior) {
+      process.stderr.write(
+        `jux snap: '${url}' and '${prior}' would both be saved as '${name}'. Give them distinct paths, or snap them separately with --as <name>.\n`,
+      );
+      return EXIT.usage;
+    }
+    seen.set(name, url);
+  }
 
   let captured: Awaited<ReturnType<typeof snapPages>>;
   try {
@@ -2786,7 +3443,7 @@ export async function snapCommand(urls: string[], flags: SnapFlags): Promise<num
   }
   const { env, pages } = captured;
 
-  const dir = path.join(path.resolve(flags.project ?? process.cwd()), '.juxtapose', 'snaps');
+  const dir = snapsDir(flags.project);
   const results: Array<Written | { url: string; error: string }> = [];
   let failed = 0;
   try {
@@ -2851,6 +3508,7 @@ async function write(
   await rm(sidecar, { force: true });
   if (s) await writeFile(sidecar, encodeStructure(s));
   return {
+    url: r.url,
     name,
     image,
     structure: s ? sidecar : null,
@@ -2863,7 +3521,7 @@ async function write(
 }
 ```
 
-`Written` carries `url: string` as its first field (`url: r.url` in `write`) so the human line can echo it; the extra JSON field is additive. The `could not capture` / `HTTP 404` messages are unchanged; their exit code moves from 1 to 3, and `check-snap.mjs` is updated in Step 6 to pin that.
+`Written.url` is additive to PR (a)'s JSON shape. The `could not capture` / `HTTP 404` messages are unchanged; their exit code moves from 1 to 3, and `check-snap.mjs` is updated in Step 6 to pin that. A non-http(s) url (`file:`) is a bad argument: it is rejected in the validation loop above, before any browser launches, with exit 2.
 
 - [ ] **Step 5: CLI — `jux diff --prefix`**
 
@@ -2889,8 +3547,10 @@ export function pairByPrefix(files: string[], a: string, b: string): PrefixPairi
   const pairs: PrefixPairing['pairs'] = [];
   const missing: PrefixPairing['missing'] = [];
   for (const slug of all) {
-    if (sa.has(slug) && sb.has(slug)) pairs.push({ slug, a: `${a}-${slug}`, b: `${b}-${slug}` });
-    else if (sa.has(slug)) missing.push({ slug, have: `${a}-${slug}`, want: `${b}-${slug}` });
+    if (sa.has(slug) && sb.has(slug))
+      pairs.push({ slug, a: `${a}-${slug}`, b: `${b}-${slug}` });
+    else if (sa.has(slug))
+      missing.push({ slug, have: `${a}-${slug}`, want: `${b}-${slug}` });
     else missing.push({ slug, have: `${b}-${slug}`, want: `${a}-${slug}` });
   }
   return { pairs, missing };
@@ -2908,12 +3568,15 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
     );
     return EXIT.usage;
   }
-  const pages: Array<{ slug: string; a: string; b: string; verdict: StructuralVerdict }> = [];
+  const pages: Array<{ slug: string; a: string; b: string; verdict: StructuralVerdict }> =
+    [];
   for (const p of pairs) {
     const loaded = await loadSides(dir, p.a, p.b);
     if ('code' in loaded) return loaded.code; // corrupt input: 3, already explained
     const [sa, sb] = loaded.sides;
-    const { verdict } = await compareSnaps(sa, sb, { crops: `jux diff ${p.a} ${p.b} --crops` });
+    const { verdict } = await compareSnaps(sa, sb, {
+      command: `jux diff ${p.a} ${p.b} --crops`,
+    });
     pages.push({ ...p, verdict });
   }
   const summary = {
@@ -2923,7 +3586,8 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
   };
   if (flags.json) {
     process.stdout.write(
-      JSON.stringify({ schema: 'juxtapose.verdict-set/v1', pages, missing, summary }) + '\n',
+      JSON.stringify({ schema: 'juxtapose.verdict-set/v1', pages, missing, summary }) +
+        '\n',
     );
   } else {
     for (const p of pages) {
@@ -2945,7 +3609,7 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
 and in `diffCommand`, inside the `try`, replace `return await diffTwo(a, b, flags);` with:
 
 ```ts
-    return await (flags.prefix ? diffPrefix(a, b, flags) : diffTwo(a, b, flags));
+return await (flags.prefix ? diffPrefix(a, b, flags) : diffTwo(a, b, flags));
 ```
 
 In `packages/cli/src/index.ts`:
@@ -2963,7 +3627,7 @@ In `packages/cli/src/index.ts`:
   ```
 
 - parseArgs options: `'as-prefix': { type: 'string' }, prefix: { type: 'boolean', default: false },`
-- switch: `case 'snap': return snapCommand(positionals, values as never);`
+- switch, inside the lazy `case 'snap'` block: `return snapCommand(positionals, values as never);`
 
 - [ ] **Step 6: Extend the end-to-end checks**
 
@@ -2974,8 +3638,10 @@ check(missing.code === 3 && /HTTP 404/.test(missing.out), '404 exits 3 naming th
 …
 check(down.code === 3 && /could not capture/.test(down.out), 'unreachable host exits 3');
 …
-check(file.code === 3 && …, 'file: url exits 3 and writes nothing');
+check(file.code === 2 && /not an http\(s\) url/.test(file.out) && …, 'file: url is a usage error (2) and writes nothing');
 ```
+
+(`file:` is a bad argument, so it is 2, not 3 — the existing `writes nothing` half of that assertion stays.) Also make the in-script server answer a second page, so the multi-url cases below use distinct paths rather than a query string that `snapName` would drop: change its handler's `if (req.url === '/ok')` to `if (req.url === '/ok' || req.url === '/ok-two')`.
 
 and add, right after the `down` check, a browser-launch failure (the one case `snapPages` throws):
 
@@ -2984,7 +3650,9 @@ const noBrowser = await run([`http://127.0.0.1:${port}/ok`, '--as', 'nobrowser']
   PLAYWRIGHT_BROWSERS_PATH: '/nonexistent',
 });
 check(
-  noBrowser.code === 3 && /could not launch the browser/.test(noBrowser.out) && /playwright install/.test(noBrowser.out),
+  noBrowser.code === 3 &&
+    /could not launch the browser/.test(noBrowser.out) &&
+    /playwright install/.test(noBrowser.out),
   'no browser exits 3 and names the install command',
 );
 ```
@@ -2995,24 +3663,55 @@ Then append before `server.close();`:
 // Several urls, one browser: both written, named <prefix>-<slug>.
 const multi = await run([
   `http://127.0.0.1:${port}/ok`,
-  `http://127.0.0.1:${port}/ok?page=2`,
+  `http://127.0.0.1:${port}/ok-two`,
   '--as-prefix',
   'before',
 ]);
 const jm = JSON.parse(multi.out);
 check(
-  multi.code === 0 && jm.prefix === 'before' && jm.snaps.length === 2 &&
-    jm.snaps.every((s) => existsSync(s.image) && s.name.startsWith('before-')),
-  'multi-url snap writes every page under the prefix',
+  multi.code === 0 &&
+    jm.prefix === 'before' &&
+    jm.snaps.length === 2 &&
+    jm.snaps.every((s) => existsSync(s.image) && s.name.startsWith('before-')) &&
+    jm.snaps[0].image !== jm.snaps[1].image,
+  'multi-url snap writes every page to its own file under the prefix',
 );
-const mixed = await run([`http://127.0.0.1:${port}/ok`, `http://127.0.0.1:${port}/missing`, '--as-prefix', 'mixed']);
+const dup = await run([
+  `http://127.0.0.1:${port}/ok`,
+  `http://127.0.0.1:${port}/ok?page=2`,
+  '--as-prefix',
+  'dup',
+]);
+check(
+  dup.code === 2 &&
+    /would both be saved as 'dup-/.test(dup.out) &&
+    /--as <name>/.test(dup.out),
+  'urls that slug to one name are refused (2) before any capture',
+);
+const mixed = await run([
+  `http://127.0.0.1:${port}/ok`,
+  `http://127.0.0.1:${port}/missing`,
+  '--as-prefix',
+  'mixed',
+]);
 const jx = JSON.parse(mixed.out);
 check(
-  mixed.code === 3 && jx.snaps[0].name === 'mixed-127-0-0-1-' + port + '-ok' && existsSync(jx.snaps[0].image) && /HTTP 404/.test(jx.snaps[1].error),
+  mixed.code === 3 &&
+    jx.snaps[0].name === 'mixed-127-0-0-1-' + port + '-ok' &&
+    existsSync(jx.snaps[0].image) &&
+    /HTTP 404/.test(jx.snaps[1].error),
   'a failing page in a set exits 3 but the good page is still written',
 );
-const asMulti = await run([`http://127.0.0.1:${port}/ok`, `http://127.0.0.1:${port}/ok?x`, '--as', 'one']);
-check(asMulti.code === 2 && /--as-prefix/.test(asMulti.out), '--as with several urls is usage (2) pointing at --as-prefix');
+const asMulti = await run([
+  `http://127.0.0.1:${port}/ok`,
+  `http://127.0.0.1:${port}/ok-two`,
+  '--as',
+  'one',
+]);
+check(
+  asMulti.code === 2 && /--as-prefix/.test(asMulti.out),
+  '--as with several urls is usage (2) pointing at --as-prefix',
+);
 ```
 
 Append to `scripts/check-diff.mjs` before `server.close();`:
@@ -3020,27 +3719,36 @@ Append to `scripts/check-diff.mjs` before `server.close();`:
 ```js
 // --prefix: pairs by slug, verdicts each, lists the unpaired (Review Focus 4).
 // Exit 1 here is "needs review": a page is unpaired, so the set is not clean.
-const base = `${server.url}/?op=`;
+const base = `${server.url}/op/`;
 await jux(['snap', `${base}noop`, `${base}text`, '--as-prefix', 'p1']);
 await jux(['snap', `${base}noop`, '--as-prefix', 'p2']); // p2 lacks the 'text' page
 const set = await jux(['diff', 'p1', 'p2', '--prefix', '--json']);
 const vs = JSON.parse(set.out);
 check(
-  set.code === 1 && vs.schema === 'juxtapose.verdict-set/v1' && vs.pages.length === 1 &&
-    vs.pages[0].verdict.classification === 'identical' && vs.missing.length === 1 &&
+  set.code === 1 &&
+    vs.schema === 'juxtapose.verdict-set/v1' &&
+    vs.pages.length === 1 &&
+    vs.pages[0].verdict.classification === 'identical' &&
+    vs.missing.length === 1 &&
     vs.missing[0].want.startsWith('p2-'),
   '--prefix verdicts the paired page and lists the unpaired one',
 );
 const human2 = await jux(['diff', 'p1', 'p2', '--prefix']);
-check(/missing p2-.*jux snap <url> --as p2-/.test(human2.out), '--prefix human output says which snap to take');
+check(
+  /missing p2-.*jux snap <url> --as p2-/.test(human2.out),
+  '--prefix human output says which snap to take',
+);
 const noset = await jux(['diff', 'zz', 'yy', '--prefix']);
-check(noset.code === 2 && /--as-prefix zz/.test(noset.err), 'unknown prefixes are usage (2) with the next command');
+check(
+  noset.code === 2 && /--as-prefix zz/.test(noset.err),
+  'unknown prefixes are usage (2) with the next command',
+);
 ```
 
 - [ ] **Step 7: Build and run everything**
 
 Run: `pnpm build && pnpm vitest run packages/cli packages/core/src/capture && pnpm typecheck && pnpm lint && node scripts/check-snap.mjs && node scripts/check-diff.mjs`
-Expected: all unit tests PASS; every `ok`. Between them the two scripts now pin every `snap` code (0 written, 2 `--as` with several urls / zero viewport, 3 no browser / 404 / unreachable / `file:`) and every `diff` code (0, 1 different or unpaired, 2, 3). The `mixed` name assertion depends on `snapName` slugging `127.0.0.1:<port>/ok`; if the slug differs, print it and correct the assertion to the real value.
+Expected: all unit tests PASS; every `ok`. Between them the two scripts now pin every `snap` code (0 written; 2 `--as` with several urls / zero viewport / `file:` / duplicate derived names; 3 no browser / 404 / unreachable) and every `diff` code (0, 1 different or unpaired, 2, 3). The `mixed` name assertion depends on `snapName` slugging `127.0.0.1:<port>/ok`; if the slug differs, print it and correct the assertion to the real value.
 
 - [ ] **Step 8: Commit**
 
@@ -3084,11 +3792,16 @@ import { promisify } from 'node:util';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { OPERATORS } from './structural-corpus/page.mjs';
+import { OPERATORS, checkVerdict } from './structural-corpus/page.mjs';
 import { startCorpusServer } from './structural-corpus/server.mjs';
 
 const exec = promisify(execFile);
 const cli = path.resolve(import.meta.dirname, '../packages/cli/dist/index.js');
+// The CLI's own slug function, so this script cannot drift from how `jux
+// snap` names files.
+const { snapName } = await import(
+  path.resolve(import.meta.dirname, '../packages/cli/dist/snap-name.js')
+);
 const project = mkdtempSync(path.join(tmpdir(), 'jux-corpus-'));
 const server = await startCorpusServer();
 const BUDGET = 1500;
@@ -3099,36 +3812,41 @@ const check = (ok, msg) => {
 };
 const jux = async (args) => {
   try {
-    return (await exec('node', [cli, ...args, '--project', project, '--json'], { encoding: 'utf8' })).stdout;
+    return (
+      await exec('node', [cli, ...args, '--project', project, '--json'], {
+        encoding: 'utf8',
+      })
+    ).stdout;
   } catch (e) {
     return e.stdout;
   }
 };
 
 // Every variant in one launch: `base` is the noop page under its own name.
-await jux(['snap', `${server.url}/?op=noop`, '--as', 'base']);
-await jux(['snap', ...OPERATORS.map((o) => `${server.url}/?op=${o.name}`), '--as-prefix', 'op']);
+await jux(['snap', `${server.url}/op/noop`, '--as', 'base']);
+await jux([
+  'snap',
+  ...OPERATORS.map((o) => `${server.url}/op/${o.name}`),
+  '--as-prefix',
+  'op',
+]);
 
-const matches = (delta, want) => Object.entries(want).every(([k, v]) => delta[k] === v);
 const lengths = [];
 for (const op of OPERATORS) {
-  const out = await jux(['diff', 'base', `op-${new URL(`${server.url}/?op=${op.name}`).host.replace(/[^a-z0-9]+/gi, '-')}-op-${op.name}`]);
-  // The slug of `127.0.0.1:<port>/?op=<name>` is `<host>-<port>-op-<name>`:
-  // derive it the same way snapName does rather than guessing.
+  const out = await jux([
+    'diff',
+    'base',
+    `op-${snapName(`${server.url}/op/${op.name}`)}`,
+  ]);
   const v = JSON.parse(out);
-  const e = op.expect;
-  const problems = [];
-  if (v.classification !== e.classification) problems.push(`classification ${v.classification} ≠ ${e.classification}`);
-  if (e.styleTags && JSON.stringify(v.styleTags) !== JSON.stringify(e.styleTags)) problems.push(`styleTags ${v.styleTags}`);
-  if (e.delta && !v.deltas.some((d) => matches(d, e.delta))) problems.push(`missing delta ${JSON.stringify(e.delta)}`);
-  for (const f of e.flags ?? []) if (!v.flags.includes(f)) problems.push(`missing flag ${f}`);
-  if (e.noDeltas && v.deltas.length) problems.push(`expected no deltas, got ${v.deltas.length}`);
-  if (e.shift && !v.deltas.some((d) => d.kind === 'shift')) problems.push('expected a shift delta');
-  if (op.name !== 'noop' && op.name !== 'canvas' && v.explained !== 'full') problems.push(`explained ${v.explained}`);
+  const problems = checkVerdict(op, v);
   const len = out.trim().length;
   lengths.push([op.name, len]);
   if (len > BUDGET) problems.push(`${len} chars > ${BUDGET}`);
-  check(problems.length === 0, `${op.name.padEnd(15)} ${v.classification.padEnd(16)} ${String(len).padStart(5)} chars ${problems.join('; ')}`);
+  check(
+    problems.length === 0,
+    `${op.name.padEnd(15)} ${v.classification.padEnd(16)} ${String(len).padStart(5)} chars ${problems.join('; ')}`,
+  );
 }
 
 const sorted = lengths.map(([, l]) => l).sort((a, b) => a - b);
@@ -3141,30 +3859,15 @@ rmSync(project, { recursive: true, force: true });
 process.exit(failed ? 1 : 0);
 ```
 
-Fix the name derivation before running: replace the whole `const out = await jux([...])` line with
-
-```js
-  const out = await jux(['diff', 'base', `op-${slugOf(`${server.url}/?op=${op.name}`)}`]);
-```
-
-and add near the top, importing the CLI's own slug function so the script cannot drift from it:
-
-```js
-const { snapName } = await import(path.resolve(import.meta.dirname, '../packages/cli/dist/snap-name.js'));
-const slugOf = (url) => snapName(url);
-```
-
-(The two stray lines about deriving the slug "the same way snapName does" are then deleted.)
-
 - [ ] **Step 2: Add to CI**
 
 In `.github/workflows/ci.yml`, after `jux diff end to end`:
 
 ```yaml
-      # Every mutation operator must classify and explain correctly, and every
-      # verdict must fit the tier-0 budget. This is the seed of the benchmark.
-      - name: Structural mutation corpus
-        run: node scripts/structural-corpus.mjs
+# Every mutation operator must classify and explain correctly, and every
+# verdict must fit the tier-0 budget. This is the seed of the benchmark.
+- name: Structural mutation corpus
+  run: node scripts/structural-corpus.mjs
 ```
 
 - [ ] **Step 3: Run it, and the green-path check (Verification 5)**
@@ -3180,7 +3883,7 @@ node ../../packages/cli/dist/index.js run --all > /dev/null; node ../../packages
 for i in 1 2 3; do node ../../packages/cli/dist/index.js run --all 2>/dev/null | grep -E 'pass|ms'; done
 ```
 
-Expected: all pass; the per-phase timing line shows `diff` absent or 0 (no diffs counted). Compare the `capture` phase to the same loop at `759d906` (`git stash` is forbidden — check out the commit in a second worktree if needed, or just record both numbers from this branch before and after Task 5's change by reading `p.timings`). Record both in the PR. The structural diff cannot run on a green story (it is inside the fail branch after `diffImages`); this step proves the whole run cost did not move.
+Expected: all pass; the per-phase timing line shows `diff` absent or 0 (no diffs counted). Compare the `capture` phase to the same loop at `966f6e7` (`git stash` is forbidden — check out the commit in a second worktree if needed, or just record both numbers from this branch before and after Task 5's change by reading `p.timings`). Record both in the PR. The structural diff cannot run on a green story (it is inside the fail branch after `diffImages`); this step proves the whole run cost did not move.
 
 - [ ] **Step 4: README**
 
@@ -3229,17 +3932,17 @@ is real output from the mutation corpus (`scripts/structural-corpus.mjs`),
 <PASTE: the exact stdout of `jux diff base op-… --json` for the `color` operator from Step 3, pretty-printed with `node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(0,"utf8")),null,2))'`>
 ```
 
-| field                | meaning                                                                                                                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `classification`     | `identical`, `render-drift`, `dimension-change`, `element-added`, `element-removed`, `reflow`, `geometry`, `text-only`, `style-only`, `attr-only`, `mixed`, `unknown`                            |
-| `styleTags`          | for `style-only`/`mixed`: `color`, `typography`, `spacing`, `border`, `effects`                                                                                                                  |
-| `summary`            | templated, ≤ 300 chars                                                                                                                                                                           |
-| `deltas`             | at most 20 typed facts (`text`, `style`, `attr`, `added`, `removed`, `moved`, `resized`, `shift`); `deltaCount` is the total                                                                     |
-| `coverage`           | fraction of changed-region area touching a delta's element; `explained` is `full` (≥ 0.98), `partial` (≥ 0.5) or `none`                                                                          |
-| `unexplainedRegions` | changed regions no delta accounts for: canvas, image content, or rendering drift                                                                                                                 |
-| `flags`              | `element-removed`, `text-changed`, `large-reflow`, `unexplained-pixels`, `structure-truncated`, `no-baseline-structure`, `no-current-structure`, `below-fold`                                    |
-| `signature`          | sha256 of the deltas with elements abstracted to role/tag — the same change on two pages shares one                                                                                              |
-| `escalate.crops`     | the command for pixel-level evidence when `explained` is not `full`                                                                                                                              |
+| field                | meaning                                                                                                                                                               |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `classification`     | `identical`, `render-drift`, `dimension-change`, `element-added`, `element-removed`, `reflow`, `geometry`, `text-only`, `style-only`, `attr-only`, `mixed`, `unknown` |
+| `styleTags`          | for `style-only`/`mixed`: `color`, `typography`, `spacing`, `border`, `effects`                                                                                       |
+| `summary`            | templated, ≤ 300 chars                                                                                                                                                |
+| `deltas`             | at most 20 typed facts (`text`, `style`, `attr`, `added`, `removed`, `moved`, `resized`, `shift`); `deltaCount` is the total                                          |
+| `coverage`           | fraction of changed-region area touching a delta's element; `explained` is `full` (≥ 0.98), `partial` (≥ 0.5) or `none`                                               |
+| `unexplainedRegions` | changed regions no delta accounts for: canvas, image content, or rendering drift                                                                                      |
+| `flags`              | `element-removed`, `text-changed`, `large-reflow`, `unexplained-pixels`, `structure-truncated`, `no-baseline-structure`, `no-current-structure`, `below-fold`         |
+| `signature`          | sha256 of the deltas with elements abstracted to role/tag — the same change on two pages shares one                                                                   |
+| `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run                                                          |
 
 The verdict never decides pass/fail — the pixel hash does. It explains a
 failure so an agent can compare the deltas with what it meant to change.
@@ -3291,10 +3994,12 @@ Base: the PR #92 branch (stacked). Body must include, verbatim: the corpus outpu
 
 **Spec coverage.** §3 matching (Task 1), deltas (Task 2), shift (Task 2), coverage (Task 3), classification + summary + flags incl. `below-fold` (Task 3), verdict object + signature §5 (Task 3). §6 `jux diff` exit codes (Task 4), `jux run` attaches `structural` (Task 5), `jux handoff` tier-0 first (Task 5), multi-URL `snap --as-prefix` one launch and `diff --prefix` (Task 6). Verification 1 real-CDP fixtures (Task 1 generator, used by Tasks 1–3, 5), 2 mutation corpus (Task 7, expectations shared with Task 3 tests), 4 tier-0 length budget (Tasks 3 and 7), 5 green path (Task 7 Step 3; code placement in Task 5). Owner's raised bar: errors with next command (Tasks 4, 6 + `check-diff`/`check-snap` assertions), versioned byte-stable JSON documented with a real example (Tasks 3, 4, 7), `--help` examples (Tasks 4, 6), 5k-element timing (Task 3 test prints and asserts), one browser/context for multi-URL (Task 6 code; `check-snap` exercises it), no browser in `jux diff` (`check-diff` with `PLAYWRIGHT_BROWSERS_PATH=/nonexistent`), size budget with distribution (Task 7), small pure modules (Tasks 1–3), README (Task 7). Not in (b), by design: cause, groups, `--crops` (stubbed with a clear message), skill.
 
-**Placeholders.** The README `<PASTE: …>` is an instruction to paste measured output, with the exact command that produces it, resolved before commit. Task 5 Step 1 fixes its own placeholder assertion in-line. No TBD/TODO remains.
+**Placeholders.** The README `<PASTE: …>` is an instruction to paste measured output, with the exact command that produces it, resolved before commit. Every code block holds its final code; no block is patched by later prose. No TBD/TODO remains.
 
-**Type consistency.** `Fact { delta, rects, abstract, order }` is the same in Tasks 2 and 3; `ElementMatch { pairs, added, removed }` in Tasks 1–3; `StructuralDiffInput { baseline?, current?, pixels, escalate }` in Tasks 3–5; `SnapSide { image, structure? }` in Tasks 4 and 6; `readSnap`/`snapsDir`/`pairByPrefix` names agree between Tasks 4 and 6; `describeDelta` exported from core index in Task 3 and used by Tasks 4 and 5; `snapPages` returns `{ env, pages }` in both the core and CLI code of Task 6.
+**Type consistency.** `Fact { delta, rects, abstract, order }` is the same in Tasks 2 and 3; `ElementMatch { pairs, added, removed }` in Tasks 1–3; `StructuralDiffInput { baseline?, current?, pixels, escalate: { command } }` in Tasks 3–5; `SnapSide { image, structure? }` and `ReadSnap` in Tasks 4 and 6; `readSnap`/`loadSides`/`snapsDir`/`pairByPrefix` names agree between Tasks 4 and 6 (`snap.ts` imports `snapsDir` from `diff.ts`); `describeDelta` exported from core index in Task 3 and used by Tasks 4 and 5; `snapPages` returns `{ env, pages }` in both the core and CLI code of Task 6; `Written.url` exists where the human line prints it; `computeFlags(ctx)` and `SummaryArgs` match between the Task 3 interface and code.
 
-**Exit codes.** `snap`: 0/2/3 pinned in `check-snap.mjs` (Task 6); `diff`: 0/1/2/3 pinned in `check-diff.mjs` (Tasks 4, 6). `run`/`approve`/`check`/`handoff` untouched (PR H).
+**Exit codes.** `snap`: 0/2/3 pinned in `check-snap.mjs` (Task 6); `diff`: 0/1/2/3 pinned in `check-diff.mjs` (Tasks 4, 6); the CLI's top-level crash exits 3 (Task 4). `run`/`approve`/`check`/`handoff` return codes untouched (PR H).
+
+**Pre-flight table (`.superpowers/sdd/2026-10-12-sp0b-structural-diff-jux-diff/preflight.md`), row by row.** A.1→2, A.1→3/5, A.2→3, A.3→4, A.4→7, A.5↔4: OK as found. A.1→3 (`shift?` missing from the interface): interface text fixed. A.3 internal↔interface (`computeFlags`, `truncatedTail`): interface text fixed. A.3→5 (`escalate` semantics): field renamed `command`, refinement 12, README row. A.4→6 (snaps dir duplicated): `snap.ts` imports `snapsDir`. A.4↔6 and A.1,6→7 (slug collisions): operators served at `/op/<name>`; duplicate derived names refused with 2; check-snap uses `/ok` and `/ok-two`. A core-index `MAX_DELTAS` export: dropped (tests import it from the module). B.1a (testId outranks name): test strips the testId on both sides and asserts both keys. B.1b (h1 counted): filter by `tag === 'div'`. B.1c (noop diffed against itself): generator captures the base first and last; `noop` is the second capture against the first. B.1d / D timing: warm-up, best of 3, bound kept, number printed. B.2a (label from the current side): text/attr labelled from the baseline (R2), test added. B.2b (phantom border colours): skipped when that side's width is `0px` on both sides (R3), the originating test now also pins it. B.2c (`not.toContain('moved')`): test asserts the measured shape — shift `(0, 74)` × 6 after `div#banner`, `moved` only for the button and img. B.2d (filler assertion): removed; the test now asserts both the run's existence and that two moves stay `moved`. B.2e (unused import): removed; `round` imported from `structure.ts` (exported there) instead of copied. B.3a (`toHaveLength(MAX_DELTAS)` with 10 elements): three props per element → 30 deltas. B.3b (large-reflow vacuous): asserts `removed` (5 × −37) has no flag, a −30 push (−67) has it, and `inserted` (+74) has it. B.3c (title): fixed. B.4 (`writeFileSync` import; `.webp` path untested and undocumented): import in the block; USAGE names paths; check-diff diffs by path and asserts byte-equal output. B.5 (placeholder assertion; Verification 5 untested; hand-written regions): final assertion in the block; `green` story asserts `getStructure` never called and no `structural`; the `diffImages` mock returns the fixture's real `color` pixels. B.6a (`Written.url`): field added, set in `write`. B.6b (name collision undetected): refused with 2 before launch, pinned in check-snap. B.7a/b/c: `/op/` routes; final code in the block; one `checkVerdict` in `page.mjs` used by the Task 3 test and the script (R11). C (`759d906`): cites `966f6e7` on main `8efd520`. C (playwright import): lazy command imports in `index.ts` (R6), proven by the `no-playwright.mjs` resolve-hook probe in check-diff. C (coverage by area): refinement 13. D (`file:` → 3): now 2, validated before launch (R5). D (`main().catch` → 1): now 3. D (`localeCompare`): `compareCodeUnits` everywhere (R10). D (hand-written handoff verdict): built with `structuralDiff` from the corpus fixture (R12). E (TS2339, unused import): fixed as above. Waived: none.
 
 **Review Focus.** 1 → Task 3 `dimension-change` test; 2 → Task 3 truncated test; 3 → Task 3 missing-structure tests and `check-diff.mjs` `bare` case; 4 → Task 6 pairing test and `check-diff.mjs` `--prefix` case; 5 → Task 1 anonymous-siblings test.
