@@ -1,5 +1,36 @@
 # @juxtapose/storybook
 
+## 0.5.0
+
+### Minor Changes
+
+- 31bc685: Capture through juxtapose's own CDP driver instead of Playwright. Captures stay byte-identical (verified on both example workbenches), so existing baselines remain valid and nothing needs re-approving.
+
+  Playwright is no longer a dependency or peer dependency. The browser is a pinned `chrome-headless-shell` 151.0.7922.34, installed once with `npx -p @juxtapose/cli jux browser install` (also `jux browser status` and `jux browser path`). An existing `ms-playwright` cache of the same build is reused and nothing is downloaded. New: `JUX_CHROME=<path>` or `--chrome <path>` uses your own Chromium, and `JUX_CACHE_DIR` moves the cache.
+
+  **Breaking:**
+
+  - Mask and `--wait-for` selectors must be CSS. Playwright-only syntax (`text=`, `>>`, `:has-text()`, `:visible`, `nth=`) now fails the story with `jux: selector '…' is not a CSS selector` instead of silently matching nothing.
+  - Node >= 22.2.0 is required (it was 20).
+  - Adapters receive `@juxtapose/core`'s `Page`, not Playwright's. Third-party adapters that used Playwright-only `Page` methods need to move to the `Page` interface core exports.
+
+- 095a958: Keep the review panel's keyboard flow working, and stop the diff hiding the change
+
+  - **Comparison modes are now `s` (side by side), `w` (slider), `o` (onion) and `f` (flicker).** They used to be `1` to `4`, but Storybook already binds bare `1`, `2` and `3` to focus the sidebar, preview and panel, and its handler runs first. Pressing `2` for Slider moved focus into the preview iframe, and from then on `j`, `a` and the other shortcuts went to the story instead of the panel.
+  - **The diff overlay now tints the current capture instead of covering it.** It was drawn at full opacity over Current. Because pixelmatch's output contains the whole frame, the reviewer saw a red silhouette and never the new render.
+  - **A failing story whose diff marks no pixels now says so.** Before, it read "0% changed" next to Approve. This happens with a small colour change, such as `#2563eb` to `#1d4ed8`, that fails the byte hash but sits inside pixelmatch's colour tolerance. The panel now says the change is too subtle for the overlay and points to Flicker, and it hides the Diff and Unfocus toggles, which would show nothing.
+
+### Patch Changes
+
+- Updated dependencies [373ff1b]
+- Updated dependencies [31bc685]
+- Updated dependencies [e65f1bd]
+- Updated dependencies [68c7ceb]
+- Updated dependencies [966f6e7]
+  - @juxtapose/core@0.5.0
+  - @juxtapose/server@0.5.0
+  - @juxtapose/adapter-storybook@0.3.0
+
 ## 0.4.0
 
 ### Minor Changes
