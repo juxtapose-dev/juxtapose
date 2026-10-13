@@ -20,6 +20,7 @@ import { EXIT } from '../exit-codes.js';
 import { snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 import { firstSymlink, symlinkRefusal, writeFresh } from '../symlink-guard.js';
+import { stdio, type Io, type Session } from '../io.js';
 
 export interface DiffFlags {
   json?: boolean;
@@ -89,25 +90,26 @@ export async function diffCommand(
   a: string | undefined,
   b: string | undefined,
   flags: DiffFlags,
+  { io = stdio }: Session = {},
 ): Promise<number> {
   if (!a || !b) {
-    process.stderr.write(
+    io.err(
       'jux diff: needs two snap names, e.g. `jux diff before after`. Take them with `jux snap <url> --as before` and `--as after`.\n',
     );
     return EXIT.usage;
   }
   if (flags.crops && flags.prefix) {
-    process.stderr.write(
+    io.err(
       'jux diff: --crops takes one pair at a time. Run `jux diff --prefix <a> <b>` first, then `jux diff <a>-<slug> <b>-<slug> --crops` for the page you want to see.\n',
     );
     return EXIT.usage;
   }
   try {
-    return await (flags.prefix ? diffPrefix(a, b, flags) : diffTwo(a, b, flags));
+    return await (flags.prefix ? diffPrefix(a, b, flags, io) : diffTwo(a, b, flags, io));
   } catch (err) {
     // sharp failing to decode a .webp, or anything else unforeseen: a tool
     // failure, distinct from "different" so a script never approves on it.
-    process.stderr.write(
+    io.err(
       `jux diff: failed: ${(err as Error).message}. Re-take both snaps with \`jux snap <url> --as ${shellQuote(a)}\` / \`--as ${shellQuote(b)}\` and retry.\n`,
     );
     return EXIT.failure;
@@ -150,22 +152,20 @@ async function loadSides(
   return { sides: [(ra as { side: SnapSide }).side, (rb as { side: SnapSide }).side] };
 }
 
-async function diffTwo(a: string, b: string, flags: DiffFlags): Promise<number> {
+async function diffTwo(a: string, b: string, flags: DiffFlags, io: Io): Promise<number> {
   const dir = snapsDir(flags.project);
   const loaded = await loadSides(dir, a, b);
   if ('code' in loaded) {
-    process.stderr.write(loaded.message);
+    io.err(loaded.message);
     return loaded.code;
   }
   const [sa, sb] = loaded.sides;
   const comparison = await compareSnaps(sa, sb, {
     command: `jux diff ${shellQuote(a)} ${shellQuote(b)} --crops`,
   });
-  if (flags.crops) return writeCrops(a, b, flags, [sa, sb], comparison);
+  if (flags.crops) return writeCrops(a, b, flags, [sa, sb], comparison, io);
   const { verdict } = comparison;
-  process.stdout.write(
-    flags.json ? JSON.stringify(verdict) + '\n' : formatVerdict(verdict),
-  );
+  io.out(flags.json ? JSON.stringify(verdict) + '\n' : formatVerdict(verdict));
   return verdict.classification === 'identical' ? EXIT.clean : EXIT.review;
 }
 
@@ -193,6 +193,7 @@ async function writeCrops(
   flags: DiffFlags,
   [sa, sb]: [SnapSide, SnapSide],
   { verdict, pixels, unexplainedRegions: allUnexplained, elementRegions }: SnapComparison,
+  io: Io,
 ): Promise<number> {
   const root = path.resolve(flags.project ?? process.cwd());
   const dirName = cropDirName(a, b);
@@ -205,14 +206,14 @@ async function writeCrops(
     (await firstSymlink(root, ['.juxtapose', 'crops', dirName])) ??
     (await firstSymlink(cropsRoot, ['.gitignore']));
   if (link) {
-    process.stderr.write(symlinkRefusal(link));
+    io.err(symlinkRefusal(link));
     return EXIT.failure;
   }
   // Removing is not writing: an identical pair must not leave the crops of an
   // earlier, different run of the same names behind.
   await rm(absDir, { recursive: true, force: true });
   if (verdict.classification === 'identical') {
-    process.stdout.write(
+    io.out(
       flags.json
         ? JSON.stringify({
             schema: 'juxtapose.crops/v1',
@@ -267,7 +268,7 @@ async function writeCrops(
     });
   }
   if (flags.json) {
-    process.stdout.write(
+    io.out(
       JSON.stringify({
         schema: 'juxtapose.crops/v1',
         verdict,
@@ -294,7 +295,7 @@ async function writeCrops(
         `  ${path.join(root, ...f.file.split('/'))}  (${r.width}×${r.height} at ${r.x},${r.y}, ${f.scale >= 1 ? `${f.scale}×` : `${Math.round(f.scale * 100)}%`})${tag}`,
       );
     }
-    process.stdout.write(lines.join('\n') + '\n');
+    io.out(lines.join('\n') + '\n');
   }
   return EXIT.review;
 }
@@ -376,14 +377,19 @@ interface PageFailure extends PageError {
   message: string;
 }
 
-async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<number> {
+async function diffPrefix(
+  a: string,
+  b: string,
+  flags: DiffFlags,
+  io: Io,
+): Promise<number> {
   const dir = snapsDir(flags.project);
   const pa = snapName(a, a);
   const pb = snapName(b, b);
   // `a` matches every `a-<slug>`, so a prefix nested in the other would pair
   // one side's snaps with themselves or swallow the other's.
   if (pa === pb || pa.startsWith(`${pb}-`) || pb.startsWith(`${pa}-`)) {
-    process.stderr.write(
+    io.err(
       `jux diff: prefixes '${pa}' and '${pb}' overlap (one is the other plus '-…'), so their snaps cannot be told apart. Re-take the snaps under unrelated prefixes, e.g. \`jux snap <url>… --as-prefix before\` and \`--as-prefix after\`.\n`,
     );
     return EXIT.usage;
@@ -391,7 +397,7 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
   const files = await readdir(dir).catch(() => [] as string[]);
   const { pairs, missing } = pairByPrefix(files, pa, pb);
   if (pairs.length === 0 && missing.length === 0) {
-    process.stderr.write(
+    io.err(
       `jux diff: no snaps named '${pa}-*' or '${pb}-*' in ${dir}. Run \`jux snap <url>… --as-prefix ${shellQuote(pa)}\` first.\n`,
     );
     return EXIT.usage;
@@ -432,7 +438,7 @@ async function diffPrefix(a: string, b: string, flags: DiffFlags): Promise<numbe
     missing: missing.length,
     errored: failures.length,
   };
-  process.stdout.write(
+  io.out(
     flags.json
       ? JSON.stringify({
           schema: 'juxtapose.verdict-set/v1',

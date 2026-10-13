@@ -8,8 +8,12 @@ import path from 'node:path';
 import { approveCapture, encodeStoryId, type RunReport } from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
+import { stdio, type Session } from '../io.js';
 
-export async function approveCommand(flags: CommonFlags): Promise<number> {
+export async function approveCommand(
+  flags: CommonFlags,
+  { io = stdio }: Session = {},
+): Promise<number> {
   const ctx = await resolveContext(flags);
 
   const runDir = flags.run
@@ -17,7 +21,7 @@ export async function approveCommand(flags: CommonFlags): Promise<number> {
     : await latestRunDir(ctx.projectRoot);
 
   if (!runDir) {
-    process.stderr.write('jux: no run found. Run `jux run` first.\n');
+    io.err('jux: no run found. Run `jux run` first.\n');
     return 1;
   }
 
@@ -33,12 +37,12 @@ export async function approveCommand(flags: CommonFlags): Promise<number> {
   });
 
   if (requested.size === 0 && !flags.all) {
-    process.stderr.write('jux: pass --story <id> or --all\n');
+    io.err('jux: pass --story <id> or --all\n');
     return 2;
   }
 
   if (candidates.length === 0) {
-    if (!ctx.json) process.stdout.write('jux: nothing to approve\n');
+    if (!ctx.json) io.out('jux: nothing to approve\n');
     return 0;
   }
 
@@ -74,7 +78,7 @@ export async function approveCommand(flags: CommonFlags): Promise<number> {
       approved.push(result.storyId);
       // The image is approved; a lost sidecar costs explanation, not status.
       if (structureError) {
-        process.stderr.write(
+        io.err(
           `jux: approved ${result.storyId}, but its structure was not saved: ${structureError}\n`,
         );
       }
@@ -87,12 +91,12 @@ export async function approveCommand(flags: CommonFlags): Promise<number> {
   }
 
   if (ctx.json) {
-    process.stdout.write(JSON.stringify({ approved, failed }) + '\n');
+    io.out(JSON.stringify({ approved, failed }) + '\n');
   } else {
-    process.stdout.write(`jux: approved ${approved.length} ${plural(approved.length)}\n`);
-    for (const f of failed) process.stderr.write(`  skipped ${f.storyId}: ${f.reason}\n`);
+    io.out(`jux: approved ${approved.length} ${plural(approved.length)}\n`);
+    for (const f of failed) io.err(`  skipped ${f.storyId}: ${f.reason}\n`);
     if (approved.length > 0) {
-      process.stdout.write(
+      io.out(
         '\n  Commit juxtapose.manifest.json and .juxtapose/baselines/ to record this.\n',
       );
     }

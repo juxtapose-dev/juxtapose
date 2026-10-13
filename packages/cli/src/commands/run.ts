@@ -36,24 +36,28 @@ import {
 } from '../context.js';
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
+import { stdio, type Io, type Session } from '../io.js';
 
 const MAX_GROUPS_SHOWN = 10;
 
-export async function runCommand(flags: CommonFlags): Promise<number> {
+export async function runCommand(
+  flags: CommonFlags,
+  { io = stdio, browser: lent }: Session = {},
+): Promise<number> {
   // Checked first: a mistyped ref used to fall through to `git-unavailable`,
   // capture everything, and give every story an unexplained `unknown` cause.
   if (
     flags.since !== undefined &&
     !gitIsCommit(flags.since, path.resolve(flags.project ?? process.cwd()))
   ) {
-    process.stderr.write(
+    io.err(
       `jux run: --since '${flags.since}' is not a commit. Try \`--since main\` or \`--since HEAD~1\`.\n`,
     );
     return EXIT.usage;
   }
   const ctx = await resolveContext(flags);
   const log = (msg: string) => {
-    if (!ctx.json) process.stderr.write(msg + '\n');
+    if (!ctx.json) io.err(msg + '\n');
   };
 
   const p = phases();
@@ -67,7 +71,7 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
   );
 
   if (stories.length === 0) {
-    process.stderr.write('jux: no stories found\n');
+    io.err('jux: no stories found\n');
     return 1;
   }
 
@@ -98,7 +102,7 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
 
   if (selection.stories.length === 0) {
     const empty = emptyReport(ctx.projectRoot, stories.length);
-    await emit(ctx.json, empty, ctx.projectRoot, p);
+    await emit(ctx.json, empty, ctx.projectRoot, p, io);
     return 0;
   }
 
@@ -109,13 +113,15 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
   let browser;
   try {
     browser = await p.time('launch', () =>
-      acquireBrowser({
-        chrome: flags.chrome,
-        noDaemon: flags['no-daemon'] === true,
-      }),
+      lent
+        ? lent()
+        : acquireBrowser({
+            chrome: flags.chrome,
+            noDaemon: flags['no-daemon'] === true,
+          }),
     );
   } catch (err) {
-    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    io.err(`${err instanceof Error ? err.message : String(err)}\n`);
     await server?.close();
     return EXIT.failure;
   }
@@ -144,31 +150,30 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
       onArtifact: (a) => writeArtifact(runDir, a),
       onProgress: (done, total, storyId) => {
         if (!ctx.json) {
-          process.stderr.write(
-            `\r  ${done}/${total}  ${storyId.slice(0, 48).padEnd(48)}`,
-          );
+          io.err(`\r  ${done}/${total}  ${storyId.slice(0, 48).padEnd(48)}`);
         }
       },
     });
 
-    if (!ctx.json) process.stderr.write('\r' + ' '.repeat(70) + '\r');
+    if (!ctx.json) io.err('\r' + ' '.repeat(70) + '\r');
 
     await writeFile(
       path.join(runDir, 'report.json'),
       JSON.stringify(report, null, 2) + '\n',
     );
 
-    await emit(ctx.json, report, runDir, p);
+    await emit(ctx.json, report, runDir, p, io);
 
-    if (flags.html) await writeHtmlReport(report, runDir, ctx.store, ctx.json);
+    if (flags.html) await writeHtmlReport(report, runDir, ctx.store, ctx.json, io);
     // The comment links the artifact only when there is one to link.
-    if (flags.comment) await comment(report, ctx.json, Boolean(flags.html));
+    if (flags.comment) await comment(report, ctx.json, Boolean(flags.html), io);
 
     // Anything needing human or agent judgement blocks. `pass` and `skip` do not.
     const blocking = report.summary.fail + report.summary.new + report.summary.stale;
     return blocking > 0 ? 1 : 0;
   } finally {
-    await browser.close().catch(() => {});
+    // A lent browser belongs to the session (`jux mcp`) and outlives this call.
+    if (!lent) await browser.close().catch(() => {});
     await server?.close();
   }
 }
@@ -185,6 +190,7 @@ async function writeHtmlReport(
   runDir: string,
   store: BaselineStore,
   json: boolean,
+  io: Io,
 ): Promise<void> {
   const images = new Map<
     string,
@@ -206,7 +212,7 @@ async function writeHtmlReport(
 
   const out = path.join(runDir, 'report.html');
   await writeFile(out, buildHtmlReport({ report, images }));
-  if (!json) process.stderr.write(`jux: wrote ${out}\n`);
+  if (!json) io.err(`jux: wrote ${out}\n`);
 }
 
 async function readIfPresent(file: string): Promise<Buffer | undefined> {
@@ -228,11 +234,12 @@ async function comment(
   report: RunReport,
   json: boolean,
   hasHtmlReport: boolean,
+  io: Io,
 ): Promise<void> {
   const ctx = await resolveGitHubContext();
   if (!ctx) {
     if (!json) {
-      process.stderr.write(
+      io.err(
         'jux: --comment had no pull request to post to (needs GITHUB_TOKEN and a pull_request event)\n',
       );
     }
@@ -245,7 +252,7 @@ async function comment(
   // reason: we only get here once a GitHub context resolved, so "not in
   // Actions" is the one explanation already mostly ruled out.
   if (!artifactUrl && !json) {
-    process.stderr.write(
+    io.err(
       hasHtmlReport
         ? 'jux: no report link in the comment (needs GITHUB_SERVER_URL and GITHUB_RUN_ID)\n'
         : 'jux: no report link in the comment (pass --html to write one)\n',
@@ -254,9 +261,7 @@ async function comment(
 
   const url = await postComment(ctx, buildComment({ report, artifactUrl }));
   if (!json) {
-    process.stderr.write(
-      url ? `jux: posted ${url}\n` : 'jux: could not post the PR comment\n',
-    );
+    io.err(url ? `jux: posted ${url}\n` : 'jux: could not post the PR comment\n');
   }
 }
 
@@ -278,9 +283,10 @@ async function emit(
   report: RunReport,
   runDir: string,
   p: Phases,
+  io: Io,
 ): Promise<void> {
   if (json) {
-    process.stdout.write(JSON.stringify(report) + '\n');
+    io.out(JSON.stringify(report) + '\n');
     return;
   }
 
@@ -292,18 +298,16 @@ async function emit(
     s.stale ? `${s.stale} stale` : null,
   ].filter(Boolean);
 
-  process.stdout.write(
-    `\n${parts.join('  ·  ')}   (${(report.durationMs / 1000).toFixed(1)}s)\n`,
-  );
+  io.out(`\n${parts.join('  ·  ')}   (${(report.durationMs / 1000).toFixed(1)}s)\n`);
 
   const timings = formatPhases(p);
-  if (timings) process.stdout.write(`  ${timings}\n`);
+  if (timings) io.out(`  ${timings}\n`);
 
   const needsReview = report.results.filter(
     (r) => r.status !== 'pass' && r.status !== 'skip',
   );
   if (needsReview.length > 0) {
-    process.stdout.write('\n');
+    io.out('\n');
     for (const r of needsReview.slice(0, 20)) {
       const detail =
         r.status === 'fail' && r.mismatchPercent > 0
@@ -311,29 +315,27 @@ async function emit(
           : r.error
             ? ` ${r.error}`
             : '';
-      process.stdout.write(`  ${r.status.padEnd(6)} ${r.storyId}${detail}\n`);
-      for (const line of explain(r)) process.stdout.write(`         ${line}\n`);
+      io.out(`  ${r.status.padEnd(6)} ${r.storyId}${detail}\n`);
+      for (const line of explain(r)) io.out(`         ${line}\n`);
     }
     if (needsReview.length > 20) {
-      process.stdout.write(`  …and ${needsReview.length - 20} more\n`);
+      io.out(`  …and ${needsReview.length - 20} more\n`);
     }
     // Bounded like the review list: 500 groups would be 1,000 lines. The
     // report has them all.
     if (report.groups?.length) {
       const n = report.groups.length;
-      process.stdout.write(
-        `\n  ${n} change${n === 1 ? '' : 's'} shared by several stories:\n`,
-      );
+      io.out(`\n  ${n} change${n === 1 ? '' : 's'} shared by several stories:\n`);
       for (const g of report.groups.slice(0, MAX_GROUPS_SHOWN)) {
         const ids = g.storyIds.slice(0, 5).join(', ');
         const more = g.storyIds.length > 5 ? `, …${g.storyIds.length - 5} more` : '';
-        process.stdout.write(`  ${g.summary}\n    ${ids}${more}\n`);
+        io.out(`  ${g.summary}\n    ${ids}${more}\n`);
       }
       if (n > MAX_GROUPS_SHOWN)
-        process.stdout.write(`  …and ${n - MAX_GROUPS_SHOWN} more (see report.json)\n`);
+        io.out(`  …and ${n - MAX_GROUPS_SHOWN} more (see report.json)\n`);
     }
-    process.stdout.write(`\n  report: ${path.join(runDir, 'report.json')}\n`);
-    process.stdout.write(`  approve all: jux approve --all\n`);
+    io.out(`\n  report: ${path.join(runDir, 'report.json')}\n`);
+    io.out(`  approve all: jux approve --all\n`);
   }
 }
 

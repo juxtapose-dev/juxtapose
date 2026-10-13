@@ -14,14 +14,16 @@ import {
 } from '@juxtapose/core';
 import { resolveContext, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
+import { stdio, type Session } from '../io.js';
 import { DEFAULT_VIEWPORT } from '@juxtapose/core';
 
 export async function handoffCommand(
   storyId: string | undefined,
   flags: CommonFlags,
+  { io = stdio }: Session = {},
 ): Promise<number> {
   if (!storyId) {
-    process.stderr.write('jux: handoff needs a story id\n');
+    io.err('jux: handoff needs a story id\n');
     return 2;
   }
 
@@ -31,7 +33,7 @@ export async function handoffCommand(
     : await latestRunDir(ctx.projectRoot);
 
   if (!runDir) {
-    process.stderr.write('jux: no run found. Run `jux run` first.\n');
+    io.err('jux: no run found. Run `jux run` first.\n');
     return 1;
   }
 
@@ -41,7 +43,7 @@ export async function handoffCommand(
 
   const result = report.results.find((r) => r.storyId === storyId);
   if (!result) {
-    process.stderr.write(`jux: no result for '${storyId}' in the last run\n`);
+    io.err(`jux: no result for '${storyId}' in the last run\n`);
     return 1;
   }
 
@@ -122,6 +124,6 @@ export async function handoffCommand(
     projectRoot: ctx.projectRoot,
   };
 
-  process.stdout.write(buildHandoffPrompt(payload) + '\n');
+  io.out(buildHandoffPrompt(payload) + '\n');
   return 0;
 }
