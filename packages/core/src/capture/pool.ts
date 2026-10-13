@@ -2,7 +2,13 @@
 // complete. Used by both the CLI and the dev-server review API, which is why
 // it takes a Browser rather than owning one.
 
-import type { Browser } from '../browser/browser.js';
+import {
+  BrowserDiedError,
+  type Browser,
+  type BrowserContext,
+} from '../browser/browser.js';
+import { TargetClosedError } from '../browser/cdp.js';
+import { PageCrashedError, type Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
 import type { Snapshot, StoryManifest, Viewport } from '../types.js';
 import { captureStory, type CaptureDeps } from './capture.js';
@@ -74,11 +80,24 @@ export async function* capturePool(
     notify = null;
   };
 
-  const workers = Array.from({ length: workerCount }, async () => {
+  // Set once the browser itself is gone: every story not yet taken fails with
+  // it, without touching a page, so a dead browser reads as one failure.
+  let died: BrowserDiedError | null = null;
+
+  const open = async (): Promise<{ context: BrowserContext; page: Page }> => {
     // No Retina: it quadruples buffer size for no diff signal. deviceScaleFactor
     // is pinned to 1 by the driver and `--force-device-scale-factor=1`.
     const context = await opts.browser.newContext({ viewport: opts.viewport });
-    const page = await context.newPage();
+    try {
+      return { context, page: await context.newPage() };
+    } catch (err) {
+      await context.close().catch(() => {});
+      throw err;
+    }
+  };
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    let session: { context: BrowserContext; page: Page } | null = await open();
     const deps: CaptureDeps = {
       platform: opts.platform,
       baseUrl: opts.baseUrl,
@@ -92,8 +111,14 @@ export async function* capturePool(
         if (i >= work.length) break;
         const story = work[i];
 
+        if (died || !session) {
+          push({ story, error: died ?? new BrowserDiedError() });
+          opts.onProgress?.(++done, work.length, story.storyId);
+          continue;
+        }
+
         try {
-          const snapshot = await captureStory(page, story, deps, opts.viewport);
+          const snapshot = await captureStory(session.page, story, deps, opts.viewport);
           // null means the story declared `skip` in params only visible once
           // it had rendered. Report it as skipped, not as a failure.
           push(snapshot ? { story, snapshot } : { story, skipped: true });
@@ -101,12 +126,28 @@ export async function* capturePool(
           // One bad story must never kill a run of 700. Report it as a failure
           // for this story and keep the worker going.
           push({ story, error: err instanceof Error ? err : new Error(String(err)) });
+          // A crashed renderer or a closed target is permanent for that page:
+          // left alone, every later story on this worker failed instantly
+          // (concurrency 2, one crash: 6 of 8 stories failed). Replace the
+          // worker's context and page; if the browser itself is gone, stop.
+          if (!opts.browser.isConnected()) {
+            died ??= new BrowserDiedError(err);
+          } else if (
+            err instanceof PageCrashedError ||
+            err instanceof TargetClosedError
+          ) {
+            await session.context.close().catch(() => {});
+            session = await open().catch((e: unknown) => {
+              died ??= new BrowserDiedError(e);
+              return null;
+            });
+          }
         }
 
         opts.onProgress?.(++done, work.length, story.storyId);
       }
     } finally {
-      await context.close().catch(() => {});
+      await session?.context.close().catch(() => {});
     }
   });
 

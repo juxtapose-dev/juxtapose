@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { createServer, type Server } from 'node:http';
+import { Browser } from '../browser/browser.js';
 import type { Page } from '../browser/page.js';
-import { expect, test, vi } from 'vitest';
+import { queryAllExpression } from '../browser/selectors.js';
+import { chromeForTests } from '../browser/__tests__/helpers.js';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { captureStructure, MASK_ATTR } from './structure.js';
 
 const fixture = JSON.parse(
@@ -18,13 +22,15 @@ function fakePage(opts: {
 }) {
   const calls: { sel: string; args: unknown[] }[] = [];
   const send = vi.fn(opts.send ?? (async () => fixture.raw));
-  // Each mark/verify/unmark evaluate carries its selector as the
-  // JSON-encoded argument of the queryAll call, `(function (selector) {…})("sel")`;
-  // recover it for the assertions.
+  // Each mark/verify/unmark evaluate is `(function (els, a0) {…})((queryAll)("sel"), "arg")`:
+  // queryAll's source ends in `}`, so the selector is the JSON string after
+  // `})(`, and the evaluate's own arguments are the JSON values after it.
+  // Both are parsed from the real expression, so a wrong attribute fails.
   const evaluate = vi.fn(async (expr: string) => {
-    const m = /\}\)\(("(?:[^"\\]|\\.)*")\)/.exec(expr);
+    const m = /\}\)\(("(?:[^"\\]|\\.)*")\)((?:, "(?:[^"\\]|\\.)*")*)\)$/.exec(expr);
     const sel = m ? (JSON.parse(m[1]) as string) : '';
-    calls.push({ sel, args: [MASK_ATTR] });
+    const args = m?.[2] ? (JSON.parse(`[${m[2].slice(2)}]`) as unknown[]) : [];
+    calls.push({ sel, args });
     return opts.evaluateAll ? opts.evaluateAll(sel, calls.length) : true;
   });
   const page = { evaluate, send } as unknown as Page;
@@ -125,5 +131,62 @@ test('every marked match still marked and matching yields a snapshot', async () 
   });
   await expect(captureStructure(page, viewport, ['.secret'])).resolves.toMatchObject({
     schema: 'juxtapose.structure/v1',
+  });
+});
+
+// Real Chrome: mark and verify resolve the selector through open shadow roots,
+// as the screenshot mask does, so a masked element inside a component never
+// leaks its text into the sidecar.
+const chrome = chromeForTests();
+const SHADOW_PAGE = `<!doctype html><body style="margin:0">
+<div class="secret" style="width:40px;height:20px">LIGHT-SECRET</div>
+<p>public</p>
+<x-host></x-host>
+<script>customElements.define('x-host', class extends HTMLElement {
+  connectedCallback() {
+    this.attachShadow({ mode: 'open' }).innerHTML =
+      '<div class="secret" style="width:30px;height:10px">SHADOW-SECRET</div>';
+  }
+});</script></body>`;
+
+describe.skipIf(!chrome)('captureStructure on a real page', () => {
+  let server: Server;
+  let browser: Browser;
+  beforeAll(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(SHADOW_PAGE);
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    browser = await Browser.launch({ executablePath: chrome!.path });
+  });
+  afterAll(async () => {
+    await browser?.close();
+    server.closeAllConnections();
+    server.close();
+  });
+
+  test('marks and verifies matches in the light DOM and an open shadow root, then unmarks', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 200, height: 100 } });
+    try {
+      const page = await ctx.newPage();
+      await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+      const s = await captureStructure(page, { width: 200, height: 100 }, ['.secret']);
+      expect(s).toBeDefined();
+      const masked = s!.elements.filter((e) => e.tag === 'masked');
+      expect(masked.map((e) => e.rect)).toEqual([
+        { x: 0, y: 0, w: 40, h: 20 },
+        expect.objectContaining({ w: 30, h: 10 }),
+      ]);
+      expect(JSON.stringify(s)).not.toMatch(/SECRET/);
+      expect(JSON.stringify(s)).toMatch(/public/);
+      // Nothing left marked, in either tree.
+      const left = await page.evaluate<number>(
+        queryAllExpression(`[${MASK_ATTR}]`, 'return els.length;'),
+      );
+      expect(left).toBe(0);
+    } finally {
+      await ctx.close();
+    }
   });
 });

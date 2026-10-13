@@ -10,6 +10,21 @@ import { CdpConnection } from './cdp.js';
 import { launchChrome, type SpawnFn } from './launch.js';
 import { CdpPage, type Page } from './page.js';
 
+/**
+ * The browser process is gone (killed, crashed, or closed under us). Every
+ * story still queued fails with this one error rather than with N cascading
+ * TargetClosedErrors that each look like a story problem.
+ */
+export class BrowserDiedError extends Error {
+  constructor(cause?: unknown) {
+    super(
+      'jux: the browser died mid-run; the remaining stories were not captured',
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = 'BrowserDiedError';
+  }
+}
+
 export interface ContextOptions {
   viewport: Viewport;
   /** `serviceWorkers: 'block'` in Playwright terms: an init script that stubs registration. */

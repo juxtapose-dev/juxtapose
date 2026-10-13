@@ -62,6 +62,22 @@ describe('captureStory', () => {
     ).rejects.toThrow("jux: selector 'text=x' is not a CSS selector");
     expect(page.calls).toEqual([]);
   });
+  it('a non-CSS mask from live params fails the story before the shutter', async () => {
+    const page = recordingPage();
+    await expect(
+      captureStory(
+        page,
+        story({}),
+        {
+          platform: { ...platform, readLiveParams: async () => ({ mask: ['text=x'] }) },
+          baseUrl: 'x',
+          structure: false,
+        },
+        { width: 10, height: 10 },
+      ),
+    ).rejects.toThrow("jux: selector 'text=x' is not a CSS selector");
+    expect(page.calls).not.toContain('screenshot');
+  });
   it('a non-CSS waitForSelector fails the story the same way', async () => {
     const page = recordingPage();
     await expect(

@@ -26,8 +26,22 @@ export class PageCrashedError extends Error {
   }
 }
 
+/**
+ * The page a platform adapter drives: the public adapter API, exported from
+ * `@juxtapose/core`. Adapters receive it in `showStory`, `settle`,
+ * `switchStory` and `readLiveParams`.
+ *
+ * Stable (semver): `goto`, `url`, `evaluate`, `waitForFunction`,
+ * `waitForSelector`, `addStyleTag`, `setViewportSize`, `screenshot`.
+ * Everything else serves core's own pipeline (snap, structure, the pool) and
+ * may change without a major version.
+ *
+ * Selectors (`waitForSelector`, `screenshot({ mask })`) are CSS, resolved
+ * through open shadow roots; anything else throws synchronously.
+ */
 export interface Page {
-  goto(url: string, opts?: { waitUntil?: 'load'; timeout?: number }): Promise<void>;
+  /** Navigate and resolve on the main frame's `load`; rejects at `timeout` with the URL. */
+  goto(url: string, opts?: { timeout?: number }): Promise<void>;
   url(): string;
   evaluate<R, A = undefined>(
     fn: string | ((arg: A) => R | Promise<R>),
@@ -43,7 +57,10 @@ export interface Page {
   addStyleTag(opts: { content: string }): Promise<void>;
   setViewportSize(viewport: Viewport): Promise<void>;
   screenshot(opts?: { mask?: string[] }): Promise<Buffer>;
-  /** Raw CDP on this page's session, for DOMSnapshot. */
+  /**
+   * Raw CDP on this page's session, for DOMSnapshot.
+   * @internal Not part of the adapter API; the protocol surface is Chrome's, not ours.
+   */
   send<T = unknown>(method: string, params?: object): Promise<T>;
   /** HTTP status of each main-document response; returns the unsubscribe. */
   onMainResponse(handler: (status: number) => void): () => void;
@@ -425,10 +442,7 @@ export class CdpPage implements Page {
    * iframe fires one for itself), nor may a late `load` from the previous
    * document: Playwright waits on the new document's loaderId.
    */
-  async goto(
-    url: string,
-    opts: { waitUntil?: 'load'; timeout?: number } = {},
-  ): Promise<void> {
+  async goto(url: string, opts: { timeout?: number } = {}): Promise<void> {
     const timeout = opts.timeout ?? DEFAULT_TIMEOUT_MS;
     const early: string[] = []; // loaderIds that fired load before navigate replied
     let wanted: string | undefined;

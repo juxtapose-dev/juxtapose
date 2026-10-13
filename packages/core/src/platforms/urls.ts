@@ -74,7 +74,7 @@ export function createUrlPlatform(urls: UrlEntry[]): Platform {
       }));
     },
     async showStory(page: Page, storyId: string, baseUrl: string) {
-      await page.goto(resolve(storyId, baseUrl), { waitUntil: 'load' });
+      await page.goto(resolve(storyId, baseUrl));
     },
     previewUrl() {
       return 'about:blank';

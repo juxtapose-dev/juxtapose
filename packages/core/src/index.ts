@@ -99,11 +99,15 @@ export {
 export { deterministicLaunchOptions, type LaunchOptions } from './capture/launch.js';
 export { chromeArgs, PARITY_CHROMIUM_ARGS } from './capture/launch.js';
 
-// The browser driver: our own CDP client over chrome-headless-shell. `Page` is
-// the seam adapters implement against; `acquireBrowser` is the one place that
-// decides where a Browser comes from.
-export { Browser, BrowserContext } from './browser/browser.js';
-export { TimeoutError, type Page } from './browser/page.js';
+// The browser driver: our own CDP client over chrome-headless-shell. Adapters
+// consume `Page` (see its doc comment for which members are stable).
+// `Browser` and `BrowserContext` are types only: `acquireBrowser` is the one
+// place that decides where a Browser comes from, so `Browser.launch` is not
+// public.
+export type { Browser, BrowserContext } from './browser/browser.js';
+export { BrowserDiedError } from './browser/browser.js';
+export { TargetClosedError } from './browser/cdp.js';
+export { PageCrashedError, TimeoutError, type Page } from './browser/page.js';
 export { acquireBrowser, type AcquireOptions } from './browser/acquire.js';
 export {
   resolveChrome,

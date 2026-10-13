@@ -117,9 +117,9 @@ export async function runCommand(flags: CommonFlags): Promise<number> {
 
   const runId = `${Date.now().toString(36)}`;
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);
-  await mkdir(path.join(runDir, 'images'), { recursive: true });
-
   try {
+    // Inside the try, so a failed mkdir still closes the browser below.
+    await mkdir(path.join(runDir, 'images'), { recursive: true });
     const report = await runCapture({
       browser,
       platform: ctx.platform,

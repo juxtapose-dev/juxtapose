@@ -126,7 +126,7 @@ describe.skipIf(!chrome)('CdpPage', () => {
     }));
   it('goto waits for load, evaluate round-trips JSON, url() is the final url', () =>
     withPage(async (page) => {
-      await page.goto(`${base}/plain`, { waitUntil: 'load' });
+      await page.goto(`${base}/plain`);
       expect(page.url()).toBe(`${base}/plain`);
       expect(
         await page.evaluate(() => ({

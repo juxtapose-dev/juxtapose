@@ -12,7 +12,7 @@ import type { Page } from './browser/page.js';
 /**
  * Build a `showStory` implementation from a URL builder.
  *
- * Note `waitUntil: 'load'` rather than `networkidle`: the platform's own
+ * `page.goto` resolves on the main frame's `load`, not network idle: the platform's own
  * render signal and core's settle pipeline decide when the page is actually
  * ready. Waiting for network idle here would be both slower and less reliable
  * — a story that polls would never satisfy it.
@@ -21,6 +21,6 @@ export function navigateToStory(
   storyUrl: (baseUrl: string, storyId: string) => string,
 ): (page: Page, storyId: string, baseUrl: string) => Promise<void> {
   return async (page, storyId, baseUrl) => {
-    await page.goto(storyUrl(baseUrl, storyId), { waitUntil: 'load' });
+    await page.goto(storyUrl(baseUrl, storyId));
   };
 }
