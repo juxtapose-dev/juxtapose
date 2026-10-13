@@ -9,7 +9,7 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { rmSync } from 'node:fs';
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromeArgs } from '../capture/launch.js';
@@ -98,7 +98,7 @@ const PROFILE_PREFIX = 'jux-chrome-';
  * `jux-chrome-<pid>-…`, owner pid dead, untouched for 10 minutes. Anything
  * else in the directory is not ours to touch.
  */
-export async function sweepStaleProfiles(dir: string = tmpdir()): Promise<void> {
+export async function sweepStaleProfiles(dir: string): Promise<void> {
   try {
     for (const name of await readdir(dir)) {
       const m = /^jux-chrome-(\d+)-/.exec(name);
@@ -111,7 +111,9 @@ export async function sweepStaleProfiles(dir: string = tmpdir()): Promise<void> 
       }
       const full = path.join(dir, name);
       try {
-        if (Date.now() - (await stat(full)).mtimeMs < STALE_PROFILE_MS) continue;
+        // lstat: a symlink entry is not a directory of ours, whatever it points at.
+        const st = await lstat(full);
+        if (!st.isDirectory() || Date.now() - st.mtimeMs < STALE_PROFILE_MS) continue;
         await rm(full, { recursive: true, force: true, maxRetries: 3 });
       } catch {
         // raced with another sweeper, or unreadable: leave it
@@ -122,9 +124,40 @@ export async function sweepStaleProfiles(dir: string = tmpdir()): Promise<void> 
   }
 }
 
-async function sweepThenMkdtemp(): Promise<string> {
-  await sweepStaleProfiles();
-  return mkdtemp(path.join(tmpdir(), `${PROFILE_PREFIX}${process.pid}-`));
+/**
+ * The per-user directory every profile lives in. A shared tmpdir lets another
+ * user plant `jux-chrome-<dead pid>-x` (or swap one under us) and have our
+ * sweep delete through it, so profiles and the sweep stay inside a directory
+ * only we can write. Verified with lstat, never chmod/chown'd: a dir that is
+ * not ours is refused, not repaired. Windows has no uid; its tmpdir is already
+ * per-user.
+ */
+export async function privateProfileRoot(
+  opts: { base?: string; uid?: number | undefined } = {},
+): Promise<string> {
+  const uid = 'uid' in opts ? opts.uid : process.getuid?.();
+  const root = path.join(opts.base ?? tmpdir(), `jux-${uid ?? 'u'}`);
+  const refuse = (why: string) =>
+    new Error(
+      `jux: refusing to use ${root}: ${why}. Remove it (rm -rf ${root}) and run jux again.`,
+    );
+  await mkdir(root, { mode: 0o700 }).catch((e: NodeJS.ErrnoException) => {
+    if (e.code !== 'EEXIST') throw e;
+  });
+  const st = await lstat(root);
+  if (st.isSymbolicLink() || !st.isDirectory())
+    throw refuse('it is not a real directory');
+  if (uid !== undefined) {
+    if (st.uid !== uid) throw refuse('it is owned by another user');
+    if ((st.mode & 0o022) !== 0) throw refuse('it is writable by other users');
+  }
+  return root;
+}
+
+async function createProfileDir(): Promise<string> {
+  const root = await privateProfileRoot();
+  await sweepStaleProfiles(root);
+  return mkdtemp(path.join(root, `${PROFILE_PREFIX}${process.pid}-`));
 }
 
 export async function launchChrome(opts: {
@@ -136,7 +169,7 @@ export async function launchChrome(opts: {
   handshakeTimeoutMs?: number;
 }): Promise<LaunchedChrome> {
   const spawn = opts.spawn ?? nodeSpawn;
-  const userDataDir = await sweepThenMkdtemp();
+  const userDataDir = await createProfileDir();
   const args = chromeArgs({ userDataDir, args: opts.args, headless: opts.headless });
   let proc: ChildProcess;
   try {

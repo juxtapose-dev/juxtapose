@@ -11,6 +11,9 @@ import {
   writeFileSync,
   chmodSync,
   readdirSync,
+  lstatSync,
+  symlinkSync,
+  lutimesSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -19,6 +22,7 @@ import { PassThrough, Writable } from 'node:stream';
 import { spawn as realSpawn } from 'node:child_process';
 import {
   launchChrome,
+  privateProfileRoot,
   sweepStaleProfiles,
   terminateAll,
   type SpawnFn,
@@ -236,6 +240,11 @@ describe('real signals', () => {
   }
 
   const built = existsSync(builtLaunch);
+  it.runIf(!!process.env.CI)('CI has the built dist the signal tests need', () => {
+    // tsc --build emits it; if it is missing the real-signal tests would skip
+    // silently and the Ctrl-C guarantee would go unchecked.
+    expect(built, `missing ${builtLaunch}: run pnpm build before pnpm test`).toBe(true);
+  });
   for (const sig of ['SIGTERM', 'SIGINT'] as const) {
     it.skipIf(!built)(
       `${sig} ends the host by that signal and takes chrome and its profile`,
@@ -271,7 +280,9 @@ describe('failed launches clean up and explain', () => {
   };
   const profiles = () =>
     new Set(
-      readdirSync(tmpdir()).filter((n) => n.startsWith(`jux-chrome-${process.pid}-`)),
+      readdirSync(path.join(tmpdir(), `jux-${process.getuid?.() ?? 'u'}`)).filter((n) =>
+        n.startsWith(`jux-chrome-${process.pid}-`),
+      ),
     );
 
   it('a binary that exits at once gives its exit code, and leaves no profile', async () => {
@@ -368,6 +379,87 @@ describe('stale profile sweep', () => {
         expect(existsSync(kept)).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('private profile root', () => {
+  const uid = process.getuid!();
+  const base = () => mkdtempSync(path.join(tmpdir(), 'jux-root-'));
+
+  it('creates the per-user dir with mode 0700', async () => {
+    const b = base();
+    try {
+      const root = await privateProfileRoot({ base: b });
+      expect(root).toBe(path.join(b, `jux-${uid}`));
+      expect(lstatSync(root).mode & 0o777).toBe(0o700);
+      expect(await privateProfileRoot({ base: b })).toBe(root); // idempotent
+    } finally {
+      rmSync(b, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a symlink, and never touches its target', async () => {
+    const b = base();
+    const target = mkdtempSync(path.join(tmpdir(), 'jux-target-'));
+    try {
+      symlinkSync(target, path.join(b, `jux-${uid}`));
+      await expect(privateProfileRoot({ base: b })).rejects.toThrow(/jux-\d+.*Remove/s);
+      expect(existsSync(target)).toBe(true);
+    } finally {
+      rmSync(b, { recursive: true, force: true });
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  for (const mode of [0o770, 0o707, 0o777]) {
+    it(`refuses a dir with mode ${mode.toString(8)} and leaves its mode alone`, async () => {
+      const b = base();
+      try {
+        const d = path.join(b, `jux-${uid}`);
+        mkdirSync(d);
+        chmodSync(d, mode);
+        await expect(privateProfileRoot({ base: b })).rejects.toThrow(/Remove/);
+        expect(lstatSync(d).mode & 0o777).toBe(mode);
+      } finally {
+        rmSync(b, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it('refuses a dir owned by another uid', async () => {
+    const b = base();
+    try {
+      mkdirSync(path.join(b, `jux-${uid + 1}`), { mode: 0o700 });
+      // The seam: pretend we are uid+1, so the dir we own looks foreign.
+      await expect(privateProfileRoot({ base: b, uid: uid + 1 })).rejects.toThrow(
+        /owned by another user[\s\S]*Remove/,
+      );
+    } finally {
+      rmSync(b, { recursive: true, force: true });
+    }
+  });
+
+  it('the sweep never follows or deletes a symlink entry', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'jux-sweep-'));
+    const victim = mkdtempSync(path.join(tmpdir(), 'jux-victim-'));
+    writeFileSync(path.join(victim, 'precious'), 'x');
+    const dead = await new Promise<number>((resolve) => {
+      const c = childSpawn(process.execPath, ['-e', '']);
+      c.once('exit', () => resolve(c.pid!));
+    });
+    try {
+      const link = path.join(root, `jux-chrome-${dead}-evil`);
+      symlinkSync(victim, link);
+      const old = new Date(Date.now() - 30 * 60_000);
+      utimesSync(victim, old, old);
+      lutimesSync(link, old, old);
+      await sweepStaleProfiles(root);
+      expect(existsSync(path.join(victim, 'precious'))).toBe(true);
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(victim, { recursive: true, force: true });
     }
   });
 });
