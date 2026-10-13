@@ -125,12 +125,21 @@ variables), on Windows, with `--no-daemon` on `snap`, `run` and `init`, and with
 ```bash
 jux browser start    # start it now, or report the one already running
 jux browser status   # pid, start time and idle timeout, or "not running"
-jux browser stop     # stop it; does nothing if none is running
+jux browser stop     # stop every warm browser in the state dir
 ```
+
+A new jux build, a Chrome update or other flags select a new warm browser, and
+the previous one runs until it goes idle. `status` lists it too, and `stop`
+stops it along with the current one. `stop` signals a process only after it
+confirms the process is a jux warm browser; a process it cannot confirm, or
+one still running 2 s after the signal, is named and `stop` exits 3.
 
 `status --json` and `start --json` report a `daemon` object (`running`,
 `enabled`, `pid`, `key`, `socket`, `startedAt`, `idleMinutes`; the last five
-are `null` when it is not running).
+are `null` when it is not running). `status --json` also has `ok` and a
+`daemons` array of every live warm browser, each with `current: true` for the
+one this jux would use. `stop --json` reports `ok`, `stopped` and the
+`stoppedPids`; on a failure it adds `error` and `notStopped`.
 
 Its socket, state file and lock live in `<state dir>/browser/`. The state dir
 is the cache dir above unless `JUX_STATE_DIR` is set, so you can move one

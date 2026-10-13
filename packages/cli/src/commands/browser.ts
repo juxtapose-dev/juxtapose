@@ -9,17 +9,19 @@ import {
   chromePlatform,
   daemonEnabled,
   daemonIdleMinutes,
+  daemonKeyFor,
   daemonStatus,
   daemonSupported,
   installChrome,
   juxCacheDir,
+  listDaemons,
   juxStateDir,
   noBrowserMessage,
   proxyReexecArgs,
   resolveChrome,
   startDaemon,
   stderrProgress,
-  stopDaemon,
+  stopAllDaemons,
   type CommandReader,
   type ChromeSource,
   type DaemonState,
@@ -182,19 +184,43 @@ function warmOptions(chrome: ResolvedChrome, io: BrowserCommandIo) {
 const daemonAllowed = (io: BrowserCommandIo): boolean =>
   daemonSupported() && daemonEnabled(io.env);
 
-/** What `status` reports for the warm browser; never throws (a bad state dir is "not running"). */
-async function currentDaemon(
+/** One live daemon in `status`'s list; `current` is the one this jux, browser and env would use. */
+type ListedDaemon = DaemonReport & { current: boolean };
+
+/**
+ * What `status` reports: the warm browser this jux would use, and every live
+ * one in the state dir. A daemon from an older jux build, another binary or
+ * other flags runs under another key and idles out on its own; listing it
+ * says why a `stop` found more than one. Never throws (a bad state dir is
+ * "not running").
+ */
+async function daemonsReport(
   chrome: ResolvedChrome | null,
   io: BrowserCommandIo,
-): Promise<DaemonReport> {
+): Promise<{ daemon: DaemonReport; daemons: ListedDaemon[] }> {
   const enabled = daemonAllowed(io);
-  if (!chrome || !daemonSupported()) return daemonReport(null, enabled);
+  if (!daemonSupported()) return { daemon: daemonReport(null, enabled), daemons: [] };
+  let current: string | null = null;
+  let live: DaemonState[] = [];
   try {
-    return daemonReport(await daemonStatus(warmOptions(chrome, io)), enabled);
+    if (chrome) current = daemonKeyFor({ executablePath: chrome.path, env: io.env });
+    live = await listDaemons({
+      stateDir: juxStateDir({ env: io.env }),
+      readCommand: io.readCommand,
+    });
   } catch {
-    return daemonReport(null, enabled);
+    // An unusable state dir: nothing is running that jux could reach.
   }
+  const daemons = live.map((s) => ({
+    ...daemonReport(s, enabled),
+    current: s.key === current,
+  }));
+  const mine = live.find((s) => s.key === current) ?? null;
+  return { daemon: daemonReport(mine, enabled), daemons };
 }
+
+const otherLine = (d: DaemonReport): string =>
+  `other warm browser (another jux build, browser binary, flags or env): pid ${d.pid}, started ${d.startedAt}, socket ${d.socket}`;
 
 export async function browserCommand(
   argv: string[],
@@ -279,24 +305,42 @@ export async function browserCommand(
   if (sub === 'path' || sub === 'status') {
     const r = resolveOrExplain(flag, io);
     if ('error' in r) {
-      io.writeErr(`${r.error}\n`);
+      // Under --json, stdout is one object even here: `JSON.parse` of the
+      // output never meets an empty string.
+      if (json)
+        io.write(
+          JSON.stringify({
+            ok: false,
+            ...report(null),
+            error: r.error.replace(/^jux: /, ''),
+          }) + '\n',
+        );
+      else io.writeErr(`${r.error}\n`);
       return EXIT.failure;
     }
     // Status also says whether the warm browser is up; path stays one line.
-    const daemon = sub === 'status' ? await currentDaemon(r.chrome, io) : null;
+    const status = sub === 'status' ? await daemonsReport(r.chrome, io) : null;
     if (json)
       io.write(
-        JSON.stringify({ ...report(r.chrome), ...(daemon ? { daemon } : {}) }) + '\n',
+        JSON.stringify(
+          status
+            ? { ok: r.chrome !== null, ...report(r.chrome), ...status }
+            : report(r.chrome),
+        ) + '\n',
       );
     if (!r.chrome) {
       if (!json) io.writeErr(`${noBrowserMessage()}\n`);
       return EXIT.failure;
     }
     if (!json) {
-      if (sub === 'path') io.write(`${r.chrome.path}\n`);
+      if (!status) io.write(`${r.chrome.path}\n`);
       else
         io.write(
-          `jux: ${r.chrome.path} (${r.chrome.source}, pinned ${CHROME_VERSION})\n  ${daemonLine(daemon as DaemonReport)}\n`,
+          [
+            `jux: ${r.chrome.path} (${r.chrome.source}, pinned ${CHROME_VERSION})`,
+            `  ${daemonLine(status.daemon)}`,
+            ...status.daemons.filter((d) => !d.current).map((d) => `  ${otherLine(d)}`),
+          ].join('\n') + '\n',
         );
     }
     return EXIT.clean;
@@ -350,25 +394,50 @@ async function daemonCommand(
   const r = resolveOrExplain(flag, io);
   if ('error' in r) return daemonFailure(sub, json, io, r.error);
   if (sub === 'stop') {
-    // Nothing to stop without a browser: no daemon can be running for it.
-    const result =
-      r.chrome && daemonSupported()
-        ? await stopDaemon(warmOptions(r.chrome, io))
-        : { outcome: 'none' as const };
-    if (result.outcome === 'unverified')
-      return daemonFailure(
-        sub,
-        json,
-        io,
-        `jux: pid ${result.pid} is running but could not be verified as the warm browser (${result.reason}); not stopping it`,
-        { pid: result.pid },
-      );
-    const stopped = result.outcome === 'stopped';
+    // Every daemon in the state dir, not only this build's key: the key
+    // changes with each jux upgrade, rebuild or Chrome update, and the old
+    // daemon would otherwise run until it idled out (up to 35000 minutes).
+    // Each pid is still verified as our supervisor-main before it is signalled.
+    const results = daemonSupported()
+      ? await stopAllDaemons({
+          stateDir: juxStateDir({ env: io.env }),
+          readCommand: io.readCommand,
+        })
+      : [];
+    const stoppedPids = results.filter((x) => x.outcome === 'stopped').map((x) => x.pid);
+    const left = results.flatMap((x) =>
+      x.outcome === 'unverified' || x.outcome === 'running'
+        ? [{ pid: x.pid, key: x.key, outcome: x.outcome, reason: x.reason }]
+        : [],
+    );
     const d = daemonReport(null, daemonAllowed(io));
+    const stoppedText =
+      stoppedPids.length === 1
+        ? `stopped the warm browser (pid ${stoppedPids[0]})`
+        : `stopped ${stoppedPids.length} warm browsers (pids ${stoppedPids.join(', ')})`;
+    if (left.length > 0) {
+      if (!json && stoppedPids.length > 0) io.write(`jux: ${stoppedText}\n`);
+      const why = left.map((x) =>
+        x.outcome === 'unverified'
+          ? `pid ${x.pid} is running but could not be verified as the warm browser (${x.reason}); not stopping it`
+          : `pid ${x.pid} is still running (${x.reason})`,
+      );
+      return daemonFailure(sub, json, io, `jux: ${why.join('; ')}`, {
+        stopped: stoppedPids.length > 0,
+        stoppedPids,
+        pid: left[0]!.pid,
+        notStopped: left,
+      });
+    }
     io.write(
       json
-        ? JSON.stringify({ ok: true, stopped, daemon: d }) + '\n'
-        : `jux: ${stopped ? 'stopped the warm browser' : 'no warm browser running'}\n`,
+        ? JSON.stringify({
+            ok: true,
+            stopped: stoppedPids.length > 0,
+            stoppedPids,
+            daemon: d,
+          }) + '\n'
+        : `jux: ${stoppedPids.length > 0 ? stoppedText : 'no warm browser running'}\n`,
     );
     return EXIT.clean;
   }

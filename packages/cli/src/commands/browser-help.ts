@@ -9,9 +9,10 @@ export const BROWSER_HELP = `browser
                                  warm browser is running (pid, started, idle timeout, socket)
   jux browser start|stop         keep one browser warm between runs (on by default; JUX_NO_DAEMON=1,
                                  --no-daemon on snap/run/init, or any CI variable turns it off).
-                                 start reports the running one; stop does nothing if none is running.
+                                 start reports the running one; stop stops every one in the state
+                                 dir (older jux builds and browsers too); status lists them all.
                                  It exits after JUX_BROWSER_IDLE_MINUTES (default 10) idle; its socket
                                  lives in JUX_STATE_DIR (default: the cache dir, JUX_CACHE_DIR)
-  --json                         one JSON object: {path, source, version, pinned} (+ installed for install; status adds daemon; start and stop report started/stopped and daemon)
+  --json                         one JSON object: {path, source, version, pinned} (+ installed for install; status adds ok, daemon and daemons; start and stop report ok, started/stopped and daemon)
   exit 0 ok · 2 usage · 3 failure (no browser, download failed)
 `;
