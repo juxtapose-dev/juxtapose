@@ -67,6 +67,8 @@ export {
 // Structural diff: two sidecars + a pixel diff → the tier-0 verdict.
 export { structuralDiff, type StructuralDiffInput } from './diff/structural.js';
 export { compareSnaps, type SnapSide, type SnapComparison } from './diff/compare.js';
+// Tier-3 crops: two images + regions → side-by-side PNG strips, no browser.
+export { renderCrops, MAX_CROPS, MAX_CROP_SIDE, type Crop } from './diff/crops.js';
 export { describeDelta, describeDeltas } from './diff/structural/summary.js';
 export { compareCodeUnits } from './diff/structural/deltas.js';
 
