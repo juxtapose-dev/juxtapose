@@ -15,6 +15,10 @@ export type {
   Viewport,
   StoryManifest,
   Snapshot,
+  StructureSnapshot,
+  StructureElement,
+  StructureRect,
+  CaptureEnv,
   ChangedRegion,
   DiffStatus,
   DiffResult,
@@ -23,6 +27,7 @@ export type {
   BaselineEntry,
   BaselineManifest,
   ProjectConfig,
+  UrlEntry,
   StorageConfig,
   BaselineStore,
 } from './types.js';
@@ -30,6 +35,7 @@ export type {
 // Implementing a platform adapter.
 export type { Platform, EnumerateTarget, SettleContext } from './platform.js';
 export { navigateToStory } from './url-platform.js';
+export { createUrlPlatform } from './platforms/urls.js';
 export { waitForSelector } from './capture/settle.js';
 
 // Implementing a baseline store. `encodeStoryId` matters for anyone building
@@ -41,6 +47,16 @@ export { hashImage } from './baseline/status.js';
 export type { BaselineStatus, AncestryCheck } from './baseline/status.js';
 export { createAncestryCheck, alwaysAncestor } from './git/ancestry.js';
 
+// Structure sidecars: read and write the gzipped snapshot beside an image.
+export { encodeStructure, decodeStructure } from './capture/structure.js';
+// Approving a run capture with its sidecar: every approval path (CLI approve,
+// init, the review server) goes through this so they cannot disagree.
+export {
+  approveCapture,
+  readRunStructure,
+  type RunStructure,
+} from './baseline/approve.js';
+
 // Driving a run.
 export {
   runCapture,
@@ -51,6 +67,7 @@ export {
 
 // Per-phase timings, so a slow run can say which phase was slow.
 export { phases, formatPhases, type Phases } from './run/phases.js';
+export { snapPage, type SnapOptions, type SnapResult } from './capture/snap.js';
 export { deterministicLaunchOptions, type LaunchOptions } from './capture/launch.js';
 export {
   resolveAffected,

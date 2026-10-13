@@ -92,6 +92,17 @@ jobs:
       - name: Determinism (Ladle)
         run: node scripts/check-determinism.mjs examples/ladle 3
 
+      # Structure sidecars must be as stable as the pixels they explain, or the
+      # structural diff reports phantom changes.
+      - name: Structure determinism (Storybook, React)
+        run: node scripts/check-structure-determinism.mjs examples/storybook 3
+
+      - name: Structure determinism (Ladle)
+        run: node scripts/check-structure-determinism.mjs examples/ladle 3
+
+      - name: jux snap end to end
+        run: node scripts/check-snap.mjs
+
   # Dogfooding. This is the only way to exercise the reporter's actual
   # POST/PATCH against GitHub — every other part of it is unit-tested, but the
   # network call needs a real PR. Running it here means every PR to this repo

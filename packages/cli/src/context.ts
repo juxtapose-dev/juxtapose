@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import type { BaselineStore, Platform, ProjectConfig } from '@juxtapose/core';
-import { GitBaselineStore } from '@juxtapose/core';
+import { GitBaselineStore, createUrlPlatform } from '@juxtapose/core';
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 import { LadlePlatform } from '@juxtapose/adapter-ladle';
 
@@ -61,7 +61,11 @@ export async function resolveContext(flags: CommonFlags): Promise<Context> {
   );
 
   const target = { projectRoot, buildDir, origin };
-  const platform = await resolvePlatform(flags.platform ?? config.platform, target);
+  const platform = await resolvePlatform(
+    flags.platform ?? config.platform,
+    target,
+    config,
+  );
 
   return {
     projectRoot,
@@ -93,14 +97,23 @@ function resolveBuildDir(
 async function resolvePlatform(
   name: string | undefined,
   target: { projectRoot: string; buildDir?: string; origin?: string },
+  config: ProjectConfig,
 ): Promise<Platform> {
+  if (name === 'urls') {
+    if (!config.urls?.length) {
+      throw new Error(
+        "platform 'urls' needs a non-empty `urls` list in juxtapose config",
+      );
+    }
+    return createUrlPlatform(config.urls);
+  }
   const platforms: Platform[] = [new StorybookPlatform(), new LadlePlatform()];
 
   if (name) {
     const found = platforms.find((p) => p.name === name);
     if (!found) {
       throw new Error(
-        `unknown platform '${name}' (expected: ${platforms.map((p) => p.name).join(', ')})`,
+        `unknown platform '${name}' (expected: ${[...platforms.map((p) => p.name), 'urls'].join(', ')})`,
       );
     }
     return found;

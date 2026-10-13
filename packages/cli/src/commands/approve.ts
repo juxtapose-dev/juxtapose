@@ -5,7 +5,7 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { encodeStoryId, type RunReport } from '@juxtapose/core';
+import { approveCapture, encodeStoryId, type RunReport } from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
 
@@ -56,12 +56,33 @@ export async function approveCommand(flags: CommonFlags): Promise<number> {
       'images',
       `${encodeStoryId(result.storyId)}-current.webp`,
     );
+    let image: Buffer;
     try {
-      const image = await readFile(imagePath);
-      await ctx.store.put(result.storyId, image, { commit, approvedBy, approvedAt, env });
-      approved.push(result.storyId);
+      image = await readFile(imagePath);
     } catch {
       failed.push({ storyId: result.storyId, reason: 'capture image missing from run' });
+      continue;
+    }
+    try {
+      const { structureError } = await approveCapture(
+        ctx.store,
+        result.storyId,
+        image,
+        { commit, approvedBy, approvedAt, env },
+        imagePath,
+      );
+      approved.push(result.storyId);
+      // The image is approved; a lost sidecar costs explanation, not status.
+      if (structureError) {
+        process.stderr.write(
+          `jux: approved ${result.storyId}, but its structure was not saved: ${structureError}\n`,
+        );
+      }
+    } catch (err) {
+      failed.push({
+        storyId: result.storyId,
+        reason: `could not write baseline: ${(err as Error).message}`,
+      });
     }
   }
 
