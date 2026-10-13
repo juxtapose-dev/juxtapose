@@ -14,7 +14,7 @@ import {
   round,
 } from '../../capture/structure.js';
 import type { Delta, StructureRect, StructureSnapshot } from '../../types.js';
-import { abstractLabel, label } from './label.js';
+import { abstractLabel, clip, label } from './label.js';
 import type { ElementMatch } from './match.js';
 
 export interface Fact {
@@ -41,6 +41,12 @@ export const KIND_RANK: Record<Delta['kind'], number> = {
 };
 
 const ATTRS = ['src', 'role', 'name'] as const;
+
+/** Longest `from`/`to` in a delta. A paragraph of copy or a data-URI src
+ *  would otherwise make one delta larger than the whole tier-0 budget; 200
+ *  keeps any realistic value (a font stack, a shadow, a URL) whole. With
+ *  labels capped at MAX_LABEL, every delta has a fixed worst-case size. */
+const MAX_VALUE = 200;
 const BORDER_COLOR = /^border-(top|right|bottom|left)-color$/;
 
 export function computeFacts(
@@ -60,20 +66,22 @@ export function computeFacts(
       abstract: abstractLabel(eb),
       order: j,
     });
-    // Text and attr deltas are labelled from the BASELINE side: a button's
-    // label is its name, and its name is usually its text, so labelling from
-    // the current side would read `button[name="Save changes"] text "Save"→
-    // "Save changes"` — the label would spoil the delta. Everything else is
-    // labelled from the current side, which is what the agent is looking at.
-    const elA = label(ea);
-    const el = label(eb);
+    // Every fact about a matched element carries ONE label, the baseline
+    // side's. A button's label is its name, and its name is usually its text,
+    // so the current side would read `button[name="Save changes"] text
+    // "Save"→"Save changes"`, and a text delta labelled from one side beside
+    // a resize labelled from the other reads as two buttons.
+    const el = label(ea);
 
     // Masked stand-ins carry no content by construction; anything that leaks
     // onto one must not surface as a delta either.
     if (ea.tag !== 'masked' && eb.tag !== 'masked') {
       const ta = ea.text ?? '';
       const tb = eb.text ?? '';
-      if (ta !== tb) facts.push(fact({ kind: 'text', el: elA, from: ta, to: tb }));
+      if (ta !== tb)
+        facts.push(
+          fact({ kind: 'text', el, from: clip(ta, MAX_VALUE), to: clip(tb, MAX_VALUE) }),
+        );
 
       for (const attr of ATTRS) {
         const from = ea[attr] ?? '';
@@ -81,7 +89,15 @@ export function computeFacts(
         if (from === to) continue;
         // A name that is just the text restates the text delta.
         if (attr === 'name' && from === ta && to === tb) continue;
-        facts.push(fact({ kind: 'attr', el: elA, attr, from, to }));
+        facts.push(
+          fact({
+            kind: 'attr',
+            el,
+            attr,
+            from: clip(from, MAX_VALUE),
+            to: clip(to, MAX_VALUE),
+          }),
+        );
       }
 
       for (const prop of STRUCTURE_PROPS) {
@@ -95,7 +111,15 @@ export function computeFacts(
         if (from === to) continue;
         if (INHERITED_PROPS.has(prop) && !originatesHere(a, b, i, j, aToB, prop))
           continue;
-        facts.push(fact({ kind: 'style', el, prop, from, to }));
+        facts.push(
+          fact({
+            kind: 'style',
+            el,
+            prop,
+            from: clip(from, MAX_VALUE),
+            to: clip(to, MAX_VALUE),
+          }),
+        );
       }
     }
 

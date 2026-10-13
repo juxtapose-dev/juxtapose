@@ -1,6 +1,8 @@
 // Deterministic prose. No model, no adjectives: the classification, the
-// changes that caused it, and whether they account for the pixels. Hard cap
-// 300 chars.
+// changes that caused it, and whether they account for the pixels. 300 chars,
+// met by construction: labels and values are capped, the tail is reserved
+// first, and each clause has shorter forms down to `el prop changed`, so the
+// hard cut at the end is a backstop no input reaches.
 //
 // The summary is the line an agent reads first, so it leads with causes
 // (text, attr, style, added, removed) and only then consequences (shift,
@@ -17,10 +19,12 @@ import type {
   StyleTag,
 } from '../../types.js';
 import { selfPaintingAt } from './classify.js';
-import { label } from './label.js';
+import { clip, label } from './label.js';
 
 export const MAX_SUMMARY = 300;
 const LEAD_ITEMS = 3;
+/** Changes listed in one element's clause; the rest join "(+N more)". */
+const CLAUSE_CHANGES = 3;
 const MAX_VALUE = 40;
 
 export function describeDelta(d: Delta): string {
@@ -47,9 +51,11 @@ type ContentDelta = Extract<Delta, { kind: 'text' | 'style' | 'attr' }>;
 /** `prop from→to`, without the element. */
 function change(d: ContentDelta): string {
   if (d.kind === 'text') return `text "${trim(d.from)}"→"${trim(d.to)}"`;
-  const name = d.kind === 'style' ? d.prop : d.attr;
-  return `${name} ${value(d.from)}→${value(d.to)}`;
+  return `${changedName(d)} ${value(d.from)}→${value(d.to)}`;
 }
+
+const changedName = (d: ContentDelta) =>
+  d.kind === 'style' ? d.prop : d.kind === 'attr' ? d.attr : 'text';
 
 export interface SummaryArgs {
   classification: Classification;
@@ -85,6 +91,16 @@ export function buildSummary(a: SummaryArgs): string {
     body = missing
       ? `identical: images byte-identical; no ${missing} structure to compare`
       : 'identical: images byte-identical, no structural change';
+  } else if (a.classification === 'dimension-change') {
+    // Regions do not exist across sizes, so there is no region tail here.
+    const b = a.baseline && size(a.baseline);
+    const c = a.current && size(a.current);
+    body =
+      b && c && b !== c
+        ? `${head}: ${b} → ${c}; compare at one viewport`
+        : b && c
+          ? `${head}: image dimensions differ at the same ${b} viewport`
+          : `${head}: image dimensions differ; no ${missing} structure to name the sizes`;
   } else if (missing) {
     body = `${head}: no ${missing} structure, so nothing explains the pixels; re-snap (or re-approve) with structure capture enabled`;
     tail.unshift(
@@ -92,8 +108,6 @@ export function buildSummary(a: SummaryArgs): string {
         ? 'Pixel diff below tolerance'
         : `${a.regionCount} changed region${a.regionCount === 1 ? '' : 's'}`,
     );
-  } else if (a.classification === 'dimension-change' && a.baseline && a.current) {
-    body = `${head}: ${size(a.baseline)} → ${size(a.current)}; compare at one viewport`;
   } else if (a.deltas.length === 0) {
     const painter = a.current && selfPaintingAt(a.current, a.unexplainedRegions);
     body = painter
@@ -114,32 +128,38 @@ export function buildSummary(a: SummaryArgs): string {
   }
 
   const out = [body, ...tail].join('. ') + '.';
-  return out.length <= MAX_SUMMARY ? out : out.slice(0, MAX_SUMMARY - 1) + '…';
+  return clip(out, MAX_SUMMARY);
 }
 
-/** Up to LEAD_ITEMS clauses, causes first, each fitting the remaining budget
- *  whole — a clause cut mid-value would misstate the change. */
+/** Up to LEAD_ITEMS clauses, causes first. Each clause takes the richest
+ *  form that fits beside the reserved tail — a clause cut mid-value would
+ *  misstate the change — and whatever is left over is counted in
+ *  "(+N more)". */
 function lead(head: string, a: SummaryArgs, tail: string[]): string {
-  const items = leadItems(a.deltas);
-  const reserve = tail.reduce((n, t) => n + t.length + 2, 0) + 1;
+  const budget = MAX_SUMMARY - tail.reduce((n, t) => n + t.length + 2, 0) - 1;
+  const render = (texts: string[], more: number) =>
+    `${head}: ${texts.join('; ')}${more > 0 ? ` (+${more} more)` : ''}`;
   const shown: string[] = [];
   let used = 0;
-  for (const item of items.slice(0, LEAD_ITEMS)) {
-    const more = a.deltaCount - used - item.consumed;
-    const candidate = `${head}: ${[...shown, item.text].join('; ')}${more > 0 ? ` (+${more} more)` : ''}`;
-    if (shown.length > 0 && candidate.length + reserve > MAX_SUMMARY) break;
-    shown.push(item.text);
-    used += item.consumed;
+  for (const item of leadItems(a.deltas).slice(0, LEAD_ITEMS)) {
+    const fit =
+      item.find(
+        (o) =>
+          render([...shown, o.text], a.deltaCount - used - o.consumed).length <= budget,
+      ) ?? (shown.length === 0 ? item.at(-1) : undefined);
+    if (!fit) break;
+    shown.push(fit.text);
+    used += fit.consumed;
   }
-  const more = a.deltaCount - used;
-  return `${head}: ${shown.join('; ')}${more > 0 ? ` (+${more} more)` : ''}`;
+  return render(shown, a.deltaCount - used);
 }
 
-interface LeadItem {
+/** One clause, in its alternative forms, richest first. */
+type LeadItem = Array<{
   text: string;
-  /** How many deltas this clause states, for the "(+N more)" count. */
+  /** How many deltas this form states, for the "(+N more)" count. */
   consumed: number;
-}
+}>;
 
 /** Causes before consequences; within a rank, fact (document) order. */
 const CAUSE_RANK: Record<Delta['kind'], number> = {
@@ -159,26 +179,39 @@ function leadItems(deltas: Delta[]): LeadItem[] {
     .sort((x, y) => CAUSE_RANK[x.d.kind] - CAUSE_RANK[y.d.kind] || x.i - y.i)
     .map((x) => x.d);
 
-  const items: LeadItem[] = [];
   // Content changes on one element read as one clause: `el a→b, c→d`.
-  const byEl = new Map<string, LeadItem & { changes: ContentDelta[] }>();
+  const order: Array<string | Delta> = [];
+  const byEl = new Map<string, ContentDelta[]>();
   for (const d of ranked) {
     if (d.kind === 'text' || d.kind === 'style' || d.kind === 'attr') {
-      const item = byEl.get(d.el);
-      if (item) item.changes.push(d);
+      const list = byEl.get(d.el);
+      if (list) list.push(d);
       else {
-        const fresh = { text: '', consumed: 0, changes: [d] };
-        byEl.set(d.el, fresh);
-        items.push(fresh);
+        byEl.set(d.el, [d]);
+        order.push(d.el);
       }
-    } else items.push({ text: describeDelta(d), consumed: 1 });
+    } else order.push(d);
   }
-  for (const [el, item] of byEl) {
-    const parts = shorthand(item.changes);
-    item.text = `${el} ${parts.join(', ')}`;
-    item.consumed = item.changes.length;
-  }
-  return items.map(({ text, consumed }) => ({ text, consumed }));
+  return order.map((x) => {
+    if (typeof x !== 'string') return [{ text: describeDelta(x), consumed: 1 }];
+    const parts = shorthand(byEl.get(x)!);
+    const forms: LeadItem = [];
+    for (let k = Math.min(CLAUSE_CHANGES, parts.length); k >= 1; k--) {
+      const some = parts.slice(0, k);
+      forms.push({
+        text: `${x} ${some.map((p) => p.text).join(', ')}`,
+        consumed: some.reduce((n, p) => n + p.consumed, 0),
+      });
+    }
+    forms.push({ text: `${x} ${parts[0].name} changed`, consumed: parts[0].consumed });
+    return forms;
+  });
+}
+
+interface Part {
+  name: string;
+  text: string;
+  consumed: number;
 }
 
 /** CSS box properties whose four longhands collapse to one shorthand, in the
@@ -219,10 +252,10 @@ const BOXES: ReadonlyArray<readonly [string, readonly string[]]> = [
 /** One element's changes as `prop from→to` strings; when all four longhands
  *  of a box changed, they read as the shorthand (`padding 8px 12px→12px
  *  16px`), placed where the first of them was. */
-function shorthand(changes: ContentDelta[]): string[] {
+function shorthand(changes: ContentDelta[]): Part[] {
   const style = new Map<string, Extract<Delta, { kind: 'style' }>>();
   for (const c of changes) if (c.kind === 'style') style.set(c.prop, c);
-  const collapsed = new Map<string, string>(); // first longhand seen → clause
+  const collapsed = new Map<string, Part>(); // first longhand seen → clause
   const absorbed = new Set<string>();
   for (const [name, sides] of BOXES) {
     const ds = sides.map((p) => style.get(p));
@@ -230,17 +263,19 @@ function shorthand(changes: ContentDelta[]): string[] {
     const four = ds as Array<Extract<Delta, { kind: 'style' }>>;
     const first = changes.find((c) => c.kind === 'style' && sides.includes(c.prop));
     if (first?.kind !== 'style') continue;
-    collapsed.set(
-      first.prop,
-      `${name} ${value(boxValue(four.map((d) => d.from)))}→${value(boxValue(four.map((d) => d.to)))}`,
-    );
+    collapsed.set(first.prop, {
+      name,
+      text: `${name} ${value(boxValue(four.map((d) => d.from)))}→${value(boxValue(four.map((d) => d.to)))}`,
+      consumed: 4,
+    });
     for (const p of sides) absorbed.add(p);
   }
-  const out: string[] = [];
+  const out: Part[] = [];
   for (const c of changes) {
-    if (c.kind !== 'style') out.push(change(c));
-    else if (collapsed.has(c.prop)) out.push(collapsed.get(c.prop)!);
-    else if (!absorbed.has(c.prop)) out.push(change(c));
+    const box = c.kind === 'style' ? collapsed.get(c.prop) : undefined;
+    if (box) out.push(box);
+    else if (c.kind !== 'style' || !absorbed.has(c.prop))
+      out.push({ name: changedName(c), text: change(c), consumed: 1 });
   }
   return out;
 }
@@ -259,20 +294,25 @@ function boxValue([t, r, b, l]: string[]): string {
 function regions(a: SummaryArgs): string {
   const n = a.regionCount;
   const u = a.unexplainedRegions.length;
-  if (u === 0)
-    return n === 1
-      ? 'Structure explains the changed region'
-      : `Structure explains all ${n} changed regions`;
+  const the =
+    n === 1
+      ? 'the changed region'
+      : n === 2
+        ? 'both changed regions'
+        : `all ${n} changed regions`;
+  if (u === 0) return `Structure explains ${the}`;
   if (u === n)
     return n === 1
       ? 'Nothing in the structure explains the changed region'
-      : `Nothing in the structure explains the ${n} changed regions`;
+      : n === 2
+        ? 'Nothing in the structure explains either changed region'
+        : `Nothing in the structure explains the ${n} changed regions`;
   return `${u} of ${n} changed regions unexplained`;
 }
 
 const size = (s: StructureSnapshot) => `${s.viewport.width}×${s.viewport.height}`;
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
-const trim = (s: string) => (s.length > MAX_VALUE ? s.slice(0, MAX_VALUE - 1) + '…' : s);
+const trim = (s: string) => clip(s, MAX_VALUE);
 
 /** Opaque `rgb(r, g, b)` as `#rrggbb`: a third the length, and the form a
  *  developer greps their stylesheet for. Alpha colours stay as they are. */

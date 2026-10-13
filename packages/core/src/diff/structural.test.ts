@@ -7,7 +7,12 @@ import type {
   StructureSnapshot,
   StructuralVerdict,
 } from '../types.js';
-import { MAX_DELTAS, structuralDiff, type StructuralDiffInput } from './structural.js';
+import {
+  MAX_DELTAS,
+  MAX_VERDICT,
+  structuralDiff,
+  type StructuralDiffInput,
+} from './structural.js';
 
 interface Case {
   structure: StructureSnapshot;
@@ -94,6 +99,146 @@ test('summary leads with the cause, not the reflow it caused', () => {
   expect(verdict('canvas').summary).toContain('inside canvas#chart');
 });
 
+// R16 + R17: the logo sliding right no longer vetoes the rows' shared move,
+// and every fact about the button carries the baseline label.
+test('font-size: the rows below the button collapse into one shift', () => {
+  const v = verdict('font-size');
+  expect(v.deltas).toContainEqual(
+    expect.objectContaining({
+      kind: 'shift',
+      after: 'button[name="Save"]',
+      dy: -2,
+      count: 6,
+    }),
+  );
+});
+
+test('text: one label for every fact about the edited button', () => {
+  const v = verdict('text');
+  expect(v.summary).not.toContain('Save changes"]');
+  expect(v.deltas.filter((d) => 'el' in d && d.el.startsWith('button'))).not.toEqual([]);
+  for (const d of v.deltas)
+    if ('el' in d && d.el.startsWith('button')) expect(d.el).toBe('button[name="Save"]');
+});
+
+test('two changed regions read as "both"', () => {
+  expect(verdict('letter-spacing').summary).toMatch(
+    /Structure explains both changed regions\.$/,
+  );
+});
+
+const TAIL =
+  /(Structure explains [^.]*|Nothing in the structure explains [^.]*|\d+ of \d+ changed regions unexplained)\.$/;
+
+test('an element with 10 style changes: capped clause, (+N more), tail intact', () => {
+  const a = fixture.cases.noop.structure;
+  const b = structuredClone(a);
+  const save = b.elements.find((e) => e.testId === 'save')!;
+  save.styles = {
+    ...save.styles,
+    color: 'rgb(1, 2, 3)',
+    'background-color': 'rgba(10, 20, 30, 0.5)',
+    'font-family': `"${'Very Long Corporate Typeface '.repeat(8)}", system-ui, sans-serif`,
+    'font-size': '31px',
+    'font-weight': '900',
+    'font-style': 'italic',
+    'letter-spacing': '3px',
+    'text-transform': 'uppercase',
+    opacity: '0.25',
+    'box-shadow':
+      'rgba(0, 0, 0, 0.5) 0px 10px 30px 4px, rgba(0, 0, 0, 0.2) 0px 2px 4px 0px',
+  };
+  const v = structuralDiff({
+    baseline: a,
+    current: b,
+    imagesIdentical: false,
+    pixels: fixture.cases.color.pixels,
+    escalate: ESC,
+  });
+  expect(v.deltaCount).toBe(10);
+  expect(v.summary.length).toBeLessThanOrEqual(300);
+  expect(v.summary).toMatch(/\(\+\d+ more\)/);
+  expect(v.summary).toMatch(TAIL);
+  expect(v.summary).not.toMatch(/…$/);
+  expect(JSON.stringify(v).length).toBeLessThanOrEqual(1500);
+});
+
+test('a removed element with a deep unnamed path: label capped at a > boundary', () => {
+  const a = structuredClone(fixture.cases.noop.structure);
+  const main = a.elements.findIndex((e) => e.tag === 'main');
+  const deep = Array.from({ length: 30 }, (_, k) => `div:nth-of-type(${k + 2})`).join(
+    '>',
+  );
+  a.elements.push({
+    ...a.elements[main],
+    tag: 'div',
+    parent: main,
+    id: undefined,
+    testId: undefined,
+    classes: undefined,
+    role: undefined,
+    name: undefined,
+    text: 'gone',
+    path: `${a.elements[main].path}>${deep}`,
+    rect: { x: 16, y: 400, w: 100, h: 20 },
+    styles: {},
+  });
+  const v = structuralDiff({
+    baseline: a,
+    current: fixture.cases.noop.structure,
+    imagesIdentical: false,
+    pixels: fixture.cases.color.pixels,
+    escalate: ESC,
+  });
+  const removed = v.deltas.find((d) => d.kind === 'removed')!;
+  expect('el' in removed && removed.el.length).toBeLessThanOrEqual(60);
+  expect('el' in removed && removed.el).toMatch(
+    /^…>div:nth-of-type\(\d+\)(>div:nth-of-type\(\d+\))*$/,
+  );
+  expect(v.summary.length).toBeLessThanOrEqual(300);
+  expect(v.summary).toMatch(TAIL);
+  expect(JSON.stringify(v).length).toBeLessThanOrEqual(1500);
+});
+
+test('text delta values are capped at 200 chars in the JSON', () => {
+  const b = structuredClone(fixture.cases.text.structure);
+  const save = b.elements.find((e) => e.testId === 'save')!;
+  save.text = 'x'.repeat(5000);
+  const v = verdict('text', { current: b });
+  const t = v.deltas.find((d) => d.kind === 'text')!;
+  expect(t.kind === 'text' && t.to.length).toBe(200);
+  expect(t.kind === 'text' && t.to.endsWith('…')).toBe(true);
+});
+
+test('the signature hashes the classification, so fact-free verdicts differ', () => {
+  const dims = verdict('color', {
+    pixels: { changedRegions: [], dimensionMismatch: true },
+  });
+  const sigs = new Set([
+    verdict('canvas').signature,
+    dims.signature,
+    verdict('noop').signature,
+  ]);
+  expect(dims.deltaCount).toBe(0);
+  expect(sigs.size).toBe(3);
+});
+
+test('imagesIdentical contradicted by the pixels → the pixel evidence wins', () => {
+  const v = verdict('canvas', { imagesIdentical: true });
+  expect(v.classification).not.toBe('identical');
+  expect(v.classification).toBe('unknown');
+});
+
+test('zero-area regions are not counted', () => {
+  const pixels = {
+    changedRegions: [{ x: 600, y: 400, width: 0, height: 5 }],
+    dimensionMismatch: false,
+  };
+  const v = verdict('noop', { imagesIdentical: false, pixels });
+  expect(v.unexplainedRegions).toEqual([]);
+  expect(v.flags).toEqual(['sub-threshold']);
+});
+
 test('sub-threshold with no structural change → render-drift, never identical', () => {
   const v = verdict('noop', { imagesIdentical: false });
   expect(v.classification).toBe('render-drift');
@@ -164,7 +309,7 @@ test('signature abstracts the element but keeps the values', () => {
   expect(v1.signature).toMatch(/^[0-9a-f]{64}$/);
 });
 
-test('deltas are capped at MAX_DELTAS; deltaCount keeps the total', () => {
+test('deltas are capped at MAX_DELTAS and the verdict budget; deltaCount keeps the total', () => {
   const a = fixture.cases.noop.structure;
   const b = structuredClone(a);
   // 10 elements × 3 non-inherited props = 30 deltas, past the cap of 20
@@ -176,14 +321,26 @@ test('deltas are capped at MAX_DELTAS; deltaCount keeps the total', () => {
       'box-shadow': 'rgb(0, 0, 0) 0px 1px 2px 0px',
     };
   }
-  const v = structuralDiff({
+  const input: StructuralDiffInput = {
     baseline: a,
     current: b,
     imagesIdentical: false,
     pixels: fixture.cases.color.pixels,
     escalate: ESC,
-  });
-  expect(v.deltas).toHaveLength(MAX_DELTAS);
+  };
+  const v = structuralDiff(input);
+  // Changed in fix round 1: the brief expected exactly MAX_DELTAS (20), but
+  // 20 of these deltas are ~2,600 chars; the 1,500 budget now binds first
+  // and keeps a prefix. Both caps hold; deltaCount keeps the total.
+  expect(v.deltas.length).toBeGreaterThan(0);
+  expect(v.deltas.length).toBeLessThanOrEqual(MAX_DELTAS);
+  expect(v.deltas).toEqual(
+    structuralDiff({ ...input, escalate: { command: '' } }).deltas.slice(
+      0,
+      v.deltas.length,
+    ),
+  );
+  expect(JSON.stringify(v).length).toBeLessThanOrEqual(MAX_VERDICT);
   expect(v.deltaCount).toBe(b.elements.length * 3);
 });
 
@@ -195,6 +352,18 @@ test('missing baseline structure → unknown + no-baseline-structure, and says t
   expect(v.deltas).toEqual([]);
   expect(v.summary).toMatch(/no baseline structure/);
   expect(v.summary).toMatch(/re-snap|re-approve/);
+});
+
+// Review: a size change is a size change, with or without structure.
+test('dimension mismatch with a structure missing → dimension-change, no region count', () => {
+  const v = verdict('color', {
+    baseline: undefined,
+    pixels: { changedRegions: [], dimensionMismatch: true },
+  });
+  expect(v.classification).toBe('dimension-change');
+  expect(v.flags).toContain('no-baseline-structure');
+  expect(v.summary).toMatch(/image dimensions differ/);
+  expect(v.summary).not.toMatch(/0 changed region/);
 });
 
 test('missing current structure → unknown + no-current-structure', () => {
@@ -376,11 +545,11 @@ test('5,000-element tree pair (50 parents × 100 children, LCS path) diffs well 
       escalate: ESC,
     });
   const v = run();
-  expect(v.deltaCount).toBeGreaterThan(100);
-  // The LCS aligned around the gaps: one removal per 10th section, not a
-  // cascade of removed+added rows.
-  expect(v.flags).toContain('element-removed');
-  expect(v.deltas.filter((d) => d.kind === 'added')).toEqual([]);
+  // The LCS aligned around the gaps: per 10th section one removal and one
+  // shift of the 96 rows below it (5 + 5), plus 2 text edits in each of the
+  // 50 sections (100) — a cascade of removed+added rows would be far more.
+  expect(v.classification).toBe('element-removed');
+  expect(v.deltaCount).toBe(110);
   const ms = bestOf3(run);
   console.log(
     `structuralDiff ${a.elements.length}×${b.elements.length} tree (${PARENTS}×${CHILDREN + 1}): ${ms.toFixed(1)} ms (target < 50)`,

@@ -26,6 +26,8 @@ export interface ClassifyContext {
     /** Byte-identical images: the only pixel evidence of "no change". */
     imagesIdentical: boolean;
     dimensionMismatch: boolean;
+    /** The pixel diff marked at least one region with area. */
+    hasRegions: boolean;
     /** The images differ but the pixel diff marked no region. */
     subThreshold: boolean;
   };
@@ -52,11 +54,19 @@ export function classify(ctx: ClassifyContext): {
   const { pixels, baseline, current, facts } = ctx;
   // Never "0 mismatch pixels": pixelmatch's tolerance hides real changes
   // (the corpus `background` case changes the bytes and marks 0 pixels).
-  if (pixels.imagesIdentical && facts.length === 0)
+  if (
+    pixels.imagesIdentical &&
+    !pixels.dimensionMismatch &&
+    !pixels.hasRegions &&
+    facts.length === 0
+  )
     return { classification: 'identical', styleTags: none };
+  // Before the structure checks: a size change is a size change whether or
+  // not either side captured structure.
+  if (pixels.dimensionMismatch)
+    return { classification: 'dimension-change', styleTags: none };
   if (!baseline || !current) return { classification: 'unknown', styleTags: none };
   if (
-    pixels.dimensionMismatch ||
     baseline.viewport.width !== current.viewport.width ||
     baseline.viewport.height !== current.viewport.height
   ) {

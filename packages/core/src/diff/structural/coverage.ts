@@ -7,6 +7,8 @@ import type { ChangedRegion, StructureRect } from '../../types.js';
 import type { Fact } from './deltas.js';
 
 export interface Coverage {
+  /** Changed regions with area; zero-area boxes carry no pixels. */
+  regionCount: number;
   coverage: number;
   explained: 'full' | 'partial' | 'none';
   unexplainedRegions: ChangedRegion[];
@@ -24,13 +26,14 @@ export function intersects(r: ChangedRegion, rect: StructureRect): boolean {
 export function computeCoverage(regions: ChangedRegion[], facts: Fact[]): Coverage {
   // No marked regions: nothing is left unexplained. That includes a change
   // below the pixel diff's tolerance, where the deltas are the whole story.
-  if (regions.length === 0)
-    return { coverage: 1, explained: 'full', unexplainedRegions: [] };
+  const real = regions.filter((r) => r.width > 0 && r.height > 0);
+  if (real.length === 0)
+    return { regionCount: 0, coverage: 1, explained: 'full', unexplainedRegions: [] };
   const rects = facts.flatMap((f) => f.rects);
   let total = 0;
   let explained = 0;
   const unexplainedRegions: ChangedRegion[] = [];
-  for (const r of regions) {
+  for (const r of real) {
     const area = r.width * r.height;
     total += area;
     if (rects.some((rect) => intersects(r, rect))) explained += area;
@@ -38,6 +41,7 @@ export function computeCoverage(regions: ChangedRegion[], facts: Fact[]): Covera
   }
   const coverage = total === 0 ? 1 : Math.round((explained / total) * 1000) / 1000;
   return {
+    regionCount: real.length,
     coverage,
     explained: coverage >= 0.98 ? 'full' : coverage >= 0.5 ? 'partial' : 'none',
     unexplainedRegions,

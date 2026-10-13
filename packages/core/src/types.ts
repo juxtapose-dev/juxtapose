@@ -165,17 +165,19 @@ export interface StructuralVerdict {
   styleTags: StyleTag[];
   /** Templated, deterministic, ≤ 300 chars. */
   summary: string;
-  /** Capped at 20; `deltaCount` is the total. */
+  /** At most 20, and only the prefix that keeps the whole verdict within
+   *  1,500 chars; `deltaCount` is the total. */
   deltas: Delta[];
   deltaCount: number;
   /** Fraction of changed-region area intersecting some delta's element. */
   coverage: number;
   /** ≥ 0.98 | ≥ 0.5 | below. */
   explained: 'full' | 'partial' | 'none';
+  /** The prefix that fits the 1,500-char verdict; `coverage` covers all. */
   unexplainedRegions: ChangedRegion[];
   flags: Flag[];
-  /** sha256 over the delta set with elements abstracted to role|tag, so two
-   *  pages with the same change share one. */
+  /** sha256 over the classification and the delta set with elements
+   *  abstracted to role|tag, so two pages with the same change share one. */
   signature: string;
   /** The exact command for tier-3 pixels. */
   escalate: { command: string };
