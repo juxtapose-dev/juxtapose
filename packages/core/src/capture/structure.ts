@@ -11,6 +11,7 @@
 
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
+import type { Page } from 'playwright';
 import type {
   StructureElement,
   StructureRect,
@@ -444,4 +445,65 @@ export function encodeStructure(s: StructureSnapshot): Buffer {
 
 export function decodeStructure(b: Buffer): StructureSnapshot {
   return JSON.parse(gunzipSync(b).toString('utf8')) as StructureSnapshot;
+}
+
+/**
+ * Snapshot the page's structure. Never throws: a missing structure costs the
+ * agent some explanation, a thrown error would cost the story its capture.
+ *
+ * Mask selectors are marked with MASK_ATTR so the normalizer collapses their
+ * subtree, then unmarked. Setting an attribute does not affect paint unless a
+ * stylesheet targets it, which nothing ships with.
+ *
+ * If marking fails we return undefined without touching CDP: a mask must never
+ * leak masked content through the sidecar. Invalid selectors are swallowed
+ * in-page, so in a real browser a bad selector never rejects the evaluate.
+ */
+export async function captureStructure(
+  page: Page,
+  viewport: Viewport,
+  mask: readonly string[],
+): Promise<StructureSnapshot | undefined> {
+  const mark = (on: boolean) =>
+    page.evaluate(
+      ({ selectors, attr, on }) => {
+        for (const sel of selectors) {
+          try {
+            const els = document.querySelectorAll(sel);
+            for (let i = 0; i < els.length; i++) {
+              const el = els[i]!;
+              if (on) el.setAttribute(attr, '1');
+              else el.removeAttribute(attr);
+            }
+          } catch {
+            // invalid selector: same as matching nothing
+          }
+        }
+      },
+      { selectors: [...mask], attr: MASK_ATTR, on },
+    );
+
+  try {
+    if (mask.length) await mark(true);
+  } catch {
+    return undefined;
+  }
+
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      const raw = (await cdp.send('DOMSnapshot.captureSnapshot', {
+        computedStyles: [...STRUCTURE_PROPS, 'visibility'],
+        includeDOMRects: true,
+        includePaintOrder: true,
+      })) as unknown as CdpSnapshot;
+      return normalizeStructure(raw, viewport);
+    } finally {
+      await cdp.detach().catch(() => {});
+    }
+  } catch {
+    return undefined;
+  } finally {
+    if (mask.length) await mark(false).catch(() => {});
+  }
 }
