@@ -10,6 +10,10 @@ export interface ZipSpec {
   symlink?: boolean;
   /** Lie about the uncompressed size in the headers (zip-bomb tests). */
   claimedSize?: number;
+  /** Set general-purpose flag bits (e.g. 1 = encrypted, 8 = data descriptor). */
+  flags?: number;
+  /** Override the compression method written in the headers (body is as built). */
+  method?: number;
 }
 
 export function buildZip(specs: ZipSpec[]): Buffer {
@@ -19,23 +23,30 @@ export function buildZip(specs: ZipSpec[]): Buffer {
   for (const s of specs) {
     const name = Buffer.from(s.name);
     const body = s.stored ? s.data : deflateRawSync(s.data);
-    const method = s.stored ? 0 : 8;
+    const method = s.method ?? (s.stored ? 0 : 8);
+    const flags = s.flags ?? 0;
+    const descriptor = (flags & 8) !== 0;
     const crc = crc32(s.data);
     const usize = s.claimedSize ?? s.data.length;
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(flags, 6);
     local.writeUInt16LE(method, 8);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(body.length, 18);
-    local.writeUInt32LE(usize, 22);
+    // With a data descriptor the local header carries zeros; the real values
+    // follow the body (and live in the central directory).
+    if (!descriptor) {
+      local.writeUInt32LE(crc, 14);
+      local.writeUInt32LE(body.length, 18);
+      local.writeUInt32LE(usize, 22);
+    }
     local.writeUInt16LE(name.length, 26);
     local.writeUInt16LE(0, 28);
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0);
     central.writeUInt16LE(0x031e, 4);
     central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(flags, 8);
     central.writeUInt16LE(method, 10);
     central.writeUInt32LE(crc, 16);
     central.writeUInt32LE(body.length, 20);
@@ -44,9 +55,16 @@ export function buildZip(specs: ZipSpec[]): Buffer {
     const type = s.symlink ? 0o120000 : s.name.endsWith('/') ? 0o040000 : 0o100000;
     central.writeUInt32LE(((type | s.mode) >>> 0) * 0x10000, 38);
     central.writeUInt32LE(offset, 42);
-    locals.push(local, name, body);
+    const trailer = Buffer.alloc(descriptor ? 16 : 0);
+    if (descriptor) {
+      trailer.writeUInt32LE(0x08074b50, 0);
+      trailer.writeUInt32LE(crc, 4);
+      trailer.writeUInt32LE(body.length, 8);
+      trailer.writeUInt32LE(usize, 12);
+    }
+    locals.push(local, name, body, trailer);
     centrals.push(central, name);
-    offset += local.length + name.length + body.length;
+    offset += local.length + name.length + body.length + trailer.length;
   }
   const cd = Buffer.concat(centrals);
   const eocd = Buffer.alloc(22);
