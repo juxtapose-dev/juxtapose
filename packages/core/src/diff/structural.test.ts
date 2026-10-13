@@ -276,6 +276,7 @@ test('the verdict JSON is byte-identical across calls and has a fixed key order'
     'classification',
     'styleTags',
     'summary',
+    'change',
     'deltas',
     'deltaCount',
     'coverage',
@@ -568,6 +569,7 @@ test('cause sits between flags and signature, and is absent when not given', () 
     'classification',
     'styleTags',
     'summary',
+    'change',
     'deltas',
     'deltaCount',
     'coverage',
@@ -617,4 +619,31 @@ test('cause paths are clipped on code point boundaries', () => {
     expect(clipped.isWellFormed()).toBe(true);
     expect(clipped).toMatch(/^…😀+\.tsx$/u);
   }
+});
+
+test('change states the shared change without per-page labels, and only when there are facts', () => {
+  const v = structuralDiff({
+    baseline: fixture.cases.noop.structure,
+    current: fixture.cases.color.structure,
+    imagesIdentical: false,
+    pixels: fixture.cases.color.pixels,
+    escalate: { command: 'x' },
+  });
+  expect(v.change).toBe('style-only (color): button color #ffffff→#fef08a');
+  expect(v.change!.length).toBeLessThanOrEqual(160);
+  expect(Object.keys(v).slice(0, 5)).toEqual([
+    'schema',
+    'classification',
+    'styleTags',
+    'summary',
+    'change',
+  ]);
+  const none = structuralDiff({
+    baseline: fixture.cases.noop.structure,
+    current: fixture.cases.noop.structure,
+    imagesIdentical: true,
+    pixels: fixture.cases.noop.pixels,
+    escalate: { command: 'x' },
+  });
+  expect('change' in none).toBe(false);
 });

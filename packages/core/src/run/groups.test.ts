@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
 import { structuralDiff } from '../diff/structural.js';
-import type { ChangedRegion, DiffResult, StructureSnapshot } from '../types.js';
+import type {
+  ChangedRegion,
+  DiffResult,
+  StructuralVerdict,
+  StructureSnapshot,
+} from '../types.js';
 import { computeGroups } from './groups.js';
 
 // Real verdicts from the corpus fixture, so the signatures are the ones
@@ -55,7 +60,7 @@ test('two stories with the same change share a group; a lone change does not', (
   expect(groups).toEqual([
     {
       signature: verdict('color').signature,
-      summary: verdict('color').summary,
+      summary: `${verdict('color').change} — 2 stories`,
       storyIds: ['a--two', 'b--one'],
     },
   ]);
@@ -103,7 +108,7 @@ test('5,000 failing stories with one signature are one group, under 50 ms', () =
   expect(groups).toHaveLength(1);
   expect(groups[0].storyIds).toHaveLength(5000);
   // Timing: one warm-up, then best of 3, so a cold run on a contended CI
-  // runner does not flake it. Measured 1.2 ms in pre-flight.
+  // runner does not flake it. Measured 0.4 ms.
   computeGroups(results);
   let ms = Infinity;
   for (let k = 0; k < 3; k++) {
@@ -128,4 +133,67 @@ test('500 distinct shared signatures are 500 groups, each small', () => {
   const groups = computeGroups(results);
   expect(groups).toHaveLength(500);
   expect(JSON.stringify(groups[0]).length).toBeLessThan(600);
+});
+
+// The same change on three pages whose buttons carry different names: the
+// signature matches (it abstracts to role|tag), and the text a human reads
+// must not name any one page's button.
+function namedButton(name: string): StructuralVerdict {
+  const c = fixture.cases.color;
+  const rename = (snap: StructureSnapshot): StructureSnapshot => ({
+    ...snap,
+    elements: snap.elements.map((e) => (e.role === 'button' ? { ...e, name } : e)),
+  });
+  return structuralDiff({
+    baseline: rename(fixture.cases[c.against].structure),
+    current: rename(c.structure),
+    imagesIdentical: c.imagesIdentical,
+    pixels: c.pixels,
+    escalate: { command: 'jux handoff x' },
+  });
+}
+
+test("a group describes the shared change, not one page's element names", () => {
+  const results = ['Save', 'Cancel', 'Delete'].map((n, k) => ({
+    ...fail(`button--${k}`, 'color'),
+    structural: namedButton(n),
+  }));
+  expect(new Set(results.map((r) => r.structural!.signature)).size).toBe(1);
+  expect(results[0].structural!.summary).toContain('[name=');
+  const [g] = computeGroups(results);
+  expect(g.summary).not.toContain('[name=');
+  expect(g.summary).toBe('style-only (color): button color #ffffff→#fef08a — 3 stories');
+});
+
+// A signature with no facts is shared by unrelated failures: every
+// identical, drifting, resized or structure-less story hashes alike.
+test('stories with no deltas never group, whatever their class', () => {
+  const noop = fixture.cases.noop;
+  const base = {
+    baseline: noop.structure,
+    current: noop.structure,
+    imagesIdentical: false,
+    pixels: noop.pixels,
+    escalate: { command: 'jux handoff x' },
+  };
+  const variants: StructuralVerdict[] = [
+    structuralDiff({ ...base, imagesIdentical: true }),
+    structuralDiff({
+      ...base,
+      pixels: {
+        ...noop.pixels,
+        changedRegions: fixture.cases.canvas.pixels.changedRegions,
+      },
+    }),
+    structuralDiff({ ...base, pixels: { ...noop.pixels, dimensionMismatch: true } }),
+    structuralDiff({ ...base, baseline: undefined }),
+  ];
+  expect(variants.map((v) => v.deltaCount)).toEqual([0, 0, 0, 0]);
+  for (const v of variants) {
+    const results = [0, 1, 2].map((k) => ({
+      ...fail(`s${k}`, 'noop'),
+      structural: v,
+    }));
+    expect(computeGroups(results), v.classification).toEqual([]);
+  }
 });

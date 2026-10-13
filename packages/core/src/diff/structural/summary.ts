@@ -22,6 +22,9 @@ import { selfPaintingAt } from './classify.js';
 import { clip, label } from './label.js';
 
 export const MAX_SUMMARY = 300;
+/** `change`: the summary's lead clauses without the per-story tail. */
+export const MAX_CHANGE = 160;
+const CHANGE_ITEMS = 2;
 const LEAD_ITEMS = 3;
 /** Changes listed in one element's clause; the rest join "(+N more)". */
 const CLAUSE_CHANGES = 3;
@@ -219,11 +222,21 @@ export interface SummaryArgs {
   current?: StructureSnapshot;
 }
 
+const headOf = (a: SummaryArgs) =>
+  a.styleTags.length > 0
+    ? `${a.classification} (${a.styleTags.join(', ')})`
+    : a.classification;
+
+/** The change alone, for naming what several stories share: the summary's
+ *  own clause wording with every element reduced to its role|tag (the
+ *  caller passes `deltas` already abstracted), no coverage or tolerance
+ *  tail, at most two clauses. */
+export function buildChange(a: SummaryArgs): string {
+  return clip(lead(headOf(a), a, [], MAX_CHANGE, CHANGE_ITEMS), MAX_CHANGE);
+}
+
 export function buildSummary(a: SummaryArgs): string {
-  const head =
-    a.styleTags.length > 0
-      ? `${a.classification} (${a.styleTags.join(', ')})`
-      : a.classification;
+  const head = headOf(a);
   const subThreshold = a.flags.includes('sub-threshold');
   const missing = a.flags.includes('no-baseline-structure')
     ? 'baseline'
@@ -284,13 +297,19 @@ export function buildSummary(a: SummaryArgs): string {
  *  form that fits beside the reserved tail — a clause cut mid-value would
  *  misstate the change — and whatever is left over is counted in
  *  "(+N more)". */
-function lead(head: string, a: SummaryArgs, tail: string[]): string {
-  const budget = MAX_SUMMARY - tail.reduce((n, t) => n + t.length + 2, 0) - 1;
+function lead(
+  head: string,
+  a: SummaryArgs,
+  tail: string[],
+  max = MAX_SUMMARY,
+  items = LEAD_ITEMS,
+): string {
+  const budget = max - tail.reduce((n, t) => n + t.length + 2, 0) - 1;
   const render = (texts: string[], more: number) =>
     `${head}: ${texts.join('; ')}${more > 0 ? ` (+${more} more)` : ''}`;
   const shown: string[] = [];
   let used = 0;
-  for (const item of leadItems(a.deltas, a.deltaCount).slice(0, LEAD_ITEMS)) {
+  for (const item of leadItems(a.deltas, a.deltaCount).slice(0, items)) {
     const fit =
       item.find(
         (o) =>

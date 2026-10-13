@@ -8,17 +8,26 @@ import { compareCodeUnits } from '../diff/structural/deltas.js';
 import type { DiffResult, RunGroup } from '../types.js';
 
 export function computeGroups(results: DiffResult[]): RunGroup[] {
-  const bySignature = new Map<
-    string,
-    { ids: string[]; summaries: Map<string, string> }
-  >();
+  const bySignature = new Map<string, { ids: string[]; first: string; change: string }>();
   for (const r of results) {
-    if (r.status !== 'fail' || !r.structural) continue;
-    const { signature, summary } = r.structural;
-    let g = bySignature.get(signature);
-    if (!g) bySignature.set(signature, (g = { ids: [], summaries: new Map() }));
-    g.ids.push(r.storyId);
-    g.summaries.set(r.storyId, summary);
+    // A verdict with no deltas has a signature that depends on the
+    // classification alone: unrelated identical, drifting or resized
+    // stories would "share" it, and there is no change to state.
+    if (r.status !== 'fail' || !r.structural || r.structural.deltaCount === 0) continue;
+    const { signature, change, summary } = r.structural;
+    const text = change ?? summary;
+    const g = bySignature.get(signature);
+    if (!g)
+      bySignature.set(signature, { ids: [r.storyId], first: r.storyId, change: text });
+    else {
+      g.ids.push(r.storyId);
+      // The wording of the first story in code-unit order, whatever the
+      // input order: two verdicts of one signature can word it differently.
+      if (compareCodeUnits(r.storyId, g.first) < 0) {
+        g.first = r.storyId;
+        g.change = text;
+      }
+    }
   }
   // Collected through a Map, emitted through a sort: insertion order never
   // reaches the report.
@@ -26,7 +35,11 @@ export function computeGroups(results: DiffResult[]): RunGroup[] {
   for (const [signature, g] of bySignature) {
     if (g.ids.length < 2) continue;
     const storyIds = [...g.ids].sort(compareCodeUnits);
-    groups.push({ signature, summary: g.summaries.get(storyIds[0])!, storyIds });
+    groups.push({
+      signature,
+      summary: `${g.change} — ${storyIds.length} stories`,
+      storyIds,
+    });
   }
   return groups.sort(
     (x, y) =>

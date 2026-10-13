@@ -245,7 +245,7 @@ test('two failing stories with the same change are one group on the report', asy
   expect(r.groups).toEqual([
     {
       signature: r.results[0].structural!.signature,
-      summary: r.results[0].structural!.summary,
+      summary: `${r.results[0].structural!.change} — 2 stories`,
       storyIds: ['s', 's2'],
     },
   ]);

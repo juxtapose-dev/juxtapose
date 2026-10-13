@@ -318,9 +318,7 @@ async function emit(
       for (const g of report.groups.slice(0, MAX_GROUPS_SHOWN)) {
         const ids = g.storyIds.slice(0, 5).join(', ');
         const more = g.storyIds.length > 5 ? `, …${g.storyIds.length - 5} more` : '';
-        process.stdout.write(
-          `  ${g.storyIds.length} stories: ${g.summary}\n    ${ids}${more}\n`,
-        );
+        process.stdout.write(`  ${g.summary}\n    ${ids}${more}\n`);
       }
       if (n > MAX_GROUPS_SHOWN)
         process.stdout.write(`  …and ${n - MAX_GROUPS_SHOWN} more (see report.json)\n`);

@@ -184,6 +184,10 @@ export interface StructuralVerdict {
   styleTags: StyleTag[];
   /** Templated, deterministic, ≤ 300 chars. */
   summary: string;
+  /** The change with every element reduced to role|tag and no per-story
+   *  tail, ≤ 160 chars: what stories sharing a `signature` have in common.
+   *  Absent when there are no deltas. */
+  change?: string;
   /** At most 20, and only the prefix that keeps the whole verdict within
    *  1,500 chars; `deltaCount` is the total. */
   deltas: Delta[];
@@ -233,8 +237,8 @@ export interface DiffResult {
  *  approving by group is a later row. */
 export interface RunGroup {
   signature: string;
-  /** The first story's summary, in code-unit order of `storyIds`; labels
-   *  can differ per page, the signature cannot. */
+  /** The shared change, as `<change> — N stories`: the verdict's `change`
+   *  (elements as role|tag), not one page's labelled summary. */
   summary: string;
   /** ≥ 2, code-unit sorted. */
   storyIds: string[];

@@ -6,6 +6,8 @@ import path from 'node:path';
 import { chromium, type Browser } from 'playwright';
 import {
   approveCapture,
+  compareCodeUnits,
+  computeGroups,
   buildHandoffPrompt,
   createAncestryCheck,
   alwaysAncestor,
@@ -351,17 +353,29 @@ export class RunDirSource implements ReviewSource {
 }
 
 /** Overlay fresh results onto the previous report, keeping untouched stories. */
-function mergeReports(previous: RunReport | null, fresh: RunReport): RunReport {
+export function mergeReports(previous: RunReport | null, fresh: RunReport): RunReport {
   if (!previous) return fresh;
 
   const byId = new Map(previous.results.map((r) => [r.storyId, r]));
   for (const result of fresh.results) byId.set(result.storyId, result);
 
-  const results = [...byId.values()].sort((a, b) => a.storyId.localeCompare(b.storyId));
+  const results = [...byId.values()].sort((a, b) =>
+    compareCodeUnits(a.storyId, b.storyId),
+  );
   const summary = { pass: 0, fail: 0, new: 0, stale: 0, skip: 0 };
   for (const r of results) summary[r.status]++;
 
-  return { ...fresh, results, summary, totalCount: previous.totalCount };
+  // Groups span stories, so a partial run's groups are stale the moment it
+  // is merged: recompute over the merged results.
+  const { groups: _stale, ...rest } = fresh;
+  const groups = computeGroups(results);
+  return {
+    ...rest,
+    results,
+    summary,
+    ...(groups.length > 0 ? { groups } : {}),
+    totalCount: previous.totalCount,
+  };
 }
 
 /** The same hash the manifest stores, so a match means "already approved". */

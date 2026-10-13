@@ -21,7 +21,7 @@ import { disambiguate } from './structural/disambiguate.js';
 import { compareCodeUnits, computeFacts, type Fact } from './structural/deltas.js';
 import { matchElements } from './structural/match.js';
 import { synthesizeShifts } from './structural/shift.js';
-import { buildSummary } from './structural/summary.js';
+import { buildChange, buildSummary } from './structural/summary.js';
 
 export interface StructuralDiffInput {
   baseline?: StructureSnapshot;
@@ -108,6 +108,28 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
     current,
   });
 
+  // The same clauses with `el` swapped for role|tag, so it reads the same on
+  // every page that made the change. Absent when there is nothing to state.
+  const change =
+    facts.length > 0
+      ? buildChange({
+          classification,
+          styleTags,
+          deltas: facts
+            .slice(0, MAX_DELTAS)
+            .map((f) =>
+              f.delta.kind === 'shift'
+                ? { ...f.delta, after: f.abstract }
+                : { ...f.delta, el: f.abstract },
+            ),
+          deltaCount: facts.length,
+          regionCount: 0,
+          unexplainedRegions: [],
+          flags,
+          imagesIdentical,
+        })
+      : undefined;
+
   const sig = signature(classification, facts);
   // Fitted here, not trusted from the caller: the budget is a guarantee for
   // any input, and the index's cap is a courtesy.
@@ -118,6 +140,7 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
     classification,
     styleTags,
     summary,
+    ...(change ? { change } : {}),
     deltas: ds,
     deltaCount: facts.length,
     coverage: cov.coverage,
