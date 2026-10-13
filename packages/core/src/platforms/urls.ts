@@ -70,7 +70,11 @@ export function createUrlPlatform(urls: UrlEntry[]): Platform {
         title: u.id,
         name: u.id,
         componentPath: '',
-        params: u.params ?? {},
+        // `variants` may sit on the entry itself (the spec's form) or in its
+        // params; the entry's win by name. Expansion happens in core.
+        params: u.variants
+          ? { ...u.params, variants: { ...u.params?.variants, ...u.variants } }
+          : (u.params ?? {}),
       }));
     },
     async showStory(page: Page, storyId: string, baseUrl: string) {

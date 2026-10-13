@@ -12,6 +12,8 @@
 
 export type {
   StoryParams,
+  VariantSpec,
+  ColorScheme,
   Viewport,
   StoryManifest,
   Snapshot,
@@ -45,6 +47,17 @@ export type { Platform, EnumerateTarget, SettleContext } from './platform.js';
 export { navigateToStory } from './url-platform.js';
 export { createUrlPlatform } from './platforms/urls.js';
 export { waitForSelector } from './capture/settle.js';
+
+// Per-story capture variants: expansion after enumeration, and selection by a
+// base id (story + all variants) or a capture key (one capture).
+export {
+  expandVariants,
+  selectByStoryId,
+  captureKey,
+  platformStoryId,
+  VariantConfigError,
+  VARIANT_NAME,
+} from './capture/variants.js';
 
 // Implementing a baseline store. `encodeStoryId` matters for anyone building
 // keys from a story id — they are platform-supplied and not path-safe.
