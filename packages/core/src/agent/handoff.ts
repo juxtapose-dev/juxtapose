@@ -165,7 +165,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
 
   lines.push('## Assessment');
   lines.push('');
-  lines.push(magnitudeHint(p.mismatchPercent));
+  lines.push(magnitudeHint(p.mismatchPercent, p.structural?.deltaCount ?? 0));
   lines.push('');
 
   lines.push(...actions(p, { approveVerb: 'accept the new rendering' }));
@@ -276,8 +276,12 @@ export function describeCause(c: Cause): string {
  * Without this, agents treat a 0.02% antialiasing shift and a 40% layout
  * collapse as equally alarming.
  */
-function magnitudeHint(pct: number): string {
+function magnitudeHint(pct: number, deltaCount: number): string {
   if (pct < 0.1) {
+    // A sub-threshold colour change marks no pixels at all; calling it
+    // antialiasing noise beside a real delta argued with the section above.
+    if (deltaCount > 0)
+      return `Pixels are below tolerance, but structure records ${deltaCount} delta(s); judge those, not the pixel count.`;
     return 'Under 0.1% — consistent with sub-pixel antialiasing noise. Usually safe to approve, but confirm the changed regions are not on meaningful content.';
   }
   if (pct < 1) {

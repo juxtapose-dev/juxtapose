@@ -246,6 +246,28 @@ describe('describeRegion', () => {
     expect(out).toContain('## What changed');
   });
 
+  // Review: a sub-threshold background change came with "Under 0.1% —
+  // consistent with sub-pixel antialiasing noise. Usually safe to approve"
+  // beside a real background-color delta.
+  it('a tiny pixel count with structural deltas does not call it noise', () => {
+    const structural = verdictFor('background');
+    expect(structural.deltaCount).toBeGreaterThan(0);
+    const out = buildHandoffPrompt({ ...base, mismatchPercent: 0, structural });
+    const assessment = out.slice(out.indexOf('## Assessment'), out.indexOf('## What to do'));
+    expect(assessment).toContain(
+      `Pixels are below tolerance, but structure records ${structural.deltaCount} delta(s); judge those, not the pixel count.`,
+    );
+    expect(out).not.toContain('antialiasing');
+    expect(out).not.toContain('Usually safe to approve');
+    // No deltas: the noise hint stands.
+    const drift = buildHandoffPrompt({
+      ...base,
+      mismatchPercent: 0.02,
+      structural: { ...structural, deltas: [], deltaCount: 0 },
+    });
+    expect(drift).toContain('sub-pixel antialiasing');
+  });
+
   it('a partial in-closure cause says other imports could not be traced, and does not blame the file', () => {
     const structural = {
       ...verdictFor('color'),
