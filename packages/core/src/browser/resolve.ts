@@ -5,7 +5,7 @@
 // (pins.ts), and most early users already have it, so the upgrade costs them
 // no download.
 
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { homedir as osHomedir } from 'node:os';
 import path from 'node:path';
 import {
@@ -22,7 +22,20 @@ export interface ResolveOptions {
   arch?: string;
   homedir?: string;
   exists?: (p: string) => boolean;
+  isDirectory?: (p: string) => boolean;
 }
+
+/** Paths follow the target platform, not the host, so tests can assert win32 strings anywhere. */
+const pathFor = (platform: NodeJS.Platform) =>
+  platform === 'win32' ? path.win32 : path.posix;
+
+const isDirectoryOnDisk = (p: string): boolean => {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+};
 
 export type ChromeSource = 'flag' | 'env' | 'jux-cache' | 'ms-playwright';
 
@@ -51,78 +64,102 @@ function osCacheDir(
   env: NodeJS.ProcessEnv,
   home: string,
 ): string {
-  if (platform === 'darwin') return path.join(home, 'Library', 'Caches');
-  if (platform === 'win32')
-    return env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
-  return env.XDG_CACHE_HOME || path.join(home, '.cache');
+  const p = pathFor(platform);
+  if (platform === 'darwin') return p.join(home, 'Library', 'Caches');
+  if (platform === 'win32') return env.LOCALAPPDATA || p.join(home, 'AppData', 'Local');
+  return env.XDG_CACHE_HOME || p.join(home, '.cache');
 }
 
 export function juxCacheDir(opts: ResolveOptions = {}): string {
   const env = opts.env ?? process.env;
-  if (env.JUX_CACHE_DIR) return env.JUX_CACHE_DIR;
   const platform = opts.platform ?? process.platform;
-  return path.join(osCacheDir(platform, env, opts.homedir ?? osHomedir()), 'jux');
+  const p = pathFor(platform);
+  if (env.JUX_CACHE_DIR) return p.resolve(env.JUX_CACHE_DIR);
+  return p.join(osCacheDir(platform, env, opts.homedir ?? osHomedir()), 'jux');
 }
+
+/** A cache dir with a drive letter or backslashes is a Windows path. */
+const platformOfCacheDir = (cacheDir: string): NodeJS.Platform =>
+  /^[A-Za-z]:|\\/.test(cacheDir) ? 'win32' : 'linux';
 
 export function chromeInstallDir(
   cacheDir: string,
   version: string = CHROME_VERSION,
 ): string {
-  return path.join(cacheDir, 'chrome-headless-shell', version);
+  return pathFor(platformOfCacheDir(cacheDir)).join(
+    cacheDir,
+    'chrome-headless-shell',
+    version,
+  );
 }
 
 /** Mirrors the zip's top-level folder so `extractZip` needs no renaming. */
 export function chromeBinaryPath(installDir: string, platform: ChromePlatform): string {
   const exe =
     platform === 'win64' ? 'chrome-headless-shell.exe' : 'chrome-headless-shell';
-  return path.join(installDir, `chrome-headless-shell-${platform}`, exe);
+  const p = platform === 'win64' ? path.win32 : path.posix;
+  return p.join(installDir, `chrome-headless-shell-${platform}`, exe);
 }
 
 export function msPlaywrightBinaryPath(opts: ResolveOptions = {}): string {
   const env = opts.env ?? process.env;
   const platform = opts.platform ?? process.platform;
   const cft = chromePlatform(platform, opts.arch ?? process.arch);
+  const p = pathFor(platform);
   const root =
     env.PLAYWRIGHT_BROWSERS_PATH ||
-    path.join(osCacheDir(platform, env, opts.homedir ?? osHomedir()), 'ms-playwright');
+    p.join(osCacheDir(platform, env, opts.homedir ?? osHomedir()), 'ms-playwright');
   return chromeBinaryPath(
-    path.join(root, `chromium_headless_shell-${MS_PLAYWRIGHT_REVISION}`),
+    p.join(root, `chromium_headless_shell-${MS_PLAYWRIGHT_REVISION}`),
     cft,
   );
 }
 
 export function resolveChrome(opts: ResolveOptions = {}): ResolvedChrome | null {
   const env = opts.env ?? process.env;
+  const platform = opts.platform ?? process.platform;
+  const p = pathFor(platform);
   const exists = opts.exists ?? existsSync;
+  const isDirectory = opts.isDirectory ?? isDirectoryOnDisk;
 
-  if (opts.flag) {
-    if (!exists(opts.flag)) throw new Error(`jux: --chrome ${opts.flag} does not exist.`);
-    return { path: opts.flag, source: 'flag' };
-  }
-  if (env.JUX_CHROME) {
-    if (!exists(env.JUX_CHROME))
-      throw new Error(`jux: JUX_CHROME=${env.JUX_CHROME} does not exist.`);
-    return { path: env.JUX_CHROME, source: 'env' };
-  }
+  // Resolved so a daemon or child with another cwd sees the same file; an
+  // existing directory would only fail later at spawn, with a worse message.
+  const explicit = (raw: string, label: string): string => {
+    const abs = p.resolve(raw);
+    if (!exists(abs)) throw new Error(`jux: ${label} does not exist.`);
+    if (isDirectory(abs))
+      throw new Error(`jux: ${label} is a directory, not a browser executable.`);
+    return abs;
+  };
+
+  if (opts.flag)
+    return { path: explicit(opts.flag, `--chrome ${opts.flag}`), source: 'flag' };
+  // An empty JUX_CHROME (`JUX_CHROME= jux ...`) is unset, not a path.
+  if (env.JUX_CHROME)
+    return {
+      path: explicit(env.JUX_CHROME, `JUX_CHROME=${env.JUX_CHROME}`),
+      source: 'env',
+    };
 
   let cft: ChromePlatform;
   try {
-    cft = chromePlatform(opts.platform ?? process.platform, opts.arch ?? process.arch);
+    cft = chromePlatform(platform, opts.arch ?? process.arch);
   } catch {
     return null;
   }
 
   const installDir = chromeInstallDir(juxCacheDir(opts));
   const ours = chromeBinaryPath(installDir, cft);
-  if (exists(ours) && exists(path.join(installDir, INSTALL_MARKER)))
+  if (exists(ours) && exists(p.join(installDir, INSTALL_MARKER)))
     return { path: ours, source: 'jux-cache' };
+
+  // PLAYWRIGHT_BROWSERS_PATH=0 is Playwright's "install inside node_modules"
+  // sentinel, not a directory; joining it would probe a relative "0/" path.
+  if (env.PLAYWRIGHT_BROWSERS_PATH === '0') return null;
 
   const theirs = msPlaywrightBinaryPath(opts);
   // Playwright writes INSTALLATION_COMPLETE last, like our marker.
-  const theirMarker = path.join(
-    path.dirname(path.dirname(theirs)),
-    'INSTALLATION_COMPLETE',
-  );
+  const theirMarker = p.join(p.dirname(p.dirname(theirs)), 'INSTALLATION_COMPLETE');
   if (exists(theirs) && exists(theirMarker))
     return { path: theirs, source: 'ms-playwright' };
 

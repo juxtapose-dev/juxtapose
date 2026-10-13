@@ -1,6 +1,5 @@
 // packages/core/src/browser/resolve.test.ts
 import { describe, it, expect } from 'vitest';
-import path from 'node:path';
 import {
   resolveChrome,
   juxCacheDir,
@@ -35,30 +34,48 @@ describe('chromePlatform', () => {
     // CfT publishes no linux-arm64 build of 151.0.7922.34 (spec §Decisions 6).
     expect(() => chromePlatform('linux', 'arm64')).toThrow(/linux-arm64.*JUX_CHROME/);
   });
-  it('pins every platform with a 64-hex sha256 and the CfT url', () => {
-    for (const pin of Object.values(CHROME_PINS)) {
-      expect(pin.sha256).toMatch(/^[0-9a-f]{64}$/);
+  it('pins every platform to the measured sha256 and size, at the CfT url', () => {
+    const expected = {
+      linux64: [
+        '3cfc2bd00d1bafcf8a68dc74c9c92bb7150ddc8d26ade948a776316e1cec4f14',
+        120231126,
+      ],
+      'mac-arm64': [
+        'cb46a336dbe3d6f1339c5039c3083e4e5dd8e4379710790e34f8f4a865e2452d',
+        99275008,
+      ],
+      'mac-x64': [
+        '608e2b5b1815b45e8bf59c9a381412b62df3ce36f2c182bc04e22fcf04ad53ea',
+        103580477,
+      ],
+      win64: [
+        '46cc69ef55ba29268ffe32dda4192a9d2165be42c3f4e923241153d519493aea',
+        120106945,
+      ],
+    } as const;
+    for (const [platform, [sha256, bytes]] of Object.entries(expected)) {
+      const pin = CHROME_PINS[platform as keyof typeof CHROME_PINS];
+      expect(pin.platform).toBe(platform);
+      expect(pin.sha256).toBe(sha256);
+      expect(pin.bytes).toBe(bytes);
       expect(pin.url).toBe(
-        `https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${pin.platform}/chrome-headless-shell-${pin.platform}.zip`,
+        `https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${platform}/chrome-headless-shell-${platform}.zip`,
       );
     }
   });
 });
 
+const win = { platform: 'win32' as const, arch: 'x64', homedir: 'C:\\Users\\u', env: {} };
+const lin = { platform: 'linux' as const, arch: 'x64', homedir: '/home/u', env: {} };
+
 describe('paths', () => {
   it('uses the OS cache directory, overridable by JUX_CACHE_DIR', () => {
     expect(juxCacheDir(mac)).toBe('/Users/u/Library/Caches/jux');
-    expect(
-      juxCacheDir({ ...mac, platform: 'linux', env: { XDG_CACHE_HOME: '/x' } }),
-    ).toBe('/x/jux');
-    expect(juxCacheDir({ ...mac, platform: 'linux', env: {} })).toBe(
-      '/Users/u/.cache/jux',
-    );
-    // path.join is the host's; on POSIX that yields "C:\L/jux", which is what a win32 host would not do.
-    expect(
-      juxCacheDir({ ...mac, platform: 'win32', env: { LOCALAPPDATA: 'C:\\L' } }),
-    ).toBe(path.join('C:\\L', 'jux'));
-    expect(juxCacheDir({ ...mac, env: { JUX_CACHE_DIR: '/tmp/c' } })).toBe('/tmp/c');
+    expect(juxCacheDir({ ...lin, env: { XDG_CACHE_HOME: '/x' } })).toBe('/x/jux');
+    expect(juxCacheDir(lin)).toBe('/home/u/.cache/jux');
+    expect(juxCacheDir({ ...win, env: { LOCALAPPDATA: 'C:\\L' } })).toBe('C:\\L\\jux');
+    expect(juxCacheDir(win)).toBe('C:\\Users\\u\\AppData\\Local\\jux');
+    expect(juxCacheDir({ ...mac, env: { JUX_CACHE_DIR: '/tmp/c/../c' } })).toBe('/tmp/c');
   });
   it('lays the install out like the zip does', () => {
     const dir = chromeInstallDir('/c', '151.0.7922.34');
@@ -66,8 +83,8 @@ describe('paths', () => {
     expect(chromeBinaryPath(dir, 'mac-arm64')).toBe(
       '/c/chrome-headless-shell/151.0.7922.34/chrome-headless-shell-mac-arm64/chrome-headless-shell',
     );
-    expect(chromeBinaryPath(dir, 'win64')).toBe(
-      path.join(dir, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'),
+    expect(chromeBinaryPath(chromeInstallDir('C:\\c'), 'win64')).toBe(
+      'C:\\c\\chrome-headless-shell\\151.0.7922.34\\chrome-headless-shell-win64\\chrome-headless-shell.exe',
     );
   });
   it('knows where Playwright keeps the same build', () => {
@@ -76,6 +93,19 @@ describe('paths', () => {
       msPlaywrightBinaryPath({ ...mac, env: { PLAYWRIGHT_BROWSERS_PATH: '/pw' } }),
     ).toBe(
       '/pw/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell',
+    );
+    expect(
+      msPlaywrightBinaryPath({ ...lin, env: { PLAYWRIGHT_BROWSERS_PATH: '/pw' } }),
+    ).toBe(
+      '/pw/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell',
+    );
+    expect(msPlaywrightBinaryPath({ ...lin, env: {} })).toBe(
+      '/home/u/.cache/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell',
+    );
+    expect(
+      msPlaywrightBinaryPath({ ...win, env: { PLAYWRIGHT_BROWSERS_PATH: 'D:\\pw' } }),
+    ).toBe(
+      'D:\\pw\\chromium_headless_shell-1234\\chrome-headless-shell-win64\\chrome-headless-shell.exe',
     );
   });
 });
@@ -123,5 +153,72 @@ describe('resolveChrome', () => {
       /linux-arm64/,
     );
     expect(noBrowserMessage(mac)).toBe(NO_BROWSER_MESSAGE);
+  });
+});
+
+describe('resolveChrome details', () => {
+  const winPw =
+    'C:\\Users\\u\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1234';
+  const winPwBin = `${winPw}\\chrome-headless-shell-win64\\chrome-headless-shell.exe`;
+  it('finds the win32 Playwright install by its INSTALLATION_COMPLETE marker', () => {
+    expect(
+      resolveChrome({
+        ...win,
+        exists: have(winPwBin, `${winPw}\\INSTALLATION_COMPLETE`),
+      }),
+    ).toEqual({ path: winPwBin, source: 'ms-playwright' });
+    expect(resolveChrome({ ...win, exists: have(winPwBin) })).toBeNull();
+  });
+  it('honours PLAYWRIGHT_BROWSERS_PATH on linux, but not the "0" sentinel', () => {
+    const bin =
+      '/pw/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell';
+    const marker = '/pw/chromium_headless_shell-1234/INSTALLATION_COMPLETE';
+    expect(
+      resolveChrome({
+        ...lin,
+        env: { PLAYWRIGHT_BROWSERS_PATH: '/pw' },
+        exists: have(bin, marker),
+      }),
+    ).toEqual({ path: bin, source: 'ms-playwright' });
+    const zero =
+      '0/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell';
+    expect(
+      resolveChrome({
+        ...lin,
+        env: { PLAYWRIGHT_BROWSERS_PATH: '0' },
+        exists: have(zero, '0/chromium_headless_shell-1234/INSTALLATION_COMPLETE'),
+      }),
+    ).toBeNull();
+  });
+  it('returns null on linux-arm64 even with JUX_CHROME unset', () => {
+    expect(resolveChrome({ ...lin, arch: 'arm64', exists: () => true })).toBeNull();
+  });
+  it('treats an empty JUX_CHROME as unset', () => {
+    expect(
+      resolveChrome({ ...mac, env: { JUX_CHROME: '' }, exists: have(juxBin, juxMarker) }),
+    ).toEqual({ path: juxBin, source: 'jux-cache' });
+  });
+  it('returns resolved paths for flag and env', () => {
+    expect(resolveChrome({ ...mac, flag: '/a/../f', exists: () => true })).toEqual({
+      path: '/f',
+      source: 'flag',
+    });
+    expect(
+      resolveChrome({ ...mac, env: { JUX_CHROME: '/a/../e' }, exists: () => true }),
+    ).toEqual({ path: '/e', source: 'env' });
+  });
+  it('rejects a flag or env that is a directory', () => {
+    const isDirectory = (p: string) => p === '/d';
+    expect(() =>
+      resolveChrome({ ...mac, flag: '/d', exists: () => true, isDirectory }),
+    ).toThrow(/directory/);
+    expect(() =>
+      resolveChrome({
+        ...mac,
+        env: { JUX_CHROME: '/d' },
+        exists: () => true,
+        isDirectory,
+      }),
+    ).toThrow(/JUX_CHROME.*directory/);
   });
 });
