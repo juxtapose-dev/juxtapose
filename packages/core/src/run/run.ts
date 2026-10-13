@@ -16,12 +16,20 @@ import type {
   RunReport,
   Snapshot,
   StoryManifest,
+  StructuralVerdict,
   StructureSnapshot,
   Viewport,
 } from '../types.js';
 import { capturePool } from '../capture/pool.js';
 import { resolveStatus, toDiffStatus, type AncestryCheck } from '../baseline/status.js';
-import { diffImages, resolveThreshold, resolveMinDiffPercent } from '../diff/diff.js';
+import { decodeStructure } from '../capture/structure.js';
+import { structuralDiff } from '../diff/structural.js';
+import {
+  diffImages,
+  type DiffOutput,
+  resolveThreshold,
+  resolveMinDiffPercent,
+} from '../diff/diff.js';
 import { phases, type Phases } from './phases.js';
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1280, height: 800 };
@@ -202,13 +210,56 @@ async function judge(
     structure: snapshot.structure,
   });
 
+  // Structure explains the failure after the pixels have decided it. The
+  // baseline sidecar is read only here, so a green run never touches one. A
+  // manifest hash is not a file: read the store, and treat anything
+  // unreadable as absent. This code runs only on a hash mismatch.
+  const structural = await tryStructural(opts.store, story.storyId, snapshot, diff);
+
   return {
     ...base,
     mismatchPixels: diff.mismatchPixels,
     mismatchPercent: diff.mismatchPercent,
     changedRegions: diff.changedRegions,
     error: diff.dimensionMismatch ? 'viewport size changed since baseline' : undefined,
+    ...(structural ? { structural } : {}),
   };
+}
+
+/** A sidecar that is absent or unreadable is simply no baseline structure. */
+async function readBaselineStructure(
+  store: BaselineStore,
+  storyId: string,
+): Promise<StructureSnapshot | undefined> {
+  try {
+    const gz = store.getStructure ? await store.getStructure(storyId) : null;
+    return gz ? decodeStructure(gz) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Structure explains a failure, never decides one, so nothing in here may
+ *  fail the story: a missing, corrupt or malformed sidecar, or a bug in the
+ *  diff, yields no verdict and the pixel result stands. */
+async function tryStructural(
+  store: BaselineStore,
+  storyId: string,
+  snapshot: Snapshot,
+  pixels: Pick<DiffOutput, 'changedRegions' | 'dimensionMismatch'>,
+): Promise<StructuralVerdict | undefined> {
+  if (!snapshot.structure) return undefined;
+  try {
+    return structuralDiff({
+      baseline: await readBaselineStructure(store, storyId),
+      current: snapshot.structure,
+      imagesIdentical: false,
+      pixels,
+      escalate: { command: `jux handoff ${storyId}` },
+    });
+  } catch {
+    return undefined;
+  }
 }
 
 function tally(results: DiffResult[]): Record<DiffStatus, number> {

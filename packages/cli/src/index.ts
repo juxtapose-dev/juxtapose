@@ -7,12 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
-import { initCommand } from './commands/init.js';
-import { runCommand } from './commands/run.js';
-import { approveCommand } from './commands/approve.js';
-import { checkCommand } from './commands/check.js';
-import { handoffCommand } from './commands/handoff.js';
-import { snapCommand } from './commands/snap.js';
+import { EXIT } from './exit-codes.js';
 
 const USAGE = `
 jux — visual regression testing for component workbenches
@@ -23,7 +18,8 @@ Usage
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
   jux handoff <storyId>          print an agent prompt for one failing story
-  jux snap <url> [options]       capture one page: pixels + structure, no workbench
+  jux snap <url>… [options]      capture pages: pixels + structure, no workbench
+  jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix)
   jux --version                  print installed package versions
 
 Common options
@@ -47,9 +43,31 @@ approve
 
 snap
   --as <name>                    name for this snap (default: from the url)
+  --as-prefix <p>                several urls: name each <p>-<slug> (slug = path), one browser
+                                 launch; first removes older <p>-* snaps
   --viewport <WxH>               default 1280x800
   --wait-for <selector>          wait for this selector before capture
   --mask <selector>              cover before capture (repeatable)
+
+diff
+  <a>, <b>                       snap names (from --as), or paths to .webp files
+  --prefix                       pair <a>-<slug> with <b>-<slug> and verdict every page
+  --json                         the verdict as juxtapose.verdict/v1 JSON (byte-stable)
+  --crops                        for now: print both image paths ({"images": [...]} with --json)
+                                 and exit 0; cropped strips arrive in a later release
+  --prefix output is juxtapose.verdict-set/v1: pages[] (a verdict each), missing[] (unpaired
+    slugs), errors[] ({slug, code, file}; code is snap-missing | sidecar-undecodable |
+    image-undecodable | pair-undecodable; file is the snap file name, null for
+    pair-undecodable) and summary {identical, different, missing, errored}; one bad pair
+    never hides the others
+  exit 0 identical · 1 different or unpaired · 2 usage · 3 could not read an input
+  (with --prefix, 3 beats 1 beats 0: any errored pair makes the exit 3)
+snap exit: 0 all written · 2 usage · 3 browser or any page failed (the rest are still written)
+
+The agent loop, no workbench needed:
+  jux snap http://localhost:5173/ http://localhost:5173/settings --as-prefix before
+  # …edit code…
+  jux snap http://localhost:5173/ http://localhost:5173/settings --as-prefix after && jux diff --prefix before after
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -83,29 +101,75 @@ async function main(argv: string[]): Promise<number> {
       story: { type: 'string', multiple: true },
       run: { type: 'string' },
       as: { type: 'string' },
+      'as-prefix': { type: 'string' },
+      prefix: { type: 'boolean', default: false },
       viewport: { type: 'string' },
       'wait-for': { type: 'string' },
       mask: { type: 'string', multiple: true },
+      crops: { type: 'boolean', default: false },
     },
   });
 
   switch (command) {
-    case 'init':
+    case 'init': {
+      const { initCommand } = await import('./commands/init.js');
       return initCommand(values as never);
-    case 'run':
+    }
+    case 'run': {
+      const { runCommand } = await import('./commands/run.js');
       return runCommand(values as never);
-    case 'approve':
+    }
+    case 'approve': {
+      const { approveCommand } = await import('./commands/approve.js');
       return approveCommand(values as never);
-    case 'check':
+    }
+    case 'check': {
+      const { checkCommand } = await import('./commands/check.js');
       return checkCommand(values as never);
-    case 'handoff':
+    }
+    case 'handoff': {
+      const { handoffCommand } = await import('./commands/handoff.js');
       return handoffCommand(positionals[0], values as never);
-    case 'snap':
-      return snapCommand(positionals[0], values as never);
+    }
+    case 'snap': {
+      const { snapCommand } = await import('./commands/snap.js');
+      return snapCommand(positionals, values as never);
+    }
+    case 'diff': {
+      const { diffCommand } = await import('./commands/diff.js');
+      return diffCommand(positionals[0], positionals[1], values as never);
+    }
     default:
-      process.stderr.write(`jux: unknown command '${command}'\n${USAGE}`);
-      return 2;
+      process.stderr.write(
+        `jux: unknown command '${command}'.${suggest(command)} Run \`jux --help\`.\n`,
+      );
+      return EXIT.usage;
   }
+}
+
+const COMMANDS = ['init', 'run', 'approve', 'check', 'handoff', 'snap', 'diff'];
+
+function distance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++)
+      row[j] = Math.min(
+        prev[j] + 1,
+        row[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    prev = row;
+  }
+  return prev[b.length];
+}
+
+/** " Did you mean 'diff'?" when a command is within edit distance 2. */
+function suggest(command: string): string {
+  const best = COMMANDS.map((c) => ({ c, d: distance(command, c) })).sort(
+    (x, y) => x.d - y.d,
+  )[0];
+  return best.d <= 2 ? ` Did you mean '${best.c}'?` : '';
 }
 
 /**
@@ -149,6 +213,11 @@ main(process.argv.slice(2))
   .then((code) => process.exit(code))
   .catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`jux: ${message}\n`);
-    process.exit(1);
+    process.stderr.write(
+      `jux: ${message}\nunexpected failure; re-run with JUX_DEBUG=1 for the stack trace, or report it at https://github.com/juxtapose-dev/juxtapose/issues\n`,
+    );
+    if (process.env.JUX_DEBUG && err instanceof Error && err.stack)
+      process.stderr.write(`${err.stack}\n`);
+    // An unhandled throw is a tool failure, not "needs review".
+    process.exit(EXIT.failure);
   });

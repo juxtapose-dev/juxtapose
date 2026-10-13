@@ -110,6 +110,79 @@ export interface ChangedRegion {
   height: number;
 }
 
+/** One changed fact between two structure snapshots. `el` is a short human
+ *  label (`button[name="Save"]`, `div#row-1`, `div.card`, or a trimmed path). */
+export type Delta =
+  | { kind: 'text'; el: string; from: string; to: string }
+  | { kind: 'style'; el: string; prop: string; from: string; to: string }
+  | { kind: 'attr'; el: string; attr: 'src' | 'role' | 'name'; from: string; to: string }
+  | { kind: 'added'; el: string; rect: StructureRect }
+  | { kind: 'removed'; el: string; rect: StructureRect }
+  | { kind: 'moved'; el: string; dx: number; dy: number }
+  | { kind: 'resized'; el: string; dw: number; dh: number }
+  /** ≥3 contiguous elements after `after` moved by the same (dx, dy). */
+  | { kind: 'shift'; after: string; dx: number; dy: number; count: number };
+
+export type Classification =
+  | 'identical'
+  | 'render-drift'
+  | 'dimension-change'
+  | 'element-added'
+  | 'element-removed'
+  | 'reflow'
+  | 'geometry'
+  | 'text-only'
+  | 'style-only'
+  | 'attr-only'
+  | 'mixed'
+  | 'unknown';
+
+/** Sub-tags of `style-only`, so "colour tweak" and "spacing change" read
+ *  differently at a glance. */
+export type StyleTag = 'color' | 'typography' | 'spacing' | 'border' | 'effects';
+
+export type Flag =
+  | 'element-removed'
+  | 'text-changed'
+  | 'large-reflow'
+  | 'unexplained-pixels'
+  /** The images differ but the pixel diff marked nothing: the change is below
+   *  its tolerance, and the structural deltas are the change. */
+  | 'sub-threshold'
+  | 'structure-truncated'
+  | 'no-baseline-structure'
+  | 'no-current-structure'
+  /** Either side's content is taller than the viewport: changes below the
+   *  fold are invisible to both pixels and structure. */
+  | 'below-fold';
+
+/** Tier-0: what changed, in a few hundred characters, with whether it
+ *  explains every changed pixel. The whole output of `jux diff`. */
+export interface StructuralVerdict {
+  schema: 'juxtapose.verdict/v1';
+  classification: Classification;
+  /** Empty unless classification is `style-only` or `mixed`. */
+  styleTags: StyleTag[];
+  /** Templated, deterministic, ≤ 300 chars. */
+  summary: string;
+  /** At most 20, and only the prefix that keeps the whole verdict within
+   *  1,500 chars; `deltaCount` is the total. */
+  deltas: Delta[];
+  deltaCount: number;
+  /** Fraction of changed-region area intersecting some delta's element. */
+  coverage: number;
+  /** ≥ 0.98 | ≥ 0.5 | below. */
+  explained: 'full' | 'partial' | 'none';
+  /** The prefix that fits the 1,500-char verdict; `coverage` covers all. */
+  unexplainedRegions: ChangedRegion[];
+  flags: Flag[];
+  /** sha256 over the classification and the delta set with elements
+   *  abstracted to role|tag, so two pages with the same change share one. */
+  signature: string;
+  /** The exact command for tier-3 pixels. */
+  escalate: { command: string };
+}
+
 export type DiffStatus = 'pass' | 'fail' | 'new' | 'stale' | 'skip';
 
 export interface DiffResult {
@@ -128,6 +201,9 @@ export interface DiffResult {
   viewport?: Viewport;
   /** Set when the capture or diff threw. status is 'fail' in that case. */
   error?: string;
+  /** Tier-0 explanation of a failure. Present only when status is 'fail' and
+   *  the current capture produced a structure; never consulted on pass. */
+  structural?: StructuralVerdict;
   durationMs: number;
 }
 

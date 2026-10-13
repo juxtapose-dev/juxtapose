@@ -20,6 +20,11 @@ export type {
   StructureRect,
   CaptureEnv,
   ChangedRegion,
+  Delta,
+  Classification,
+  StyleTag,
+  Flag,
+  StructuralVerdict,
   DiffStatus,
   DiffResult,
   RunReport,
@@ -56,6 +61,11 @@ export {
   readRunStructure,
   type RunStructure,
 } from './baseline/approve.js';
+// Structural diff: two sidecars + a pixel diff → the tier-0 verdict.
+export { structuralDiff, type StructuralDiffInput } from './diff/structural.js';
+export { compareSnaps, type SnapSide, type SnapComparison } from './diff/compare.js';
+export { describeDelta, describeDeltas } from './diff/structural/summary.js';
+export { compareCodeUnits } from './diff/structural/deltas.js';
 
 // Driving a run.
 export {
@@ -67,7 +77,14 @@ export {
 
 // Per-phase timings, so a slow run can say which phase was slow.
 export { phases, formatPhases, type Phases } from './run/phases.js';
-export { snapPage, type SnapOptions, type SnapResult } from './capture/snap.js';
+export {
+  snapPage,
+  snapPages,
+  type SnapOptions,
+  type SnapResult,
+  type SnapPagesOptions,
+  type SnapPageResult,
+} from './capture/snap.js';
 export { deterministicLaunchOptions, type LaunchOptions } from './capture/launch.js';
 export {
   resolveAffected,

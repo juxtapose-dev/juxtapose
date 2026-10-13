@@ -1,0 +1,3687 @@
+{
+  "viewport": { "width": 640, "height": 480 },
+  "cases": {
+    "noop": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "a448b99b74bbd45702714f2f65285906e1d0527d6fd6e98bffb21912d03a5b11",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": true,
+      "pixels": {
+        "mismatchPixels": 0,
+        "mismatchPercent": 0,
+        "changedRegions": [],
+        "dimensionMismatch": false
+      }
+    },
+    "color": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "74b9bbe19f9bd3dee4c02f3713b8794fead0aee92221ccfdabfce13785ddebb1",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(254, 240, 138)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 134,
+        "mismatchPercent": 0.043619791666666664,
+        "changedRegions": [{ "x": 31, "y": 84, "width": 35, "height": 12 }],
+        "dimensionMismatch": false
+      }
+    },
+    "background": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "131c3b2b61766b26ab01ab6f609660f5cc2ffb9834bacb32b6e3b5bf95938ae9",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(29, 78, 216)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 0,
+        "mismatchPercent": 0,
+        "changedRegions": [],
+        "dimensionMismatch": false
+      }
+    },
+    "padding": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "0fed800f70eed61d3bc1c14aa0a61e536b5b57ed00f62f17818f49eb1d9d29ac",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 370 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 65, "w": 73.38, "h": 52 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "12px",
+              "padding-right": "16px",
+              "padding-bottom": "12px",
+              "padding-left": "16px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 93.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 129, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 166, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 203, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 240, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 277, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 326, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 3918,
+        "mismatchPercent": 1.275390625,
+        "changedRegions": [
+          { "x": 16, "y": 64, "width": 81, "height": 53 },
+          { "x": 115, "y": 64, "width": 11, "height": 32 },
+          { "x": 18, "y": 137, "width": 60, "height": 16 },
+          { "x": 18, "y": 174, "width": 58, "height": 16 },
+          { "x": 18, "y": 211, "width": 70, "height": 16 },
+          { "x": 18, "y": 248, "width": 61, "height": 16 },
+          { "x": 18, "y": 285, "width": 58, "height": 16 },
+          { "x": 26, "y": 332, "width": 120, "height": 4 },
+          { "x": 26, "y": 372, "width": 120, "height": 4 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "margin": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "e2a843fa8c5027130957293893104707aa5e1e08c4822dbc81e0bd6b2191e21f",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 386 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "32px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 145, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 182, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 219, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 256, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 293, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 342, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 6882,
+        "mismatchPercent": 2.240234375,
+        "changedRegions": [
+          { "x": 17, "y": 137, "width": 62, "height": 12 },
+          { "x": 17, "y": 157, "width": 62, "height": 29 },
+          { "x": 17, "y": 194, "width": 71, "height": 29 },
+          { "x": 17, "y": 231, "width": 72, "height": 29 },
+          { "x": 17, "y": 268, "width": 63, "height": 29 },
+          { "x": 18, "y": 305, "width": 58, "height": 12 },
+          { "x": 26, "y": 332, "width": 120, "height": 20 },
+          { "x": 26, "y": 372, "width": 120, "height": 20 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "font-size": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "ed595e153446aaecbc8a5194c8cb7a0362e0142d3064f68d5594f8bcbc9d2086",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 364 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 67, "w": 74.72, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-size": "20px",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 95.17, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 123, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 160, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 197, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 234, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 271, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 320, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 2946,
+        "mismatchPercent": 0.958984375,
+        "changedRegions": [
+          { "x": 17, "y": 64, "width": 81, "height": 49 },
+          { "x": 115, "y": 64, "width": 12, "height": 32 },
+          { "x": 18, "y": 135, "width": 60, "height": 14 },
+          { "x": 18, "y": 172, "width": 58, "height": 14 },
+          { "x": 18, "y": 209, "width": 70, "height": 14 },
+          { "x": 18, "y": 246, "width": 62, "height": 14 },
+          { "x": 18, "y": 283, "width": 58, "height": 14 },
+          { "x": 26, "y": 330, "width": 120, "height": 2 },
+          { "x": 26, "y": 370, "width": 120, "height": 2 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "font-weight": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "a5a0c652218587133e2a5042e48af6b2d9d667983a176b31d5396235c854e3fe",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 64.47, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 84.92, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 162,
+        "mismatchPercent": 0.052734375,
+        "changedRegions": [
+          { "x": 77, "y": 70, "width": 9, "height": 42 },
+          { "x": 117, "y": 70, "width": 1, "height": 20 },
+          { "x": 32, "y": 85, "width": 34, "height": 10 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "line-height": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "ab55e85664af3c689a49b3ca406a29b364d79a65242b20f2527d91d29d27119f",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 377 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 64, "w": 65.38, "h": 60 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "line-height": "40px",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 67, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 136, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 173, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 210, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 247, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 284, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 333, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 5951,
+        "mismatchPercent": 1.9371744791666665,
+        "changedRegions": [
+          { "x": 16, "y": 64, "width": 101, "height": 8 },
+          { "x": 31, "y": 84, "width": 35, "height": 15 },
+          { "x": 87, "y": 95, "width": 30, "height": 4 },
+          { "x": 16, "y": 110, "width": 65, "height": 14 },
+          { "x": 17, "y": 137, "width": 61, "height": 23 },
+          { "x": 17, "y": 174, "width": 59, "height": 23 },
+          { "x": 17, "y": 211, "width": 71, "height": 23 },
+          { "x": 17, "y": 248, "width": 62, "height": 23 },
+          { "x": 17, "y": 285, "width": 59, "height": 23 },
+          { "x": 26, "y": 332, "width": 120, "height": 11 },
+          { "x": 26, "y": 372, "width": 120, "height": 11 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "letter-spacing": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "a86375a06713bb3423197ae4c1d0d74728cdc0565c78018b4305d76173b2173b",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 73.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "letter-spacing": "2px",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 93.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 802,
+        "mismatchPercent": 0.2610677083333333,
+        "changedRegions": [
+          { "x": 42, "y": 64, "width": 55, "height": 49 },
+          { "x": 115, "y": 64, "width": 11, "height": 32 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "border-radius": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "eddc5ad50516b90aaddeb6057413d6e3feb769e908643e8b3723ed6612cf17fb",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "16px",
+              "border-top-right-radius": "16px",
+              "border-bottom-right-radius": "16px",
+              "border-bottom-left-radius": "16px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 114,
+        "mismatchPercent": 0.037109375,
+        "changedRegions": [
+          { "x": 16, "y": 69, "width": 11, "height": 10 },
+          { "x": 70, "y": 69, "width": 11, "height": 10 },
+          { "x": 16, "y": 103, "width": 11, "height": 10 },
+          { "x": 70, "y": 103, "width": 11, "height": 10 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "border-color": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "cd14cc499b0537748d2c14b5e95f1d75989d3068f4d57af55a72cf4aa4867dd6",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(220, 38, 38)",
+              "border-right-color": "rgb(220, 38, 38)",
+              "border-bottom-color": "rgb(220, 38, 38)",
+              "border-left-color": "rgb(220, 38, 38)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 376,
+        "mismatchPercent": 0.12239583333333334,
+        "changedRegions": [{ "x": 16, "y": 69, "width": 65, "height": 44 }],
+        "dimensionMismatch": false
+      }
+    },
+    "box-shadow": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "13054701b92adbaa1a914110ebe3d0fb76e2c2ed4894f7b5a6c790a290cab9bf",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px",
+              "box-shadow": "rgba(0, 0, 0, 0.4) 0px 4px 12px 0px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 621,
+        "mismatchPercent": 0.20214843749999997,
+        "changedRegions": [{ "x": 12, "y": 77, "width": 73, "height": 44 }],
+        "dimensionMismatch": false
+      }
+    },
+    "opacity": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "84ba8dbf541307c4317fec998a14485f8b110f0170a805deb90216e509a0fd81",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 2,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px",
+              "opacity": "0.5"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 2492,
+        "mismatchPercent": 0.8111979166666666,
+        "changedRegions": [{ "x": 16, "y": 69, "width": 65, "height": 44 }],
+        "dimensionMismatch": false
+      }
+    },
+    "text": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "aa0716ba6e6999b47bf2ce4b450cc4640ca647c46dea40a4be8d8fb053127f60",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 134.73, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save changes",
+            "text": "Save changes"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 155.19, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 3212,
+        "mismatchPercent": 1.0455729166666667,
+        "changedRegions": [{ "x": 73, "y": 64, "width": 114, "height": 49 }],
+        "dimensionMismatch": false
+      }
+    },
+    "removed": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "8f85485046a1bc884477045f6054ab2344a0e618941d9c5eca59847530bf01a8",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 329 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 285, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 9514,
+        "mismatchPercent": 3.0970052083333335,
+        "changedRegions": [
+          { "x": 53, "y": 138, "width": 25, "height": 11 },
+          { "x": 57, "y": 174, "width": 31, "height": 12 },
+          { "x": 55, "y": 211, "width": 33, "height": 12 },
+          { "x": 57, "y": 248, "width": 22, "height": 12 },
+          { "x": 18, "y": 285, "width": 128, "height": 87 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "inserted": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "b0cfb01a366f57a14540401222c59209004eebac7c538cf3900a53d9825cdb7c",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 440 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 64, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#banner",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 120, "w": 608, "h": 40 },
+            "paintOrder": 1,
+            "styles": { "background-color": "rgb(254, 243, 199)" },
+            "id": "banner",
+            "name": "Unsaved changes",
+            "text": "Unsaved changes"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 16, "y": 160, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 310, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 347, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 396, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 13407,
+        "mismatchPercent": 4.3642578125,
+        "changedRegions": [
+          { "x": 16, "y": 64, "width": 102, "height": 32 },
+          { "x": 16, "y": 105, "width": 65, "height": 8 },
+          { "x": 17, "y": 125, "width": 126, "height": 24 },
+          { "x": 16, "y": 160, "width": 60, "height": 32 },
+          { "x": 53, "y": 211, "width": 35, "height": 12 },
+          { "x": 55, "y": 252, "width": 24, "height": 8 },
+          { "x": 55, "y": 286, "width": 33, "height": 11 },
+          { "x": 18, "y": 322, "width": 128, "height": 50 },
+          { "x": 26, "y": 406, "width": 120, "height": 40 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "img-src": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "52c8a2980e95be824c632c5d0767ae922a353fb7d0b61cc6a281e68d8a373d73",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-b.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 968,
+        "mismatchPercent": 0.31510416666666663,
+        "changedRegions": [{ "x": 86, "y": 64, "width": 32, "height": 32 }],
+        "dimensionMismatch": false
+      }
+    },
+    "reorder": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "feba92e301dd76b2528fa2cfb45cbd74cf65198520e37bca51494dbe3d5d8cac",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 521,
+        "mismatchPercent": 0.16959635416666666,
+        "changedRegions": [
+          { "x": 53, "y": 138, "width": 25, "height": 11 },
+          { "x": 57, "y": 174, "width": 31, "height": 12 },
+          { "x": 55, "y": 211, "width": 33, "height": 12 },
+          { "x": 53, "y": 248, "width": 26, "height": 12 }
+        ],
+        "dimensionMismatch": false
+      }
+    },
+    "canvas": {
+      "structure": {
+        "schema": "juxtapose.structure/v1",
+        "viewport": { "width": 640, "height": 480 },
+        "structureHash": "a448b99b74bbd45702714f2f65285906e1d0527d6fd6e98bffb21912d03a5b11",
+        "contentHeight": 480,
+        "elements": [
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)",
+            "parent": null,
+            "tag": "main",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 366 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(17, 24, 39)",
+              "font-family": "sans-serif",
+              "font-size": "16px",
+              "line-height": "24px"
+            },
+            "role": "main"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>h1#title",
+            "parent": 0,
+            "tag": "h1",
+            "rect": { "x": 16, "y": 16, "w": 608, "h": 36 },
+            "paintOrder": 1,
+            "styles": {
+              "font-size": "24px",
+              "font-weight": "700",
+              "line-height": "36px",
+              "margin-bottom": "12px"
+            },
+            "id": "title",
+            "role": "heading",
+            "name": "Settings",
+            "text": "Settings"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>button[data-testid=\"save\"]",
+            "parent": 0,
+            "tag": "button",
+            "rect": { "x": 16, "y": 69, "w": 65.38, "h": 44 },
+            "paintOrder": 1,
+            "styles": {
+              "color": "rgb(255, 255, 255)",
+              "background-color": "rgb(37, 99, 235)",
+              "font-family": "Arial",
+              "font-weight": "600",
+              "text-align": "center",
+              "padding-top": "8px",
+              "padding-right": "12px",
+              "padding-bottom": "8px",
+              "padding-left": "12px",
+              "margin-bottom": "12px",
+              "border-top-width": "2px",
+              "border-right-width": "2px",
+              "border-bottom-width": "2px",
+              "border-left-width": "2px",
+              "border-top-color": "rgb(29, 78, 216)",
+              "border-right-color": "rgb(29, 78, 216)",
+              "border-bottom-color": "rgb(29, 78, 216)",
+              "border-left-color": "rgb(29, 78, 216)",
+              "border-top-left-radius": "6px",
+              "border-top-right-radius": "6px",
+              "border-bottom-right-radius": "6px",
+              "border-bottom-left-radius": "6px"
+            },
+            "testId": "save",
+            "classes": ["save"],
+            "role": "button",
+            "name": "Save",
+            "text": "Save"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>img#logo",
+            "parent": 0,
+            "tag": "img",
+            "rect": { "x": 85.83, "y": 64, "w": 32, "h": 32 },
+            "paintOrder": 1,
+            "styles": {},
+            "id": "logo",
+            "role": "img",
+            "name": "Logo",
+            "src": "logo-a.svg"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-1",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 125, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-1",
+            "classes": ["row"],
+            "name": "Row one",
+            "text": "Row one"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-2",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 162, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-2",
+            "classes": ["row"],
+            "name": "Row two",
+            "text": "Row two"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-3",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 199, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-3",
+            "classes": ["row"],
+            "name": "Row three",
+            "text": "Row three"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-4",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 236, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-4",
+            "classes": ["row"],
+            "name": "Row four",
+            "text": "Row four"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>div#row-5",
+            "parent": 0,
+            "tag": "div",
+            "rect": { "x": 16, "y": 273, "w": 608, "h": 37 },
+            "paintOrder": 1,
+            "styles": {
+              "padding-top": "6px",
+              "padding-bottom": "6px",
+              "border-top-width": "1px",
+              "border-top-color": "rgb(229, 231, 235)"
+            },
+            "id": "row-5",
+            "classes": ["row"],
+            "name": "Row five",
+            "text": "Row five"
+          },
+          {
+            "path": "html:nth-of-type(1)>body:nth-of-type(1)>main:nth-of-type(1)>canvas#chart",
+            "parent": 0,
+            "tag": "canvas",
+            "rect": { "x": 16, "y": 322, "w": 200, "h": 60 },
+            "paintOrder": 1,
+            "styles": { "margin-top": "12px" },
+            "id": "chart"
+          }
+        ]
+      },
+      "imagesIdentical": false,
+      "pixels": {
+        "mismatchPixels": 4800,
+        "mismatchPercent": 1.5625,
+        "changedRegions": [{ "x": 26, "y": 332, "width": 120, "height": 40 }],
+        "dimensionMismatch": false
+      }
+    }
+  }
+}

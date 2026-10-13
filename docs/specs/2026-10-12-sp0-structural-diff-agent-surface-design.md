@@ -238,6 +238,12 @@ handoffs into one decision.
   by slug and prints one verdict per page plus a page-level summary. This is
   the URL-mode answer to "which pages did my shared-component edit touch": the
   agent snaps every page it suspects in one command instead of choosing one.
+  Prefix slugs are path-based within one origin (host and port are dropped, so
+  a dev-server port change between before and after still pairs); across
+  origins the host is kept, minus the port for loopback hosts. The fragment is
+  part of the slug (hash-routed SPAs). `diff --prefix` reports an unreadable
+  pair in `errors[]` (`{ slug, code, file }`, stable codes) and exits 3; 3 beats
+  1 beats 0.
 - **`jux diff <a> <b> [--json] [--crops]`**
   `a`, `b` are snap names or paths. Prints the tier-0 `StructuralVerdict`.
   Exit 0 identical, 1 different or failed, 2 usage error — the CLI's existing

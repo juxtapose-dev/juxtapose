@@ -8,7 +8,8 @@
 // Pure function. No I/O, no clipboard — string in, string out, so it is
 // trivially testable and callable from both the CLI and a server.
 
-import type { ChangedRegion, DiffStatus, Viewport } from '../types.js';
+import type { ChangedRegion, DiffStatus, StructuralVerdict, Viewport } from '../types.js';
+import { describeDeltas } from '../diff/structural/summary.js';
 
 export interface HandoffPayload {
   storyId: string;
@@ -22,6 +23,8 @@ export interface HandoffPayload {
   componentPath: string;
   /** Absolute path to the machine-readable sidecar for this diff. */
   diffDataPath?: string;
+  /** Tier-0 verdict from the run, when the capture had structure. */
+  structural?: StructuralVerdict;
   images: {
     baseline?: string;
     current?: string;
@@ -68,7 +71,57 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     lines.push(`Read \`${p.diffDataPath}\` for the full machine-readable diff.`, '');
   }
 
-  lines.push('## What changed');
+  const v = p.structural;
+  // Missing data is not a verdict: with no snapshot on one side and nothing
+  // to list, a structure section would be empty and misleading.
+  const missing =
+    v && v.deltas.length === 0
+      ? v.flags.includes('no-baseline-structure')
+        ? 'baseline'
+        : v.flags.includes('no-current-structure')
+          ? 'current'
+          : undefined
+      : undefined;
+  if (v && missing) {
+    lines.push(
+      missing === 'baseline'
+        ? 'No structure snapshot for the baseline (approved before juxtapose recorded structure). Re-approve after this change to get structural diffs next time.'
+        : 'No structure snapshot for the current capture (structure capture failed or was unavailable). Re-run the capture to get structural diffs.',
+      '',
+    );
+  } else if (v) {
+    lines.push('## What changed (structure)');
+    lines.push('');
+    lines.push(v.summary);
+    lines.push('');
+    if (v.deltas.length > 0) {
+      lines.push(...describeDeltas(v.deltas, v.deltaCount));
+      if (v.deltaCount > v.deltas.length) {
+        lines.push(
+          `  …and ${v.deltaCount - v.deltas.length} more (see the diff data file)`,
+        );
+      }
+      lines.push('');
+      lines.push(
+        'Check these deltas against the change you intended. If they are all intended,',
+        `the change is expected: approve it (\`jux approve --story ${p.storyId}\`). If any`,
+        'delta is one you did not intend, fix that before approving.',
+      );
+    }
+    if (v.flags.length > 0) {
+      lines.push('', `Flags: ${v.flags.join(', ')}`);
+    }
+    if (v.explained !== 'full') {
+      lines.push(
+        '',
+        'Part of the pixel change has no matching DOM or style delta (canvas, images, or',
+        'rendering). Look at the diff image for those regions.',
+      );
+    }
+    lines.push('');
+  }
+
+  lines.push(v && !missing ? '## Pixels' : '## What changed');
   lines.push('');
   lines.push('```json');
   lines.push(
