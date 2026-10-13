@@ -35,10 +35,13 @@ interface StorybookIndex {
   entries: Record<string, StorybookIndexEntry>;
 }
 
-/** The check this file always made (a truthy `entries`), now on `unknown`;
- *  entries are read field by field downstream. */
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** An object with an `entries` object; entries are read field by field
+ *  downstream. */
 const isStorybookIndex = (v: unknown): v is StorybookIndex =>
-  typeof v === 'object' && v !== null && 'entries' in v && Boolean(v.entries);
+  isRecord(v) && isRecord(v['entries']);
 
 /**
  * Phases where the story is settled enough to screenshot.

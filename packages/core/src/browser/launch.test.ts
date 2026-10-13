@@ -43,7 +43,7 @@ describe.skipIf(!chrome)('launchChrome', () => {
   it('launches over the pipe, answers getVersion, and cleans its profile up', async () => {
     const b = await launchChrome({ executablePath: chrome!.path });
     try {
-      const v = await b.connection.send<{ product: string }>('Browser.getVersion');
+      const v = await b.connection.send('Browser.getVersion');
       expect(v.product).toMatch(/^HeadlessChrome\//);
       expect(existsSync(b.userDataDir)).toBe(true);
     } finally {

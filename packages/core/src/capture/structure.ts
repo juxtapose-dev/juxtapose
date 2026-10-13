@@ -515,6 +515,8 @@ function isStructureSnapshot(v: unknown): v is StructureSnapshot {
     typeof v['structureHash'] === 'string' &&
     typeof v['contentHeight'] === 'number' &&
     isRecord(v['viewport']) &&
+    typeof v['viewport']['width'] === 'number' &&
+    typeof v['viewport']['height'] === 'number' &&
     Array.isArray(v['elements'])
   );
 }

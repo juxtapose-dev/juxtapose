@@ -65,6 +65,8 @@ export type CdpEventParams<E extends CdpEvent> = Events[E] extends [infer P]
   : undefined;
 
 export const SEND_TIMEOUT_MS = 30_000;
+/** JSON-RPC's "internal error": what a reply that fails isRawMessage rejects with. */
+export const MALFORMED_REPLY_CODE = -32603;
 
 export class CdpError extends Error {
   constructor(
@@ -103,6 +105,12 @@ interface Pending {
 /**
  * A stored handler. `never` params: every typed handler is assignable to it,
  * and dispatch is the one caller (through asProtocol).
+ *
+ * send, on and once each have a typed overload (a protocol method or event,
+ * inferred) and an untyped fallback (any string, the caller's `<T>`): the
+ * fallback keeps methods newer than the pinned protocol, the daemon's own
+ * events, and adapters written against 0.7's `send<T>(method: string)`
+ * compiling. A typed name with an explicit `<T>` takes the fallback too.
  */
 type Handler = (params: never, sessionId?: string) => void;
 
@@ -194,13 +202,25 @@ export class CdpConnection {
     method: M,
     params?: CdpParams<M>,
     sessionId?: string,
+    opts?: { timeout?: number },
+  ): Promise<CdpResult<M>>;
+  send<T = unknown>(
+    method: string,
+    params?: object,
+    sessionId?: string,
+    opts?: { timeout?: number },
+  ): Promise<T>;
+  send(
+    method: string,
+    params?: object,
+    sessionId?: string,
     opts: { timeout?: number } = {},
-  ): Promise<CdpResult<M>> {
+  ): Promise<unknown> {
     if (this._closed)
       return Promise.reject(new TargetClosedError(this.closeReason, method));
     const id = this.allocateId();
     const timeout = opts.timeout ?? SEND_TIMEOUT_MS;
-    return new Promise<CdpResult<M>>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new SendTimeoutError(method, timeout));
@@ -208,7 +228,7 @@ export class CdpConnection {
       timer.unref();
       this.pending.set(id, {
         method,
-        resolve: (v) => resolve(asProtocol<CdpResult<M>>(v)),
+        resolve,
         reject,
         timer,
       });
@@ -229,7 +249,13 @@ export class CdpConnection {
     event: E,
     handler: (params: CdpEventParams<E>, sessionId?: string) => void,
     sessionId?: string,
-  ): () => void {
+  ): () => void;
+  on(
+    event: string,
+    handler: (params: unknown, sessionId?: string) => void,
+    sessionId?: string,
+  ): () => void;
+  on(event: string, handler: Handler, sessionId?: string): () => void {
     const key = `${sessionId ?? ''}\n${event}`;
     let set = this.handlers.get(key);
     if (!set) this.handlers.set(key, (set = new Set()));
@@ -248,11 +274,21 @@ export class CdpConnection {
   once<E extends CdpEvent>(
     event: E,
     sessionId?: string,
-    predicate: (p: CdpEventParams<E>) => boolean = () => true,
-  ): Promise<CdpEventParams<E>> {
+    predicate?: (p: CdpEventParams<E>) => boolean,
+  ): Promise<CdpEventParams<E>>;
+  once<P = unknown>(
+    event: string,
+    sessionId?: string,
+    predicate?: (p: P) => boolean,
+  ): Promise<P>;
+  once(
+    event: string,
+    sessionId?: string,
+    predicate: (p: never) => boolean = () => true,
+  ): Promise<unknown> {
     if (this._closed)
       return Promise.reject(new TargetClosedError(this.closeReason, event));
-    return new Promise<CdpEventParams<E>>((resolve, reject) => {
+    return new Promise<unknown>((resolve, reject) => {
       const onClosed = (e: Error) => {
         off();
         reject(e);
@@ -260,7 +296,7 @@ export class CdpConnection {
       const off = this.on(
         event,
         (params) => {
-          if (!predicate(params)) return;
+          if (!predicate(asProtocol<never>(params))) return;
           off();
           this.closeWaiters.delete(onClosed);
           resolve(params);
@@ -283,8 +319,25 @@ export class CdpConnection {
       return; // Chrome never sends non-JSON frames; nothing to do but ignore.
     }
     // Nor frames that are not a message object. A `null` frame used to throw
-    // here, out of the transport's data event.
-    if (!isRawMessage(parsed)) return;
+    // here, out of the transport's data event. A malformed reply to one of our
+    // own sends still answers it, as an error, rather than leaving it to time
+    // out.
+    if (!isRawMessage(parsed)) {
+      const id = isRecord(parsed) ? parsed['id'] : undefined;
+      const p = typeof id === 'number' ? this.pending.get(id) : undefined;
+      if (typeof id === 'number' && p) {
+        this.pending.delete(id);
+        clearTimeout(p.timer);
+        p.reject(
+          new CdpError(
+            MALFORMED_REPLY_CODE,
+            p.method,
+            'malformed reply from the browser',
+          ),
+        );
+      }
+      return;
+    }
     const m = parsed;
     try {
       this.onRaw?.(m);

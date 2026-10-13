@@ -70,6 +70,12 @@ export interface Page {
    * @internal Not part of the adapter API; the protocol surface is Chrome's, not ours.
    */
   send<M extends CdpMethod>(method: M, params?: CdpParams<M>): Promise<CdpResult<M>>;
+  /**
+   * Untyped fallback: a method newer than the pinned protocol, or a caller
+   * written against 0.7's `send<T>(method: string)`.
+   * @internal
+   */
+  send<T = unknown>(method: string, params?: object): Promise<T>;
   /** HTTP status of each main-document response; returns the unsubscribe. */
   onMainResponse(handler: (status: number) => void): () => void;
   /** Storage.clearDataForOrigin on this page's session: localStorage, IndexedDB, Cache Storage, service workers. */
@@ -446,7 +452,9 @@ export class CdpPage implements Page {
     return page;
   }
 
-  send<M extends CdpMethod>(method: M, params?: CdpParams<M>): Promise<CdpResult<M>> {
+  send<M extends CdpMethod>(method: M, params?: CdpParams<M>): Promise<CdpResult<M>>;
+  send<T = unknown>(method: string, params?: object): Promise<T>;
+  send(method: string, params?: object): Promise<unknown> {
     if (this.goneError) return Promise.reject(this.goneError);
     return this.guard(this.connection.send(method, params, this.sessionId));
   }

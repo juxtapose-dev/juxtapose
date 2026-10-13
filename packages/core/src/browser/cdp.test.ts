@@ -1,7 +1,13 @@
 // packages/core/src/browser/cdp.test.ts
 import { PassThrough } from 'node:stream';
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { CdpConnection, CdpError, SendTimeoutError, TargetClosedError } from './cdp.js';
+import {
+  CdpConnection,
+  CdpError,
+  MALFORMED_REPLY_CODE,
+  SendTimeoutError,
+  TargetClosedError,
+} from './cdp.js';
 import {
   FrameTooLargeError,
   NullFramer,
@@ -37,7 +43,7 @@ describe('CdpConnection', () => {
   it('matches replies by id and carries sessionId', async () => {
     const t = new FakeTransport();
     const c = new CdpConnection(t);
-    const p = c.send<{ product: string }>('Browser.getVersion');
+    const p = c.send('Browser.getVersion');
     const q = c.send('Page.enable', {}, 'S1');
     expect(t.sent).toEqual([
       { id: 1, method: 'Browser.getVersion', params: {} },
@@ -53,10 +59,23 @@ describe('CdpConnection', () => {
     const c = new CdpConnection(t);
     const p = c.send('Browser.getVersion');
     // `null` used to throw out of the transport's data event.
-    for (const frame of ['null', '[1]', '"x"', '{"id":"1"}', '{"id":1,"error":"no"}'])
+    for (const frame of ['null', '[1]', '"x"', '{"id":"1"}', '{"id":99,"error":"no"}'])
       expect(() => t.onMessage?.(frame)).not.toThrow();
     t.reply(1, { product: 'HeadlessChrome/151' });
     await expect(p).resolves.toEqual({ product: 'HeadlessChrome/151' });
+  });
+  it('rejects a send whose reply is malformed instead of letting it time out', async () => {
+    const t = new FakeTransport();
+    const c = new CdpConnection(t);
+    const p = c.send('Browser.getVersion');
+    t.onMessage?.('{"id":1,"error":{"message":"no code"}}');
+    await expect(p).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof CdpError &&
+        e.code === MALFORMED_REPLY_CODE &&
+        /Browser\.getVersion.*malformed reply/.test(e.message),
+    );
+    expect(c.pendingCount).toBe(0);
   });
   it('rejects with CdpError carrying the protocol code and method', async () => {
     const t = new FakeTransport();
@@ -80,11 +99,7 @@ describe('CdpConnection', () => {
       'S1',
     );
     c.on('Page.lifecycleEvent', (p) => isLifecycle(p) && got.push('S2:' + p.name), 'S2');
-    const load = c.once<{ name: string }>(
-      'Page.lifecycleEvent',
-      'S1',
-      (p) => p.name === 'load',
-    );
+    const load = c.once('Page.lifecycleEvent', 'S1', (p) => p.name === 'load');
     t.event('Page.lifecycleEvent', { name: 'init' }, 'S1');
     t.event('Page.lifecycleEvent', { name: 'load' }, 'S2');
     t.event('Page.lifecycleEvent', { name: 'load' }, 'S1');

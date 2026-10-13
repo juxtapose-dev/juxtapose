@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test } from 'vitest';
@@ -62,4 +62,16 @@ test('locate names the baseline image path, present or not', async () => {
   expect(await readFile(where)).toEqual(Buffer.from('img'));
   const custom = new GitBaselineStore({ projectRoot: root, dir: 'shots' });
   expect(custom.locate('x')).toBe(path.join(root, 'shots', 'x.webp'));
+});
+
+test('a manifest whose baselines is null or an array reads as empty', async () => {
+  for (const baselines of [null, []]) {
+    const root = await mkdtemp(path.join(tmpdir(), 'jux-store-'));
+    await writeFile(
+      path.join(root, 'juxtapose.manifest.json'),
+      JSON.stringify({ version: 1, baselines }),
+    );
+    const store = new GitBaselineStore({ projectRoot: root });
+    expect(await store.readManifest()).toEqual({ version: 1, baselines: {} });
+  }
 });

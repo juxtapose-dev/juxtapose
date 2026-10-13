@@ -22,12 +22,13 @@ import { hashImage } from './status.js';
 import { isRecord } from '../browser/guards.js';
 
 /**
- * The envelope only, exactly the check this file always made: version 1 and
- * a `baselines` of type object. Entries are not checked one by one; the guard
- * vouches for the envelope, the cast it replaces vouched for nothing.
+ * The envelope only: version 1 and a `baselines` object. A null or array
+ * `baselines` (which `typeof` used to let through, to fail on first use) reads
+ * as corrupt, like any other damaged manifest. Entries are not checked one by
+ * one.
  */
 function isBaselineManifest(v: unknown): v is BaselineManifest {
-  return isRecord(v) && v['version'] === 1 && typeof v['baselines'] === 'object';
+  return isRecord(v) && v['version'] === 1 && isRecord(v['baselines']);
 }
 
 const MANIFEST_NAME = 'juxtapose.manifest.json';

@@ -46,10 +46,12 @@ interface LadleMeta {
   stories: Record<string, LadleStory>;
 }
 
-/** The check this file always made (a truthy `stories`), now on `unknown`;
- *  stories are read field by field downstream. */
-const isLadleMeta = (v: unknown): v is LadleMeta =>
-  typeof v === 'object' && v !== null && 'stories' in v && Boolean(v.stories);
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** An object with a `stories` object; stories are read field by field
+ *  downstream. */
+const isLadleMeta = (v: unknown): v is LadleMeta => isRecord(v) && isRecord(v['stories']);
 
 /** Where a story declares juxtapose config. Ladle's `meta` is an open index
  *  signature, so a namespaced key passes through untouched. */
