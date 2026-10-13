@@ -216,3 +216,38 @@ describe('resolveAffectedFromPaths', () => {
     expect(r.map((s) => s.storyId)).toEqual(['button--primary']);
   });
 });
+
+describe('a project in a subdirectory of its repository', () => {
+  it("escalates on the project's own package.json, not another package's", async () => {
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, mkdirSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const repo = mkdtempSync(path.join(tmpdir(), 'jux-affected-repo-'));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: repo });
+      const web = path.join(repo, 'apps', 'web');
+      mkdirSync(web, { recursive: true });
+      const s = [
+        {
+          storyId: 'a',
+          title: 'a',
+          name: 'a',
+          componentPath: path.join(web, 'src/A.tsx'),
+          params: {},
+        },
+      ];
+      const run = (file: string) =>
+        resolveAffected(s, 'HEAD~1', {
+          projectRoot: web,
+          configDirs: ['.storybook'],
+          changedFiles: [file],
+        });
+      // It can carry `juxtapose.variants`: every capture may change.
+      expect((await run('apps/web/package.json')).reason).toBe('config-changed');
+      // Another package's manifest is no reason by itself.
+      expect((await run('apps/api/package.json')).reason).not.toBe('config-changed');
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});

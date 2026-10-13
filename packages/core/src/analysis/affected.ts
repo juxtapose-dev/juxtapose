@@ -96,10 +96,30 @@ export function isTsconfigChange(file: string): boolean {
  *  graph names it. Matched at any depth, unlike a lockfile: changed paths are
  *  repository-relative, and a project in a subdirectory keeps its config
  *  there. A nested match is at worst a full run, which is the safe direction.
- *  `package.json#juxtapose` is already covered as a dependency change. */
+ *  The project's own `package.json` (which can carry `juxtapose`) is
+ *  `isProjectPackageJson`'s job: only the one at the project root counts. */
 export function isJuxtaposeConfigChange(file: string): boolean {
   const base = file.split('/').pop() ?? file;
   return base === 'juxtapose.config.json' || base === '.juxtaposerc.json';
+}
+
+/** The jux project's own package.json, whose `juxtapose` key is config
+ *  like `juxtapose.config.json`. `projectPrefix` is the project root relative
+ *  to the repository (`apps/web/`, or '' at the root), the base changed paths
+ *  are reported against. At the root it is also a lockfile-list entry, which
+ *  escalates first as `dependency-changed`. */
+export function isProjectPackageJson(file: string, projectPrefix: string): boolean {
+  return file === `${projectPrefix}package.json`;
+}
+
+/** The project root relative to the repository top, with a trailing slash;
+ *  '' at the top or outside git. */
+export function gitProjectPrefix(projectRoot: string): string {
+  try {
+    return git(['rev-parse', '--show-prefix'], projectRoot).trim();
+  } catch {
+    return '';
+  }
 }
 
 /** Anything under a platform config dir (`.storybook`, `.ladle`) reaches
@@ -123,10 +143,12 @@ export async function resolveAffected(
   if (changed === null) return { stories, reason: 'git-unavailable' };
   if (changed.length === 0) return { stories: [], reason: 'no-changes' };
 
+  const prefix = gitProjectPrefix(opts.projectRoot);
   for (const file of changed) {
     if (isLockfileChange(file)) return { stories, reason: 'dependency-changed' };
     if (isTsconfigChange(file)) return { stories, reason: 'config-changed' };
     if (isJuxtaposeConfigChange(file)) return { stories, reason: 'config-changed' };
+    if (isProjectPackageJson(file, prefix)) return { stories, reason: 'config-changed' };
     if (isConfigChange(file, opts.configDirs))
       return { stories, reason: 'config-changed' };
   }
