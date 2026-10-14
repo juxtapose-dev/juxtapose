@@ -6,6 +6,10 @@ name: profile
 # equality. Reuses field-tests.yml's cache keys, so a Storybook built there is
 # not rebuilt here. Output: the job summary and the profile-<name> artifact.
 on:
+  # The push trigger only registers the workflow before it exists on main;
+  # dispatch it with inputs afterwards.
+  push:
+    branches: [perf/capture-experiments]
   workflow_dispatch:
     inputs:
       storybook:
@@ -45,7 +49,7 @@ jobs:
     steps:
       - id: m
         env:
-          PICK: ${{ inputs.storybook || 'all' }}
+          PICK: ${{ inputs.storybook || 'spectrum' }}
         run: |
           # `sha` is the commit docs/field-tests.md pins. `output` is where the
           # repo's own build leaves the static Storybook, relative to its root.
@@ -69,7 +73,7 @@ jobs:
       STORYBOOK_DISABLE_TELEMETRY: '1'
       STORIES: ${{ inputs.stories || '200' }}
       REPEATS: ${{ inputs.repeats || '3' }}
-      VARIANTS: ${{ inputs.variants }}
+      VARIANTS: ${{ inputs.variants || 'base,png-speed,chrome-webp,chrome-webp-noicc,sharp-conc1,uv-threads-8,v8-cache-none,js-no-opt,no-fresh-renderer,c2,c4' }}
     steps:
       # The runner context is not available in job-level env.
       - name: Set paths
