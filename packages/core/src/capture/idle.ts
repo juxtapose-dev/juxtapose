@@ -288,7 +288,15 @@ export class NetworkTracker {
       this.inflight.set(p.requestId, {
         url: p.request.url,
         ...(p.type !== undefined ? { type: p.type } : {}),
-        ...(p.frameId === mainFrameId ? { mainLoader: p.loaderId } : {}),
+        // Every frame's request, not only the main frame's: a child frame's
+        // request (an iframe's analytics XHR) never gets loadingFailed when
+        // the document navigates away, and without a loader it escaped the
+        // sweep below and pinned every later story at the cap.
+        ...(p.frameId === mainFrameId
+          ? { mainLoader: p.loaderId }
+          : this.mainLoader !== undefined
+            ? { mainLoader: this.mainLoader }
+            : {}),
       });
     });
     // The new main document commits. Its predecessor's requests, including

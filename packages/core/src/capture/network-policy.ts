@@ -7,9 +7,11 @@
 // Network.loadingFailed: the settle tracker drops them like any failed
 // request, an <img> becomes `complete`, and nothing is pending or flagged.
 //
-// Limits: requests from out-of-process iframes and workers run on sessions
-// this page does not hold and are not intercepted. data:, blob:, about: and
-// file: URLs have no remote origin and always pass; so does the top-level
+// Limits: WebSockets are not intercepted, and neither is anything running on
+// a session this page does not hold (an out-of-process iframe; measured:
+// headless-shell ran a cross-site iframe in-process, and dedicated-worker
+// fetches were blocked, but a real Chrome with site isolation may differ).
+// data:, blob:, about: and file: URLs have no remote origin and always pass; so does the top-level
 // document, so a story URL that redirects elsewhere still loads.
 
 import type { Page } from '../browser/page.js';
@@ -94,14 +96,22 @@ export async function applyNetworkPolicy(
     await page.send('Fetch.disable').catch(() => {});
     return;
   }
-  if (current?.origin === origin) return;
-  current?.off();
+  if (current) {
+    // In place, never off() then on(): a request paused in between would
+    // never be answered and would hang the page.
+    current.origin = origin;
+    return;
+  }
   if (!page.on) return;
   const tree = await page.send('Page.getFrameTree').catch(() => undefined);
   const mainFrameId = tree?.frameTree?.frame?.id;
   const state: Applied = { origin, off: () => {} };
   state.off = page.on('Fetch.requestPaused', (e) => {
     const top = e.resourceType === 'Document' && e.frameId === mainFrameId;
+    // The page's own origin is the committed main document's: a top-level
+    // redirect (127.0.0.1 -> localhost) moves it, and the new document's own
+    // CSS, scripts and images must not count as external.
+    if (top) state.origin = originOf(e.request.url) ?? state.origin;
     const block = !top && isExternal(e.request.url, state.origin);
     const done = block
       ? page.send('Fetch.failRequest', {
@@ -113,4 +123,13 @@ export async function applyNetworkPolicy(
   });
   applied.set(page, state);
   await page.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
+}
+
+function originOf(url: string): string | undefined {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : undefined;
+  } catch {
+    return undefined;
+  }
 }

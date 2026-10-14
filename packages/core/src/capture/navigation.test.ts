@@ -29,6 +29,13 @@ const PAGES: Record<string, (port: number) => string> = {
   '/external-img': (port) =>
     doc(`<img src="http://localhost:${port}/never-image" width="10" height="10">`),
   '/own-img': () => doc('<img src="/ok.svg" width="10" height="10">'),
+  // A top-level redirect to another origin (127.0.0.1 -> localhost): the
+  // document that commits is the page, and its own stylesheet is not external.
+  '/own-css': () => doc('', '<link rel="stylesheet" href="/own.css">'),
+  // A child frame whose request never finishes, then a navigation away.
+  '/frame-hang': () => doc('<iframe src="/frame-inner" width="10" height="10"></iframe>'),
+  '/frame-inner': () => doc(`<script>fetch('/never-image')</script>`),
+  '/static': () => doc(''),
 };
 
 beforeAll(async () => {
@@ -36,7 +43,14 @@ beforeAll(async () => {
     const url = new URL(req.url ?? '/', 'http://x');
     hits.push(`${req.headers.host}${url.pathname}`);
     const page = PAGES[url.pathname];
-    if (url.pathname === '/never-image') {
+    if (url.pathname === '/redir-top') {
+      const port = (server.address() as { port: number }).port;
+      res.writeHead(302, { location: `http://localhost:${port}/own-css` });
+      res.end();
+    } else if (url.pathname === '/own.css') {
+      res.writeHead(200, { 'content-type': 'text/css' });
+      res.end('p{color:red}');
+    } else if (url.pathname === '/never-image') {
       // holds the connection
     } else if (url.pathname === '/ok.svg') {
       res.writeHead(200, { 'content-type': 'image/svg+xml' });
@@ -86,8 +100,8 @@ describe.skipIf(!chrome)('navigation is bounded by settle', () => {
     expect(snapshot?.structure?.elements.map((e) => e.text)).toContain('final');
     expect(snapshot?.settle).toMatchObject({ status: 'timeout', timeoutMs: 1000 });
     expect(snapshot?.settle?.pending.join('\n')).toContain('/never-image');
-    // main: waits the 30 s load timeout, then errors.
-    expect(ms).toBeLessThan(8000);
+    // main: waits the 30 s load timeout, then errors. Cap plus launch and capture.
+    expect(ms).toBeLessThan(1000 + 3000);
   }, 60_000);
 });
 
@@ -116,5 +130,28 @@ describe.skipIf(!chrome)("network.external: 'block'", () => {
     expect(error).toBeUndefined();
     expect(snapshot?.settle).toBeUndefined();
     expect(hits.some((h) => h.endsWith('/ok.svg'))).toBe(true);
+  }, 60_000);
+
+  it("a top-level redirect to another origin keeps the new document's own resources", async () => {
+    hits.length = 0;
+    const { snapshot, error } = await snap('/redir-top', {
+      network: { external: 'block' },
+    });
+    expect(error).toBeUndefined();
+    expect(snapshot?.settle).toBeUndefined();
+    expect(hits).toContain(`localhost:${new URL(base).port}/own.css`);
+  }, 60_000);
+});
+
+describe.skipIf(!chrome)('requests left open by a navigated-away document', () => {
+  it("a child frame's open request does not pin the next page at the cap", async () => {
+    const { pages } = await snapPages({
+      urls: [`${base}/frame-hang`, `${base}/static`],
+      browser,
+      viewport: { width: 320, height: 240 },
+      params: { settle: { timeout: 800 } },
+    });
+    expect(pages[0]!.snapshot?.settle?.status).toBe('timeout');
+    expect(pages[1]!.snapshot?.settle).toBeUndefined();
   }, 60_000);
 });
