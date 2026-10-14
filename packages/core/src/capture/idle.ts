@@ -223,7 +223,12 @@ const IDLE_INIT = `(function () {
       fonts: document.fonts.status, images: imgs.length, imageSrcs: imgs.slice(0, 3),
       workers: workers.length, workerSrcs: workers.slice(0, 3), ready: S.ready };
   };
-  W.__juxIdle = { snapshot: snapshot, reset: function () { S.ready = false; } };
+  // untracked: rerasterLayers (settle.ts) runs its own style toggles through
+  // this, so the mutation counter never sees them and a capture does not take
+  // the recheck path for jux's own writes. Page mutations queued before fn are
+  // counted first; fn's own records are dropped.
+  W.__juxIdle = { snapshot: snapshot, reset: function () { S.ready = false; },
+    untracked: function (fn) { flushMut(); var m = S.mut; try { return fn(); } finally { if (MO) MO.takeRecords(); S.mut = m; } } };
 
   // Resolves 'idle' when two consecutive task hops each see no pending work
   // and no mutation since the previous hop, or 'cap' at capMs.

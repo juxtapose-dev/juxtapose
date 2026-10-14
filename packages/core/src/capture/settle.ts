@@ -66,28 +66,133 @@ export async function waitForSelector(
  * its first frame and then rebuilt this way gives. A device-scale round trip
  * and `--disable-threaded-animation` leave the stale raster; freezing
  * animations from the first frame (an init script) fixes the fixture but not
- * Chakra, whose marquee widens when its font loads. Costs ~19 ms a capture.
+ * Chakra, whose marquee widens when its font loads.
  *
- * A constructed stylesheet rather than a style tag: the idle detector and
- * the structure snapshot never see it. Shadow roots are not reached, as with
- * the freeze stylesheet.
+ * Only the elements whose computed `will-change` is not `auto` are touched,
+ * through an inline `!important` declaration, in the document and in every
+ * open shadow root. The first version adopted a `* { will-change: auto
+ * !important }` sheet instead, and that went wrong in four measured ways:
+ *  - `will-change: transform` (or filter, perspective) gives an element a
+ *    containing block for fixed descendants and a stacking context. Dropping
+ *    it moved those descendants to the viewport for two frames, so a latching
+ *    IntersectionObserver captured "seen" 6/6, a ResizeObserver reacting
+ *    through a 30 ms timer captured the wrong layout 3-4/6, and every such
+ *    page took the recheck. Where the computed transform, translate and
+ *    filter are all `none`, the element also gets `translate: 0px
+ *    !important` for the two frames: an identity 2D transform, with no layer
+ *    of its own and the same containing block. 0/6 after, and no recheck.
+ *  - An adopted sheet does not reach shadow roots: a marquee in one stayed
+ *    stale 4/4. 0/4 after.
+ *  - An inline `will-change: transform !important` beats an author
+ *    `!important` sheet: stale 4/4. 0/4 after.
+ *  - Adopting any `*` sheet forces a whole-document style recalc, which by
+ *    itself re-rastered a frozen fill-forwards transform animation with no
+ *    will-change (Chakra button--custom-spinner) to a hash a static page
+ *    never gives. Touching only will-change elements leaves those alone.
+ * The writes run through `__juxIdle.untracked` (idle.ts), so the mutation
+ * counter, and with it the recheck in captureStory, never sees them. Each
+ * declaration is put back as it was, in the second frame or on timeout.
+ * A page with no will-change element, most stories, skips the two frames:
+ * 16-18 ms became the scan, 0.7 / 1.9 / 6.9 ms on 200 / 2k / 10k elements.
+ *
+ * Scope: this rebuilds `will-change: transform` layers. A layer promoted
+ * another way (`translateZ(0)`, `translate3d`, `backdrop-filter`) or by
+ * `will-change: opacity` or `filter` keeps its first raster: stale 3-4/4 when
+ * it grows after that raster, before and after this. Will-change on a
+ * pseudo-element is not reached either, since it takes no inline style.
+ * Those need a different mechanism than a style toggle (see #145).
  */
 export async function rerasterLayers(page: Page, timeoutMs = 1000): Promise<void> {
   await page
     .evaluate(
       (cap) =>
         new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, cap);
-          const sheet = new CSSStyleSheet();
-          sheet.replaceSync('*, *::before, *::after { will-change: auto !important; }');
-          document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+          // will-change values that give the element a containing block for
+          // fixed descendants, as a transform or filter would.
+          const CB = /transform|translate|rotate|scale|filter|perspective/;
+          type Saved = {
+            el: HTMLElement | SVGElement;
+            attr: string | null;
+            css: string;
+            props: Array<[string, string, string]>;
+          };
+          const hits: Array<[HTMLElement | SVGElement, boolean]> = [];
+          const visit = (root: Document | ShadowRoot) => {
+            const els = root.querySelectorAll<HTMLElement | SVGElement>('*');
+            for (let i = 0; i < els.length; i++) {
+              const el = els[i]!;
+              const cs = getComputedStyle(el);
+              if (cs.willChange !== 'auto' && el.style) {
+                hits.push([
+                  el,
+                  CB.test(cs.willChange) &&
+                    cs.transform === 'none' &&
+                    cs.translate === 'none' &&
+                    cs.filter === 'none',
+                ]);
+              }
+              if (el.shadowRoot) visit(el.shadowRoot);
+            }
+          };
+          visit(document);
+          if (hits.length === 0) {
+            resolve();
+            return;
+          }
+          const idle = (
+            window as unknown as {
+              __juxIdle?: { untracked?: (fn: () => void) => void };
+            }
+          ).__juxIdle;
+          const quiet = (fn: () => void) => (idle?.untracked ? idle.untracked(fn) : fn());
+          const saved: Saved[] = [];
+          quiet(() => {
+            for (const [el, keepCb] of hits) {
+              const s = el.style;
+              const props: Saved['props'] = [];
+              const set = (prop: string, value: string) => {
+                props.push([prop, s.getPropertyValue(prop), s.getPropertyPriority(prop)]);
+                s.setProperty(prop, value, 'important');
+              };
+              const attr = el.getAttribute('style');
+              const css = s.cssText;
+              set('will-change', 'auto');
+              if (keepCb) set('translate', '0px');
+              saved.push({ el, attr, css, props });
+            }
+          });
+          // Per declaration, so a page that wrote other inline styles in these
+          // two frames keeps its writes; the attribute text itself too when
+          // nothing else changed.
+          let restored = false;
+          const restore = () => {
+            if (restored) return;
+            restored = true;
+            quiet(() => {
+              for (const { el, attr, css, props } of saved) {
+                for (const [prop, value, priority] of props) {
+                  if (value) el.style.setProperty(prop, value, priority);
+                  else el.style.removeProperty(prop);
+                }
+                if (el.style.cssText !== css) continue;
+                // Read first: Chrome serializes a CSSOM-edited style attribute
+                // lazily, and without this read removeAttribute was undone by
+                // the next read, leaving style="".
+                el.getAttribute('style');
+                if (attr === null) el.removeAttribute('style');
+                else el.setAttribute('style', attr);
+              }
+            });
+          };
+          const timer = setTimeout(() => {
+            restore();
+            resolve();
+          }, cap);
           // Two frames: the second is committed without the layers.
           requestAnimationFrame(() =>
             requestAnimationFrame(() => {
-              document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
-                (s) => s !== sheet,
-              );
               clearTimeout(timer);
+              restore();
               resolve();
             }),
           );

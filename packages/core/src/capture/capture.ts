@@ -298,6 +298,10 @@ export async function captureStory(
       settle,
       Math.max(100, settle.timeoutMs - first.waitedMs),
     );
+    // No idle wait after this rebuild: it keeps every containing block and
+    // stacking context and leaves no mutation behind (settle.ts), so it gives
+    // the page nothing to react to. With the earlier blanket sheet a
+    // latching IntersectionObserver did react, and this path captured it.
     await rerasterLayers(page);
     await waitForPaint(page);
     if (second.status !== 'idle') flagged = second;
