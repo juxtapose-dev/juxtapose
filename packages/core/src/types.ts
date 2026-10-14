@@ -40,6 +40,17 @@ export interface StoryParams {
   /** How the capture decides the page has finished. Layered over the project
    *  config's `settle` and under per-call options. */
   settle?: SettleParams;
+  /** Which requests the page may make. Layered like `settle`; read before
+   *  navigation, so only the story's static params count, not live ones. */
+  network?: NetworkParams;
+}
+
+/** Third-party requests during capture (issue #147). */
+export interface NetworkParams {
+  /** `'block'` fails requests to origins other than the page's own, so a
+   *  random photo or a broken link neither changes the pixels nor holds the
+   *  page to the settle cap. Default `'allow'`. */
+  external?: 'allow' | 'block';
 }
 
 /**
@@ -452,6 +463,8 @@ export interface ProjectConfig {
   minDiffPercent?: number;
   /** Project-wide settle options; a story's `settle` is layered over them. */
   settle?: SettleParams;
+  /** Project-wide network policy; a story's `network` is layered over it. */
+  network?: NetworkParams;
   /** Project-wide `waitForSelector`; a story's own wins. */
   waitForSelector?: string;
   /** Project-wide `delay`, ms; a story's own wins. */

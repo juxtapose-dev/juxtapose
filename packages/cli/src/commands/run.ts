@@ -236,7 +236,14 @@ export async function runCommand(
       stories: selection,
       totalCount: stories.length,
       config: ctx.config,
-      ...(call.settle ? { settle: { settle: call.settle } } : {}),
+      ...(call.settle || call.network
+        ? {
+            settle: {
+              ...(call.settle ? { settle: call.settle } : {}),
+              ...(call.network ? { network: call.network } : {}),
+            },
+          }
+        : {}),
       ancestry: isGitRepo(ctx.projectRoot)
         ? createAncestryCheck(ctx.projectRoot)
         : alwaysAncestor,

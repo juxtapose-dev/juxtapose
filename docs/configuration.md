@@ -12,7 +12,7 @@
 ```
 
 Also accepted: `buildDir` and `origin` (the CLI flags' defaults), `threshold`,
-`minDiffPercent`, `waitForSelector`, `delay` and `settle` as project-wide
+`minDiffPercent`, `waitForSelector`, `delay`, `settle` and `network` as project-wide
 versions of the per-story options below, and `warmSwitch` — off by default, and best left there: it is ~4x faster but
 does not reproduce cold-load pixels exactly, which under a byte-exact hash
 makes a story's verdict depend on where it lands in the queue.
@@ -158,6 +158,44 @@ wait to notice, such as a fetch behind a long timer. Each pattern must match a
 request that completes, successfully or not, after the story starts rendering.
 If a request matches both lists, `require` wins, so you can wait for one
 request of an ignored type.
+
+### Navigation and slow subresources
+
+Navigation resolves when the page's `DOMContentLoaded` event fires, not its
+`load` event. `load` waits for every subresource, so one image or script that
+never finishes (a broken third-party link that answers after 20 s) used to hold
+a worker for up to 30 s on every run, whatever `captureTimeout` or
+`settle.timeout` said. Now the settle wait owns that time: it tracks requests
+and images still in flight, and a page that is still waiting on a subresource
+at `settle.timeout` is captured anyway and flagged `settle-timeout` with the
+request named in `pending`. Pages that had finished loading capture the same
+pixels as before. A document that never reaches `DOMContentLoaded` (a blocking
+script that hangs) still fails the story after 30 s.
+
+### Third-party requests
+
+```json
+{ "network": { "external": "block" } }
+```
+
+| option             | default | purpose                                                                                      |
+| ------------------ | ------- | -------------------------------------------------------------------------------------------- |
+| `network.external` | `allow` | `block` fails requests to origins other than the page's own (the story URL's origin) at once |
+
+With `block`, an external image, font, script or frame fails the moment it's
+requested. It doesn't fetch bytes that change between runs (a random photo, a
+CDN), it never holds the page to the settle cap, and it isn't counted as
+pending, so the capture isn't flagged. The page sees an ordinary failed
+request, so an `<img>` shows its fallback. `data:`, `blob:` and `about:` URLs,
+and the top-level document, are never blocked. Requests from out-of-process
+iframes and from workers aren't intercepted.
+
+It's layered like `settle`: the project config, then the story's
+`parameters.juxtapose.network`, then the command (`--network-external block`,
+or `network: { "external": "block" }` in the MCP `snap` and `run` tools). Only
+values known before navigation apply, so a value that only the live Storybook
+preview declares is ignored. Recording and replaying external responses is
+tracked in #147 and isn't implemented.
 
 ### Ready signal
 

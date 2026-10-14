@@ -204,9 +204,11 @@ export async function snapCommand(
         ...(flags.mask?.length ? { mask: flags.mask } : {}),
         ...(delay !== undefined ? { delay } : {}),
         ...(call.settle ? { settle: call.settle } : {}),
+        ...(call.network ? { network: call.network } : {}),
       },
       projectSettle: {
         ...(config.settle ? { settle: config.settle } : {}),
+        ...(config.network ? { network: config.network } : {}),
         ...(config.waitForSelector !== undefined
           ? { waitForSelector: config.waitForSelector }
           : {}),

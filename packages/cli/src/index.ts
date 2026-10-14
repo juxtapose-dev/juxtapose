@@ -54,6 +54,8 @@ Settle options (snap, run; over the story's and the config's settle)
   --settle-require <pattern>     wait until a matching request completes (repeatable)
                                  pattern: [type:<ResourceType>] [<glob>]; a glob starting with /
                                  matches the path, e.g. '/api/feed' or 'type:Fetch **/poll*'
+  --network-external <mode>      allow (default) or block: block fails requests to origins other than
+                                 the page's own, so a third-party image neither changes nor stalls the capture
   --delay <ms>                   snap: fixed extra wait after settling; last resort
 `;
 
@@ -148,6 +150,7 @@ async function main(argv: string[]): Promise<number> {
       'no-settle-ready': { type: 'boolean', default: false },
       'settle-ignore': { type: 'string', multiple: true },
       'settle-require': { type: 'string', multiple: true },
+      'network-external': { type: 'string' },
       mask: { type: 'string', multiple: true },
       crops: { type: 'boolean', default: false },
       chrome: { type: 'string' },

@@ -110,7 +110,7 @@ describe.skipIf(!chrome)('CdpPage', () => {
   it('closing the context rejects a committed goto and in-flight evaluate within 1 s', () =>
     withPage(async (page, ctx) => {
       const url = `${base}/stuck-load`;
-      const nav = page.goto(url, { timeout: 20_000 });
+      const nav = page.goto(url, { timeout: 20_000, waitUntil: 'load' });
       await committed(page, url);
       const ev = page.evaluate('new Promise(() => {})', undefined, { timeout: 20_000 });
       void ctx.close();
@@ -127,7 +127,7 @@ describe.skipIf(!chrome)('CdpPage', () => {
     withPage(async (page) => {
       const bound = process.platform === 'linux' ? 3000 : 1000;
       const url = `${base}/stuck-load`;
-      const nav = page.goto(url, { timeout: 20_000 });
+      const nav = page.goto(url, { timeout: 20_000, waitUntil: 'load' });
       await committed(page, url);
       const ev = page.evaluate('new Promise(() => {})', undefined, { timeout: 20_000 });
       // Both settle together; measure them together so a failed bound on one
@@ -179,14 +179,21 @@ describe.skipIf(!chrome)('CdpPage', () => {
       ).toBe('after');
       expect(await page.evaluate(() => confirm('x'))).toBe(false);
     }));
-  it('goto waits for the main frame load, not a child frame', () =>
+  it("goto({ waitUntil: 'load' }) waits for the main frame load, not a child frame", () =>
     withPage(async (page) => {
-      await page.goto(`${base}/iframe`);
+      await page.goto(`${base}/iframe`, { waitUntil: 'load' });
       expect(
         await page.evaluate(
           () => (window as unknown as { __mainLoaded: boolean }).__mainLoaded,
         ),
       ).toBe(true);
+    }));
+  it('goto resolves at DOMContentLoaded while a subresource still hangs', () =>
+    withPage(async (page) => {
+      const t0 = performance.now();
+      await page.goto(`${base}/stuck-load`, { timeout: 5000 });
+      expect(performance.now() - t0).toBeLessThan(4000);
+      expect(await page.evaluate(() => document.readyState)).toBe('interactive');
     }));
   it('a dedicated worker runs (no auto-attach pausing it)', () =>
     withPage(async (page) => {
@@ -403,7 +410,7 @@ describe.skipIf(!chrome)('browser death', () => {
       const ctx = await b.newContext({ viewport: { width: 300, height: 200 } });
       const page = await ctx.newPage();
       const url = `${base}/stuck-load`;
-      const nav = page.goto(url, { timeout: 20_000 });
+      const nav = page.goto(url, { timeout: 20_000, waitUntil: 'load' });
       await committed(page, url);
       const ev = page.evaluate('new Promise(() => {})', undefined, { timeout: 20_000 });
       process.kill(launched.pid, 'SIGKILL');
@@ -541,7 +548,9 @@ describe('CdpPage.goto (fake browser)', () => {
       return {};
     };
     let done = false;
-    const nav = page.goto('http://x/next', { timeout: 2000 }).then(() => (done = true));
+    const nav = page
+      .goto('http://x/next', { timeout: 2000, waitUntil: 'load' })
+      .then(() => (done = true));
     await new Promise((r) => setTimeout(r, 50));
     expect(done).toBe(false);
     fake.event(

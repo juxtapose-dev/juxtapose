@@ -101,6 +101,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     settleLayers: {
       project: {
         ...(opts.config?.settle ? { settle: opts.config.settle } : {}),
+        ...(opts.config?.network ? { network: opts.config.network } : {}),
         ...(opts.config?.waitForSelector !== undefined
           ? { waitForSelector: opts.config.waitForSelector }
           : {}),

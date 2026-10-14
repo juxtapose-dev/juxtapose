@@ -41,6 +41,7 @@ export type {
   StorageConfig,
   BaselineStore,
   SettleParams,
+  NetworkParams,
   SettleReport,
   CaptureFlag,
 } from './types.js';
@@ -75,6 +76,7 @@ export {
   DEFAULT_NETWORK_IGNORE,
   type SettleLayer,
 } from './capture/settle-options.js';
+export { checkNetwork } from './capture/network-policy.js';
 export {
   discoverParams,
   prepareCaptures,
