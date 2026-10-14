@@ -176,6 +176,7 @@ for (let rep = 1; rep <= repeats; rep++)
       project,
     ];
     const load = os.loadavg();
+    const cpu0 = os.cpus().map((c) => c.times);
     const t0 = Date.now();
     const res = spawnSync('node', nodeArgs, {
       env: {
@@ -188,7 +189,26 @@ for (let rep = 1; rep <= repeats; rep++)
       encoding: 'utf8',
     });
     const wallS = (Date.now() - t0) / 1000;
+    // Machine-wide CPU (jux, Chrome and anything else), from os.cpus() deltas.
+    const cpu1 = os.cpus().map((c) => c.times);
+    let busy = 0;
+    let total = 0;
+    cpu1.forEach((t, i) => {
+      const a = cpu0[i];
+      const idle = t.idle - a.idle;
+      const all =
+        t.user +
+        t.nice +
+        t.sys +
+        t.irq +
+        t.idle -
+        (a.user + a.nice + a.sys + a.irq + a.idle);
+      busy += all - idle;
+      total += all;
+    });
+    const cpuBusy = total ? Math.round((busy / total) * 1000) / 1000 : 0;
     let summary = {
+      cpuBusy,
       tag,
       variant: vname,
       concurrency: conc,

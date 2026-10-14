@@ -18,6 +18,7 @@ const med = (xs) => {
 };
 const spread = (xs) => `${Math.min(...xs).toFixed(1)}-${Math.max(...xs).toFixed(1)}`;
 const f1 = (v) => (Math.round(v * 10) / 10).toString();
+const f2 = (v) => (Math.round(v * 100) / 100).toString();
 const PHASES = [
   'navigate',
   'freshRenderer',
@@ -42,13 +43,13 @@ for (const dir of process.argv.slice(2)) {
     (groups.get(k) ?? groups.set(k, []).get(k)).push(r);
   }
   console.log(
-    '| variant | conc | runs | wall s (med, range) | story p50 ms | story p95 ms | slot util | loop util | load1 |',
+    '| variant | conc | runs | wall s (med, range) | story p50 ms | story p95 ms | slot util | loop util | machine cpu | load1 |',
   );
-  console.log('| --- | --- | --- | --- | --- | --- | --- | --- | --- |');
+  console.log('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const [k, rs] of groups) {
     const [v, c] = k.split('|');
     console.log(
-      `| ${v} | ${c} | ${rs.length} | ${f1(med(rs.map((r) => r.wallS)))} (${spread(rs.map((r) => r.wallS))}) | ${f1(med(rs.map((r) => r.durationMs.p50)))} | ${f1(med(rs.map((r) => r.durationMs.p95)))} | ${f1(med(rs.map((r) => r.slotUtilization)))} | ${f1(med(rs.map((r) => r.preload.eventLoop.utilization)))} | ${f1(med(rs.map((r) => r.load1)))} |`,
+      `| ${v} | ${c} | ${rs.length} | ${f1(med(rs.map((r) => r.wallS)))} (${spread(rs.map((r) => r.wallS))}) | ${f1(med(rs.map((r) => r.durationMs.p50)))} | ${f1(med(rs.map((r) => r.durationMs.p95)))} | ${f2(med(rs.map((r) => r.slotUtilization)))} | ${f2(med(rs.map((r) => r.preload.eventLoop.utilization)))} | ${f2(med(rs.map((r) => r.cpuBusy ?? 0)))} | ${f1(med(rs.map((r) => r.load1)))} |`,
     );
   }
   console.log('\nPer-phase p50/p95 ms (median across repeats)\n');
