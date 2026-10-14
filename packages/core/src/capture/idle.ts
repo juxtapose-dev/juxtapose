@@ -37,7 +37,12 @@ import { matchPattern, type ResolvedSettle } from './settle-options.js';
 export interface IdleSnapshot {
   timers: number;
   rafs: number;
+  /** Posted messages sent and not yet delivered. */
   msgs: number;
+  delivered: number;
+  /** Workers created within the horizon that have not answered yet. */
+  workers: number;
+  workerSrcs: string[];
   mut: number;
   fonts: string;
   images: number;
@@ -49,13 +54,13 @@ export interface IdleSnapshot {
 }
 
 export interface IdleResult {
-  /** `noinit`: the init script is absent (a page with no CDP session behind
-   *  it); `error`: the wait could not run, e.g. the page navigated mid-wait.
-   *  Both capture as they are, unflagged, as the quiet window used to. */
-  status: 'idle' | 'timeout' | 'noinit' | 'error';
+  /** `fallback`: the detector could not run (not installed, or the page
+   *  navigated mid-wait), so a fonts/images/quiet-DOM wait stood in. */
+  status: 'idle' | 'timeout' | 'fallback';
   waitedMs: number;
   snap?: IdleSnapshot;
-  /** Set on `timeout`: what was still pending. Never empty. */
+  /** Set on `timeout` (what was still pending) and `fallback` (why).
+   *  Never empty. */
   pending?: string[];
 }
 
@@ -71,15 +76,37 @@ export interface IdleResult {
 const IDLE_INIT = `(function () {
   if (window.__juxIdle) return;
   var W = window;
-  var S = { timers: new Map(), rafs: new Set(), msgs: 0, mut: 0, ready: false };
+  var S = { timers: new Map(), rafs: new Set(), sent: 0, delivered: 0, workers: new Map(), mut: 0, ready: false };
   var oST = W.setTimeout, oCT = W.clearTimeout, oSI = W.setInterval, oCI = W.clearInterval;
   var oRAF = W.requestAnimationFrame, oCAF = W.cancelAnimationFrame, oPM = W.postMessage;
+  var PP = MessagePort.prototype, oPPM = PP.postMessage, oAEL = PP.addEventListener, oREL = PP.removeEventListener;
 
+  // Task hop on a private channel, created before MessagePort is patched so
+  // its own messages are never counted as the page's.
+  var hop = (function () { var ch = new MessageChannel(); var q = [];
+    ch.port1.onmessage = function () { var f = q.shift(); if (f) f(); };
+    return function (f) { q.push(f); oPPM.call(ch.port2, 0); }; })();
+
+  // A timer that re-arms itself from its own callback is a poll or a clock
+  // (setTimeout(poll, 200) forever, a 1 s tick): counted for its first arm
+  // only once it is paced (delay >= 16 ms, a frame), or every capture of the
+  // page waits for it until the cap. Measured on the review's probes: a 200 ms
+  // poll pinned every capture at the 1500 ms cap; with 1 generation it settles
+  // in one period. 2 generations already pins a 1000 ms clock at the cap (2 x
+  // 1000 > 1500). Faster re-arms are yields inside chunked work (5 x
+  // setTimeout(step, 0)) and stay counted, or the chunked work is captured
+  // after its first chunk.
+  var TIMER_GENERATIONS = 1, PACED_MS = 16;
+  var curFn = null, curGen = 0;
   W.setTimeout = function (fn, delay) {
     if (typeof fn !== 'function') return oST.apply(W, arguments);
     var args = Array.prototype.slice.call(arguments, 2); var d = Math.max(0, Number(delay) || 0); var id;
-    var cb = function () { S.timers.delete(id); return fn.apply(W, args); };
-    id = oST.call(W, cb, d); S.timers.set(id, d); return id;
+    var gen = fn === curFn ? curGen + 1 : 0;
+    var cb = function () { S.timers.delete(id); var pf = curFn, pg = curGen; curFn = fn; curGen = gen;
+      try { return fn.apply(W, args); } finally { curFn = pf; curGen = pg; } };
+    id = oST.call(W, cb, d);
+    if (gen < TIMER_GENERATIONS || d < PACED_MS) S.timers.set(id, d);
+    return id;
   };
   W.clearTimeout = function (id) { S.timers.delete(id); return oCT.call(W, id); };
   // An interval counts until its first tick only: it must not block forever.
@@ -100,19 +127,47 @@ const IDLE_INIT = `(function () {
     if (gen < 3) S.rafs.add(id); return id;
   };
   W.cancelAnimationFrame = function (id) { S.rafs.delete(id); return oCAF.call(W, id); };
-  // Posted messages (React's scheduler uses a MessageChannel): count sends,
-  // decrement on delivery. A port nobody listens to never delivers; the
-  // waiter treats a count that stops moving as stale.
-  W.postMessage = function () { S.msgs++; return oPM.apply(W, arguments); };
-  W.addEventListener('message', function () { if (S.msgs > 0) S.msgs--; }, true);
-  var PP = MessagePort.prototype, oPPM = PP.postMessage, oAEL = PP.addEventListener, wrapped = new WeakMap();
+  // Posted messages (React's scheduler uses a MessageChannel): count sends
+  // and deliveries, each event once however many listeners see it. Pending
+  // is the difference; the waiter treats it as stale only when deliveries
+  // stop moving (a port nobody listens to), never while they continue (the
+  // review measured 40 x 5 ms of scheduler slices captured mid-render when
+  // a steady 1-in-flight count was read as stale).
+  var seen = new WeakSet();
+  var deliver = function (e) { if (e && typeof e === 'object') { if (seen.has(e)) return; seen.add(e); }
+    if (S.delivered < S.sent) S.delivered++; };
+  W.postMessage = function () { S.sent++; return oPM.apply(W, arguments); };
+  W.addEventListener('message', deliver, true);
+  var wrapped = new WeakMap();
   var wrap = function (fn) { if (typeof fn !== 'function') return fn; var w = wrapped.get(fn);
-    if (!w) { w = function (e) { if (S.msgs > 0) S.msgs--; return fn.call(this, e); }; wrapped.set(fn, w); } return w; };
-  PP.postMessage = function () { S.msgs++; return oPPM.apply(this, arguments); };
+    if (!w) { w = function (e) { deliver(e); return fn.call(this, e); }; wrapped.set(fn, w); } return w; };
+  PP.postMessage = function () { S.sent++; return oPPM.apply(this, arguments); };
   PP.addEventListener = function (type, fn, opt) { return oAEL.call(this, type, type === 'message' ? wrap(fn) : fn, opt); };
+  PP.removeEventListener = function (type, fn, opt) {
+    return oREL.call(this, type, type === 'message' && typeof fn === 'function' ? (wrapped.get(fn) || fn) : fn, opt); };
   var onmsg = Object.getOwnPropertyDescriptor(PP, 'onmessage');
   Object.defineProperty(PP, 'onmessage', { configurable: true,
     get: function () { return onmsg.get.call(this); }, set: function (fn) { return onmsg.set.call(this, wrap(fn)); } });
+
+  // A dedicated Worker runs where this script can't see; its script request
+  // never completes on the page's session either. Count it as pending until
+  // its first message, error or terminate, within the timer horizon: a worker
+  // that answers late is waited for like a timer, a silent one costs at most
+  // the horizon.
+  var OW = W.Worker, wid = 0;
+  if (typeof OW === 'function') {
+    var JW = function (url, opts) {
+      var w = new OW(url, opts); var id = ++wid; var src = String(url);
+      S.workers.set(id, { t: performance.now(), src: src });
+      var done = function () { S.workers.delete(id); };
+      w.addEventListener('message', done, { once: true });
+      w.addEventListener('error', done, { once: true });
+      var term = w.terminate; w.terminate = function () { done(); return term.apply(w, arguments); };
+      return w;
+    };
+    JW.prototype = OW.prototype;
+    W.Worker = JW;
+  }
 
   new MutationObserver(function (list) { S.mut += list.length; })
     .observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
@@ -121,27 +176,26 @@ const IDLE_INIT = `(function () {
   // call it unconditionally (window.__juxtapose?.ready() outside jux).
   W.__juxtapose = { ready: function () { S.ready = true; } };
 
-  // Task hop on a private channel, with the unwrapped postMessage.
-  var hop = (function () { var ch = new MessageChannel(); var q = [];
-    ch.port1.onmessage = function () { var f = q.shift(); if (f) f(); };
-    return function (f) { q.push(f); oPPM.call(ch.port2, 0); }; })();
-
   var pendingImages = function () {
     var vh = W.innerHeight, vw = W.innerWidth, out = [];
     Array.prototype.forEach.call(document.images, function (img) {
       if (img.complete) return;
-      // A lazy image outside the viewport never loads; waiting for it is
-      // what hung the old drain.
-      if (img.loading === 'lazy') { var r = img.getBoundingClientRect(); if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) return; }
+      // A lazy image outside the viewport, or not rendered at all
+      // (display: none), never loads; waiting for it is what hung the old drain.
+      if (img.loading === 'lazy') { if (img.getClientRects().length === 0) return;
+        var r = img.getBoundingClientRect(); if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) return; }
       out.push(img.currentSrc || img.src || '(no src)');
     });
     return out;
   };
   var snapshot = function (horizon) {
     var timers = 0; S.timers.forEach(function (d) { if (d <= horizon) timers++; });
+    var now = performance.now(), workers = [];
+    S.workers.forEach(function (w) { if (now - w.t <= horizon) workers.push(w.src); });
     var imgs = pendingImages();
-    return { timers: timers, rafs: S.rafs.size, msgs: S.msgs, mut: S.mut, fonts: document.fonts.status,
-      images: imgs.length, imageSrcs: imgs.slice(0, 3), ready: S.ready };
+    return { timers: timers, rafs: S.rafs.size, msgs: S.sent - S.delivered, delivered: S.delivered, mut: S.mut,
+      fonts: document.fonts.status, images: imgs.length, imageSrcs: imgs.slice(0, 3),
+      workers: workers.length, workerSrcs: workers.slice(0, 3), ready: S.ready };
   };
   W.__juxIdle = { snapshot: snapshot, reset: function () { S.ready = false; } };
 
@@ -149,7 +203,7 @@ const IDLE_INIT = `(function () {
   // and no mutation since the previous hop, or 'cap' at capMs.
   W.__juxIdleWait = function (capMs, horizon, needReady) {
     return new Promise(function (resolve) {
-      var t0 = performance.now(); var lastMut = -1; var lastMsgs = -1; var quiet = 0; var stale = 0; var done = false; var changing = false;
+      var t0 = performance.now(); var lastMut = -1; var lastDelivered = -1; var quiet = 0; var stale = 0; var done = false; var changing = false;
       var finish = function (status, s) { if (done) return; done = true; oCT.call(W, capTimer);
         s = s || snapshot(horizon); s.changing = changing;
         resolve({ status: status, waitedMs: performance.now() - t0, snap: s }); };
@@ -157,9 +211,9 @@ const IDLE_INIT = `(function () {
       var check = function () {
         if (done) return;
         var s = snapshot(horizon);
-        if (s.msgs > 0 && s.msgs === lastMsgs) stale++; else stale = 0; lastMsgs = s.msgs;
+        if (s.msgs > 0 && s.delivered === lastDelivered) stale++; else stale = 0; lastDelivered = s.delivered;
         var msgsOk = s.msgs === 0 || stale >= 3;
-        var noWork = s.timers === 0 && s.rafs === 0 && msgsOk && s.fonts !== 'loading' && s.images === 0 && (!needReady || s.ready);
+        var noWork = s.timers === 0 && s.rafs === 0 && msgsOk && s.workers === 0 && s.fonts !== 'loading' && s.images === 0 && (!needReady || s.ready);
         changing = s.mut !== lastMut && lastMut !== -1;
         var isQuiet = noWork && s.mut === lastMut;
         lastMut = s.mut;
@@ -167,7 +221,7 @@ const IDLE_INIT = `(function () {
         if (quiet >= 2) return finish('idle', s);
         if (noWork) hop(check);                                        // a mutation just happened: look again next task
         else if (s.rafs > 0) oRAF.call(W, function () { hop(check); }); // sleep to the frame edge
-        else oST.call(W, check, 4);                                    // timer/font/image/ready pending: poll cheaply
+        else oST.call(W, check, 4);                                    // timer/font/image/worker/ready pending: poll cheaply
       };
       // First check after a frame: style and layout must run once before
       // fonts and in-viewport images start loading.
@@ -190,6 +244,11 @@ export class NetworkTracker {
   private readonly inflight = new Map<string, Request>();
   private done: Request[] = [];
   private readonly listeners = new Set<() => void>();
+  /** In flight when the current story started on a warm switch: the last
+   *  story's, never this one's. */
+  private excluded = new Set<string>();
+  /** The current main document's loader. */
+  private mainLoader: string | undefined;
 
   constructor(page: Page & Required<Pick<Page, 'on'>>, mainFrameId: string | undefined) {
     page.on('Network.requestWillBeSent', (p) => {
@@ -200,7 +259,24 @@ export class NetworkTracker {
       if (p.type === 'Document' && p.frameId === mainFrameId) {
         this.inflight.clear();
         this.done = [];
+        this.excluded.clear();
+        this.mainLoader = p.loaderId;
       }
+      // A dedicated Worker's script request has no loader and never gets
+      // loadingFinished on this session (review: every capture of a page
+      // with `new Worker('/w.js')` pinned at the cap). The init script counts
+      // the worker itself until it answers.
+      if (p.loaderId === '') return;
+      // Started by the previous document between the navigation's start and
+      // its commit: it never gets loadingFailed either (review: a 2 ms poller
+      // followed by a static page flagged the static page at the cap 4 of 6
+      // times).
+      if (
+        p.frameId === mainFrameId &&
+        this.mainLoader !== undefined &&
+        p.loaderId !== this.mainLoader
+      )
+        return;
       this.inflight.set(p.requestId, {
         url: p.request.url,
         ...(p.type !== undefined ? { type: p.type } : {}),
@@ -210,6 +286,7 @@ export class NetworkTracker {
       const r = this.inflight.get(p.requestId);
       if (!r) return;
       this.inflight.delete(p.requestId);
+      this.excluded.delete(p.requestId);
       this.done.push(r);
       if (this.done.length > MAX_DONE) this.done.splice(0, this.done.length - MAX_DONE);
       for (const l of [...this.listeners]) l();
@@ -218,19 +295,24 @@ export class NetworkTracker {
     page.on('Network.loadingFailed', finish);
   }
 
-  /** Forget completions: a warm switch renders a new story in the same
-   *  document, and the last story's requests must not satisfy `require`. */
+  /** A warm switch renders a new story in the same document: the last
+   *  story's completions must not satisfy `require`, and its requests still
+   *  in flight (a long poll) must not pin this one at the cap. */
   reset(): void {
     this.done = [];
+    this.excluded = new Set(this.inflight.keys());
   }
 
   /** In-flight requests the wait counts: required, or not ignored. */
   counted(s: ResolvedSettle): Request[] {
-    return [...this.inflight.values()].filter(
-      (r) =>
-        s.require.some((p) => matchPattern(p, r.url, r.type)) ||
-        !s.ignore.some((p) => matchPattern(p, r.url, r.type)),
-    );
+    return [...this.inflight.entries()]
+      .filter(([id]) => !this.excluded.has(id))
+      .map(([, r]) => r)
+      .filter(
+        (r) =>
+          s.require.some((p) => matchPattern(p, r.url, r.type)) ||
+          !s.ignore.some((p) => matchPattern(p, r.url, r.type)),
+      );
   }
 
   /** `require` patterns no completed request has matched yet. */
@@ -341,7 +423,12 @@ export async function waitForIdle(
         { timeout: Math.ceil(remaining) + 2000 },
       );
     } catch {
-      return { status: 'error', waitedMs: now() - t0, ...(snap ? { snap } : {}) };
+      return fallback(
+        page,
+        t0,
+        capMs,
+        'the page navigated or stopped answering during the wait',
+      );
     }
     const status =
       typeof r === 'object' && r !== null
@@ -350,7 +437,13 @@ export async function waitForIdle(
     const got = (r as { snap?: unknown } | undefined)?.snap;
     if (isSnapshot(got)) snap = got;
     if (status === 'cap') return timeout();
-    if (status !== 'idle') return { status: 'noinit', waitedMs: now() - t0 };
+    if (status !== 'idle')
+      return fallback(
+        page,
+        t0,
+        capMs,
+        'the idle detector was not installed in this page',
+      );
     const net = idle.net;
     if (!net) return { status: 'idle', waitedMs: now() - t0, ...(snap ? { snap } : {}) };
     if (net.busy(s)) {
@@ -368,6 +461,43 @@ export async function waitForIdle(
   }
 }
 
+/**
+ * When the detector can't run, wait the way the quiet window did: fonts,
+ * eager images and 100 ms without a DOM change, all inside what is left of the
+ * cap. Flagged `settle-fallback`, so the weaker wait is never silent.
+ */
+async function fallback(
+  page: Page,
+  t0: number,
+  capMs: number,
+  why: string,
+): Promise<IdleResult> {
+  const remaining = Math.max(0, Math.ceil(capMs - (now() - t0)));
+  await page
+    .evaluate(
+      `new Promise(function (resolve) {
+        var cap = setTimeout(resolve, ${remaining});
+        Promise.resolve(document.fonts && document.fonts.ready).then(function () {
+          return Promise.all(Array.prototype.filter.call(document.images, function (i) { return !i.complete && i.loading !== 'lazy'; })
+            .map(function (i) { return new Promise(function (r) { i.addEventListener('load', r, { once: true }); i.addEventListener('error', r, { once: true }); }); }));
+        }).then(function () {
+          var t; var fin = function () { o.disconnect(); clearTimeout(cap); resolve(); };
+          var o = new MutationObserver(function () { clearTimeout(t); t = setTimeout(fin, 100); });
+          o.observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
+          t = setTimeout(fin, 100);
+        });
+      })`,
+      undefined,
+      { timeout: remaining + 2000 },
+    )
+    .catch(() => {});
+  return {
+    status: 'fallback',
+    waitedMs: now() - t0,
+    pending: [`${why}; waited for fonts, images and a quiet DOM only`],
+  };
+}
+
 /** After the paint barrier: did the DOM, fonts, images or network move? */
 export async function movedSincePaint(
   page: Page,
@@ -382,8 +512,13 @@ export async function movedSincePaint(
     )
     .catch(() => null);
   if (!isSnapshot(after)) return false;
+  // Timers and messages too: a callback inside the barrier can schedule work
+  // without touching the DOM yet.
   return (
     after.mut !== before.mut ||
+    after.timers > 0 ||
+    after.msgs > 0 ||
+    after.workers > 0 ||
     after.fonts === 'loading' ||
     after.images > 0 ||
     idle.net?.busy(s) === true
@@ -444,6 +579,10 @@ export function describePending(
     if (snap.rafs > 0)
       out.push(`${plural(snap.rafs, 'animation frame callback')} pending`);
     if (snap.msgs > 0) out.push(`${plural(snap.msgs, 'posted message')} undelivered`);
+    if (snap.workers > 0)
+      out.push(
+        `${plural(snap.workers, 'worker')} not answered yet: ${snap.workerSrcs.map(displayUrl).join(', ')}`,
+      );
     if (snap.fonts === 'loading') out.push('web fonts still loading');
     if (snap.images > 0)
       out.push(

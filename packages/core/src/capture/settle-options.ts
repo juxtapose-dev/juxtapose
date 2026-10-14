@@ -9,7 +9,7 @@
 //
 // Pure on purpose: nothing here touches a page, so every rule has a unit test.
 
-import type { SettleParams, StoryParams } from '../types.js';
+import type { CaptureFlag, SettleParams, SettleReport, StoryParams } from '../types.js';
 import { SettleConfigError } from './config-errors.js';
 
 export { SettleConfigError };
@@ -214,6 +214,10 @@ export function layerScalars(
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** The flag a settle report raises. */
+export const settleFlag = (s: Pick<SettleReport, 'status'>): CaptureFlag =>
+  s.status === 'timeout' ? 'settle-timeout' : 'settle-fallback';
 
 /** A settle cap: a whole number of ms, 1 to MAX_SETTLE_TIMEOUT_MS. The CLI
  *  and the MCP server check per-call values with this too. */

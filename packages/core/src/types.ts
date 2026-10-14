@@ -63,16 +63,20 @@ export interface SettleParams {
   };
 }
 
-/** Something about a capture that doesn't fail it but should be read. */
-export type CaptureFlag = 'settle-timeout';
+/** Something about a capture that doesn't fail it but should be read.
+ *  `settle-timeout`: the settle wait hit its cap. `settle-fallback`: the
+ *  event-driven wait could not run and a weaker one stood in. */
+export type CaptureFlag = 'settle-timeout' | 'settle-fallback';
 
-/** Present on a capture whose settle wait hit its cap. */
+/** Present on a capture whose settle wait hit its cap (`timeout`), or could
+ *  not run as designed (`fallback`). */
 export interface SettleReport {
-  status: 'timeout';
+  status: 'timeout' | 'fallback';
   /** The cap that was hit, ms. */
   timeoutMs: number;
   /** What was still pending at the cap, one description per item, such as
-   *  `1 request to /api/feed in flight (Fetch)`. Never empty. */
+   *  `1 request to /api/feed in flight (Fetch)`; for `fallback`, why. Never
+   *  empty. */
   pending: string[];
 }
 
@@ -232,7 +236,10 @@ export type Flag =
   | 'below-fold'
   /** The current capture's settle wait hit its cap: the page may have been
    *  captured mid-update. The result's `settle.pending` says what was left. */
-  | 'settle-timeout';
+  | 'settle-timeout'
+  /** The current capture's event-driven settle wait could not run; a
+   *  fonts/images/quiet-DOM wait stood in. */
+  | 'settle-fallback';
 
 export type CauseKind =
   /** At least one changed file is in the story's import closure. */

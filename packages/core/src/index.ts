@@ -68,6 +68,7 @@ export {
   checkPatterns,
   checkProjectSettle,
   isSettleTimeout,
+  settleFlag,
   SettleConfigError,
   DEFAULT_SETTLE_TIMEOUT_MS,
   MAX_SETTLE_TIMEOUT_MS,

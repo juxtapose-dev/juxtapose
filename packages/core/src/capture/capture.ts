@@ -120,9 +120,6 @@ export async function captureStory(
   const scheme: ColorScheme =
     story.variant !== undefined ? (params.colorScheme ?? 'light') : 'light';
 
-  // Arm before triggering the render, or the observer misses the mutations it
-  // exists to watch.
-  //
   // A story that wants animations running can't reuse a page whose stylesheet
   // already froze them, so force the cold path for those. Likewise a scheme
   // change: an app that reads matchMedia once at boot keeps the old scheme
@@ -273,7 +270,7 @@ export async function captureStory(
   // Work that landed during the paint barrier (an observer callback, a
   // request the last frame started) gets one more wait, within what is left
   // of the cap. Once: a page that keeps moving is captured, not chased.
-  let timedOut: IdleResult | undefined = first.status === 'timeout' ? first : undefined;
+  let flagged: IdleResult | undefined = first.status === 'idle' ? undefined : first;
   if (
     first.status === 'idle' &&
     (await movedSincePaint(page, idle, first.snap, settle))
@@ -285,7 +282,7 @@ export async function captureStory(
       Math.max(100, settle.timeoutMs - first.waitedMs),
     );
     await waitForPaint(page);
-    if (second.status === 'timeout') timedOut = second;
+    if (second.status !== 'idle') flagged = second;
   }
 
   // Structure from the same frame the screenshot is about to take: after the
@@ -329,12 +326,12 @@ export async function captureStory(
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     ...(structure ? { structure } : {}),
-    ...(timedOut
+    ...(flagged && flagged.status !== 'idle'
       ? {
           settle: {
-            status: 'timeout' as const,
+            status: flagged.status,
             timeoutMs: settle.timeoutMs,
-            pending: timedOut.pending ?? [],
+            pending: flagged.pending ?? [],
           },
         }
       : {}),

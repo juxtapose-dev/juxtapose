@@ -35,7 +35,7 @@ import {
 import { phases, type Phases } from './phases.js';
 import type { CauseIndex } from '../analysis/cause.js';
 import { shellQuote } from '../shell-quote.js';
-import type { SettleLayer } from '../capture/settle-options.js';
+import { settleFlag, type SettleLayer } from '../capture/settle-options.js';
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
@@ -203,7 +203,7 @@ async function judge(
     // Never silent: a capture taken at the settle cap says so on every
     // status, a pass included, with what was still pending.
     ...(snapshot.settle
-      ? { flags: ['settle-timeout' as const], settle: snapshot.settle }
+      ? { flags: [settleFlag(snapshot.settle)], settle: snapshot.settle }
       : {}),
     durationMs: snapshot.durationMs,
   };
@@ -307,7 +307,7 @@ async function tryStructural(
       pixels,
       escalate: { command: `jux handoff ${shellQuote(story.storyId)}` },
       ...(cause ? { cause } : {}),
-      ...(snapshot.settle ? { settleTimeout: true } : {}),
+      ...(snapshot.settle ? { settleFlag: settleFlag(snapshot.settle) } : {}),
     });
   } catch {
     return undefined;

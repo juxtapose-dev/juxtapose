@@ -4,7 +4,6 @@
 // whether the capture saw the final state, and `settle` whether it hit the cap.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { Socket } from 'node:net';
 import { Browser } from '../browser/browser.js';
@@ -29,14 +28,15 @@ const PAGES: Record<string, string> = {
   '/fetch-chain': page(
     `fetch('/slow/150/a').then((r) => r.text()).then(() => fetch('/slow/150/b')).then((r) => r.text()).then((t) => add('final ' + t));`,
   ),
+  // Promise steps that each wait a task (a 0 ms timer from a fresh
+  // resolver, so no single function re-arms itself): microtasks alone finish
+  // before any check could run, so this is the case that needs tracking.
   '/microtasks': page(
-    `let p = Promise.resolve(); for (let i = 0; i < 50; i++) p = p.then(() => new Promise((r) => queueMicrotask(r))); p.then(() => add('final'));`,
+    `let p = Promise.resolve(); for (let i = 0; i < 20; i++) p = p.then(() => new Promise((r) => setTimeout(r, 0))).then(() => { document.title = String(Math.random()); });
+     p.then(() => add('final'));`,
   ),
-  // Sockets and streams never finish while the page is open.
-  '/socket': page(
-    `const ws = new WebSocket('ws://' + location.host + '/ws'); ws.onopen = () => add('open');
-     const es = new EventSource('/sse'); add('final');`,
-  ),
+  // An event stream never finishes while the page is open.
+  '/stream': page(`const es = new EventSource('/sse'); add('final');`),
   // Starts its request after the 1000 ms timer horizon: only `require`
   // knows to wait for it.
   '/late': page(
@@ -50,6 +50,42 @@ const PAGES: Record<string, string> = {
   '/broken-image': page(
     `add('final'); addEventListener('load', () => { const i = new Image(10, 10); i.src = '/never-image'; document.body.appendChild(i); });`,
   ),
+  // A Worker's script request never gets loadingFinished on the page session;
+  // its answer arrives after 120 ms.
+  '/worker': page(`const w = new Worker('/w.js'); w.onmessage = (e) => add(e.data);`),
+  // React-scheduler shape: 60 MessageChannel slices of 5 ms each.
+  '/sched': page(
+    `const ch = new MessageChannel(); let n = 0; add('rendering');
+     ch.port1.onmessage = () => { const t = performance.now(); while (performance.now() - t < 5) {}
+       if (++n < 60) ch.port2.postMessage(null); else document.querySelector('#out p').textContent = 'final'; };
+     ch.port2.postMessage(null);`,
+  ),
+  // Polls forever without touching the DOM; also runs a 300 ms chain of
+  // distinct timers, which must still be waited for.
+  '/timer-poll': page(
+    `(function poll() { setTimeout(poll, 200); })(); setTimeout(() => setTimeout(() => add('final'), 150), 150);`,
+  ),
+  // Keeps requests in flight across the next navigation. Another host name
+  // for the same server, so the hanging requests don't use up the six
+  // connections the next page's navigation needs.
+  '/poller': page(
+    `setInterval(() => fetch('http://localhost:' + location.port + '/never?' + Math.random(), { mode: 'no-cors' }).catch(() => {}), 2); add('final');`,
+  ),
+  '/static': page(`add('final');`),
+  '/hidden-lazy': page(
+    `add('final');`,
+    '<img loading="lazy" src="/never-image" style="display:none" width="10" height="10">',
+  ),
+  // An animation loop stops being counted after 3 frames, so the idle wait
+  // returns while it runs on; its 5th frame, inside the paint barrier,
+  // schedules the last change without touching the DOM yet.
+  '/late-frame': page(
+    `let n = 0; (function f() { if (++n === 5) setTimeout(() => add('final'), 60); else requestAnimationFrame(f); })();`,
+  ),
+  '/port-remove': page(
+    `const ch = new MessageChannel(); const f = () => add('removed listener fired'); ch.port1.addEventListener('message', f);
+     ch.port1.removeEventListener('message', f); ch.port1.start(); ch.port2.postMessage(1); add('final');`,
+  ),
   '/lazy-image': page(
     `add('final');`,
     '<div style="height:5000px"></div><img loading="lazy" src="/never-image" width="10" height="10">',
@@ -62,6 +98,9 @@ beforeAll(async () => {
     const slow = /^\/slow\/(\d+)\/(.*)$/.exec(url.pathname);
     if (slow) {
       setTimeout(() => res.end(slow[2]), Number(slow[1]));
+    } else if (url.pathname === '/w.js') {
+      res.writeHead(200, { 'content-type': 'text/javascript' });
+      res.end(`setTimeout(() => postMessage('final'), 120);`);
     } else if (url.pathname === '/sse') {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
       res.write('data: hi\n\n');
@@ -76,16 +115,6 @@ beforeAll(async () => {
     }
   });
   server.on('connection', (s) => sockets.add(s));
-  // The smallest WebSocket server: accept the handshake, never send a frame.
-  server.on('upgrade', (req, socket) => {
-    sockets.add(socket as Socket);
-    const accept = createHash('sha1')
-      .update(`${req.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
-      .digest('base64');
-    socket.write(
-      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
-    );
-  });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   if (chrome) browser = await Browser.launch({ executablePath: chrome.path });
@@ -123,18 +152,18 @@ describe.skipIf(!chrome)('event-driven settle in Chrome', () => {
     expect(s.settle).toBeUndefined();
   });
 
-  it('waits out a 50-deep promise and microtask chain', async () => {
+  it('waits out a promise chain that yields a task at every step', async () => {
     const s = await snap('/microtasks');
     expect(texts(s)).toContain('final');
     expect(s.settle).toBeUndefined();
   });
 
-  it('does not wait for a WebSocket or an EventSource by default', async () => {
+  it('does not wait for an EventSource by default', async () => {
     const started = Date.now();
-    const s = await snap('/socket');
+    const s = await snap('/stream');
     expect(s.settle).toBeUndefined();
     expect(texts(s)).toContain('final');
-    // Far below the 1500 ms cap: neither was ever counted.
+    // Far below the 1500 ms cap: the stream was never counted.
     expect(Date.now() - started).toBeLessThan(1200);
   });
 
@@ -191,5 +220,52 @@ describe.skipIf(!chrome)('event-driven settle in Chrome', () => {
     const s = await snap('/lazy-image');
     expect(s.settle).toBeUndefined();
     expect(Date.now() - started).toBeLessThan(1200);
+  });
+
+  it('waits for a Worker to answer, and its script request does not pin the cap', async () => {
+    const s = await snap('/worker');
+    expect(texts(s)).toContain('final');
+    expect(s.settle).toBeUndefined();
+  });
+
+  it('waits out continuous MessageChannel work (60 slices of 5 ms)', async () => {
+    const s = await snap('/sched');
+    expect(texts(s)).toContain('final');
+    expect(texts(s)).not.toContain('rendering');
+    expect(s.settle).toBeUndefined();
+  });
+
+  it('a timer that re-arms itself forever does not pin the cap; other timers are still waited for', async () => {
+    const started = Date.now();
+    const s = await snap('/timer-poll');
+    expect(texts(s)).toContain('final');
+    expect(s.settle).toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(1200);
+  });
+
+  it("the previous page's requests do not leak into the next page's wait", async () => {
+    const { pages } = await snapPages({
+      urls: [`${base}/poller`, `${base}/static`],
+      browser,
+      viewport: { width: 320, height: 240 },
+    });
+    expect(pages[0]!.snapshot?.settle?.status).toBe('timeout');
+    expect(pages[1]!.snapshot?.settle).toBeUndefined();
+  }, 15_000);
+
+  it('a hidden lazy image is not waited for', async () => {
+    const s = await snap('/hidden-lazy');
+    expect(s.settle).toBeUndefined();
+  });
+
+  it('work that lands during the paint barrier gets another wait', async () => {
+    const s = await snap('/late-frame');
+    expect(texts(s)).toContain('final');
+  });
+
+  it('a removed MessagePort listener stays removed', async () => {
+    const s = await snap('/port-remove');
+    expect(texts(s)).toContain('final');
+    expect(texts(s)).not.toContain('removed listener fired');
   });
 });

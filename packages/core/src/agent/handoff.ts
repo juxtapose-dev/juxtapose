@@ -87,8 +87,12 @@ export function describeVariant(v: NonNullable<HandoffPayload['variant']>): stri
     : `${head}, with no settings of its own`;
 }
 
-/** What a settle-timeout means for this capture, and the knob for each case. */
+/** What a settle flag means for this capture, and the knob for each case. */
 function settleSection(s: SettleReport): string[] {
+  if (s.status === 'fallback')
+    return [
+      `**settle-fallback:** ${s.pending.join('; ')}. This capture may show a frame mid-update; re-run it before judging the pixels.`,
+    ];
   return [
     `**settle-timeout:** the page still had work at the ${s.timeoutMs} ms settle cap, so this capture may show a frame mid-update. Pending:`,
     ...s.pending.map((p) => `- ${p}`),
