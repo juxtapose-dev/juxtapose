@@ -9,9 +9,9 @@ export default {
     // automatic runtime has to be on for files outside this app's own root.
     esbuild: { ...config.esbuild, jsx: 'automatic' },
 
-    // juxtapose walks the Vite build manifest to work out which stories a
-    // change could have affected. Without this it can still run, but it has no
-    // graph to consult and conservatively captures everything.
+    // The addon records the module graph `jux run --since` uses to pick the
+    // stories a change reaches. Vite's own manifest is optional now: only
+    // `cause` (why a story changed) still reads it.
     build: { ...config.build, manifest: true },
   }),
 };

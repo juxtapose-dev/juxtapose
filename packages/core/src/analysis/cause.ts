@@ -42,6 +42,7 @@ import {
   gitTopLevel,
   isConfigChange,
   isLockfileChange,
+  isNeverBundled,
   isTsconfigChange,
   keyToSrc,
   loadViteManifest,
@@ -157,19 +158,7 @@ interface ForwardGraph {
   edges: Map<string, string[]>;
 }
 
-/** Files no bundler imports. `.mdx` is not one: it compiles to a module. */
-const NEVER_BUNDLED_EXT = /\.(?:md|markdown|mdown|rst|adoc)$/i;
-const NEVER_BUNDLED_NAME =
-  /^(?:LICENSE.*|CHANGELOG.*|AUTHORS.*|CODEOWNERS|\.gitignore|\.gitattributes|\.editorconfig)$/;
-
-function neverBundled(f: ChangedFile): boolean {
-  const name = f.path.slice(f.path.lastIndexOf('/') + 1);
-  return (
-    NEVER_BUNDLED_EXT.test(name) ||
-    NEVER_BUNDLED_NAME.test(name) ||
-    f.repoPath.startsWith('.github/')
-  );
-}
+const neverBundled = isNeverBundled;
 
 /** Reaches every story: a root lockfile or tsconfig, or a workbench config
  *  dir. Checked in both forms, since a monorepo's root files are only

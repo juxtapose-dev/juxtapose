@@ -150,11 +150,17 @@ diff, not abort a 700-story run.
 
 ## Affected-story analysis is deliberately pessimistic
 
-`analysis/affected.ts` walks Vite's build manifest backwards from changed files.
-The failure modes are asymmetric — a false positive costs seconds of capture, a
-false negative ships a regression — so every uncertain path escalates to
-capturing everything: config or lockfile changes, a missing manifest, a git
-failure, or a change that matched no story.
+`analysis/affected.ts` walks the build's module graph backwards from changed
+files. Vite's manifest cannot be that graph: it lists chunks, and a component
+bundled into a shared chunk has no entry (#200). So `analysis/vite-plugin.ts`
+(added by the Storybook addon, or by hand in a Ladle `vite.config`) records
+every source module and its imports at build time; the manifest is only a
+fallback. The failure modes are asymmetric — a false positive costs seconds of
+capture, a false negative ships a regression — so every uncertain path
+escalates to capturing everything: config or lockfile changes, a missing graph,
+a git failure, any changed file the graph has no node for, a changed file that
+only a non-story module (the preview) imports, or a change that matched no
+story.
 
 The `reason` field on the result exists so a full run is never mysterious. If
 you add a path, give it a reason string too.
