@@ -8,13 +8,24 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import {
+  analyzeFlake,
   compareCodeUnits,
+  readRunCapture,
+  configCoverage,
+  describeFlake,
+  describeFlakeGroup,
+  groupFlakes,
+  listStoryIds,
   encodeStoryId,
   hashImage,
   parseRunReport,
   shellQuote,
   type DiffResult,
+  type Flake,
+  type ProjectConfig,
+  type FlakeCapture,
 } from '@juxtapose/core';
+import { loadConfig } from '../context.js';
 import { EXIT } from '../exit-codes.js';
 import { errorMessage } from '../guards.js';
 import type { Io } from '../io.js';
@@ -30,6 +41,9 @@ export interface RunSide {
   /** story id -> sha256 of the current capture, or `<status>` when nothing was
    *  captured (skip, capture error) so two skipped stories still compare equal. */
   hashes: Map<string, string>;
+  /** The run directory, where each story's capture and structure sidecar are. */
+  dir: string;
+  results: Map<string, DiffResult>;
 }
 
 export interface RunsComparison {
@@ -69,7 +83,12 @@ async function readRun(runDir: string): Promise<RunSide> {
   );
   const hashes = new Map<string, string>();
   for (const r of report.results) hashes.set(r.storyId, await resultHash(runDir, r));
-  return { runId: path.basename(runDir), hashes };
+  return {
+    runId: path.basename(runDir),
+    hashes,
+    dir: runDir,
+    results: new Map(report.results.map((r) => [r.storyId, r])),
+  };
 }
 
 export function compareRuns(a: RunSide, b: RunSide): RunsComparison {
@@ -83,6 +102,56 @@ export function compareRuns(a: RunSide, b: RunSide): RunsComparison {
     if (ha === undefined) out.missing.push({ storyId, in: 'b' });
     else if (hb === undefined) out.missing.push({ storyId, in: 'a' });
     else (ha === hb ? out.identical : out.different).push(storyId);
+  }
+  return out;
+}
+
+/** One run's capture of a story, as the flake analysis reads it. The
+ *  structure sidecar is optional: without it only pixels and settle flags
+ *  explain the difference. */
+async function readCapture(side: RunSide, storyId: string): Promise<FlakeCapture> {
+  const stored = await readRunCapture(side.dir, storyId);
+  if (!stored) throw new Error(`no stored capture of ${storyId}`);
+  const result = side.results.get(storyId);
+  return {
+    ...stored,
+    ...(result?.settle ? { settle: result.settle } : {}),
+    ...(result?.flags?.length ? { flags: result.flags } : {}),
+  };
+}
+
+/** Why each story that differs between the two runs differs. A story whose
+ *  captures can't be read or compared simply has no entry: the hash already
+ *  said it differs, and this only explains. */
+async function explainDifferences(
+  sa: RunSide,
+  sb: RunSide,
+  ids: string[],
+  config: ProjectConfig,
+): Promise<Map<string, Flake>> {
+  const out = new Map<string, Flake>();
+  for (const storyId of ids) {
+    try {
+      out.set(
+        storyId,
+        await analyzeFlake({
+          storyId,
+          first: await readCapture(sa, storyId),
+          second: await readCapture(sb, storyId),
+          // What the project config already answers: the same coverage a run
+          // computes, minus the story's own parameters.
+          covered: configCoverage(config, {
+            storyId,
+            ...(sa.results.get(storyId)?.baseStoryId
+              ? { baseStoryId: sa.results.get(storyId)!.baseStoryId! }
+              : {}),
+          }),
+          freshRenderer: config.freshRenderer !== false,
+        }),
+      );
+    } catch {
+      // not explainable from what the runs kept
+    }
   }
   return out;
 }
@@ -117,6 +186,11 @@ export async function diffRuns(
   const [sa, sb] = sides as [RunSide, RunSide];
   const c = compareRuns(sa, sb);
   const clean = c.different.length === 0 && c.missing.length === 0;
+  const flakes = await explainDifferences(sa, sb, c.different, await loadConfig(root));
+  const flakeGroups = groupFlakes(
+    [...flakes].map(([storyId, flake]) => ({ storyId, flake })),
+  );
+  const grouped = new Set(flakeGroups.flatMap((g) => g.storyIds));
   if (flags.json) {
     io.out(
       JSON.stringify({
@@ -129,6 +203,8 @@ export async function diffRuns(
           missing: c.missing.length,
         },
         different: c.different,
+        ...(flakes.size > 0 ? { flake: Object.fromEntries(flakes) } : {}),
+        ...(flakeGroups.length > 0 ? { flakeGroups } : {}),
         missing: c.missing,
       }) + '\n',
     );
@@ -137,7 +213,13 @@ export async function diffRuns(
       `${shellQuote(sa.runId)} vs ${shellQuote(sb.runId)}: ${c.identical.length} identical, ${c.different.length} different` +
         (c.missing.length ? `, ${c.missing.length} in only one run` : ''),
     ];
-    for (const id of c.different) lines.push(`  different  ${id}`);
+    for (const id of c.different) {
+      lines.push(`  different  ${id}`);
+      const flake = flakes.get(id);
+      if (flake && !grouped.has(id)) lines.push(`    ${describeFlake(flake)}`);
+    }
+    for (const g of flakeGroups)
+      lines.push(`  ${describeFlakeGroup(g)}`, `    ${listStoryIds(g.storyIds)}`);
     for (const m of c.missing)
       lines.push(`  only in ${m.in === 'a' ? sa.runId : sb.runId}  ${m.storyId}`);
     io.out(lines.join('\n') + '\n');

@@ -16,6 +16,7 @@ import type { Page } from '../browser/page.js';
 import { isRecord } from '../browser/guards.js';
 import { queryAllExpression } from '../browser/selectors.js';
 import type {
+  ExternalRef,
   StructureElement,
   StructureRect,
   StructureSnapshot,
@@ -228,6 +229,13 @@ export function normalizeStructure(
     return m;
   };
   const inputValue = rare(nodes.inputValue);
+  // Which third-party resource each element paints or embeds, read from this
+  // same response: the browser's resolved <img> source and the computed
+  // background. Nothing here touches the page, so it cannot move a pixel.
+  const currentSource = rare(doc.nodes.currentSourceURL);
+  const documentUrl = str(doc.baseURL) ?? str(doc.documentURL) ?? '';
+  const pageOrigin = httpOrigin(documentUrl);
+  const backgroundIdx = STRUCTURE_PROPS.indexOf('background-image');
 
   // children lists and own text, in document order
   const children = new Map<number, number[]>();
@@ -303,7 +311,8 @@ export function normalizeStructure(
     }
 
     if (row === undefined) return; // display:none (or no box): drop the subtree
-    const values = layout.styles[row]!.map((s) => urlsToFileNames(str(s) ?? ''));
+    const rawValues = layout.styles[row]!.map((s) => str(s) ?? '');
+    const values = rawValues.map(urlsToFileNames);
     if (values[visibilityIdx] === 'hidden' || values[visibilityIdx] === 'collapse') {
       // hidden boxes can still contain visible descendants (visibility: visible)
       for (const c of children.get(i) ?? []) visit(c, path, keptParent);
@@ -367,6 +376,16 @@ export function normalizeStructure(
         if (name) el.name = name.slice(0, 80);
         if (text) el.text = text.slice(0, 200);
         if (a.src !== undefined) el.src = fileName(a.src);
+        const external = pageOrigin
+          ? externalRefs({
+              pageOrigin,
+              baseUrl: documentUrl,
+              tag,
+              src: tag === 'img' ? (currentSource.get(i) ?? a.src) : a.src,
+              background: rawValues[backgroundIdx] ?? '',
+            })
+          : [];
+        if (external.length) el.external = external;
         elements.push(el);
         effective.push(eff);
         me = elements.length - 1;
@@ -440,6 +459,62 @@ function urlsToFileNames(v: string): string {
   );
 }
 
+/** Most third-party references kept per element. */
+const MAX_EXTERNAL_PER_ELEMENT = 5;
+
+const httpOrigin = (u: string): string | undefined => {
+  try {
+    const parsed = new URL(u);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? parsed.origin
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * The third-party URLs an element loads: its <img> source, an <iframe>'s
+ * `src`, and any `url()` in its computed background. A URL on the page's own
+ * origin, a data: or blob: URL, or one that does not parse is not third-party.
+ * The query and hash are dropped (sidecars are committed; a signed URL's query
+ * is a credential).
+ */
+function externalRefs(e: {
+  pageOrigin: string;
+  baseUrl: string;
+  tag: string;
+  src: string | undefined;
+  background: string;
+}): ExternalRef[] {
+  const out: ExternalRef[] = [];
+  const add = (kind: ExternalRef['kind'], raw: string | undefined): void => {
+    if (!raw) return;
+    let u: URL;
+    try {
+      u = new URL(raw, e.baseUrl);
+    } catch {
+      return;
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return;
+    if (u.origin === e.pageOrigin) return;
+    if (
+      out.some((r) => r.kind === kind && r.origin === u.origin && r.path === u.pathname)
+    )
+      return;
+    out.push({ kind, origin: u.origin, path: u.pathname });
+  };
+  if (e.tag === 'img') add('image', e.src);
+  else if (e.tag === 'iframe') add('frame', e.src);
+  if (e.background.includes('url(')) {
+    for (const m of e.background.matchAll(
+      /url\((?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^)]*))\)/g,
+    ))
+      add('background', (m[1] ?? m[2] ?? m[3] ?? '').trim());
+  }
+  return out.slice(0, MAX_EXTERNAL_PER_ELEMENT);
+}
+
 const collapse = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 /** Computed `content` is a CSS string like `"★"` (quoted), `none`, `normal`,
@@ -497,7 +572,13 @@ function canonical(v: unknown): string {
 }
 
 function hashElements(elements: StructureElement[]): string {
-  return createHash('sha256').update(canonical(elements)).digest('hex');
+  // `external` is evidence for the flake classifier, not structure. Leaving it
+  // out keeps every structureHash (and so every committed sidecar's) what it
+  // was before the field existed.
+  const structural = elements.map((el) =>
+    Object.fromEntries(Object.entries(el).filter(([k]) => k !== 'external')),
+  );
+  return createHash('sha256').update(canonical(structural)).digest('hex');
 }
 
 export function encodeStructure(s: StructureSnapshot): Buffer {

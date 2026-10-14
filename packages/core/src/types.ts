@@ -49,12 +49,28 @@ export type SettleReport =
       /** What was still pending at the cap, one description per item, such
        *  as `1 request to /api/feed in flight (Fetch)`. Never empty. */
       pending: string[];
+      /** The counted requests still in flight, with their full URLs and CDP
+       *  resource types (`pending` shows paths only). At most
+       *  MAX_PENDING_REQUESTS; `requestsOmitted` counts the rest. Absent on
+       *  reports written before it was recorded. */
+      requests?: PendingRequest[];
+      requestsOmitted?: number;
+      /** The origin of the page, so a request to another one can be told
+       *  from the page's own. */
+      origin?: string;
     }
   | {
       status: 'fallback';
       /** Why the event-driven wait could not run. Never empty. */
       pending: string[];
     };
+
+/** A request still in flight at the settle cap. */
+export interface PendingRequest {
+  url: string;
+  /** CDP resource type (`Image`, `Fetch`, `Document`...); `Other` if unknown. */
+  type: string;
+}
 
 export type ColorScheme = 'light' | 'dark';
 
@@ -123,6 +139,20 @@ export interface StructureRect {
   h: number;
 }
 
+/** How an element reaches a third-party URL. */
+export const EXTERNAL_KINDS = ['image', 'background', 'frame'] as const;
+export type ExternalKind = (typeof EXTERNAL_KINDS)[number];
+
+/** A resource from an origin other than the page's own. The query and hash are
+ *  dropped: sidecars are committed, and a signed URL's query is a credential. */
+export interface ExternalRef {
+  kind: ExternalKind;
+  /** `https://picsum.photos`. */
+  origin: string;
+  /** The URL's path, without query or hash. */
+  path: string;
+}
+
 export interface StructureElement {
   /** tag + (#id | [data-testid] | :nth-of-type) chain from <html>. */
   path: string;
@@ -136,6 +166,10 @@ export interface StructureElement {
   name?: string;
   text?: string;
   src?: string;
+  /** Third-party resources this element paints or embeds: where `src` keeps
+   *  only a file name (the origin changes per run), this keeps the origin. Not
+   *  part of `structureHash`. Absent when there are none. */
+  external?: ExternalRef[];
   rect: StructureRect;
   paintOrder: number;
   /** Compact: see effectiveStyle() in capture/structure.ts. */
@@ -323,7 +357,85 @@ export interface DiffResult {
   flags?: CaptureFlag[];
   /** Present only with the `settle-timeout` flag. */
   settle?: SettleReport;
+  /** Why an `unstable` story's two captures differed, and the config change
+   *  that would fix it. Present only with `unstable` (and only when the
+   *  second capture produced an image to compare). */
+  flake?: Flake;
   durationMs: number;
+}
+
+/** Why two captures of one story differ. Ordered as the classifier checks
+ *  them: the first confident match wins. */
+export const FLAKE_CAUSES = [
+  'settle-timeout',
+  'external-image',
+  'embed',
+  'order-dependence',
+  'async-element',
+  'clock',
+  'random-content',
+  'render-drift',
+  'unknown',
+] as const;
+export type FlakeCause = (typeof FLAKE_CAUSES)[number];
+
+export const FLAKE_CONFIDENCES = ['high', 'medium', 'low'] as const;
+export type FlakeConfidence = (typeof FLAKE_CONFIDENCES)[number];
+
+/** Which capture an element appears in, for `async-element`. */
+export type FlakeSide = 'first' | 'second';
+
+/** The facts behind a cause: enough for a one-line message and for an agent
+ *  to decide. Only the fields that apply are set. */
+export interface FlakeEvidence {
+  /** A CSS selector for the element, valid in `mask` and `waitForSelector`. */
+  selector?: string;
+  /** The third-party resource, without query or hash. */
+  url?: string;
+  host?: string;
+  /** Changed text, first capture then second. */
+  before?: string;
+  after?: string;
+  /** What the settle wait was still waiting on at the cap. */
+  pending?: string[];
+  /** `async-element`: the capture the element is missing from is the other. */
+  presentIn?: FlakeSide;
+  /** `order-dependence`: the captures that ran in a renderer process an
+   *  earlier story had used. */
+  reusedIn?: FlakeSide[];
+  /** `render-drift` and `unknown`: how much of the frame differs. */
+  mismatchPercent?: number;
+  flags?: CaptureFlag[];
+}
+
+/** An exact patch for `juxtapose.config.json`: merge it in (arrays append).
+ *  Story-scoped under `stories` where the option exists per story; a
+ *  project-only option (`freshRenderer`) or a fix shared by a group of stories
+ *  sits at the top level. */
+export interface FlakeFix {
+  stories?: Record<string, StoryOverride>;
+  freshRenderer?: boolean;
+  network?: NetworkParams;
+}
+
+/** Several unstable stories with one project-level fix: the same cause and
+ *  host, or the same project-scoped cause. */
+export interface FlakeGroup {
+  cause: FlakeCause;
+  /** `external-image` and `embed`: the third-party host they share. */
+  host?: string;
+  /** At least 3, code-unit sorted. */
+  storyIds: string[];
+  /** One patch for the whole project instead of one per story. */
+  fix: FlakeFix;
+}
+
+export interface Flake {
+  cause: FlakeCause;
+  confidence: FlakeConfidence;
+  evidence: FlakeEvidence;
+  /** Null when no config change helps: `render-drift`, `unknown`. */
+  fix: FlakeFix | null;
 }
 
 /** One change seen on several stories: the same signature on ≥2 failing
@@ -352,6 +464,8 @@ export interface RunReport {
   summary: Record<DiffStatus, number>;
   /** Present when at least one signature is shared by ≥2 failing stories. */
   groups?: RunGroup[];
+  /** Present when at least 3 unstable stories share a project-level fix. */
+  flakeGroups?: FlakeGroup[];
   durationMs: number;
   startedAt: string;
 }

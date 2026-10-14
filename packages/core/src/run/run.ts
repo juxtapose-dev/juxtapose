@@ -41,6 +41,10 @@ import { phases, type Phases } from './phases.js';
 import type { CauseIndex } from '../analysis/cause.js';
 import { shellQuote } from '../shell-quote.js';
 import { captureFlags, settleFlag, type SettleLayer } from '../capture/settle-options.js';
+import { networkCoverage } from '../flake/coverage.js';
+import { groupFlakes } from '../flake/group.js';
+import { analyzeFlake, type FlakeCapture } from '../flake/analyze.js';
+import type { NetworkCoverage } from '../flake/classify.js';
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
@@ -70,6 +74,12 @@ export interface RunOptions {
   phases?: Phases;
   /** From `jux run --since`: consulted only for a story that failed. */
   cause?: CauseIndex;
+  /** Reads back the first capture of a story that `onArtifact` stored, for the
+   *  flake analysis when its recheck differs. Captures are never kept in
+   *  memory for this. Without it, an unstable story gets no `flake`. */
+  readFirstCapture?: (
+    storyId: string,
+  ) => Promise<{ image: Buffer; structure?: StructureSnapshot } | undefined>;
   /** Per-call settle options (CLI flags, MCP arguments), layered over every
    *  story's own. The project's come from `config`. */
   settle?: SettleLayer;
@@ -92,6 +102,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const results: DiffResult[] = [];
   const firstPassWarnings = new Set<string>();
   const toConfirm = new Map<string, DiffResult>();
+  // What the recheck needs of a first capture besides its image and structure,
+  // which are read back from where `onArtifact` put them. Small: no pixels.
+  const firstNotes = new Map<string, Pick<FlakeCapture, 'settle' | 'flags'>>();
 
   const poolOptions = (onProgress: RunOptions['onProgress']) => ({
     browser: opts.browser,
@@ -185,6 +198,11 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     results.push(result);
     if ((result.status === 'new' || result.status === 'fail') && result.hash) {
       toConfirm.set(result.storyId, result);
+      const { settle, flags } = flakeCapture(outcome.snapshot);
+      firstNotes.set(result.storyId, {
+        ...(settle ? { settle } : {}),
+        ...(flags ? { flags } : {}),
+      });
     }
   }
 
@@ -226,7 +244,20 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
         continue;
       }
       const second = hashImage(outcome.snapshot.image);
-      if (second !== first.hash) first.unstable = { hashes: [first.hash!, second] };
+      if (second !== first.hash) {
+        first.unstable = { hashes: [first.hash!, second] };
+        const flake = opts.readFirstCapture
+          ? await tryFlake(
+              first.storyId,
+              () => opts.readFirstCapture!(first.storyId),
+              firstNotes.get(first.storyId) ?? {},
+              flakeCapture(outcome.snapshot),
+              coverageOf(outcome.story, opts),
+              opts.config?.freshRenderer !== false,
+            )
+          : undefined;
+        if (flake) first.flake = flake;
+      }
       if (opts.signal?.aborted) break;
     }
     for (const id of unseen) {
@@ -249,6 +280,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   // localeCompare is not.
   results.sort((a, b) => compareCodeUnits(a.storyId, b.storyId));
   const groups = computeGroups(results);
+  const flakeGroups = groupFlakes(
+    results.flatMap((r) => (r.flake ? [{ storyId: r.storyId, flake: r.flake }] : [])),
+  );
 
   return {
     runId: opts.runId,
@@ -263,6 +297,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     results,
     summary,
     ...(groups.length > 0 ? { groups } : {}),
+    ...(flakeGroups.length > 0 ? { flakeGroups } : {}),
     durationMs: Date.now() - started,
     startedAt: startedAt.toISOString(),
   };
@@ -359,6 +394,51 @@ async function judge(
     error: diff.dimensionMismatch ? 'viewport size changed since baseline' : undefined,
     ...(structural ? { structural } : {}),
   };
+}
+
+/** The parts of a capture the flake analysis reads. */
+function flakeCapture(snapshot: Snapshot): FlakeCapture {
+  const flags = captureFlags(snapshot);
+  return {
+    image: snapshot.image,
+    ...(snapshot.structure ? { structure: snapshot.structure } : {}),
+    ...(snapshot.settle ? { settle: snapshot.settle } : {}),
+    ...(flags.length > 0 ? { flags } : {}),
+  };
+}
+
+/** Explaining a flake never fails the story: it is already `unstable`, and a
+ *  bug in the analysis must not turn a recheck into an error. */
+async function tryFlake(
+  storyId: string,
+  readFirst: () => Promise<Pick<FlakeCapture, 'image' | 'structure'> | undefined>,
+  firstNotes: Pick<FlakeCapture, 'settle' | 'flags'>,
+  second: FlakeCapture,
+  covered: NetworkCoverage,
+  freshRenderer: boolean,
+): Promise<DiffResult['flake']> {
+  try {
+    const stored = await readFirst();
+    if (!stored) return undefined;
+    return await analyzeFlake({
+      storyId,
+      first: { ...stored, ...firstNotes },
+      second,
+      covered,
+      freshRenderer,
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/** The story's network config already answers some third-party requests. */
+function coverageOf(story: StoryManifest, opts: RunOptions): NetworkCoverage {
+  return networkCoverage(
+    opts.config?.network,
+    story.params.network,
+    opts.settle?.network,
+  );
 }
 
 /** A sidecar that is absent or unreadable is simply no baseline structure. */

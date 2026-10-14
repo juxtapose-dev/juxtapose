@@ -39,6 +39,53 @@ const fixture = JSON.parse(
 };
 
 describe('buildHandoffPrompt', () => {
+  it('a story in a flake group also gets the shared project fix', () => {
+    const out = buildHandoffPrompt({
+      ...base,
+      status: 'new',
+      unstable: { hashes: ['a', 'b'] },
+      flakeGroup: {
+        cause: 'external-image',
+        host: 'picsum.photos',
+        storyIds: ['a', 'b', 'c'],
+        fix: {
+          network: {
+            rules: [
+              { match: 'type:Image https://picsum.photos/**', action: 'placeholder' },
+            ],
+          },
+        },
+      },
+    });
+    expect(out).toContain(
+      'Shared fix: 3 stories: external images from picsum.photos; fix: network.rules += {"match":"type:Image https://picsum.photos/**","action":"placeholder"}',
+    );
+  });
+
+  it('an unstable story gets the flake line: the cause, the evidence and the exact fix', () => {
+    const out = buildHandoffPrompt({
+      ...base,
+      status: 'new',
+      unstable: { hashes: ['a', 'b'] },
+      flake: {
+        cause: 'external-image',
+        confidence: 'high',
+        evidence: { selector: '.card img', host: 'picsum.photos' },
+        fix: {
+          stories: {
+            'card--basic': { network: { external: { images: 'placeholder' } } },
+          },
+        },
+      },
+    });
+    expect(out).toContain(
+      '**Unstable: external image from picsum.photos in .card img; fix: stories["card--basic"].network.external.images = "placeholder"**',
+    );
+    expect(
+      buildHandoffPrompt({ ...base, unstable: { hashes: ['a', 'b'] } }),
+    ).not.toContain('fix:');
+  });
+
   it('a settle-timeout comes first, with what was pending and the knob for each case', () => {
     for (const status of ['fail', 'new'] as const) {
       const out = buildHandoffPrompt({
