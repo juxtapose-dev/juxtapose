@@ -20,7 +20,7 @@
 // --stories captures only the listed story ids (one `jux run --story` each)
 // and turns the run into an investigation: the gate is skipped, nothing fails.
 //
-// Each pass is one `jux run --all` with a fresh browser launch and its own
+// Each pass is one `jux run --all --no-recheck` with a fresh browser launch and its own
 // temporary state dir. Every later pass is compared with pass 1 through
 // `jux diff --runs --json`. Needs a built CLI (`pnpm build`).
 
@@ -180,6 +180,11 @@ try {
         [
           'run',
           ...(investigate ? storyIds.flatMap((id) => ['--story', id]) : ['--all']),
+          // Every story is new in a fresh state dir, so the stable-approve
+          // recheck would capture each one twice per pass. The sweep compares
+          // passes, not captures, so skip it and halve the captures per pass.
+          // Investigation runs keep it, since its hash lands in diff.md.
+          ...(investigate ? [] : ['--no-recheck']),
           '--json',
           '--no-daemon',
         ],
