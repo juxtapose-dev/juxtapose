@@ -49,6 +49,9 @@ export interface PumpStats {
   lastError?: string;
 }
 
+/** The tail of each browser's beginFrame queue. */
+const chains = new WeakMap<CdpConnection, Promise<void>>();
+
 export class FramePump {
   readonly stats: PumpStats = { frames: 0, damaged: 0, errors: 0 };
   private running = true;
@@ -66,17 +69,36 @@ export class FramePump {
     void this.loop();
   }
 
+  /**
+   * One beginFrame in flight per browser, across every page. Measured on
+   * Linux CI (examples/storybook, 3 runs): concurrency 1 ran clean, but at 2
+   * and 8 the GPU process logged "Got overlapping IssueExternalBeginFrame",
+   * crashed 6 times and took the browser down ("GPU process isn't usable").
+   * The display compositor's external begin-frame source is shared, so
+   * per-page pumps must take turns.
+   */
   private frame(screenshot: boolean): Promise<BeginFrameResult> {
-    return this.connection.send<BeginFrameResult>(
-      'HeadlessExperimental.beginFrame',
-      {
-        // The interval reported to the compositor; 60 Hz as an ordinary display.
-        interval: 16.666,
-        ...(screenshot ? { screenshot: { format: 'png' } } : {}),
-      },
-      this.sessionId,
-      { timeout: FRAME_SEND_TIMEOUT_MS },
+    const prev = chains.get(this.connection) ?? Promise.resolve();
+    const next = prev.then(() =>
+      this.connection.send<BeginFrameResult>(
+        'HeadlessExperimental.beginFrame',
+        {
+          // The interval reported to the compositor; 60 Hz as an ordinary display.
+          interval: 16.666,
+          ...(screenshot ? { screenshot: { format: 'png' } } : {}),
+        },
+        this.sessionId,
+        { timeout: FRAME_SEND_TIMEOUT_MS },
+      ),
     );
+    chains.set(
+      this.connection,
+      next.then(
+        () => {},
+        () => {},
+      ),
+    );
+    return next;
   }
 
   private async loop(): Promise<void> {
