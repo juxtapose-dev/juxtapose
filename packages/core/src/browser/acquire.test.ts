@@ -52,6 +52,20 @@ describe.skipIf(!chrome)('acquireBrowser', () => {
     }).catch(() => undefined);
     expect(seen).toBe('/tmp/s');
   });
+  it('freezeImages launches with the image switch, the daemon keyed by it', async () => {
+    if (process.platform === 'win32') return;
+    let args: string[] | undefined;
+    await acquireBrowser({
+      chrome: chrome!.path,
+      env: outsideCi({ ...base }),
+      freezeImages: true,
+      connectWarm: (o) => {
+        args = o.args;
+        throw new Error('seam');
+      },
+    }).catch(() => undefined);
+    expect(args?.at(-1)).toMatch(/^--blink-settings=.*imageAnimationPolicy=2$/);
+  });
   it('outside CI it asks the warm daemon first', async () => {
     const env = outsideCi({ ...base });
     let asked = 0;

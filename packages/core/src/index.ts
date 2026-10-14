@@ -162,6 +162,13 @@ export { groupFlakes, MIN_GROUP } from './flake/group.js';
 export { checkNetwork } from './capture/network-policy.js';
 export { mergeNetwork } from './capture/network-rules.js';
 export {
+  DEFAULT_FREEZE,
+  DEFAULT_FROZEN_INSTANT,
+  freezeImages,
+  resolveFreeze,
+  type ResolvedFreeze,
+} from './capture/freeze.js';
+export {
   discoverParams,
   prepareCaptures,
   type PrepareOptions,

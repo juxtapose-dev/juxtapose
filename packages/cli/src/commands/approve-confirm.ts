@@ -4,6 +4,7 @@
 import path from 'node:path';
 import {
   acquireBrowser,
+  freezeImages,
   confirmCaptures,
   DEFAULT_VIEWPORT,
   expandVariants,
@@ -55,6 +56,7 @@ export async function confirmForApprove(
       : await acquireBrowser({
           chrome: flags.chrome,
           noDaemon: flags['no-daemon'] === true,
+          freezeImages: freezeImages(ctx.config),
         });
     const captures = ctx.platform.discoverParams
       ? await prepareCaptures(enumerated, {

@@ -15,6 +15,7 @@ import {
   createAncestryCheck,
   alwaysAncestor,
   acquireBrowser,
+  freezeImages,
   type Browser,
   encodeStoryId,
   encodeStructure,
@@ -478,7 +479,7 @@ export class RunDirSource implements ReviewSource {
     // Kept alive across runs: launching Chromium is most of the latency on a
     // single-story recapture, which is the common case in the panel.
     if (this.browser?.isConnected()) return this.browser;
-    this.browser = await acquireBrowser();
+    this.browser = await acquireBrowser({ freezeImages: freezeImages(this.opts.config) });
     return this.browser;
   }
 

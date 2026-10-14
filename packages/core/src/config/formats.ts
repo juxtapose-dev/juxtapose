@@ -7,7 +7,17 @@
 import { FormatRegistry, TypeRegistry } from '@sinclair/typebox/type';
 import { isCssSelector } from '../browser/selectors.js';
 import { parsePattern } from '../capture/url-pattern.js';
-import { CSS_SELECTOR_FORMAT, STRING_ENUM_KIND, URL_PATTERN_FORMAT } from './schema.js';
+import {
+  CSS_SELECTOR_FORMAT,
+  INSTANT_FORMAT,
+  STRING_ENUM_KIND,
+  URL_PATTERN_FORMAT,
+} from './schema.js';
+
+/** A date, or a date-time with its offset: a time without one would be read in
+ *  the host's time zone, and the instant would differ between machines. */
+const INSTANT =
+  /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
 
 /** Why a value fails a format, or undefined when it passes. The message is
  *  what a config error shows as `{reason}`. */
@@ -22,6 +32,10 @@ export const formatReasons: Readonly<Record<string, (v: string) => string | unde
       }
     },
     [CSS_SELECTOR_FORMAT]: (v) => (isCssSelector(v) ? undefined : 'not a CSS selector'),
+    [INSTANT_FORMAT]: (v) =>
+      INSTANT.test(v) && Number.isFinite(Date.parse(v))
+        ? undefined
+        : `'${v}' is not an ISO 8601 date, or date-time with Z or an offset`,
   };
 
 interface Registries {

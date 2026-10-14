@@ -75,6 +75,7 @@ export {
   chromeArgs,
   deterministicLaunchOptions,
   DETERMINISTIC_CHROMIUM_ARGS,
+  imageAnimationArgs,
   PARITY_CHROMIUM_ARGS,
   type LaunchOptions,
 } from './flags.js';

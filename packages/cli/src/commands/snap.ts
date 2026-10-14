@@ -12,6 +12,7 @@ import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   acquireBrowser,
+  freezeImages,
   compareCodeUnits,
   encodeStructure,
   snapPages,
@@ -197,6 +198,7 @@ export async function snapCommand(
       : await acquireBrowser({
           chrome: flags.chrome,
           noDaemon: flags['no-daemon'] === true,
+          freezeImages: freezeImages(config),
         });
     captured = await snapPages({
       urls,
@@ -225,6 +227,7 @@ export async function snapCommand(
       projectSettle: {
         ...(config.settle ? { settle: config.settle } : {}),
         ...(config.network ? { network: config.network } : {}),
+        ...(config.freeze ? { freeze: config.freeze } : {}),
         ...(config.waitForSelector !== undefined
           ? { waitForSelector: config.waitForSelector }
           : {}),

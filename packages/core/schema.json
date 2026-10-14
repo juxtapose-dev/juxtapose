@@ -240,6 +240,29 @@
                   }
                 }
               },
+              "freeze": {
+                "additionalProperties": false,
+                "description": "Make time and randomness deterministic before any page script runs. Layered field by field like `settle`; only values known before navigation apply.",
+                "type": "object",
+                "properties": {
+                  "clock": {
+                    "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "format": "jux-instant",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "random": {
+                    "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                    "type": "boolean"
+                  }
+                }
+              },
               "threshold": {
                 "minimum": 0,
                 "maximum": 1,
@@ -531,6 +554,29 @@
                               }
                             }
                           },
+                          "freeze": {
+                            "additionalProperties": false,
+                            "description": "Make time and randomness deterministic before any page script runs. Layered field by field like `settle`; only values known before navigation apply.",
+                            "type": "object",
+                            "properties": {
+                              "clock": {
+                                "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                                "anyOf": [
+                                  {
+                                    "type": "boolean"
+                                  },
+                                  {
+                                    "format": "jux-instant",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
+                              "random": {
+                                "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                                "type": "boolean"
+                              }
+                            }
+                          },
                           "threshold": {
                             "minimum": 0,
                             "maximum": 1,
@@ -813,6 +859,29 @@
                           }
                         }
                       },
+                      "freeze": {
+                        "additionalProperties": false,
+                        "description": "Make time and randomness deterministic before any page script runs. Layered field by field like `settle`; only values known before navigation apply.",
+                        "type": "object",
+                        "properties": {
+                          "clock": {
+                            "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                            "anyOf": [
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "format": "jux-instant",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "random": {
+                            "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                            "type": "boolean"
+                          }
+                        }
+                      },
                       "threshold": {
                         "minimum": 0,
                         "maximum": 1,
@@ -1049,6 +1118,33 @@
         }
       }
     },
+    "freeze": {
+      "additionalProperties": false,
+      "description": "Make time, randomness and animated images deterministic. A story's own `freeze` (clock and random) wins field by field.",
+      "type": "object",
+      "properties": {
+        "clock": {
+          "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "format": "jux-instant",
+              "type": "string"
+            }
+          ]
+        },
+        "random": {
+          "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+          "type": "boolean"
+        },
+        "images": {
+          "description": "Show the first frame of animated GIF, WebP and APNG images instead of playing them. Default true. Project-wide: Chrome sets it at launch.",
+          "type": "boolean"
+        }
+      }
+    },
     "stories": {
       "additionalProperties": false,
       "description": "Per-story overrides keyed by story id glob, for a workbench you don't own. `*` matches anything but `/`, `**` anything, `?` one character. A key matching a story id covers its variants; `<id>__<variant>` targets one variant.",
@@ -1253,6 +1349,29 @@
                       }
                     }
                   }
+                }
+              }
+            },
+            "freeze": {
+              "additionalProperties": false,
+              "description": "Make time and randomness deterministic before any page script runs. Layered field by field like `settle`; only values known before navigation apply.",
+              "type": "object",
+              "properties": {
+                "clock": {
+                  "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "format": "jux-instant",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "random": {
+                  "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                  "type": "boolean"
                 }
               }
             },
@@ -1553,6 +1672,29 @@
                           }
                         }
                       }
+                    }
+                  }
+                },
+                "freeze": {
+                  "additionalProperties": false,
+                  "description": "Make time and randomness deterministic before any page script runs. Layered field by field like `settle`; only values known before navigation apply.",
+                  "type": "object",
+                  "properties": {
+                    "clock": {
+                      "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "format": "jux-instant",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "random": {
+                      "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                      "type": "boolean"
                     }
                   }
                 },

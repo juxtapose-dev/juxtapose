@@ -19,6 +19,7 @@ import {
   createAncestryCheck,
   alwaysAncestor,
   acquireBrowser,
+  freezeImages,
   encodeStoryId,
   encodeStructure,
   expandVariants,
@@ -193,6 +194,7 @@ export async function runCommand(
         : acquireBrowser({
             chrome: flags.chrome,
             noDaemon: flags['no-daemon'] === true,
+            freezeImages: freezeImages(ctx.config),
           }),
     );
   } catch (err) {

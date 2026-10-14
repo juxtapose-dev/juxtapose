@@ -59,6 +59,7 @@ export const DEFAULT_RECHECK: RecheckMode = 'changed';
  *  that doesn't know them ignores them. */
 export const URL_PATTERN_FORMAT = 'jux-url-pattern';
 export const CSS_SELECTOR_FORMAT = 'jux-css-selector';
+export const INSTANT_FORMAT = 'jux-instant';
 /** TypeBox kind of a StringEnum; checked by the validator registerFormats()
  *  installs (./formats.ts). */
 export const STRING_ENUM_KIND = 'JuxStringEnum';
@@ -311,6 +312,71 @@ export const NetworkSchema = withText(
   },
 );
 
+const FREEZE_CLOCK = withText(
+  Type.Union([Type.Boolean(), Type.String({ format: INSTANT_FORMAT })], {
+    description:
+      'Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.',
+  }),
+  {
+    type: 'freeze.clock must be true, false, or an ISO 8601 date or a date-time with Z or an offset, got {got}',
+  },
+);
+const FREEZE_RANDOM = withText(
+  Type.Boolean({
+    description:
+      'Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.',
+  }),
+  { type: 'freeze.random must be true or false, got {got}' },
+);
+
+/** `freeze` in a story, a variant or a `stories` override: per capture. */
+export const FreezeSchema = withText(
+  Type.Object(
+    { clock: Type.Optional(FREEZE_CLOCK), random: Type.Optional(FREEZE_RANDOM) },
+    {
+      additionalProperties: false,
+      description:
+        'Make time and randomness deterministic before any page script runs. Layered field by field like `settle`; only values known before navigation apply.',
+    },
+  ),
+  {
+    type: "'freeze' must be an object",
+    unknown:
+      "unknown freeze option '{extra}' (expected {keys}; `images` is set in the project config only)",
+    error: 'settle',
+  },
+);
+
+/** `freeze` in the project config: per capture, plus `images`, which is a
+ *  browser launch setting. */
+export const ProjectFreezeSchema = withText(
+  Type.Object(
+    {
+      clock: Type.Optional(FREEZE_CLOCK),
+      random: Type.Optional(FREEZE_RANDOM),
+      images: Type.Optional(
+        withText(
+          Type.Boolean({
+            description:
+              'Show the first frame of animated GIF, WebP and APNG images instead of playing them. Default true. Project-wide: Chrome sets it at launch.',
+          }),
+          { type: 'freeze.images must be true or false, got {got}' },
+        ),
+      ),
+    },
+    {
+      additionalProperties: false,
+      description:
+        "Make time, randomness and animated images deterministic. A story's own `freeze` (clock and random) wins field by field.",
+    },
+  ),
+  {
+    type: "'freeze' must be an object",
+    unknown: "unknown freeze option '{extra}' (expected {keys})",
+    error: 'settle',
+  },
+);
+
 export const ViewportSchema = Type.Object(
   {
     width: Type.Integer({ minimum: 1, description: 'CSS pixels.' }),
@@ -410,6 +476,7 @@ const captureOptions = {
   ),
   settle: SettleSchema,
   network: NetworkSchema,
+  freeze: FreezeSchema,
   threshold: withText(
     Type.Number({
       minimum: 0,
@@ -469,6 +536,7 @@ const EXTENDS = withText(
 );
 const VARIANT_SETTLE = withText(SettleSchema, { prefix: "variant '{name}': " });
 const VARIANT_NETWORK = withText(NetworkSchema, { prefix: "variant '{name}': " });
+const VARIANT_FREEZE = withText(FreezeSchema, { prefix: "variant '{name}': " });
 
 const { skip: _skip, ...variantCaptureOptions } = captureOptions;
 
@@ -480,6 +548,7 @@ export const VariantSchema = Type.Object(
     ...optional(variantCaptureOptions),
     settle: Type.Optional(VARIANT_SETTLE),
     network: Type.Optional(VARIANT_NETWORK),
+    freeze: Type.Optional(VARIANT_FREEZE),
     colorScheme: Type.Optional(COLOR_SCHEME),
     extends: Type.Optional(EXTENDS),
   },
@@ -522,6 +591,7 @@ export const VariantRuntimeSchema = Type.Object({
   colorScheme: Type.Optional(COLOR_SCHEME),
   settle: Type.Optional(VARIANT_SETTLE),
   network: Type.Optional(VARIANT_NETWORK),
+  freeze: Type.Optional(VARIANT_FREEZE),
   extends: Type.Optional(EXTENDS),
 });
 export const VariantsRuntimeSchema = variantsMap(
@@ -624,6 +694,7 @@ const projectChecked = {
   ),
   settle: SettleSchema,
   network: NetworkSchema,
+  freeze: ProjectFreezeSchema,
   stories: StoriesSchema,
   waitForSelector: settleScalar(
     Type.String({ description: "Project-wide `waitForSelector`; a story's own wins." }),
@@ -813,6 +884,7 @@ export const ProjectRuntimeSchema = Type.Object(optional(projectChecked));
 
 export type SettleParams = Static<typeof SettleSchema>;
 export type NetworkParams = Static<typeof NetworkSchema>;
+export type FreezeParams = Static<typeof ProjectFreezeSchema>;
 export type ExternalNetwork = Static<typeof ExternalNetworkSchema>;
 export type NetworkRule = Static<typeof NetworkRuleSchema>;
 export type VariantSpec = Static<typeof VariantSchema>;

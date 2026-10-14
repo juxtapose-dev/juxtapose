@@ -46,6 +46,49 @@ function run(kind: Kind, input: unknown, where?: string): void {
 const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
   [
     'project',
+    { freeze: { clock: 'tomorrow' } },
+    undefined,
+    'SettleConfigError',
+    'jux: project config: freeze.clock must be true, false, or an ISO 8601 date or a date-time with Z or an offset, got "tomorrow"',
+  ],
+  [
+    // A time with no offset would be read in each machine's own time zone.
+    'project',
+    { freeze: { clock: '2024-01-01T12:00:00' } },
+    undefined,
+    'SettleConfigError',
+    'jux: project config: freeze.clock must be true, false, or an ISO 8601 date or a date-time with Z or an offset, got "2024-01-01T12:00:00"',
+  ],
+  [
+    'project',
+    { freeze: { random: 'yes' } },
+    undefined,
+    'SettleConfigError',
+    'jux: project config: freeze.random must be true or false, got "yes"',
+  ],
+  [
+    'project',
+    { freeze: { gifs: true } },
+    undefined,
+    'SettleConfigError',
+    "jux: project config: unknown freeze option 'gifs' (expected clock, random, images)",
+  ],
+  [
+    'story',
+    { freeze: { images: false } },
+    undefined,
+    'SettleConfigError',
+    "jux: story 'a--b': unknown freeze option 'images' (expected clock, random; `images` is set in the project config only)",
+  ],
+  [
+    'project',
+    { stories: { a: { freeze: { clock: 1 } } } },
+    undefined,
+    'SettleConfigError',
+    "jux: project config: stories['a']: freeze.clock must be true, false, or an ISO 8601 date or a date-time with Z or an offset, got 1",
+  ],
+  [
+    'project',
     { freshRenderer: 'no' },
     undefined,
     'SettleConfigError',
@@ -329,7 +372,7 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
     { stories: { x: { dely: 1 } } },
     undefined,
     'VariantConfigError',
-    "jux: project config: stories['x']: unknown option 'dely' (expected comparison, renderer, skip, mask, delay, waitForSelector, captureTimeout, settle, network, threshold, minDiffPercent)",
+    "jux: project config: stories['x']: unknown option 'dely' (expected comparison, renderer, skip, mask, delay, waitForSelector, captureTimeout, settle, network, freeze, threshold, minDiffPercent)",
   ],
   [
     'project',
@@ -462,7 +505,7 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
     { stories: { 'components-card--*': { dely: 1 } } },
     undefined,
     'VariantConfigError',
-    "jux: project config: stories['components-card--*']: unknown option 'dely' (expected comparison, renderer, skip, mask, delay, waitForSelector, captureTimeout, settle, network, threshold, minDiffPercent)",
+    "jux: project config: stories['components-card--*']: unknown option 'dely' (expected comparison, renderer, skip, mask, delay, waitForSelector, captureTimeout, settle, network, freeze, threshold, minDiffPercent)",
   ],
   [
     'project',
@@ -698,6 +741,10 @@ const VALID: Array<[Kind, unknown]> = [
     },
   ],
   ['project', { network: { external: 'allow' } }],
+  ['project', { freeze: { clock: false, random: true, images: false } }],
+  ['project', { freeze: { clock: '2024-06-01' } }],
+  ['project', { freeze: { clock: '2024-06-01T09:30:00.250+02:00' } }],
+  ['story', { freeze: { clock: false }, variants: { m: { freeze: { random: false } } } }],
   ['project', { stories: {} }],
   [
     'project',
