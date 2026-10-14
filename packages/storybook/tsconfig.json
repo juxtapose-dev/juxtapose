@@ -3,7 +3,11 @@
   "compilerOptions": {
     "rootDir": "./src",
     "outDir": "./dist",
-    "jsx": "react-jsx",
+    // Manager code: Storybook provides only react/react-dom as globals, so the
+    // automatic runtime (react/jsx-runtime) would be bundled from the project's
+    // own React and crash on a version mismatch (#198). Classic emits
+    // React.createElement against the global `react` import instead.
+    "jsx": "react",
     "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
   "include": ["src/**/*"],
