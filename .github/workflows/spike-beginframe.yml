@@ -40,35 +40,43 @@ jobs:
         env:
           STORYBOOK_DISABLE_TELEMETRY: '1'
       - name: Measure
+        env:
+          # Which phases to run: probe fixtures snap examples.
+          PHASES: examples
         run: |
           mkdir -p out
           S=scripts/spike-beginframe.mjs
           BF="JUX_BEGIN_FRAME=1"
           BARE="JUX_SPIKE_PARTIAL_RASTER=1 JUX_SPIKE_NO_RERASTER=1"
+          has() { case " $PHASES " in *" $1 "*) return 0;; esac; return 1; }
+          if has probe; then
           SPIKE_ARM=main node $S probe out/probe-main.json || true
           env SPIKE_ARM=bf $BF node $S probe out/probe-bf.json || true
           env SPIKE_ARM=bf0 $BF JUX_BEGIN_FRAME_INTERVAL_MS=0 node $S probe out/probe-bf0.json || true
-          # #120 and #136 fixtures
+          fi
+          if has fixtures; then
           SPIKE_ARM=main node $S fixtures 5 out/fx-1-main.json || true
           env SPIKE_ARM=main-bare $BARE node $S fixtures 5 out/fx-2-mainbare.json || true
           env SPIKE_ARM=bf-bare $BF $BARE node $S fixtures 5 out/fx-3-bfbare.json || true
           env SPIKE_ARM=bf-no120flag $BF JUX_SPIKE_PARTIAL_RASTER=1 node $S fixtures 5 out/fx-4-bfnopr.json || true
           env SPIKE_ARM=bf-noreraster $BF JUX_SPIKE_NO_RERASTER=1 node $S fixtures 5 out/fx-5-bfnorr.json || true
           env SPIKE_ARM=bf $BF node $S fixtures 5 out/fx-6-bf.json || true
-          # corpus, 10 calls per arm
+          fi
+          if has snap; then
           SPIKE_ARM=main node $S snap 10 out/snap-1-main.json || true
           env SPIKE_ARM=bf $BF node $S snap 10 out/snap-2-bf.json || true
           env SPIKE_ARM=bf-bare $BF $BARE node $S snap 10 out/snap-3-bfbare.json || true
           env SPIKE_ARM=bf0 $BF JUX_BEGIN_FRAME_INTERVAL_MS=0 node $S snap 10 out/snap-4-bf0.json || true
-          # examples, 5 runs per arm
+          fi
+          if has examples; then
           for ex in storybook ladle; do
             SPIKE_ARM=main node $S run examples/$ex 5 out/ex-$ex-1-main.json || true
             env SPIKE_ARM=bf $BF node $S run examples/$ex 5 out/ex-$ex-2-bf.json || true
             env SPIKE_ARM=bf-bare $BF $BARE node $S run examples/$ex 5 out/ex-$ex-3-bfbare.json || true
             env SPIKE_ARM=bf0 $BF JUX_BEGIN_FRAME_INTERVAL_MS=0 node $S run examples/$ex 5 out/ex-$ex-4-bf0.json || true
           done
-          node $S summary out/summary.md out/fx-*.json out/snap-*.json out/ex-*.json
-          cat out/probe-*.json >> out/summary.md
+          fi
+          node $S summary out/summary.md out/*-*-*.json
           cat out/summary.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()

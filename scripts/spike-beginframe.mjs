@@ -95,7 +95,8 @@ async function probe(out) {
   writeFileSync(out, JSON.stringify(result, null, 1));
 }
 
-async function runs(projectDir, n, out) {
+async function runs(dir, n, out) {
+  const projectDir = path.resolve(dir);
   const env = { ...process.env, JUX_NO_DAEMON: '1' };
   const perRun = [];
   for (let i = 0; i < n; i++) {
