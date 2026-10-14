@@ -17,13 +17,15 @@
 // patterns with wildcards before exact ids; then fewer literal characters
 // before more (`a--*` loses to `a--b-*`); then earlier in the file before
 // later. Scalars: last wins. `mask` unions. `settle` and
-// `network` merge field by field (settle.network lists concatenate).
+// `network` merge field by field (settle.network lists concatenate; the
+// override's network.rules are checked before the story's).
 
 import type { StoryManifest, StoryOverride, StoryParams } from '../types.js';
 import { StoriesSchema } from '../config/schema.js';
 import { validate } from '../config/validate.js';
 import { globToRegExp } from './url-pattern.js';
 import { mergeSettle } from './settle-options.js';
+import { checkRulePlaceholders, mergeNetwork } from './network-rules.js';
 
 const isWild = (glob: string) => /[*?]/.test(glob);
 
@@ -34,7 +36,10 @@ export function checkStoryOverrides(
   where = 'project config',
 ): Record<string, StoryOverride> {
   if (raw === undefined) return {};
-  return validate<Record<string, StoryOverride>>(StoriesSchema, raw, where);
+  const stories = validate<Record<string, StoryOverride>>(StoriesSchema, raw, where);
+  for (const [glob, o] of Object.entries(stories))
+    checkRulePlaceholders(o.network?.rules, `${where}: stories '${glob}'`);
+  return stories;
 }
 
 export interface CompiledOverride {
@@ -115,7 +120,8 @@ export function applyOverride<T extends StoryParams>(
     out.mask = [...new Set([...(params.mask ?? []), ...(mask ?? [])])];
   const s = mergeSettle(params.settle, settle);
   if (s) out.settle = s;
-  if (params.network || network) out.network = { ...params.network, ...network };
+  const n = mergeNetwork(params.network, network);
+  if (n) out.network = n;
   return out;
 }
 

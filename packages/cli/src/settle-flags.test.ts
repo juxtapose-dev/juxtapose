@@ -68,4 +68,33 @@ describe('settle flags', () => {
         "jux run: --network-external must be allow or block, got 'replay'. Try --network-external block.",
     });
   });
+
+  it('--network takes a config network object as JSON', () => {
+    const json =
+      '{"external":{"images":"placeholder"},"rules":[{"match":"**/ad.js","action":"block"}]}';
+    expect(settleFromFlags({ network: json }, 'jux snap')).toEqual({
+      network: JSON.parse(json),
+    });
+    expect(settleFlagArgs({ network: json })).toEqual(['--network', `'${json}'`]);
+    // --network-external is a string form at a higher layer: that policy for
+    // every type, replacing the object's per-type entries
+    expect(
+      settleFromFlags({ network: json, 'network-external': 'block' }, 'jux snap'),
+    ).toEqual({
+      network: {
+        ...JSON.parse(json),
+        external: { default: 'block' },
+      },
+    });
+    expect(settleFromFlags({ network: '{' }, 'jux snap')).toEqual({
+      error: expect.stringMatching(/^jux snap: --network must be a JSON object/),
+    });
+    expect(
+      settleFromFlags({ network: '{"external":{"default":"placeholder"}}' }, 'jux snap'),
+    ).toEqual({
+      error: expect.stringMatching(
+        /^jux snap: --network: network.external.default must be 'allow' or 'block'/,
+      ),
+    });
+  });
 });

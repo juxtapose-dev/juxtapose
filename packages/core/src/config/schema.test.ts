@@ -55,8 +55,10 @@ describe('schema.json', () => {
       { properties?: Record<string, unknown> }
     >;
     expect(props['network']!.properties!['external']).toMatchObject({
-      type: 'string',
-      enum: ['allow', 'block'],
+      anyOf: [
+        { type: 'string', enum: ['allow', 'block'] },
+        { type: 'object', properties: { default: { enum: ['allow', 'block'] } } },
+      ],
     });
     expect(props['platform']).toMatchObject({ enum: ['storybook', 'ladle', 'urls'] });
   });

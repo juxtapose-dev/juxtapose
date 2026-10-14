@@ -41,7 +41,7 @@ non-zero when any story fails, is new, or has a stale baseline.
 `jux snap` and `jux run` take settle options that override the config and the
 story for that command: `--settle-timeout <ms>`, `--settle-ready` or
 `--no-settle-ready`, `--settle-ignore <pattern>` and `--settle-require <pattern>`, the last two
-repeatable, and `--network-external <allow|block>`. `jux snap` also takes `--delay <ms>`. See
+repeatable, `--network-external <allow|block>`, and `--network <json>` (a config `network` object, for per-type actions and URL rules). `jux snap` also takes `--delay <ms>`. See
 [Settle](configuration.md#settle).
 
 `jux snap` and `jux run` also take `--no-fresh-renderer`, which overrides the

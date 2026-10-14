@@ -119,12 +119,87 @@
                 "type": "object",
                 "properties": {
                   "external": {
-                    "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                    "type": "string",
-                    "enum": [
-                      "allow",
-                      "block"
+                    "anyOf": [
+                      {
+                        "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Same as `{ default }`.",
+                        "type": "string",
+                        "enum": [
+                          "allow",
+                          "block"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "description": "Per resource type actions for third-party requests, each overriding `default` for that type.",
+                        "type": "object",
+                        "properties": {
+                          "default": {
+                            "description": "For third-party requests no type entry covers. `placeholder` is not valid here; it needs a resource type. Default `allow`.",
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "block"
+                            ]
+                          },
+                          "images": {
+                            "description": "Third-party images (CDP resource type Image). `placeholder` answers with a fixed 64x64 gray PNG, the same bytes every time.",
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "block",
+                              "placeholder"
+                            ]
+                          },
+                          "frames": {
+                            "description": "Third-party sub-frame documents (iframes). `placeholder` answers with a fixed empty HTML document.",
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "block",
+                              "placeholder"
+                            ]
+                          },
+                          "media": {
+                            "description": "Third-party audio and video (CDP resource type Media). `placeholder` blocks: there is no stand-in for media.",
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "block",
+                              "placeholder"
+                            ]
+                          }
+                        }
+                      }
                     ]
+                  },
+                  "rules": {
+                    "description": "URL rules checked before `external`, in order; the first match wins. They match any URL, including the Storybook's own origin. Story rules are checked before project rules.",
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "One URL rule: the first rule that matches a request decides it.",
+                      "type": "object",
+                      "required": [
+                        "match",
+                        "action"
+                      ],
+                      "properties": {
+                        "match": {
+                          "format": "jux-url-pattern",
+                          "description": "A URL glob, a `type:<ResourceType>`, or both: the same pattern syntax as `settle.network.ignore`. A glob starting with `/` matches the URL path.",
+                          "type": "string"
+                        },
+                        "action": {
+                          "description": "`allow`, `block`, or `placeholder` (a fixed image or empty frame; any other request is blocked instead, and `placeholder` on a `type:` that can't have one is an error).",
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "block",
+                            "placeholder"
+                          ]
+                        }
+                      }
+                    }
                   }
                 }
               },
@@ -298,12 +373,87 @@
                             "type": "object",
                             "properties": {
                               "external": {
-                                "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                                "type": "string",
-                                "enum": [
-                                  "allow",
-                                  "block"
+                                "anyOf": [
+                                  {
+                                    "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Same as `{ default }`.",
+                                    "type": "string",
+                                    "enum": [
+                                      "allow",
+                                      "block"
+                                    ]
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "description": "Per resource type actions for third-party requests, each overriding `default` for that type.",
+                                    "type": "object",
+                                    "properties": {
+                                      "default": {
+                                        "description": "For third-party requests no type entry covers. `placeholder` is not valid here; it needs a resource type. Default `allow`.",
+                                        "type": "string",
+                                        "enum": [
+                                          "allow",
+                                          "block"
+                                        ]
+                                      },
+                                      "images": {
+                                        "description": "Third-party images (CDP resource type Image). `placeholder` answers with a fixed 64x64 gray PNG, the same bytes every time.",
+                                        "type": "string",
+                                        "enum": [
+                                          "allow",
+                                          "block",
+                                          "placeholder"
+                                        ]
+                                      },
+                                      "frames": {
+                                        "description": "Third-party sub-frame documents (iframes). `placeholder` answers with a fixed empty HTML document.",
+                                        "type": "string",
+                                        "enum": [
+                                          "allow",
+                                          "block",
+                                          "placeholder"
+                                        ]
+                                      },
+                                      "media": {
+                                        "description": "Third-party audio and video (CDP resource type Media). `placeholder` blocks: there is no stand-in for media.",
+                                        "type": "string",
+                                        "enum": [
+                                          "allow",
+                                          "block",
+                                          "placeholder"
+                                        ]
+                                      }
+                                    }
+                                  }
                                 ]
+                              },
+                              "rules": {
+                                "description": "URL rules checked before `external`, in order; the first match wins. They match any URL, including the Storybook's own origin. Story rules are checked before project rules.",
+                                "type": "array",
+                                "items": {
+                                  "additionalProperties": false,
+                                  "description": "One URL rule: the first rule that matches a request decides it.",
+                                  "type": "object",
+                                  "required": [
+                                    "match",
+                                    "action"
+                                  ],
+                                  "properties": {
+                                    "match": {
+                                      "format": "jux-url-pattern",
+                                      "description": "A URL glob, a `type:<ResourceType>`, or both: the same pattern syntax as `settle.network.ignore`. A glob starting with `/` matches the URL path.",
+                                      "type": "string"
+                                    },
+                                    "action": {
+                                      "description": "`allow`, `block`, or `placeholder` (a fixed image or empty frame; any other request is blocked instead, and `placeholder` on a `type:` that can't have one is an error).",
+                                      "type": "string",
+                                      "enum": [
+                                        "allow",
+                                        "block",
+                                        "placeholder"
+                                      ]
+                                    }
+                                  }
+                                }
                               }
                             }
                           },
@@ -468,12 +618,87 @@
                         "type": "object",
                         "properties": {
                           "external": {
-                            "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                            "type": "string",
-                            "enum": [
-                              "allow",
-                              "block"
+                            "anyOf": [
+                              {
+                                "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Same as `{ default }`.",
+                                "type": "string",
+                                "enum": [
+                                  "allow",
+                                  "block"
+                                ]
+                              },
+                              {
+                                "additionalProperties": false,
+                                "description": "Per resource type actions for third-party requests, each overriding `default` for that type.",
+                                "type": "object",
+                                "properties": {
+                                  "default": {
+                                    "description": "For third-party requests no type entry covers. `placeholder` is not valid here; it needs a resource type. Default `allow`.",
+                                    "type": "string",
+                                    "enum": [
+                                      "allow",
+                                      "block"
+                                    ]
+                                  },
+                                  "images": {
+                                    "description": "Third-party images (CDP resource type Image). `placeholder` answers with a fixed 64x64 gray PNG, the same bytes every time.",
+                                    "type": "string",
+                                    "enum": [
+                                      "allow",
+                                      "block",
+                                      "placeholder"
+                                    ]
+                                  },
+                                  "frames": {
+                                    "description": "Third-party sub-frame documents (iframes). `placeholder` answers with a fixed empty HTML document.",
+                                    "type": "string",
+                                    "enum": [
+                                      "allow",
+                                      "block",
+                                      "placeholder"
+                                    ]
+                                  },
+                                  "media": {
+                                    "description": "Third-party audio and video (CDP resource type Media). `placeholder` blocks: there is no stand-in for media.",
+                                    "type": "string",
+                                    "enum": [
+                                      "allow",
+                                      "block",
+                                      "placeholder"
+                                    ]
+                                  }
+                                }
+                              }
                             ]
+                          },
+                          "rules": {
+                            "description": "URL rules checked before `external`, in order; the first match wins. They match any URL, including the Storybook's own origin. Story rules are checked before project rules.",
+                            "type": "array",
+                            "items": {
+                              "additionalProperties": false,
+                              "description": "One URL rule: the first rule that matches a request decides it.",
+                              "type": "object",
+                              "required": [
+                                "match",
+                                "action"
+                              ],
+                              "properties": {
+                                "match": {
+                                  "format": "jux-url-pattern",
+                                  "description": "A URL glob, a `type:<ResourceType>`, or both: the same pattern syntax as `settle.network.ignore`. A glob starting with `/` matches the URL path.",
+                                  "type": "string"
+                                },
+                                "action": {
+                                  "description": "`allow`, `block`, or `placeholder` (a fixed image or empty frame; any other request is blocked instead, and `placeholder` on a `type:` that can't have one is an error).",
+                                  "type": "string",
+                                  "enum": [
+                                    "allow",
+                                    "block",
+                                    "placeholder"
+                                  ]
+                                }
+                              }
+                            }
                           }
                         }
                       },
@@ -583,12 +808,87 @@
       "type": "object",
       "properties": {
         "external": {
-          "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-          "type": "string",
-          "enum": [
-            "allow",
-            "block"
+          "anyOf": [
+            {
+              "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Same as `{ default }`.",
+              "type": "string",
+              "enum": [
+                "allow",
+                "block"
+              ]
+            },
+            {
+              "additionalProperties": false,
+              "description": "Per resource type actions for third-party requests, each overriding `default` for that type.",
+              "type": "object",
+              "properties": {
+                "default": {
+                  "description": "For third-party requests no type entry covers. `placeholder` is not valid here; it needs a resource type. Default `allow`.",
+                  "type": "string",
+                  "enum": [
+                    "allow",
+                    "block"
+                  ]
+                },
+                "images": {
+                  "description": "Third-party images (CDP resource type Image). `placeholder` answers with a fixed 64x64 gray PNG, the same bytes every time.",
+                  "type": "string",
+                  "enum": [
+                    "allow",
+                    "block",
+                    "placeholder"
+                  ]
+                },
+                "frames": {
+                  "description": "Third-party sub-frame documents (iframes). `placeholder` answers with a fixed empty HTML document.",
+                  "type": "string",
+                  "enum": [
+                    "allow",
+                    "block",
+                    "placeholder"
+                  ]
+                },
+                "media": {
+                  "description": "Third-party audio and video (CDP resource type Media). `placeholder` blocks: there is no stand-in for media.",
+                  "type": "string",
+                  "enum": [
+                    "allow",
+                    "block",
+                    "placeholder"
+                  ]
+                }
+              }
+            }
           ]
+        },
+        "rules": {
+          "description": "URL rules checked before `external`, in order; the first match wins. They match any URL, including the Storybook's own origin. Story rules are checked before project rules.",
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "description": "One URL rule: the first rule that matches a request decides it.",
+            "type": "object",
+            "required": [
+              "match",
+              "action"
+            ],
+            "properties": {
+              "match": {
+                "format": "jux-url-pattern",
+                "description": "A URL glob, a `type:<ResourceType>`, or both: the same pattern syntax as `settle.network.ignore`. A glob starting with `/` matches the URL path.",
+                "type": "string"
+              },
+              "action": {
+                "description": "`allow`, `block`, or `placeholder` (a fixed image or empty frame; any other request is blocked instead, and `placeholder` on a `type:` that can't have one is an error).",
+                "type": "string",
+                "enum": [
+                  "allow",
+                  "block",
+                  "placeholder"
+                ]
+              }
+            }
+          }
         }
       }
     },
@@ -678,12 +978,87 @@
               "type": "object",
               "properties": {
                 "external": {
-                  "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                  "type": "string",
-                  "enum": [
-                    "allow",
-                    "block"
+                  "anyOf": [
+                    {
+                      "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Same as `{ default }`.",
+                      "type": "string",
+                      "enum": [
+                        "allow",
+                        "block"
+                      ]
+                    },
+                    {
+                      "additionalProperties": false,
+                      "description": "Per resource type actions for third-party requests, each overriding `default` for that type.",
+                      "type": "object",
+                      "properties": {
+                        "default": {
+                          "description": "For third-party requests no type entry covers. `placeholder` is not valid here; it needs a resource type. Default `allow`.",
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "block"
+                          ]
+                        },
+                        "images": {
+                          "description": "Third-party images (CDP resource type Image). `placeholder` answers with a fixed 64x64 gray PNG, the same bytes every time.",
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "block",
+                            "placeholder"
+                          ]
+                        },
+                        "frames": {
+                          "description": "Third-party sub-frame documents (iframes). `placeholder` answers with a fixed empty HTML document.",
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "block",
+                            "placeholder"
+                          ]
+                        },
+                        "media": {
+                          "description": "Third-party audio and video (CDP resource type Media). `placeholder` blocks: there is no stand-in for media.",
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "block",
+                            "placeholder"
+                          ]
+                        }
+                      }
+                    }
                   ]
+                },
+                "rules": {
+                  "description": "URL rules checked before `external`, in order; the first match wins. They match any URL, including the Storybook's own origin. Story rules are checked before project rules.",
+                  "type": "array",
+                  "items": {
+                    "additionalProperties": false,
+                    "description": "One URL rule: the first rule that matches a request decides it.",
+                    "type": "object",
+                    "required": [
+                      "match",
+                      "action"
+                    ],
+                    "properties": {
+                      "match": {
+                        "format": "jux-url-pattern",
+                        "description": "A URL glob, a `type:<ResourceType>`, or both: the same pattern syntax as `settle.network.ignore`. A glob starting with `/` matches the URL path.",
+                        "type": "string"
+                      },
+                      "action": {
+                        "description": "`allow`, `block`, or `placeholder` (a fixed image or empty frame; any other request is blocked instead, and `placeholder` on a `type:` that can't have one is an error).",
+                        "type": "string",
+                        "enum": [
+                          "allow",
+                          "block",
+                          "placeholder"
+                        ]
+                      }
+                    }
+                  }
                 }
               }
             },
@@ -866,12 +1241,87 @@
                   "type": "object",
                   "properties": {
                     "external": {
-                      "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                      "type": "string",
-                      "enum": [
-                        "allow",
-                        "block"
+                      "anyOf": [
+                        {
+                          "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Same as `{ default }`.",
+                          "type": "string",
+                          "enum": [
+                            "allow",
+                            "block"
+                          ]
+                        },
+                        {
+                          "additionalProperties": false,
+                          "description": "Per resource type actions for third-party requests, each overriding `default` for that type.",
+                          "type": "object",
+                          "properties": {
+                            "default": {
+                              "description": "For third-party requests no type entry covers. `placeholder` is not valid here; it needs a resource type. Default `allow`.",
+                              "type": "string",
+                              "enum": [
+                                "allow",
+                                "block"
+                              ]
+                            },
+                            "images": {
+                              "description": "Third-party images (CDP resource type Image). `placeholder` answers with a fixed 64x64 gray PNG, the same bytes every time.",
+                              "type": "string",
+                              "enum": [
+                                "allow",
+                                "block",
+                                "placeholder"
+                              ]
+                            },
+                            "frames": {
+                              "description": "Third-party sub-frame documents (iframes). `placeholder` answers with a fixed empty HTML document.",
+                              "type": "string",
+                              "enum": [
+                                "allow",
+                                "block",
+                                "placeholder"
+                              ]
+                            },
+                            "media": {
+                              "description": "Third-party audio and video (CDP resource type Media). `placeholder` blocks: there is no stand-in for media.",
+                              "type": "string",
+                              "enum": [
+                                "allow",
+                                "block",
+                                "placeholder"
+                              ]
+                            }
+                          }
+                        }
                       ]
+                    },
+                    "rules": {
+                      "description": "URL rules checked before `external`, in order; the first match wins. They match any URL, including the Storybook's own origin. Story rules are checked before project rules.",
+                      "type": "array",
+                      "items": {
+                        "additionalProperties": false,
+                        "description": "One URL rule: the first rule that matches a request decides it.",
+                        "type": "object",
+                        "required": [
+                          "match",
+                          "action"
+                        ],
+                        "properties": {
+                          "match": {
+                            "format": "jux-url-pattern",
+                            "description": "A URL glob, a `type:<ResourceType>`, or both: the same pattern syntax as `settle.network.ignore`. A glob starting with `/` matches the URL path.",
+                            "type": "string"
+                          },
+                          "action": {
+                            "description": "`allow`, `block`, or `placeholder` (a fixed image or empty frame; any other request is blocked instead, and `placeholder` on a `type:` that can't have one is an error).",
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "block",
+                              "placeholder"
+                            ]
+                          }
+                        }
+                      }
                     }
                   }
                 },

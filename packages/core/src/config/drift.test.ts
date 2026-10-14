@@ -40,6 +40,18 @@ const CORPUS: unknown[] = [
   { settle: [] },
   { network: { external: 'x' } },
   { network: { external: 'block' } },
+  { network: { external: { default: 'block', images: 'placeholder' } } },
+  { network: { external: { default: 'placeholder' } } },
+  { network: { external: { images: 'maybe' } } },
+  { network: { external: { image: 'block' } } },
+  { network: { external: 'placeholder' } },
+  { network: { rules: [{ match: 'https://a/**', action: 'block' }] } },
+  { network: { rules: [{ match: 'https://a/**', action: 'nope' }] } },
+  { network: { rules: [{ match: 'type:Bogus', action: 'block' }] } },
+  { network: { rules: [{ match: 'type:Image', action: 'placeholder' }] } },
+  { network: { rules: [{ match: 'https://a/**' }] } },
+  { network: { rules: [{ match: 'type:Script', action: 'placeholder' }] } },
+  { network: { rules: 'x' } },
   { network: { foo: 1 } },
   { network: null },
   { stories: { '': {} } },
@@ -137,6 +149,8 @@ const CORPUS: unknown[] = [
 
 /** The schema accepts, the runtime refuses: what a schema can't say. */
 const SCHEMA_ONLY_ACCEPTS = [
+  // A `placeholder` rule that only matches a type with no stand-in (type:Script).
+  '{"network":{"rules":[{"match":"type:Script","action":"placeholder"}]}}',
   // A variant's `extends` must name a variant that exists, without a cycle.
   '{"variants":{"a":{"extends":"b"}}}',
   '{"variants":{"a":{"extends":"a"}}}',
