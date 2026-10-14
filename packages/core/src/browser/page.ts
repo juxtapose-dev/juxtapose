@@ -82,7 +82,7 @@ export interface Page {
    * @internal Core sets it per capture for variants; adapters must not.
    */
   setColorScheme?(scheme: 'light' | 'dark'): Promise<void>;
-  screenshot(opts?: { mask?: string[] }): Promise<Buffer>;
+  screenshot(opts?: { mask?: string[]; format?: ScreenshotFormat }): Promise<Buffer>;
   /**
    * Raw CDP on this page's session, for DOMSnapshot.
    * @internal Not part of the adapter API; the protocol surface is Chrome's, not ours.
@@ -362,6 +362,9 @@ function serialize(arg: unknown): string {
  * the hop's own Document response can be told from the story's.
  */
 export const FRESH_RENDERER_URL = 'data:text/html,jux-fresh-renderer';
+
+/** EXPERIMENT: how Chrome encodes the frame. */
+export type ScreenshotFormat = 'png' | 'png-speed' | 'webp';
 
 export class CdpPage implements Page {
   private currentUrl = 'about:blank';
@@ -702,7 +705,9 @@ export class CdpPage implements Page {
   }
 
   /** Screenshotter.screenshotPage: prepare → fonts.ready → mask → getLayoutMetrics → captureScreenshot → cleanup. */
-  async screenshot(opts: { mask?: string[] } = {}): Promise<Buffer> {
+  async screenshot(
+    opts: { mask?: string[]; format?: ScreenshotFormat } = {},
+  ): Promise<Buffer> {
     const mask = opts.mask ?? [];
     for (const sel of mask) assertCssSelector(sel);
     await this.evaluate(PREPARE_SCREENSHOT);
@@ -725,8 +730,14 @@ export class CdpPage implements Page {
           height: Math.ceil(this.viewport.height / visualViewport.scale),
           scale: visualViewport.scale,
         };
+        const fmt = opts.format ?? 'png';
         const { data } = await this.send('Page.captureScreenshot', {
-          format: 'png',
+          // EXPERIMENT (perf/capture-experiments): 'png-speed' keeps the pixels
+          // and trades PNG size for Chrome-side encode time; 'webp' is Chrome's
+          // own lossless WebP (quality 100; anything below is lossy VP8).
+          format: fmt === 'webp' ? 'webp' : 'png',
+          ...(fmt === 'webp' ? { quality: 100 } : {}),
+          ...(fmt === 'png-speed' ? { optimizeForSpeed: true } : {}),
           clip,
           captureBeyondViewport: false,
         });

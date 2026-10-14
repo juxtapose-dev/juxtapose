@@ -425,7 +425,17 @@ export async function captureStory(
   // renders the element shouldn't fail on the branch where it's absent.
   phase('screenshot');
   const tShot = performance.now();
-  const png = await page.screenshot(params.mask?.length ? { mask: params.mask } : {});
+  // EXPERIMENT (perf/capture-experiments), JUX_EXP_SHOT=png-speed|webp|webp-noicc:
+  // png-speed is hash-neutral; webp and webp-noicc use Chrome's lossless WebP
+  // as the capture and change every hash. Not for merge.
+  const expShot = process.env.JUX_EXP_SHOT;
+  const png = await page.screenshot({
+    ...(params.mask?.length ? { mask: params.mask } : {}),
+    ...(expShot === 'png-speed' ? { format: 'png-speed' as const } : {}),
+    ...(expShot === 'webp' || expShot === 'webp-noicc'
+      ? { format: 'webp' as const }
+      : {}),
+  });
   const screenshotMs = performance.now() - tShot;
 
   // LOSSLESS, deliberately, and it is not a size-vs-quality preference.
@@ -442,9 +452,14 @@ export async function captureStory(
   // the source. Costs ~4x the bytes; buys a diff that means something.
   phase('encode');
   const tEncode = performance.now();
-  const image = await sharp(png)
-    .webp({ lossless: true, effort: deps.webpEffort ?? 0 })
-    .toBuffer();
+  const image =
+    expShot === 'webp'
+      ? png
+      : expShot === 'webp-noicc'
+        ? stripIcc(png)
+        : await sharp(png)
+            .webp({ lossless: true, effort: deps.webpEffort ?? 0 })
+            .toBuffer();
   const encodeMs = performance.now() - tEncode;
   const timings = captureTimings(performance.now() - t0, {
     navigate: acc.navigate,
@@ -488,6 +503,29 @@ export async function captureStory(
         ? { settle: { status: 'fallback' as const, pending: flagged.pending ?? [] } }
         : {}),
   };
+}
+
+/** EXPERIMENT: Chrome's WebP is VP8X + ICCP + VP8L; drop the ICC profile (and
+ *  its VP8X flag) so the bytes depend on the pixels alone. */
+function stripIcc(webp: Buffer): Buffer {
+  const parts: Buffer[] = [];
+  for (let o = 12; o + 8 <= webp.length;) {
+    const type = webp.toString('ascii', o, o + 4);
+    const size = webp.readUInt32LE(o + 4);
+    const end = o + 8 + size + (size & 1);
+    if (type !== 'ICCP') {
+      const chunk = Buffer.from(webp.subarray(o, end));
+      if (type === 'VP8X') chunk[8] = chunk[8]! & ~0x20;
+      parts.push(chunk);
+    }
+    o = end;
+  }
+  const body = Buffer.concat(parts);
+  const head = Buffer.alloc(12);
+  head.write('RIFF', 0, 'ascii');
+  head.writeUInt32LE(body.length + 4, 4);
+  head.write('WEBP', 8, 'ascii');
+  return Buffer.concat([head, body]);
 }
 
 /** The phases as 0.1 ms figures, with `other` as whatever the named phases
