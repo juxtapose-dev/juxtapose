@@ -112,6 +112,14 @@ const IDLE_INIT = `(function () {
   // capture their final state 3/3. A clock that repaints every tick still
   // counts and hits the cap, flagged: it needs a mask either way. Faster
   // re-arms (setTimeout(step, 0) chunked work) are never keyed and always count.
+  // The caller's stack, minus this helper and the wrapper that called it. A
+  // page can replace Error.prepareStackTrace with one that returns call sites
+  // or throws (#214 review: every rAF then threw a TypeError and never ran);
+  // then every site is '', which is the old depth rule, never a broken page.
+  var stackKey = function () {
+    try { var st = new Error().stack; return typeof st === 'string' ? st.split('\\n').slice(3).join('\\n') : ''; }
+    catch (e) { return ''; }
+  };
   var PACED_MS = 16, sites = new Map(), MO = null;
   var flushMut = function () { if (MO) S.mut += MO.takeRecords().length; };
   W.setTimeout = function (fn, delay) {
@@ -119,7 +127,7 @@ const IDLE_INIT = `(function () {
     var args = Array.prototype.slice.call(arguments, 2); var d = Math.max(0, Number(delay) || 0); var id;
     var key = null, counted = true;
     if (d >= PACED_MS) {
-      key = (new Error().stack || '').split('\\n').slice(2).join('\\n');
+      key = stackKey();
       var site = sites.get(key);
       if (site && site.fired) { flushMut(); counted = S.mut !== site.mutAtFire; }
     }
@@ -159,7 +167,7 @@ const IDLE_INIT = `(function () {
   // stacks makes every site the same, which is the old depth rule.
   var RAF_REPEATS = 3, rafSites = null;
   W.requestAnimationFrame = function (fn) {
-    var site = (new Error().stack || '').split('\\n').slice(2).join('\\n');
+    var site = stackKey();
     var sites = new Map(rafSites || []); var n = (sites.get(site) || 0) + 1; sites.set(site, n);
     var id = oRAF.call(W, function (t) { S.rafs.delete(id); rafSites = sites; try { return fn(t); } finally { rafSites = null; } });
     if (n <= RAF_REPEATS) S.rafs.add(id); return id;

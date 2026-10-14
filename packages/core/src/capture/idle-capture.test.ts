@@ -109,6 +109,12 @@ const PAGES: Record<string, string> = {
   '/late-frames': page(
     `let n = 0; (function f() { if (++n === 6) (async () => { for (let i = 0; i < 8; i++) await new Promise((r) => requestAnimationFrame(r)); add('final'); })(); else requestAnimationFrame(f); })();`,
   ),
+  // A page whose Error.prepareStackTrace returns call sites, not a string
+  // (#214 review): the rAF and paced-timer wrappers must still schedule.
+  '/prepare-st': page(
+    `Error.prepareStackTrace = (e, cs) => cs;
+     requestAnimationFrame(() => setTimeout(() => add('final'), 20));`,
+  ),
   '/port-remove': page(
     `const ch = new MessageChannel(); const f = () => add('removed listener fired'); ch.port1.addEventListener('message', f);
      ch.port1.removeEventListener('message', f); ch.port1.start(); ch.port2.postMessage(1); add('final');`,
@@ -327,6 +333,11 @@ describe.skipIf(!chrome)('event-driven settle in Chrome', () => {
 
   it('frames still pending after the paint barrier get another wait', async () => {
     const s = await snap('/late-frames');
+    expect(texts(s)).toContain('final');
+  });
+
+  it('a page that replaces Error.prepareStackTrace still runs its frames and timers', async () => {
+    const s = await snap('/prepare-st');
     expect(texts(s)).toContain('final');
   });
 
