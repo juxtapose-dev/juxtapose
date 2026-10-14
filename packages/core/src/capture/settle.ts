@@ -73,6 +73,8 @@ export async function waitForSelector(
  * the freeze stylesheet.
  */
 export async function rerasterLayers(page: Page, timeoutMs = 1000): Promise<void> {
+  // SPIKE (#145): the #136 ablation.
+  if (process.env.JUX_SPIKE_NO_RERASTER === '1') return;
   await page
     .evaluate(
       (cap) =>

@@ -19,6 +19,7 @@ import {
   type CdpParams,
   type CdpResult,
 } from './cdp.js';
+import { FramePump, beginFrameEnabled } from './begin-frame.js';
 import { assertCssSelector, QUERY_ALL_SOURCE, queryAllExpression } from './selectors.js';
 
 export class TimeoutError extends Error {
@@ -361,6 +362,8 @@ export class CdpPage implements Page {
   private goneError: Error | null = null;
   private rejectGone!: (e: Error) => void;
   private readonly goneP: Promise<never>;
+  /** SPIKE (#145): the frame pump, when frame control is on. */
+  pump: FramePump | null = null;
   /** Every connection listener this page holds; dispose() removes them all. */
   private readonly offs: (() => void)[] = [];
 
@@ -474,6 +477,7 @@ export class CdpPage implements Page {
       page.dispose();
       throw e;
     }
+    if (beginFrameEnabled()) page.pump = new FramePump(connection, sessionId);
     return page;
   }
 
@@ -698,6 +702,12 @@ export class CdpPage implements Page {
           height: Math.ceil(this.viewport.height / visualViewport.scale),
           scale: visualViewport.scale,
         };
+        // SPIKE (#145): the screenshot is read from a frame we issue. It is
+        // the whole view; the clip above is the viewport at scale 1 anyway.
+        if (this.pump) {
+          void clip;
+          return await this.guard(this.pump.screenshot());
+        }
         const { data } = await this.send('Page.captureScreenshot', {
           format: 'png',
           clip,
@@ -735,6 +745,7 @@ export class CdpPage implements Page {
   dispose(): void {
     if (this.closed) return;
     this.closed = true;
+    this.pump?.stop();
     this.fail(new TargetClosedError('page closed'));
     for (const off of this.offs.splice(0)) off();
   }

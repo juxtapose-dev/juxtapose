@@ -1,3 +1,5 @@
+import { BEGIN_FRAME_ARGS, beginFrameEnabled } from './begin-frame.js';
+
 // Browser launch flags for reproducible rasterization.
 //
 // These matter more here than in most Playwright setups. Pass/fail is a
@@ -161,10 +163,18 @@ export function chromeArgs(opts: {
   args?: string[];
   headless?: boolean;
 }): string[] {
-  const { headless, args } = deterministicLaunchOptions({
+  const det = deterministicLaunchOptions({
     headless: opts.headless,
     args: opts.args,
   });
+  const headless = det.headless;
+  // SPIKE (#145): frame control and the #120 ablation, both env-gated.
+  let args = det.args;
+  if (process.env.JUX_SPIKE_PARTIAL_RASTER === '1')
+    args = args.filter((a) => a !== '--disable-partial-raster');
+  if (beginFrameEnabled()) args = [...args, ...BEGIN_FRAME_ARGS];
+  else if (process.env.JUX_SPIKE_RUN_ALL_STAGES === '1')
+    args = [...args, '--run-all-compositor-stages-before-draw'];
   return [
     ...PARITY_CHROMIUM_ARGS,
     '--enable-unsafe-swiftshader',

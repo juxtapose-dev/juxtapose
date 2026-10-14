@@ -9,6 +9,7 @@ import type { Viewport } from './types.js';
 import { CdpConnection } from './cdp.js';
 import type { SpawnFn } from './launch.js';
 import { CdpPage, type Page } from './page.js';
+import { beginFrameEnabled } from './begin-frame.js';
 
 /**
  * The browser process is gone (killed, crashed, or closed under us). Every
@@ -46,6 +47,8 @@ export class BrowserContext {
     const { targetId } = await this.connection.send('Target.createTarget', {
       url: 'about:blank',
       browserContextId: this.id,
+      // SPIKE (#145): only sent when on, so the default request is unchanged.
+      ...(beginFrameEnabled() ? { enableBeginFrameControl: true } : {}),
     });
     let page: CdpPage;
     try {
