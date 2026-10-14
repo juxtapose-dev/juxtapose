@@ -67,6 +67,10 @@ function current(storyId: string) {
   };
 }
 
+const gone = async () => ({
+  kind: 'unavailable' as const,
+  reason: 'not-in-cache' as const,
+});
 const meta = { commit: 'c', approvedBy: 'a', approvedAt: 't' };
 function store(
   sidecar: 'ok' | 'missing' | 'corrupt' | 'unsupported' | 'malformed',
@@ -200,7 +204,7 @@ test('a store whose getStructure throws never fails the run', async () => {
 // a failing story with a cold cache must still be reported by hash and
 // structure instead of erroring.
 test('a baseline image missing from the store fails by hash with structure only', async () => {
-  const s = { ...store('ok'), get: async () => null };
+  const s = { ...store('ok'), get: async () => null, lookup: gone };
   const r = await run(s);
   expect(r.results[0].status).toBe('fail');
   expect(r.results[0].error).toBeUndefined();
@@ -212,7 +216,7 @@ test('a baseline image missing from the store fails by hash with structure only'
 });
 
 test('a missing baseline image and a missing sidecar still do not throw', async () => {
-  const s = { ...store('missing'), get: async () => null };
+  const s = { ...store('missing'), get: async () => null, lookup: gone };
   const r = await run(s);
   expect(r.results[0].status).toBe('fail');
   expect(r.results[0].baselineImage).toBe('unavailable');
@@ -337,10 +341,18 @@ test('unavailable image never claims a pixel comparison, whatever the verdict', 
   const same = store('ok');
   same.getStructure!.mockResolvedValue(encodeStructure(CUR));
   for (const s of [same, store('ok'), store('missing')]) {
-    const r = await run({ ...s, get: async () => null });
+    const r = await run({ ...s, get: async () => null, lookup: gone });
     const v = r.results[0].structural!;
     expect(v.summary).not.toMatch(/tolerance|changed region/);
     expect(v.summary).toMatch(/no pixel diff|no baseline image/i);
     expect(v.flags).not.toContain('sub-threshold');
   }
+});
+
+// A repo-backed store's image is supposed to be there, so its absence stays an
+// error with the wording it always had.
+test('a store that cannot say why keeps the original error', async () => {
+  const r = await run({ ...store('ok'), get: async () => null });
+  expect(r.results[0].error).toBe('baseline missing from store');
+  expect(r.results[0].baselineImage).toBeUndefined();
 });

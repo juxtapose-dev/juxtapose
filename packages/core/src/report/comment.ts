@@ -40,6 +40,12 @@ export interface CommentOptions {
    *  artifact to link to — a link to an empty artifacts list is worse than no
    *  link, so callers pass this only when they actually wrote a report. */
   artifactUrl?: string;
+  /** What the project commits after an approval (`committedPaths`). Omitted:
+   *  the default store's manifest and structure. */
+  commitPaths?: string[];
+  /** The project chose a repo-backed store (`git`/`fs`), so its images are
+   *  committed on purpose and the guidance must not forbid them. */
+  imagesCommitted?: boolean;
 }
 
 /** GitHub comments have a size limit, but attention is the binding constraint
@@ -57,7 +63,12 @@ function blocking(report: RunReport): DiffResult[] {
  *  is not a visual decision — nothing about it can be reviewed or approved. */
 const changed = (r: DiffResult) => r.status === 'fail' && !r.error;
 
-export function buildComment({ report, artifactUrl }: CommentOptions): string {
+export function buildComment({
+  report,
+  artifactUrl,
+  commitPaths,
+  imagesCommitted,
+}: CommentOptions): string {
   const needsReview = blocking(report);
   const lines: string[] = [COMMENT_MARKER, ''];
 
@@ -107,7 +118,7 @@ export function buildComment({ report, artifactUrl }: CommentOptions): string {
   // a click to discover the tool even has a CTA.
   lines.push('```bash', ...commands(rows), '```', '');
 
-  lines.push(...guidance(rows));
+  lines.push(...guidance(rows, commitPaths, imagesCommitted === true));
   lines.push(footer(report, artifactUrl));
 
   return lines.join('\n');
@@ -321,7 +332,11 @@ const COMMENT_COLUMN = 32;
  * statuses actually present get a paragraph — a fail-only run should not
  * explain what "stale" means.
  */
-function guidance(rows: DiffResult[]): string[] {
+function guidance(
+  rows: DiffResult[],
+  commitPaths: string[] = ['juxtapose.manifest.json', '.juxtapose/structure/'],
+  imagesCommitted = false,
+): string[] {
   const has = (s: DiffResult['status']) => rows.some((r) => r.status === s && !r.error);
   const paras: string[] = [];
 
@@ -352,8 +367,10 @@ function guidance(rows: DiffResult[]): string[] {
   }
 
   paras.push(
-    'Then commit `juxtapose.manifest.json` and `.juxtapose/structure/` — hashes and ' +
-      'structure are what make approval a reviewable diff. Never commit images.',
+    `Then commit ${commitPaths.map((p) => `\`${p}\``).join(' and ')} — ` +
+      (imagesCommitted
+        ? 'that is what makes approval a reviewable diff.'
+        : 'hashes and structure are what make approval a reviewable diff. Never commit images.'),
   );
   paras.push(
     'Prefer a UI? Start the run from the **Visual** panel in Storybook to approve, ' +

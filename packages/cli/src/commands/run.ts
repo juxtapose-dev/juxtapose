@@ -36,6 +36,8 @@ import {
   type StoryManifest,
   formatPercent,
   BASELINE_IMAGE_UNAVAILABLE,
+  type ProjectConfig,
+  committedPaths,
   formatPhases,
   phases,
   type Phases,
@@ -309,7 +311,8 @@ export async function runCommand(
 
     if (flags.html) await writeHtmlReport(report, runDir, ctx.store, ctx.json, io);
     // The comment links the artifact only when there is one to link.
-    if (flags.comment) await comment(report, ctx.json, Boolean(flags.html), io);
+    if (flags.comment)
+      await comment(report, ctx.json, Boolean(flags.html), io, ctx.config.storage);
 
     // Anything needing human or agent judgement blocks. `pass` and `skip` do not.
     const blocking = report.summary.fail + report.summary.new + report.summary.stale;
@@ -378,6 +381,7 @@ async function comment(
   json: boolean,
   hasHtmlReport: boolean,
   io: Io,
+  storage: ProjectConfig['storage'],
 ): Promise<void> {
   const ctx = await resolveGitHubContext();
   if (!ctx) {
@@ -402,7 +406,15 @@ async function comment(
     );
   }
 
-  const url = await postComment(ctx, buildComment({ report, artifactUrl }));
+  const url = await postComment(
+    ctx,
+    buildComment({
+      report,
+      artifactUrl,
+      commitPaths: committedPaths(storage),
+      imagesCommitted: ['git', 'fs'].includes(storage?.kind ?? ''),
+    }),
+  );
   if (!json) {
     io.err(url ? `jux: posted ${url}\n` : 'jux: could not post the PR comment\n');
   }

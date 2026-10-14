@@ -43,15 +43,27 @@ function juxtaposePlugin(): VitePlugin {
   const projectRoot = process.env.JUXTAPOSE_ROOT ?? process.cwd();
   const config = loadConfig(projectRoot);
 
+  let store;
+  try {
+    // s3 is refused by the CLI; the panel falls back to the default store
+    // rather than failing to mount.
+    store = createBaselineStore(
+      projectRoot,
+      config.storage?.kind === 's3' ? undefined : config.storage,
+    );
+  } catch (err) {
+    // A bad storage.dir must not take Storybook's dev server down with it:
+    // say why and leave the panel's API unmounted.
+    console.warn(
+      `[juxtapose] capture disabled: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return { name: 'juxtapose', configureServer() {} };
+  }
+
   const source = new RunDirSource({
     projectRoot,
     platform: new StorybookPlatform(),
-    // s3 is refused by the CLI; the panel falls back to the default store
-    // rather than failing to mount.
-    store: createBaselineStore(
-      projectRoot,
-      config.storage?.kind === 's3' ? undefined : config.storage,
-    ),
+    store,
     config,
     // Replaced per-request from the Host header, since the dev server's port
     // is chosen by Storybook and can shift between sessions.

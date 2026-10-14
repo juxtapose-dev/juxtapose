@@ -30,6 +30,8 @@ export interface HandoffPayload {
   mismatchPercent: number;
   mismatchPixels: number;
   changedRegions: ChangedRegion[];
+  /** The project commits its images on purpose (`git`/`fs` store). */
+  imagesCommitted?: boolean;
   /** See DiffResult.baselineImage: no pixel numbers below are real. */
   baselineImage?: 'unavailable';
   viewport: Viewport;
@@ -324,7 +326,12 @@ function actions(p: HandoffPayload, opts: { approveVerb: string }): string[] {
   out.push(
     '',
     `- **Intentional** → \`jux approve --story ${shellQuote(p.storyId)}\` to ${opts.approveVerb}.`,
-    '  Commit `juxtapose.manifest.json` and `.juxtapose/structure/` only. Never `git add` an image: baseline images stay in the local cache.',
+    // A project on the repo-backed store commits its images on purpose.
+    ...(p.imagesCommitted
+      ? []
+      : [
+          '  Commit `juxtapose.manifest.json` and `.juxtapose/structure/` only. Never `git add` an image: baseline images stay in the local cache.',
+        ]),
     '- **Regression** → propose a fix. Do not apply it without confirmation.',
   );
   return out;

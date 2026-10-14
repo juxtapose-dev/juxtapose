@@ -122,6 +122,9 @@ export async function handoffCommand(
     mismatchPixels: result.mismatchPixels,
     changedRegions: result.changedRegions,
     ...(result.baselineImage ? { baselineImage: result.baselineImage } : {}),
+    ...(['git', 'fs'].includes(ctx.config.storage?.kind ?? '')
+      ? { imagesCommitted: true }
+      : {}),
     viewport,
     componentPath: story?.componentPath ?? '',
     diffDataPath,

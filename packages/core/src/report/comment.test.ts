@@ -465,3 +465,15 @@ describe('baseline image unavailable', () => {
     expect(body).not.toContain('.juxtapose/baselines/');
   });
 });
+
+describe('guidance by store kind', () => {
+  it('does not forbid images for a project that commits them on purpose', () => {
+    const body = buildComment({
+      report: report([result('a', 'fail', 3)]),
+      commitPaths: ['juxtapose.manifest.json', '.juxtapose/baselines'],
+      imagesCommitted: true,
+    });
+    expect(body).toContain('`.juxtapose/baselines`');
+    expect(body).not.toContain('Never commit images');
+  });
+});

@@ -380,3 +380,12 @@ describe('baseline image unavailable', () => {
     expect(prompt).not.toContain('## Assessment');
   });
 });
+
+describe('guidance by store kind', () => {
+  it('tells cache users never to add an image, and git-store users nothing of the kind', () => {
+    expect(buildHandoffPrompt(base)).toContain('Never `git add` an image');
+    expect(buildHandoffPrompt({ ...base, imagesCommitted: true })).not.toContain(
+      'Never `git add`',
+    );
+  });
+});

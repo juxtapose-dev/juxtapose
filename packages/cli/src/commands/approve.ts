@@ -7,8 +7,6 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   approveCapture,
-  committedPaths,
-  shellQuote,
   UnstableCaptureError,
   encodeStoryId,
   parseRunReport,
@@ -16,6 +14,7 @@ import {
 } from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
 import { errorMessage } from '../guards.js';
+import { commitList } from '../printed-commands.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
 
@@ -140,7 +139,7 @@ export async function approveCommand(
       const cache =
         ctx.config.storage === undefined || ctx.config.storage.kind === 'cache';
       io.out(
-        `\n  Commit ${committedPaths(ctx.config.storage).map(shellQuote).join(' and ')} to record this.\n` +
+        `\n  Commit ${commitList(ctx.config.storage)} to record this.\n` +
           (cache ? '  Images stay in the local cache and are never committed.\n' : ''),
       );
     }

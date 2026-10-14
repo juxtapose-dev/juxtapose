@@ -316,6 +316,17 @@ async function judge(
   }
 
   const baseline = await opts.store.get(story.storyId);
+  if (!baseline && !opts.store.lookup) {
+    // A store that cannot say why keeps the original wording: its image is
+    // supposed to be there, so its absence is an error.
+    await opts.onArtifact?.({
+      storyId: story.storyId,
+      status,
+      current: snapshot.image,
+      structure: snapshot.structure,
+    });
+    return { ...base, error: 'baseline missing from store' };
+  }
   if (!baseline) {
     // The manifest's hash decided this failure; the image behind it is not on
     // this machine (cold CI cache, fresh clone). That is the normal state of a
