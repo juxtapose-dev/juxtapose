@@ -33,8 +33,23 @@ story could change the next one's pixels. In Primer React, PageLayout's
 pull-request-page heading was 0.11 px wider after a story that measured canvas
 text, and in Spectrum the edge of a card's cover image changed after a button
 group. The queue is shuffled, so such a story's verdict depended on queue
-order. With `freshRenderer` on, each story hashes as it does when captured
-alone.
+order. With `freshRenderer` on, a story's hash is independent of the story
+captured before it on the same page. A story whose pixels depend on load or
+timing can still vary from run to run; that is what the settle options are for.
+
+Chrome decides whether a navigation gets a new process. Once a browser holds
+its renderer-process limit, Chrome reuses a process that already ran a story.
+Chrome derives its default limit from memory: 24 on a 4 GB machine. jux
+launches Chrome with `--renderer-process-limit=1000`, so with the browser jux
+starts the limit isn't reached. With a browser that holds a lower limit, a
+story can still land in a used renderer. jux flags that result
+`renderer-reused` (in `report.json` `flags` and in `jux snap` output) and warns
+once per run.
+
+The check that every story starts in a new renderer process is
+`packages/core/src/capture/fresh-renderer-capture.test.ts`. Its pixel test
+fails only with the macOS system font, so on Linux the renderer-process tests
+in the same file are the guard.
 
 It costs time. A cold renderer runs the workbench's JavaScript again without
 the JIT state it had built up. Measured on Chrome 151, macOS, on a shared,

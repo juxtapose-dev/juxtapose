@@ -31,6 +31,14 @@ describe('deterministicLaunchOptions', () => {
     expect(deterministicLaunchOptions().args).toContain('--disable-partial-raster');
   });
 
+  it('lifts the renderer-process limit above any concurrency', () => {
+    // At the limit Chrome reuses a renderer that already ran a story, and the
+    // fresh-renderer hop silently keeps the old process's font and raster
+    // state (issue #153): concurrency 8 at a limit of 8 reused 56 of 56
+    // captures, at 9 none. Chrome's default is RAM-derived, 24 on 4 GB.
+    expect(deterministicLaunchOptions().args).toContain('--renderer-process-limit=1000');
+  });
+
   it('pins the device scale factor', () => {
     // A baseline captured at 2x will never match one captured at 1x.
     expect(deterministicLaunchOptions().args).toContain('--force-device-scale-factor=1');
@@ -74,27 +82,30 @@ describe('chromeArgs', () => {
     expect(args).toContain('--no-sandbox');
     for (const a of DETERMINISTIC_CHROMIUM_ARGS) expect(args).toContain(a);
     expect(args.indexOf('--foo')).toBeGreaterThan(
-      args.indexOf('--force-device-scale-factor=1'),
+      args.indexOf('--renderer-process-limit=1000'),
     );
     expect(args.slice(-3)).toEqual([
       '--user-data-dir=/u',
       '--remote-debugging-pipe',
       '--no-startup-window',
     ]);
-    expect(args).toHaveLength(57 + 1);
+    expect(args).toHaveLength(58 + 1);
   });
 });
 
 describe('chromeArgs byte parity', () => {
-  it('equals the spike-proven 56-arg list exactly, in content and order, plus --disable-partial-raster', () => {
+  it('equals the spike-proven 56-arg list exactly, in content and order, plus two deliberate additions', () => {
     // Fixture generated from the spike's args.mjs (launchArgs('/U', 'pipe')).
     // Any drift in flags or order fails here before it can fail a baseline.
     // The one deliberate addition is --disable-partial-raster (issue #120):
     // it changes no bytes of a single full raster, only stops a repaint's
     // clipped re-raster from showing, and the examples captured
-    // byte-identical with it.
+    // byte-identical with it. The other is --renderer-process-limit (issue
+    // #153): it decides only whether a navigation may reuse a renderer, and
+    // the examples captured byte-identical with it too.
+    const added = ['--disable-partial-raster', '--renderer-process-limit=1000'];
     const args = chromeArgs({ userDataDir: '/U' });
-    expect(args.filter((a) => a !== '--disable-partial-raster')).toEqual(SPIKE_ARGS);
+    expect(args.filter((a) => !added.includes(a))).toEqual(SPIKE_ARGS);
     expect(args.indexOf('--disable-partial-raster')).toBe(
       args.indexOf('--force-color-profile=srgb', PARITY_CHROMIUM_ARGS.length) + 1,
     );

@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto';
 import type { DiffOutput } from './diff.js';
 import type {
-  CaptureFlag,
+  SettleFlag,
   Cause,
   ChangedRegion,
   Classification,
@@ -40,7 +40,7 @@ export interface StructuralDiffInput {
   cause?: Cause;
   /** The current capture's settle flag, if any (`settle-timeout`,
    *  `settle-fallback`): appended to the verdict's flags. */
-  settleFlag?: CaptureFlag;
+  settleFlag?: SettleFlag;
 }
 
 export const MAX_DELTAS = 20;
