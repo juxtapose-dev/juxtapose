@@ -1,5 +1,23 @@
 # @juxtapose/core
 
+## 0.13.0
+
+### Minor Changes
+
+- 3668e0e: **Default change:** each cold capture after a page's first now starts in a new Chrome renderer process (#153). The new `freshRenderer` config option (default `true`) controls this, and `--no-fresh-renderer` turns it off for one `jux run` or `jux snap`.
+
+  Chrome's renderer kept canvas text measurement, font and raster state across navigations, so the story captured before could change the next story's pixels, and the shuffled queue made that verdict random. Primer's PageLayout pull-request-page hashed 37d0ff51 after PageHeader webhooks and 76cf4695 alone. Spectrum's card--default hashed 28d933b6 after a button group and 2faf799d alone. A story's hash no longer depends on the story captured before it.
+
+  **This makes runs slower.** It costs about 220 ms per Storybook story: the full 1,086-story Spectrum pass went from 47 to 83 s at concurrency 8, and from 36 to 70 s at 16. Set `"freshRenderer": false` for speed-critical runs where you accept order dependence. A non-boolean `freshRenderer` is a config error in run, init, snap, MCP and the review server.
+
+### Patch Changes
+
+- e2d1770: The fresh renderer from #153 now holds at high concurrency, and a capture that doesn't get one is flagged. Chrome reuses a renderer that already ran a story once a browser holds its renderer-process limit, which Chrome derives from memory (24 on a 4 GB machine). Measured on Chrome 151 at concurrency 16 with a limit of 24, 14 of 128 captures stayed in a used renderer. At concurrency 8 with a limit of 8, 56 of 56 did. jux now launches Chrome with `--renderer-process-limit=1000`: 0 of 128 at concurrency 16. The flag changes no pixels. The Storybook, Ladle and Vue examples hash byte-identical to before. It also changes the warm browser's key, so an older warm browser is not reused.
+
+  A story that still lands in a used renderer, for example in a browser started with a lower limit, is flagged `renderer-reused` in `report.json` `flags`, in `jux snap` results and output, and in a warning printed once per run. The check compares the page's `Runtime.getIsolateId`, which is random per renderer process, and costs about 0.2 ms a capture.
+
+- a7e5e61: A client that wins the launch lock just after the daemon it was waiting on came up now re-checks for that daemon before spawning, instead of starting a redundant supervisor that only loses the socket bind.
+
 ## 0.12.0
 
 ### Minor Changes
