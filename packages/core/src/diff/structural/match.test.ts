@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from 'vitest';
 import type { StructureSnapshot } from '../../types.js';
-import { identityKey, matchElements } from './match.js';
+import { greedy, greedyByKey, identityKey, matchElements } from './match.js';
 
 // Real Chromium captures of the corpus page — scripts/capture-diff-fixtures.mjs.
 const fixture = JSON.parse(
@@ -147,6 +147,41 @@ test('a flat parent with thousands of children matches in bounded time', () => {
   const ms = bestOf3(() => matchElements(a, b));
   console.log(`matchElements 5000 flat children: ${ms.toFixed(1)} ms`);
   expect(ms).toBeLessThan(250);
+});
+
+test('greedyByKey pairs exactly as greedy over key equality', () => {
+  // Deterministic pseudo-random lists over a small key alphabet, so keys
+  // repeat, go missing on one side, and appear out of order.
+  let seed = 7;
+  const rand = (m: number) => (seed = (seed * 1103515245 + 12345) % 2 ** 31) % m;
+  for (let trial = 0; trial < 300; trial++) {
+    const keyA = Array.from({ length: rand(40) }, () => `k${rand(8)}`);
+    const keyB = Array.from({ length: rand(40) }, () => `k${rand(8)}`);
+    const ca = keyA.map((_, i) => i);
+    const cb = keyB.map((_, j) => j);
+    expect(greedyByKey(ca, cb, keyA, keyB)).toEqual(
+      greedy(ca, cb, (i, j) => keyA[i] === keyB[j]),
+    );
+  }
+});
+
+test('greedyByKey on a flat list where no key matches reads each key once', () => {
+  // Every row's name changed, so no identity key survives: greedy compared
+  // all n² = 9M pairs before the tag pass paired them.
+  const n = 3000;
+  let reads = 0;
+  const count = (keys: string[]) =>
+    new Proxy(keys, {
+      get(t, k, r) {
+        if (typeof k === 'string' && /^\d+$/.test(k)) reads++;
+        return Reflect.get(t, k, r) as unknown;
+      },
+    });
+  const keyA = count(Array.from({ length: n }, (_, k) => `li|listitem=row ${k} a`));
+  const keyB = count(Array.from({ length: n }, (_, k) => `li|listitem=row ${k} b`));
+  const idx = Array.from({ length: n }, (_, k) => k);
+  expect(greedyByKey(idx, idx, keyA, keyB)).toEqual([]);
+  expect(reads).toBe(2 * n);
 });
 
 function bestOf3(fn: () => unknown): number {

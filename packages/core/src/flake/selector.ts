@@ -122,30 +122,88 @@ export interface ElementSelector {
 }
 
 export function describeSelector(s: StructureSnapshot, index: number): ElementSelector {
-  const i = selectable(s, index);
-  const el = s.elements[i];
-  if (!el) return { selector: '*', stable: false };
-  const count = (match: (e: StructureElement) => boolean) =>
-    s.elements.filter(match).length;
-
-  if (el.testId !== undefined && count((e) => e.testId === el.testId) === 1)
-    return { selector: `[data-testid=${attrValue(el.testId)}]`, stable: true };
-  if (el.id !== undefined && !isGeneratedId(el.id) && count((e) => e.id === el.id) === 1)
-    return { selector: `#${cssEscape(el.id)}`, stable: true };
-  const classes = (el.classes ?? []).filter((c) => !isGeneratedClass(c));
-  if (classes.length > 0) {
-    const same = count(
-      (e) => e.tag === el.tag && classes.every((c) => e.classes?.includes(c)),
-    );
-    if (same === 1)
-      return {
-        selector: `${cssEscape(el.tag)}.${classes.map(cssEscape).join('.')}`,
-        stable: true,
-      };
-  }
-  return { selector: escapedPath(el.path), stable: false };
+  return selectorsFor(s).describe(index);
 }
 
 export function selectorFor(s: StructureSnapshot, index: number): string {
   return describeSelector(s, index).selector;
+}
+
+/**
+ * describeSelector for many elements of one snapshot. Uniqueness used to be
+ * counted by filtering every element on each call, so describing each row of
+ * a removed 4999-row list (analyzeFlake's one-sided elements) was 25M
+ * predicate calls, 330-1050 ms (4-11 ms now). Counts are built once, on first use.
+ * The snapshot must not change while this is in use.
+ */
+export function selectorsFor(s: StructureSnapshot): {
+  describe: (index: number) => ElementSelector;
+  selector: (index: number) => string;
+} {
+  let testIds: Map<string, number> | undefined;
+  let ids: Map<string, number> | undefined;
+  /** class -> each element carrying it, once */
+  let byClass: Map<string, StructureElement[]> | undefined;
+  const classCounts = new Map<string, number>();
+  const tally = (key: (e: StructureElement) => string | undefined) => {
+    const m = new Map<string, number>();
+    for (const e of s.elements) {
+      const k = key(e);
+      if (k !== undefined) m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return m;
+  };
+  /** How many elements have this tag and every one of `classes`. */
+  const withClasses = (tag: string, classes: string[]): number => {
+    const memoKey = `${tag}\n${classes.join('\n')}`; // class names hold no whitespace
+    const memo = classCounts.get(memoKey);
+    if (memo !== undefined) return memo;
+    if (!byClass) {
+      byClass = new Map();
+      for (const e of s.elements) {
+        for (const c of new Set(e.classes ?? [])) {
+          const list = byClass.get(c);
+          if (list) list.push(e);
+          else byClass.set(c, [e]);
+        }
+      }
+    }
+    // A match carries every class, so the rarest class's list holds them all.
+    let rarest: StructureElement[] = [];
+    for (const [k, c] of classes.entries()) {
+      const list = byClass.get(c) ?? [];
+      if (k === 0 || list.length < rarest.length) rarest = list;
+    }
+    const n = rarest.filter(
+      (e) => e.tag === tag && classes.every((c) => e.classes?.includes(c)),
+    ).length;
+    classCounts.set(memoKey, n);
+    return n;
+  };
+
+  const describe = (index: number): ElementSelector => {
+    const i = selectable(s, index);
+    const el = s.elements[i];
+    if (!el) return { selector: '*', stable: false };
+
+    if (
+      el.testId !== undefined &&
+      (testIds ??= tally((e) => e.testId)).get(el.testId) === 1
+    )
+      return { selector: `[data-testid=${attrValue(el.testId)}]`, stable: true };
+    if (
+      el.id !== undefined &&
+      !isGeneratedId(el.id) &&
+      (ids ??= tally((e) => e.id)).get(el.id) === 1
+    )
+      return { selector: `#${cssEscape(el.id)}`, stable: true };
+    const classes = (el.classes ?? []).filter((c) => !isGeneratedClass(c));
+    if (classes.length > 0 && withClasses(el.tag, classes) === 1)
+      return {
+        selector: `${cssEscape(el.tag)}.${classes.map(cssEscape).join('.')}`,
+        stable: true,
+      };
+    return { selector: escapedPath(el.path), stable: false };
+  };
+  return { describe, selector: (index) => describe(index).selector };
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test } from 'vitest';
-import type { Delta, StructureSnapshot } from '../../types.js';
+import { expect, test, vi } from 'vitest';
+import type { Delta, StructureElement, StructureSnapshot } from '../../types.js';
 import { computeCoverage } from './coverage.js';
 import { computeFacts } from './deltas.js';
 import { label } from './label.js';
@@ -257,4 +257,85 @@ test('a child that both moved and resized exactly with its parent is not listed'
     { kind: 'moved', el: 'div#row-2', dx: 0, dy: 10 },
     { kind: 'resized', el: 'span.meta', dw: 12, dh: 0 },
   ]);
+});
+
+// Operation counts, not timings: they do not move with machine load.
+const node = (
+  parent: number | null,
+  y: number,
+  extra: Partial<StructureElement> = {},
+): StructureElement => ({
+  path: `p${y}`,
+  parent,
+  tag: 'div',
+  rect: { x: 0, y, w: 100, h: 1 },
+  paintOrder: 0,
+  styles: {},
+  ...extra,
+});
+const structure = (elements: StructureElement[]): StructureSnapshot => ({
+  ...snap('noop'),
+  structureHash: '',
+  elements,
+});
+/** The snapshot with its element reads counted. */
+function counted(s: StructureSnapshot): { s: StructureSnapshot; reads: () => number } {
+  let reads = 0;
+  const elements = new Proxy(s.elements, {
+    get(t, k, r) {
+      if (typeof k === 'string' && /^\d+$/.test(k)) reads++;
+      return Reflect.get(t, k, r) as unknown;
+    },
+  });
+  return { s: { ...s, elements }, reads: () => reads };
+}
+
+test('an unstored inherited style is resolved once per element, not walked per read', () => {
+  // One 1000-deep chain whose root colour changed. Walking up for every
+  // element's every inherited prop read 13M elements; resolved once, 82k.
+  const n = 1000;
+  const chain = (color: string) =>
+    structure(
+      Array.from({ length: n }, (_, k) =>
+        node(k === 0 ? null : k - 1, k, k === 0 ? { styles: { color } } : {}),
+      ),
+    );
+  const a = counted(chain('rgb(0, 0, 1)'));
+  const b = counted(chain('rgb(0, 0, 2)'));
+  const match = matchElements(a.s, b.s);
+  const before = a.reads() + b.reads();
+  const facts = computeFacts(a.s, b.s, match);
+  expect(facts.map((f) => f.delta)).toEqual([
+    {
+      kind: 'style',
+      el: 'p0',
+      prop: 'color',
+      from: 'rgb(0, 0, 1)',
+      to: 'rgb(0, 0, 2)',
+    },
+  ]);
+  expect(a.reads() + b.reads() - before).toBeLessThan(200 * n);
+});
+
+test('removed elements find their predecessor in one sweep, not a scan back each', () => {
+  // A 2000-row list removed: scanning back from each row was 2M lookups; one sweep is ~2k.
+  const n = 2000;
+  const a = structure([
+    node(null, 0),
+    ...Array.from({ length: n }, (_, k) => node(0, k + 1, { classes: ['row'] })),
+  ]);
+  const b = structure([node(null, 0)]);
+  const match = matchElements(a, b);
+  const get = vi.spyOn(Map.prototype, 'get');
+  let facts;
+  let gets: number;
+  try {
+    facts = computeFacts(a, b, match);
+    gets = get.mock.calls.length;
+  } finally {
+    get.mockRestore();
+  }
+  expect(facts.filter((f) => f.delta.kind === 'removed')).toHaveLength(n);
+  expect(facts.every((f) => f.order === 0.5)).toBe(true);
+  expect(gets).toBeLessThan(10 * n);
 });

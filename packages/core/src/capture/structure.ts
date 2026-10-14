@@ -215,12 +215,20 @@ export function normalizeStructure(
   // `visibility` is requested after STRUCTURE_PROPS and used only to filter.
   const visibilityIdx = STRUCTURE_PROPS.length;
 
-  // node index -> layout row. A node can have several rows (a pseudo-element
-  // gets one for its box and one per text fragment); the FIRST is the box.
-  const layoutOf = new Map<number, number>();
-  layout.nodeIndex.forEach((n, row) => {
-    if (!layoutOf.has(n)) layoutOf.set(n, row);
-  });
+  // node index -> layout row, -1 for none. A node can have several rows (a
+  // pseudo-element gets one for its box and one per text fragment); the FIRST
+  // is the box, so rows are written last to first.
+  // Per-node tables are arrays, not Maps: this one, nthOfType, children and
+  // tagCounts are keyed by every node, and their hashing was most of the
+  // normalize on Primer's TreeView contain-intrinsic-size story (110k nodes,
+  // 130k rows, 284 kept). With identity() and rectOf() below, its median went
+  // from 92-171 ms to 41-54 ms on a loaded machine, output byte-identical on
+  // 2244 dumped snapshots (Primer's 1102 stories, twice, and the examples).
+  const nodeCount = nodes.nodeType.length;
+  const layoutOf = new Int32Array(nodeCount).fill(-1);
+  for (let row = layout.nodeIndex.length - 1; row >= 0; row--) {
+    layoutOf[layout.nodeIndex[row]!] = row; // an out-of-range write is dropped
+  }
   const contentIdx = STRUCTURE_PROPS.indexOf('content');
 
   const rare = (r: { index: number[]; value: number[] } | undefined) => {
@@ -242,27 +250,29 @@ export function normalizeStructure(
   // list per child: that was quadratic in sibling count, and Primer's TreeView
   // contain-intrinsic-size story has ~100 lists of 1000 siblings, so it cost
   // ~100M name reads and most of a 470-1070 ms normalize.
-  const children = new Map<number, number[]>();
+  const children: Array<number[] | undefined> = new Array<number[] | undefined>(
+    nodeCount,
+  );
   const ownText = new Map<number, string>();
-  const nthOfType = new Map<number, number>();
+  const nthOfType = new Uint32Array(nodeCount);
   // per parent: lowercased tag -> elements of that tag seen so far
-  const tagCounts = new Map<number, Map<string, number>>();
-  for (let i = 0; i < nodes.nodeType.length; i++) {
+  const tagCounts: Array<Map<string, number> | undefined> = new Array<
+    Map<string, number> | undefined
+  >(nodeCount);
+  for (let i = 0; i < nodeCount; i++) {
     const p = nodes.parentIndex[i]!;
     if (p < 0) continue;
     if (nodes.nodeType[i] === TEXT_NODE) {
       const t = str(nodes.nodeValue[i]) ?? '';
       ownText.set(p, (ownText.get(p) ?? '') + t);
     } else if (nodes.nodeType[i] === ELEMENT_NODE) {
-      const list = children.get(p) ?? [];
+      const list = (children[p] ??= []);
       list.push(i);
-      children.set(p, list);
-      const counts = tagCounts.get(p) ?? new Map<string, number>();
-      tagCounts.set(p, counts);
+      const counts = (tagCounts[p] ??= new Map<string, number>());
       const tag = (str(nodes.nodeName[i]) ?? '').toLowerCase();
       const n = (counts.get(tag) ?? 0) + 1;
       counts.set(tag, n);
-      nthOfType.set(i, n);
+      nthOfType[i] = n;
     }
   }
 
@@ -271,6 +281,40 @@ export function normalizeStructure(
     const a = nodes.attributes[i] ?? [];
     for (let k = 0; k + 1 < a.length; k += 2) out[str(a[k])!] = str(a[k + 1]) ?? '';
     return out;
+  };
+  // The three attributes every visited element needs (its path step and the
+  // mask check), read as attrs(i) would: the last occurrence wins. The full
+  // object is built only for kept elements: building it for all 110k nodes of
+  // Primer's TreeView contain-intrinsic-size story (284 kept) was the largest
+  // self time left in normalize, a dictionary-mode object per node.
+  const identity = (
+    i: number,
+  ): { id: string | undefined; testId: string | undefined; masked: boolean } => {
+    let id: string | undefined;
+    let testId: string | undefined;
+    let masked = false;
+    const a = nodes.attributes[i] ?? [];
+    for (let k = 0; k + 1 < a.length; k += 2) {
+      const name = str(a[k]);
+      if (name === 'id') id = str(a[k + 1]) ?? '';
+      else if (name === 'data-testid') testId = str(a[k + 1]) ?? '';
+      else if (name === MASK_ATTR) masked = true;
+    }
+    return { id, testId, masked };
+  };
+
+  // DOM.Rectangle is [x, y, width, height]; a short one reads NaN, as it
+  // always has (round(undefined)). Indexed reads, not `const [x = NaN, …] =`:
+  // array destructuring goes through the iterator protocol, and it ran for
+  // every laid-out element.
+  const rectOf = (row: number): StructureRect => {
+    const b = layout.bounds[row]!; // row came from layoutOf
+    return {
+      x: round(b[0] as number),
+      y: round(b[1] as number),
+      w: round(b[2] as number),
+      h: round(b[3] as number),
+    };
   };
 
   const elements: StructureElement[] = [];
@@ -281,32 +325,29 @@ export function normalizeStructure(
   const visit = (i: number, parentPath: string, keptParent: number | null): void => {
     const tag = (str(nodes.nodeName[i]) ?? '').toLowerCase();
     if (tag === 'head' || tag === 'script' || tag === 'style') return;
-    const a = attrs(i);
+    const { id, testId, masked } = identity(i);
     const step =
-      a.id !== undefined
-        ? `${tag}#${a.id}`
-        : a['data-testid'] !== undefined
-          ? `${tag}[data-testid="${a['data-testid']}"]`
-          : `${tag}:nth-of-type(${nthOfType.get(i)!})`; // set for every element child
+      id !== undefined
+        ? `${tag}#${id}`
+        : testId !== undefined
+          ? `${tag}[data-testid="${testId}"]`
+          : `${tag}:nth-of-type(${nthOfType[i]!})`; // set for every element child
     const path = parentPath ? `${parentPath}>${step}` : step;
 
-    const row = layoutOf.get(i);
+    const row = layoutOf[i]!; // i is a node index
 
     // Mask first, before any check that can descend: a visibility:hidden mask
     // target with a visibility:visible child used to take the hidden branch
     // below and record the child's text, while the screenshot mask covered it.
-    if (a[MASK_ATTR] !== undefined) {
-      if (row === undefined) return; // no box: nothing to stand in for
+    if (masked) {
+      if (row < 0) return; // no box: nothing to stand in for
       total++;
       if (elements.length < MAX_ELEMENTS) {
-        // DOM.Rectangle is [x, y, width, height]; a short one reads NaN, as it
-        // always has (round(undefined)).
-        const [x = NaN, y = NaN, w = NaN, h = NaN] = layout.bounds[row]!;
         elements.push({
           path,
           parent: keptParent,
           tag: 'masked',
-          rect: { x: round(x), y: round(y), w: round(w), h: round(h) },
+          rect: rectOf(row),
           paintOrder: layout.paintOrders?.[row] ?? 0,
           styles: {},
         });
@@ -319,7 +360,7 @@ export function normalizeStructure(
       return; // never descend into a masked subtree
     }
 
-    if (row === undefined) return; // display:none (or no box): drop the subtree
+    if (row < 0) return; // display:none (or no box): drop the subtree
     // Only `visibility` is read for every row; the other 41 values are decoded
     // below, for kept elements only. Decoding all of them for all 130k rows of
     // Primer's TreeView story (284 kept) was ~5.5M string reads and url()
@@ -328,12 +369,11 @@ export function normalizeStructure(
     const visibility = urlsToFileNames(str(rowStyles[visibilityIdx]) ?? '');
     if (visibility === 'hidden' || visibility === 'collapse') {
       // hidden boxes can still contain visible descendants (visibility: visible)
-      for (const c of children.get(i) ?? []) visit(c, path, keptParent);
+      for (const c of children[i] ?? []) visit(c, path, keptParent);
       return;
     }
 
-    const [x = NaN, y = NaN, w = NaN, h = NaN] = layout.bounds[row]!;
-    const rect: StructureRect = { x: round(x), y: round(y), w: round(w), h: round(h) };
+    const rect = rectOf(row);
     const offscreen =
       rect.x + rect.w <= 0 ||
       rect.y + rect.h <= 0 ||
@@ -346,6 +386,7 @@ export function normalizeStructure(
     if (keep) {
       total++;
       if (elements.length < MAX_ELEMENTS) {
+        const a = attrs(i);
         const rawValues = rowStyles.map((s) => str(s) ?? '');
         const values = rawValues.map(urlsToFileNames);
         const inherited = keptParent === null ? ROOT_INHERITED : effective[keptParent]!;
@@ -406,11 +447,11 @@ export function normalizeStructure(
         me = elements.length - 1;
       }
     }
-    for (const c of children.get(i) ?? []) visit(c, path, me);
+    for (const c of children[i] ?? []) visit(c, path, me);
   };
 
   // node 0 is #document; start from its element children (<html>)
-  for (const c of children.get(0) ?? []) visit(c, '', null);
+  for (const c of children[0] ?? []) visit(c, '', null);
 
   const snapshot: StructureSnapshot = {
     schema: 'juxtapose.structure/v1',
@@ -558,16 +599,50 @@ export function effectiveStyle(
   index: number,
   prop: string,
 ): string {
+  return resolveStyle(s, index, prop, (i, p) => effectiveStyle(s, i, p));
+}
+
+/**
+ * effectiveStyle for many reads of one snapshot, each element's value
+ * resolved once. An unstored inherited value walks up to the ancestor that
+ * stores it, so reading every element walked every chain: the structural
+ * diff of 5000 elements in 300-deep chains took 570-700 ms (33-70 ms now),
+ * and a 1000-deep chain read 13M elements (82k now).
+ * The snapshot must not change while the reader is in use.
+ */
+export function styleReader(
+  s: StructureSnapshot,
+): (index: number, prop: string) => string {
+  // prop -> value by element index
+  const memo = new Map<string, Array<string | undefined>>();
+  const read = (index: number, prop: string): string => {
+    let byIndex = memo.get(prop);
+    if (!byIndex) memo.set(prop, (byIndex = new Array<string | undefined>()));
+    let v = byIndex[index];
+    if (v === undefined) {
+      v = resolveStyle(s, index, prop, read);
+      byIndex[index] = v;
+    }
+    return v;
+  };
+  return read;
+}
+
+/** One step of effectiveStyle; `next` reads another element's value. */
+function resolveStyle(
+  s: StructureSnapshot,
+  index: number,
+  prop: string,
+  next: (index: number, prop: string) => string,
+): string {
   const el = elementAt(s, index);
   const own = el.styles[prop];
   if (own !== undefined) return own;
   if (INHERITED_PROPS.has(prop)) {
-    return el.parent === null
-      ? (ROOT_INHERITED[prop] ?? '')
-      : effectiveStyle(s, el.parent, prop);
+    return el.parent === null ? (ROOT_INHERITED[prop] ?? '') : next(el.parent, prop);
   }
   if (prop.startsWith('border-') && prop.endsWith('-color')) {
-    return effectiveStyle(s, index, 'color'); // currentColor
+    return next(index, 'color'); // currentColor
   }
   return INITIAL_VALUES[prop] ?? '';
 }
