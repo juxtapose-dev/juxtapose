@@ -1,5 +1,15 @@
 # @juxtapose/cli
 
+## 0.18.2
+
+### Patch Changes
+
+- 6dac140: Each result in `report.json` now carries `timings`: milliseconds per capture phase (navigate, freshRenderer, render, settle, paint, structure, screenshot, encode, other) that sum to `durationMs`. They are clock reads around existing calls and change no pixels or hashes.
+- Updated dependencies [6dac140]
+  - @juxtapose/core@0.18.2
+  - @juxtapose/adapter-ladle@0.3.16
+  - @juxtapose/adapter-storybook@0.4.12
+
 ## 0.18.1
 
 ### Patch Changes
