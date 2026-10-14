@@ -42,7 +42,7 @@ jobs:
       - name: Measure
         env:
           # Which phases to run: probe fixtures snap examples.
-          PHASES: examples
+          PHASES: probe fixtures snap examples
         run: |
           mkdir -p out
           S=scripts/spike-beginframe.mjs
