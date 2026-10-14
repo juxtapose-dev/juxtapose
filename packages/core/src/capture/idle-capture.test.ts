@@ -196,7 +196,7 @@ describe.skipIf(!chrome)('event-driven settle in Chrome', () => {
     const s = await snap('/timers', {
       settle: { timeout: 700, network: { require: ['/api/nope'] } },
     });
-    expect(s.settle).toEqual({
+    expect(s.settle).toMatchObject({
       status: 'timeout',
       timeoutMs: 700,
       pending: ["no request matching required pattern '/api/nope' has completed"],
@@ -212,11 +212,20 @@ describe.skipIf(!chrome)('event-driven settle in Chrome', () => {
   it('at the cap: captures anyway, flags settle-timeout and names the request', async () => {
     const s = await snap('/hang', { settle: { timeout: 600 } });
     expect(texts(s)).toContain('final');
-    expect(s.settle).toEqual({
+    expect(s.settle).toMatchObject({
       status: 'timeout',
       timeoutMs: 600,
       pending: ['1 request to /never in flight (Fetch)'],
     });
+    // The full URL and type, for the flake classifier, and the page's origin.
+    const settle = s.settle as {
+      requests?: Array<{ url: string; type: string }>;
+      origin?: string;
+    };
+    expect(settle.requests).toHaveLength(1);
+    expect(settle.requests![0]).toMatchObject({ type: 'Fetch' });
+    expect(new URL(settle.requests![0]!.url).pathname).toBe('/never');
+    expect(settle.origin).toBe(new URL(settle.requests![0]!.url).origin);
   });
 
   it('an image that never loads is capped, not waited for forever', async () => {
