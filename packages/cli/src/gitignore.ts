@@ -77,3 +77,38 @@ export async function ensureIgnored(
   );
   return missing;
 }
+
+/** Files jux needs committed; a path that git ignores here silently drops out
+ *  of every `git add`, and CI loses the structure diffs without a word. */
+const COMMITTED_SAMPLES = [
+  'juxtapose.manifest.json',
+  '.juxtapose/structure/x.structure.json',
+];
+
+export interface IgnoredCommitted {
+  /** The sample path git would ignore. */
+  path: string;
+  /** Which ignore file, line and pattern did it, when git said. */
+  source?: string;
+  pattern?: string;
+}
+
+/** Which of the committed paths git ignores (empty outside a repo). */
+export function ignoredCommittedPaths(projectRoot: string): IgnoredCommitted[] {
+  const out: IgnoredCommitted[] = [];
+  for (const sample of COMMITTED_SAMPLES) {
+    try {
+      const line = execFileSync(
+        'git',
+        ['check-ignore', '-v', '--no-index', '--', sample],
+        { cwd: projectRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+      ).trim();
+      // "<source>:<line>:<pattern>\t<path>"
+      const m = /^(.*?):\d+:(.*)\t/.exec(line);
+      out.push({ path: sample, ...(m ? { source: m[1], pattern: m[2] } : {}) });
+    } catch {
+      // exit 1: not ignored; anything else: not a repo. Neither is a finding.
+    }
+  }
+  return out;
+}

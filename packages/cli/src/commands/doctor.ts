@@ -14,12 +14,13 @@ import {
   shellQuote,
 } from '@juxtapose/core';
 import { checkStorage, loadConfig, type CommonFlags } from '../context.js';
-import { missingIgnores } from '../gitignore.js';
+import { ignoredCommittedPaths, missingIgnores } from '../gitignore.js';
 import { stdio, type Session } from '../io.js';
 
 /** One thing doctor found, with the commands that fix it. */
 export interface DoctorIssue {
-  code: 'tracked-images' | 'untracked-images' | 'missing-ignores';
+  code:
+    'tracked-images' | 'untracked-images' | 'missing-ignores' | 'committed-paths-ignored';
   message: string;
   files?: string[];
   fix: string[];
@@ -66,6 +67,9 @@ function commandsFor(projectRoot: string, cwd: string) {
   return {
     git: (rest: string) => (here ? `git ${rest}` : `git -C ${root} ${rest}`),
     gitignore: here ? '.gitignore' : shellQuote(path.join(projectRoot, '.gitignore')),
+    gitignoreTmp: here
+      ? '.gitignore.jux-new'
+      : shellQuote(path.join(projectRoot, '.gitignore.jux-new')),
     run: (rest: string) => (here ? `jux ${rest}` : `jux ${rest} --project ${root}`),
   };
 }
@@ -134,6 +138,32 @@ export async function findIssues(
       code: 'missing-ignores',
       message: `.gitignore does not cover ${missing.join(', ')}.`,
       fix: [ignoreFix(missing)],
+    });
+  }
+
+  // The files jux needs committed must not be ignored. A broad `.juxtapose/`
+  // line hides the structure sidecars: git cannot re-include a file whose
+  // parent directory is excluded, so the fix rewrites that line to
+  // `.juxtapose/*` (ignore the contents) and then un-ignores the structure dir.
+  const hidden = ignoredCommittedPaths(projectRoot);
+  if (hidden.length > 0) {
+    const broad = hidden.every(
+      (h) => h.source === '.gitignore' && /^\/?\.juxtapose\/?$/.test(h.pattern ?? ''),
+    );
+    issues.push({
+      code: 'committed-paths-ignored',
+      message:
+        `.gitignore ignores ${hidden.map((h) => h.path).join(' and ')}, which juxtapose commits, ` +
+        `so \`git add\` skips them and CI loses the structure diffs.` +
+        (broad
+          ? ''
+          : ` Edit the pattern that matches (${hidden[0]?.source ?? 'unknown'}) by hand.`),
+      fix: broad
+        ? [
+            `sed 's|^/\\{0,1\\}\\.juxtapose/\\{0,1\\}$|.juxtapose/*|' ${cmd.gitignore} > ${cmd.gitignoreTmp} && mv ${cmd.gitignoreTmp} ${cmd.gitignore}`,
+            `printf '%s\\n' '!.juxtapose/structure/' >> ${cmd.gitignore}`,
+          ]
+        : [],
     });
   }
   return issues;

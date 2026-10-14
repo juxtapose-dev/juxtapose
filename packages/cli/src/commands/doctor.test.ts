@@ -173,8 +173,8 @@ test('untracked, un-ignored images are flagged', async () => {
   expect(codes).not.toContain('missing-ignores');
 });
 
-test('a broader pattern or a parent .gitignore counts as covered', async () => {
-  const root = await repo({ '.gitignore': '.juxtapose/\n' });
+test('a broader pattern that leaves the committed files visible counts as covered', async () => {
+  const root = await repo({ '.gitignore': '.juxtapose/*\n!.juxtapose/structure/\n' });
   expect(await findIssues(root, undefined, root)).toEqual([]);
 });
 
@@ -194,4 +194,56 @@ test('storage.dir outside the project works for fs, and a bad cache dir is a usa
     name: 'UserError',
     exit: 2,
   });
+});
+
+test('a broad .juxtapose/ ignore hides the committed files; the printed fix really re-includes them', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jux-doctor-'));
+  run(root, 'init', '-q');
+  await mkdir(path.join(root, '.juxtapose/structure'), { recursive: true });
+  await writeFile(path.join(root, '.gitignore'), '.juxtapose/\n');
+  await writeFile(path.join(root, '.juxtapose/structure/x.structure.json'), '{}');
+  await writeFile(path.join(root, 'juxtapose.manifest.json'), '{}');
+
+  const issues = await findIssues(root, undefined, root);
+  const hidden = issues.find((i) => i.code === 'committed-paths-ignored')!;
+  expect(hidden.message).toContain('.juxtapose/structure/x.structure.json');
+
+  // Without the fix, git add skips the sidecar.
+  expect(() =>
+    execFileSync('git', ['add', '--', '.juxtapose/structure/x.structure.json'], {
+      cwd: root,
+      stdio: 'ignore',
+    }),
+  ).toThrow();
+
+  for (const line of hidden.fix) {
+    execFileSync('sh', ['-c', line], { cwd: root, stdio: 'ignore' });
+  }
+  execFileSync('git', ['add', '--', '.juxtapose/structure/x.structure.json'], {
+    cwd: root,
+    stdio: 'ignore',
+  });
+  // Images, the cache and runs stay ignored, and doctor is satisfied.
+  for (const p of [
+    '.juxtapose/cache/baselines/a.webp',
+    '.juxtapose/runs/r/report.json',
+  ]) {
+    run(root, 'check-ignore', '-q', '--', p);
+  }
+  expect(
+    (await findIssues(root, undefined, root)).filter(
+      (i) => i.code === 'committed-paths-ignored',
+    ),
+  ).toEqual([]);
+});
+
+test('an ignore from somewhere other than the project .gitignore is reported without a rewrite', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jux-doctor-'));
+  run(root, 'init', '-q');
+  await writeFile(path.join(root, '.git/info/exclude'), 'juxtapose.manifest.json\n');
+  const hidden = (await findIssues(root, undefined, root)).find(
+    (i) => i.code === 'committed-paths-ignored',
+  )!;
+  expect(hidden.fix).toEqual([]);
+  expect(hidden.message).toContain('by hand');
 });

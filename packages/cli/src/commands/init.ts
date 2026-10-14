@@ -44,7 +44,7 @@ import {
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
 import { installWithProxy } from './browser.js';
-import { ensureIgnored } from '../gitignore.js';
+import { ensureIgnored, ignoredCommittedPaths } from '../gitignore.js';
 import { gitAddCommand } from '../printed-commands.js';
 
 const CONFIG_NAME = 'juxtapose.config.json';
@@ -103,6 +103,14 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
   // commit that should not, even if the capture below dies halfway.
   const added = await ensureIgnored(ctx.projectRoot, ignoredPaths(ctx.config.storage));
   if (added.length > 0) say(`Added ${added.join(', ')} to .gitignore.`);
+  // A broad `.juxtapose/` ignore hides the files this very command asks you to
+  // commit. A warning, not a failure: the capture below is still worth having.
+  const hidden = ignoredCommittedPaths(ctx.projectRoot);
+  if (hidden.length > 0) {
+    process.stderr.write(
+      `jux: your .gitignore ignores ${hidden.map((h) => h.path).join(' and ')}, which must be committed, so \`git add\` will skip them and CI will lose the structure diffs. Run \`jux doctor\` for the fix.\n`,
+    );
+  }
 
   const server = ctx.origin ? null : await serveStatic(ctx.buildDir!);
   const baseUrl = ctx.origin ?? server!.url;
