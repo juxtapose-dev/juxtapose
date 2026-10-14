@@ -11,6 +11,13 @@
 // mid-update (0/5), and it does not hang on a lazy image below the fold,
 // where the old uncapped image wait in `drain` never returned.
 //
+// Shipped, through the CLI (2026-10-13, Apple M5 Pro, 15 cores, load average
+// 15-18, median of 5, interleaved with main): `jux run --all` on the
+// Storybook example 1339 -> 653 ms (story p50 203 -> 75 ms), Ladle 1127 ->
+// 603 ms (208 -> 80 ms); a warm `jux snap` of one story 356 -> 209 ms. Every
+// default and variant capture (Storybook 18, Ladle 16) byte-identical to
+// baselines approved by the quiet-window build, fresh launch and daemon.
+//
 // Two halves. An init script, installed before any page script runs, counts
 // the page's own pending work: short timers, animation frames, posted
 // messages, DOM mutations, loading fonts and loading in-viewport images. CDP
