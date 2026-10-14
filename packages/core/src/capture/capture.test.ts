@@ -160,8 +160,10 @@ describe('captureStory with variants', () => {
       'setColorScheme:dark',
       'goto',
       'setColorScheme:light',
-      // The scheme changed on a page holding a story: blanked first, so a
-      // same-URL story boots fresh rather than navigating in-document.
+      // Every cold capture on a page that has shown a story hops to a fresh
+      // renderer first (#153), which also makes a same-URL story boot fresh
+      // rather than navigating in-document.
+      'goto',
       'goto',
       'goto',
       'goto',
