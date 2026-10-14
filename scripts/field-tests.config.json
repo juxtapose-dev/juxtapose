@@ -10,18 +10,20 @@
         "foundations-sandbox--re-renders",
         "components-avatar--store",
         "rich-text-editor-tiptap--composition",
-        "components-rating--testimonial"
+        "components-rating--testimonial",
+        "components-timeline--sizes"
       ],
-      "concurrency": 3
+      "concurrency": 2
     },
     "primer": {
       "maxWallSeconds": 2400,
       "allowedErrors": ["components-treeview-features--contain-intrinsic-size"],
       "knownVariable": [
         "components-relativetime-features--count-down-timer",
-        "components-avatar-features--size-responsive"
+        "components-avatar-features--size-responsive",
+        "components-avatar-features--size"
       ],
-      "concurrency": 3
+      "concurrency": 2
     },
     "spectrum": {
       "maxWallSeconds": 2400,
@@ -38,9 +40,12 @@
         "dialog-wrapper--tooltips",
         "tabs--default",
         "color-slider--image",
-        "overlay-element--hover-tooltip"
+        "overlay-element--hover-tooltip",
+        "card--default",
+        "dialog-base--slotted",
+        "overlay-element--action-group"
       ],
-      "concurrency": 3
+      "concurrency": 2
     }
   }
 }
