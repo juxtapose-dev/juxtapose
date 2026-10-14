@@ -212,6 +212,72 @@ panel's endpoint answers 409 and the panel shows the refusal. `jux run`,
 `jux check`, `jux handoff`, the PR comment and the HTML report all mark the
 story `unstable`.
 
+### Why it flaked
+
+An unstable story's result also carries `flake`, which says why the two
+captures differed and what to change:
+
+```json
+{
+  "flake": {
+    "cause": "external-image",
+    "confidence": "high",
+    "evidence": {
+      "selector": "img.cover",
+      "host": "picsum.photos",
+      "url": "https://picsum.photos/200"
+    },
+    "fix": {
+      "stories": {
+        "card--basic": { "network": { "external": { "images": "placeholder" } } }
+      }
+    }
+  }
+}
+```
+
+`jux run` prints one line for each unstable story:
+
+```text
+Unstable: external image from picsum.photos in img.cover; fix: stories["card--basic"].network.external.images = "placeholder"
+```
+
+`fix` is a patch for `juxtapose.config.json`: merge it in. It is scoped to the
+one story, so it changes nothing for the others. It is `null` when no config
+change helps. `jux diff --runs` explains each story that differs the same way
+(`flake` in its `--json` output, keyed by story id), and `jux handoff` prints
+the line.
+
+`cause` is the first of these that matches, in this order:
+
+| Cause              | Evidence                                                                                   | Fix                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `settle-timeout`   | A third-party image or frame was still loading at the settle cap.                          | A `network.rules` placeholder for that host and type. Never a block. |
+| `external-image`   | A third-party image or background is where the pixels changed.                             | `network.external.images: "placeholder"`.                            |
+| `embed`            | A third-party iframe is where the pixels changed.                                          | `network.external.frames: "placeholder"`.                            |
+| `order-dependence` | A capture ran in a renderer process an earlier story had used, and `freshRenderer` is off. | `freshRenderer: true` (project setting; it has no per-story form).   |
+| `async-element`    | An element is in only one of the two captures.                                             | `waitForSelector` for that element.                                  |
+| `clock`            | Text that changed holds a time, a date or a duration.                                      | `mask` for that element.                                             |
+| `random-content`   | Other text changed.                                                                        | `mask` for that element (low confidence).                            |
+| `render-drift`     | The page structure is identical and under 2% of pixels differ.                             | None. Report a jux bug and confirm `freshRenderer`.                  |
+| `unknown`          | None of the above.                                                                         | None.                                                                |
+
+When three or more unstable stories in one run share a cause and a third-party
+host (`external-image`, `embed`), or are `order-dependence`, `report.json` also
+has a run-level `flakeGroups: [{ cause, host?, storyIds, fix }]`, where `fix`
+is one project-level patch (for a host, a `network.rules` entry for
+`type:Image https://<host>/**`, or `type:Document` for frames). Each story keeps its own `flake`. `jux run` and
+`jux diff --runs` print one line for each group in place of the per-story
+lines, and `jux handoff` adds it to a story in the group. Date and time
+recognition covers numeric, English, German, French, Spanish, Italian,
+Portuguese, Dutch and CJK dates, weekday names, and "today", "yesterday" and
+"tomorrow"; a changed label that holds a weekday word counts as a clock.
+
+`confidence` is `high`, `medium` or `low`. The cause is a diagnosis from the two
+captures, not a proof (partial evidence, such as a truncated request list, is `low`): check that the fix is what you intend before you apply
+it. An `async-element` fix waits for the element that is in only one capture,
+which is the wrong one if that element is a spinner that went away.
+
 Fix the cause: `mask` the changing region, add a `stories` override in config,
 or keep `freshRenderer` on (the default). With `freshRenderer: false` or
 `warmSwitch: true` a story's pixels can depend on the one captured before it,

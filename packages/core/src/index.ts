@@ -21,6 +21,15 @@ export type {
   StructureSnapshot,
   StructureElement,
   StructureRect,
+  ExternalKind,
+  ExternalRef,
+  Flake,
+  FlakeCause,
+  FlakeConfidence,
+  FlakeEvidence,
+  FlakeFix,
+  FlakeGroup,
+  FlakeSide,
   CaptureEnv,
   ChangedRegion,
   Delta,
@@ -127,6 +136,18 @@ export {
   DEFAULT_NETWORK_IGNORE,
   type SettleLayer,
 } from './capture/settle-options.js';
+// Why a story flaked and what config fixes it (#190).
+export { FLAKE_CAUSES, FLAKE_CONFIDENCES } from './types.js';
+export { analyzeFlake, type FlakeCapture } from './flake/analyze.js';
+export {
+  describeFlake,
+  describeFlakeGroup,
+  formatFix,
+  listStoryIds,
+} from './flake/describe.js';
+export { configCoverage } from './flake/coverage.js';
+export { readRunCapture } from './run/artifacts.js';
+export { groupFlakes, MIN_GROUP } from './flake/group.js';
 export { checkNetwork } from './capture/network-policy.js';
 export { mergeNetwork } from './capture/network-rules.js';
 export {

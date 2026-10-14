@@ -33,6 +33,10 @@ import {
   checkProjectSettle,
   DEFAULT_VIEWPORT,
   describeUnstable,
+  describeFlake,
+  readRunCapture,
+  describeFlakeGroup,
+  listStoryIds,
   type StoryManifest,
   formatPercent,
   BASELINE_IMAGE_UNAVAILABLE,
@@ -285,6 +289,7 @@ export async function runCommand(
           if (a.structure) passed.set(a.storyId, a.structure);
         }
       },
+      readFirstCapture: (id) => readRunCapture(runDir, id),
       onWarning: warn,
       onProgress: (done, total, storyId) => {
         if (!ctx.json) {
@@ -491,6 +496,7 @@ async function emit(
     );
   }
 
+  const grouped = new Set((report.flakeGroups ?? []).flatMap((g) => g.storyIds));
   const needsReview = report.results.filter(
     (r) => r.status !== 'pass' && r.status !== 'skip',
   );
@@ -506,11 +512,13 @@ async function emit(
               ? ` ${r.error}`
               : '';
       io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}${detail}\n`);
-      for (const line of explain(r)) io.out(`         ${line}\n`);
+      for (const line of explain(r, grouped)) io.out(`         ${line}\n`);
     }
     if (needsReview.length > 20) {
       io.out(`  …and ${needsReview.length - 20} more\n`);
     }
+    for (const g of report.flakeGroups ?? [])
+      io.out(`\n  ${describeFlakeGroup(g)}\n    ${listStoryIds(g.storyIds)}\n`);
     // Bounded like the review list: 500 groups would be 1,000 lines. The
     // report has them all.
     if (report.groups?.length) {
@@ -582,8 +590,16 @@ function emptyReport(projectRoot: string, totalCount: number): RunReport {
  *  sentence the handoff prints), then the structural summary. One line
  *  each; the handoff has the rest. An `unknown` cause is left to the
  *  handoff: under every story of a Storybook build it would be noise. */
-function explain(r: DiffResult): string[] {
-  const unstable = r.unstable ? [describeUnstable(r.unstable)] : [];
+function explain(r: DiffResult, grouped: ReadonlySet<string>): string[] {
+  // The flake line says why and what to change, which `unstable` alone does
+  // not; it stands in for the generic line, never beside it.
+  // A story in a flake group is covered by the group's line below the list.
+  const unstable =
+    r.flake && !grouped.has(r.storyId)
+      ? [describeFlake(r.flake)]
+      : r.unstable
+        ? [describeUnstable(r.unstable)]
+        : [];
   const v = r.structural;
   if (!v) return unstable;
   const why =

@@ -16,7 +16,8 @@ jux diff before after
 
 A story with `unstable` in the run report was captured twice and came out
 differently. `jux approve` refuses it (exit 1, story named) until it is made
-deterministic or `--allow-unstable` is passed; see [cli.md](cli.md).
+deterministic or `--allow-unstable` is passed; see [cli.md](cli.md). Its
+`flake` field names the cause and the config patch to apply.
 
 Approving writes the hash and structure to `juxtapose.manifest.json` and the
 image to a git-ignored cache under `.juxtapose/`. Commit the manifest; never

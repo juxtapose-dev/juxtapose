@@ -432,6 +432,11 @@ export async function captureStory(
             status: 'timeout' as const,
             timeoutMs: settle.timeoutMs,
             pending: flagged.pending ?? [],
+            ...(flagged.requests ? { requests: flagged.requests } : {}),
+            ...(flagged.requestsOmitted
+              ? { requestsOmitted: flagged.requestsOmitted }
+              : {}),
+            ...(pageOrigin(deps.baseUrl) ? { origin: pageOrigin(deps.baseUrl) } : {}),
           },
         }
       : flagged?.status === 'fallback'
@@ -528,4 +533,14 @@ async function freezeAnimations(page: Page, params: StoryParams): Promise<void> 
 function assertSelectors(params: StoryParams): void {
   for (const sel of params.mask ?? []) assertCssSelector(sel);
   if (params.waitForSelector) assertCssSelector(params.waitForSelector);
+}
+
+/** The origin of the workbench the pages are served from, or undefined. */
+function pageOrigin(baseUrl: string): string | undefined {
+  try {
+    const u = new URL(baseUrl);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : undefined;
+  } catch {
+    return undefined;
+  }
 }

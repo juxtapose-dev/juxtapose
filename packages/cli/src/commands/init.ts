@@ -33,6 +33,7 @@ import {
   DEFAULT_VIEWPORT,
   UnstableCaptureError,
   type DiffResult,
+  readRunCapture,
 } from '@juxtapose/core';
 import {
   resolveContext,
@@ -198,6 +199,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
       onArtifact: (a) => writeArtifact(runDir, a),
+      readFirstCapture: (id) => readRunCapture(runDir, id),
       onRecheck: (done, total) => {
         if (!ctx.json) {
           process.stdout.write(`

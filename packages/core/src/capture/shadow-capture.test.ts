@@ -237,7 +237,7 @@ describe.skipIf(!chrome)('open shadow roots in Chrome', { timeout: 30_000 }, () 
     const [s] = await snap(['/img-never'], {
       settle: { timeout: 600, network: { ignore: ['/never-image'] } },
     });
-    expect(s!.settle).toEqual({
+    expect(s!.settle).toMatchObject({
       status: 'timeout',
       timeoutMs: 600,
       pending: ['1 image still loading: /never-image'],

@@ -201,6 +201,11 @@ result as `jux run --json`: a `RunReport`.
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.
 
+An unstable result also has `flake: { cause, confidence, evidence, fix }`:
+why the two captures differed, and the exact config patch that fixes it (`null`
+when none helps). See [Why it flaked](cli.md#why-it-flaked). `handoff` prints
+the same fix as one line. A run-level `flakeGroups` lists stories that share one project-level fix.
+
 A result captured at the settle cap has `flags: ["settle-timeout"]` (or
 `["settle-fallback"]`) and a
 `settle` object, whatever its `status`.
