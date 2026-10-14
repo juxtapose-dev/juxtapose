@@ -60,11 +60,11 @@ jobs:
             echo "SB_SRC=$RUNNER_TEMP/sb-src"
             echo "OUT_DIR=$RUNNER_TEMP/field-out"
           } >> "$GITHUB_ENV"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
@@ -73,7 +73,7 @@ jobs:
       - run: pnpm build
 
       - name: Cache Chromium
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/jux
           key: chrome-headless-shell-151.0.7922.34-${{ runner.os }}
@@ -96,7 +96,7 @@ jobs:
       # The static build only, keyed by the pinned commit.
       - name: Restore the static Storybook
         id: sb
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/sb-cache
           key: ${{ matrix.name }}-${{ matrix.sha }}-${{ runner.os }}
@@ -149,7 +149,7 @@ jobs:
       # throw the build away.
       - name: Save the static Storybook
         if: steps.sb.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/sb-cache
           key: ${{ matrix.name }}-${{ matrix.sha }}-${{ runner.os }}
@@ -163,7 +163,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: field-test-${{ matrix.name }}
           path: ${{ runner.temp }}/field-out
