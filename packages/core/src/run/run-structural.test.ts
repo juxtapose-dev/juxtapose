@@ -330,3 +330,12 @@ test('every captured result carries the sha256 the baseline compares', async () 
   const fail = await run(store('ok'));
   expect(fail.results[0].hash).toBe(hashImage(Buffer.from('current-bytes')));
 });
+
+test('unavailable image with identical structure claims no pixel comparison', async () => {
+  const s = store('ok');
+  s.getStructure!.mockResolvedValue(encodeStructure(CUR));
+  const r = await run({ ...s, get: async () => null });
+  expect(r.results[0].structural?.classification).toBe('render-drift');
+  expect(r.results[0].structural?.summary).not.toMatch(/tolerance/);
+  expect(r.results[0].structural?.flags).not.toContain('sub-threshold');
+});

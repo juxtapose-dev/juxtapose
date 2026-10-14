@@ -230,6 +230,24 @@ export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
   return structuralDiffWithCoverage(input).verdict;
 }
 
+/**
+ * A verdict computed with no pixel diff (the baseline image is unavailable)
+ * must not claim one. With no deltas, the summary would say the pixels "differ
+ * below the diff's tolerance" and flag `sub-threshold`, both statements about a
+ * comparison that never ran. The hash mismatch is the only pixel evidence.
+ */
+export function withoutPixelClaims(v: StructuralVerdict): StructuralVerdict {
+  const flags = v.flags.filter((f) => f !== 'sub-threshold');
+  return v.classification === 'render-drift'
+    ? {
+        ...v,
+        flags,
+        summary:
+          'render-drift: structure and styles identical; the hash differs, so pixels changed, but without the baseline image there is nothing to show where',
+      }
+    : { ...v, flags };
+}
+
 /** sha256 of the classification, then the facts with each element reduced
  *  to role|tag and the values kept: "every button background
  *  #2563eb→#1d4ed8" hashes the same on any page that made that change. The

@@ -28,7 +28,7 @@ import {
   type AncestryCheck,
 } from '../baseline/status.js';
 import { decodeStructure } from '../capture/structure.js';
-import { structuralDiff } from '../diff/structural.js';
+import { structuralDiff, withoutPixelClaims } from '../diff/structural.js';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
 import { computeGroups } from './groups.js';
 import {
@@ -337,7 +337,7 @@ async function judge(
     return {
       ...base,
       baselineImage: 'unavailable',
-      ...(structural ? { structural } : {}),
+      ...(structural ? { structural: withoutPixelClaims(structural) } : {}),
     };
   }
 
