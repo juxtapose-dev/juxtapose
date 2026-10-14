@@ -132,7 +132,8 @@ Pass either `url` with `as` or `urls` with `asPrefix`.
 Result: for one `url`, the snap object (`name`, `image`, `structure`,
 `viewport`, `env`, `structureHash`, `elements`, `durationMs`). For `urls`,
 `{ prefix, snaps }`, where a page that failed is `{ url, error }`. A snap
-captured at the settle cap also has `flags: ["settle-timeout"]` and
+captured at the settle cap also has `flags: ["settle-timeout"]` (or
+`["settle-fallback"]` when the wait couldn't run) and
 `settle: { status, timeoutMs, pending }`, where `pending` lists what the page
 was still doing.
 
@@ -140,12 +141,12 @@ was still doing.
 [juxtapose config](configuration.md#settle), and it overrides the project's
 and the story's values for this call:
 
-| Field             | Type     | Description                                                  |
-| ----------------- | -------- | ------------------------------------------------------------ |
-| `timeout`         | integer  | The cap on the wait, in ms, from 1 to 60000. Default 1500.   |
-| `ready`           | boolean  | Also wait for the page to call `window.__juxtapose.ready()`. |
-| `network.ignore`  | string[] | URL patterns never counted as pending.                       |
-| `network.require` | string[] | URL patterns that must each complete before capture.         |
+| Field             | Type     | Description                                                                                                  |
+| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `timeout`         | integer  | The cap on the wait, in ms, from 1 to 60000. Default 1500.                                                   |
+| `ready`           | boolean  | Wait for the page to call `window.__juxtapose.ready()`; `false` turns off a story's or the config's `ready`. |
+| `network.ignore`  | string[] | URL patterns never counted as pending.                                                                       |
+| `network.require` | string[] | URL patterns that must each complete before capture.                                                         |
 
 When a result has `settle-timeout`, read `pending` and call the tool again:
 add a request that never finishes to `network.ignore`, or raise `timeout` for
@@ -194,7 +195,8 @@ result as `jux run --json`: a `RunReport`.
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.
 
-A result captured at the settle cap has `flags: ["settle-timeout"]` and a
+A result captured at the settle cap has `flags: ["settle-timeout"]` (or
+`["settle-fallback"]`) and a
 `settle` object, whatever its `status`.
 
 ### check
