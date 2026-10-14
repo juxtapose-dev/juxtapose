@@ -1,6 +1,6 @@
 {
   "name": "@juxtapose/server",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "type": "module",
   "description": "Local review API for juxtapose — the contract every review UI is a skin over.",
   "keywords": [

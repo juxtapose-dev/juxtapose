@@ -1,5 +1,24 @@
 # @juxtapose/cli
 
+## 0.12.0
+
+### Minor Changes
+
+- c602676: Per-story overrides in the project config (#128). `stories: { "<id glob>": { skip, mask, delay, waitForSelector, captureTimeout, settle, network, threshold, minDiffPercent } }` stabilizes or skips volatile stories in a Storybook you don't own (a deployed `origin`, a third-party `buildDir`), where `parameters.juxtapose` can't be edited. An override beats the story's own parameters (including live ones) and loses only to the command line; when several keys match, the more specific wins, masks union and settle merges. A key matching a story also covers its variants, and `<id>__<variant>` targets one. Bad entries fail up front naming the glob and option, in run, init, snap, MCP and the review server. Stories skipped by config are reported (`skippedBy` in the report, the run summary, the PR comment and `jux handoff`).
+
+### Patch Changes
+
+- 981f6b9: jux runs its pinned browser only from its own cache or an explicit `JUX_CHROME` / `--chrome` (#141). It used to run chrome-headless-shell straight out of Playwright's cache, so `playwright install` or a disk cleanup deleting that directory broke every launch, mid-run included. A matching Playwright build is now copied into jux's cache once (a clone where the filesystem supports it), version-checked, and used from there; Playwright's directory is only read. When there is no browser, the error names the expected path and `jux browser install`.
+- 0807b4f: `jux snap` and the MCP `snap` tool give each URL its own budget and replace the shared page after a timeout (#163). One wedged URL used to poison the page every later URL shared: three URLs gave 90 s and all three failed. Now the hung URL errors once, within `storyTimeout` or the 30 s navigation cap, whichever fires first, with an error naming the stuck step; the following URLs get a fresh page and capture normally. `jux snap` still exits 3 when any URL failed. Snaps that do not time out keep sharing one page, so they are byte-identical to before.
+- Updated dependencies [c602676]
+- Updated dependencies [981f6b9]
+- Updated dependencies [f251aa8]
+- Updated dependencies [0807b4f]
+- Updated dependencies [a646af0]
+  - @juxtapose/core@0.12.0
+  - @juxtapose/adapter-ladle@0.3.7
+  - @juxtapose/adapter-storybook@0.4.3
+
 ## 0.11.0
 
 ### Minor Changes
