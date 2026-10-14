@@ -24,6 +24,7 @@ import {
   countStories,
   hasVariants,
   prepareCaptures,
+  storyOverrideWarnings,
   platformStoryId,
   selectByStoryId,
   VariantConfigError,
@@ -102,7 +103,7 @@ export async function runCommand(
   // below may add a story's own variants.
   let indexCaptures: StoryManifest[];
   try {
-    indexCaptures = expandVariants(enumerated, ctx.config.variants);
+    indexCaptures = expandVariants(enumerated, ctx.config.variants, ctx.config.stories);
   } catch (err) {
     return variantError(err, io);
   }
@@ -193,6 +194,7 @@ export async function runCommand(
             baseUrl,
             viewport: ctx.config.viewport ?? DEFAULT_VIEWPORT,
             ...(ctx.config.variants ? { projectVariants: ctx.config.variants } : {}),
+            ...(ctx.config.stories ? { projectStories: ctx.config.stories } : {}),
             onWarning: (m) => io.err(`${m}\n`),
             // Beside the runs, so it is ignored wherever runs are; an unchanged
             // static build skips the preview load.
@@ -210,6 +212,10 @@ export async function runCommand(
         return variantError(err, io);
       }
     }
+
+    // After discovery, so a key that only matches a story's own variants is
+    // not reported as dead.
+    for (const m of storyOverrideWarnings(ctx.config.stories, stories)) warn(`jux: ${m}`);
 
     let selection: StoryManifest[];
     let reason: string;
@@ -427,6 +433,20 @@ async function emit(
 
   const timings = formatPhases(p);
   if (timings) io.out(`  ${timings}\n`);
+
+  // Said outright: a story that vanished from the run because the config
+  // skips it should never need explaining by whoever reads the output.
+  const byConfig = report.results.filter((r) => r.skippedBy?.length);
+  if (byConfig.length > 0) {
+    const shown = byConfig
+      .slice(0, 10)
+      .map((r) => `${r.storyId} (${r.skippedBy!.join(', ')})`)
+      .join(', ');
+    const more = byConfig.length > 10 ? `, and ${byConfig.length - 10} more` : '';
+    io.out(
+      `  ${byConfig.length} skipped by the project config's \`stories\`: ${shown}${more}\n`,
+    );
+  }
 
   const needsReview = report.results.filter(
     (r) => r.status !== 'pass' && r.status !== 'skip',

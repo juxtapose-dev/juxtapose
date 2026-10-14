@@ -207,6 +207,47 @@ describe('RunDirSource with variants', () => {
   });
 });
 
+describe('RunDirSource.handoff for a config skip (#128)', () => {
+  it('names the stories entry that skipped it', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'jux-src-skip-'));
+    const runDir = await mkdtemp(path.join(tmpdir(), 'jux-src-skip-run-'));
+    const platform = {
+      name: 'fake',
+      enumerate: async () => [{ ...story('card--a'), componentPath: '/src/Card.tsx' }],
+    } as unknown as Platform;
+    const s = new RunDirSource({
+      projectRoot: root,
+      platform,
+      store: new GitBaselineStore({ projectRoot: root }),
+      config: { stories: { 'card--*': { skip: true } } } as ProjectConfig,
+      baseUrl: 'http://127.0.0.1:1',
+      runDir,
+      branch: 'main',
+      commitSha: 'abc',
+    });
+    await writeFile(
+      path.join(runDir, 'report.json'),
+      JSON.stringify({
+        runId: 'r',
+        results: [
+          {
+            storyId: 'card--a',
+            status: 'skip',
+            skippedBy: ['card--*'],
+            mismatchPixels: 0,
+            mismatchPercent: 0,
+            changedRegions: [],
+            durationMs: 0,
+          },
+        ],
+      }),
+    );
+    const text = await s.handoff('card--a');
+    expect(text).toContain('skipped by the project config');
+    expect(text).toContain('`card--*`');
+  });
+});
+
 describe('RunDirSource.handoff baseline (#115)', () => {
   // The prompt used to name `images/<id>-baseline.webp` in the run dir, which
   // nothing writes; an agent following it found no file.

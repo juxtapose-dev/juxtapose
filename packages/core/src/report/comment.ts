@@ -83,6 +83,13 @@ export function buildComment({ report, artifactUrl }: CommentOptions): string {
   lines.push(...table(rows));
   lines.push('');
 
+  // A story the config skipped is not in the table; say so here too, or a
+  // failing run reads as though everything was captured.
+  const byConfig = report.results.filter((r) => r.skippedBy?.length).length;
+  if (byConfig > 0) {
+    lines.push(`${byConfig} skipped by the project config's \`stories\`.`, '');
+  }
+
   // Uncollapsed, and one fence. The comment is edited in place, so GitHub does
   // not re-notify on a push — the repeat reader only sees this when they come
   // back to act on it. The first-time reader is the one who would otherwise pay
@@ -339,6 +346,14 @@ function guidance(rows: DiffResult[]): string[] {
   ];
 }
 
+/** "2 skipped." or "3 skipped, 2 by the project config's `stories`." */
+function skippedText(report: RunReport): string {
+  const byConfig = report.results.filter((r) => r.skippedBy?.length).length;
+  return byConfig > 0
+    ? `${report.summary.skip} skipped, ${byConfig} by the project config's \`stories\`.`
+    : `${report.summary.skip} skipped.`;
+}
+
 function passingBody(report: RunReport): string {
   const s = report.summary;
   // `pass` counts CAPTURED passes, so "42 stories match" is a lie on a narrowed
@@ -350,12 +365,12 @@ function passingBody(report: RunReport): string {
     const head = narrowed
       ? `${count(s.pass, 'capture taken matches', 'captures taken match')} their baselines, ${across}.`
       : `${count(s.pass, 'capture matches', 'captures match')} their baselines, ${across}.`;
-    return s.skip > 0 ? `${head} ${s.skip} skipped.` : head;
+    return s.skip > 0 ? `${head} ${skippedText(report)}` : head;
   }
   const head = narrowed
     ? `${count(s.pass, 'captured story matches', 'captured stories match')} their baselines.`
     : `${count(s.pass, 'story matches', 'stories match')} their baselines.`;
-  return s.skip > 0 ? `${head} ${s.skip} skipped.` : head;
+  return s.skip > 0 ? `${head} ${skippedText(report)}` : head;
 }
 
 /**

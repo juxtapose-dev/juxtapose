@@ -28,6 +28,7 @@ import {
   selectByStoryId,
   VariantConfigError,
   checkProjectSettle,
+  storyOverrideWarnings,
   type RunReport,
   type StoryManifest,
 } from '@juxtapose/core';
@@ -177,18 +178,23 @@ export class RunDirSource implements ReviewSource {
     checkProjectSettle(this.opts.config);
     const enumerated = await this.indexStories();
     const projectVariants = this.opts.config.variants;
+    const projectStories = this.opts.config.stories;
     // Discovery needs a page, so it only runs for a platform that has it; the
     // browser it starts is the one the next capture would start anyway.
-    return this.opts.platform.discoverParams
-      ? prepareCaptures(enumerated, {
+    const captures = this.opts.platform.discoverParams
+      ? await prepareCaptures(enumerated, {
           platform: this.opts.platform,
           browser: await this.ensureBrowser(),
           baseUrl: this.opts.baseUrl,
           viewport: this.opts.config.viewport ?? DEFAULT_VIEWPORT,
           ...(projectVariants ? { projectVariants } : {}),
+          ...(projectStories ? { projectStories } : {}),
           onWarning: (m) => process.stderr.write(`juxtapose: ${m}\n`),
         })
-      : expandVariants(enumerated, projectVariants);
+      : expandVariants(enumerated, projectVariants, projectStories);
+    for (const m of storyOverrideWarnings(projectStories, captures))
+      process.stderr.write(`juxtapose: ${m}\n`);
+    return captures;
   }
 
   /** Drop the cached story index — the workbench told us it changed. */
@@ -300,6 +306,7 @@ export class RunDirSource implements ReviewSource {
       },
       projectRoot: this.opts.projectRoot,
       ...(variant ? { variant } : {}),
+      ...(result.skippedBy ? { skippedBy: result.skippedBy } : {}),
     });
   }
 

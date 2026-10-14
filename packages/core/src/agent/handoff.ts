@@ -47,6 +47,8 @@ export interface HandoffPayload {
   variant?: { baseStoryId: string; name: string; params: Record<string, unknown> };
   /** Set when the capture hit its settle cap. */
   settle?: SettleReport;
+  /** Set on a skip the project config's `stories` asked for: the globs. */
+  skippedBy?: string[];
 }
 
 /** The handoff's variant field from a run result; undefined for a default
@@ -113,6 +115,16 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     );
   }
   lines.push('');
+  if (p.status === 'skip') {
+    const globs = (p.skippedBy ?? []).map((g) => `\`${g}\``).join(', ');
+    lines.push(
+      p.skippedBy?.length
+        ? `It was skipped by the project config: \`stories\` ${globs} set \`skip: true\`, so nothing was captured and there is nothing to fix in the component. To capture it again, remove or narrow that entry (or set \`skip: false\` for this id) in the config.`
+        : 'It was skipped, so nothing was captured and there is nothing to compare.',
+      '',
+    );
+    return lines.join('\n');
+  }
   // Ahead of every status: a capture taken mid-update can make a new
   // baseline wrong or a failure spurious, so it is read before either.
   if (p.settle) lines.push(...settleSection(p.settle), '');

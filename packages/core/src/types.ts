@@ -138,6 +138,13 @@ export interface StoryManifest {
    *  empty string when the platform can't report it (URL-list adapter). */
   componentPath: string;
   params: StoryParams;
+  /** Set when the project config's `stories` matched this capture: the merged
+   *  override already folded into `params`. Kept apart because live params
+   *  are read after render and must not undo it. */
+  override?: StoryOverride;
+  /** Set when a config override (not the story) skips this capture: the
+   *  globs that matched, so the report can say who skipped it. */
+  skippedBy?: string[];
 }
 
 export interface Snapshot {
@@ -331,6 +338,9 @@ export interface DiffResult {
    *  can say the conditions it was captured under without re-enumerating. */
   variantParams?: Omit<VariantSpec, 'extends'>;
   status: DiffStatus;
+  /** Set on a 'skip' that the project config's `stories` asked for: the
+   *  matching globs, most specific last. */
+  skippedBy?: string[];
   /** sha256 of the current capture's WebP: the same hash `baseline/` compares,
    *  so two runs are byte-identical per story exactly when these match. Absent
    *  on skipped and errored stories (nothing was captured) and on reports
@@ -440,6 +450,23 @@ export interface UrlEntry {
   variants?: Record<string, VariantSpec | false>;
 }
 
+/** What a project config `stories` entry can set for the stories its glob
+ *  matches: the capture settings a story may declare in `parameters.juxtapose`
+ *  that are about stability, plus the two diff tolerances. Layered OVER the
+ *  story's own params (see capture/story-overrides.ts). */
+export type StoryOverride = Pick<
+  StoryParams,
+  | 'skip'
+  | 'mask'
+  | 'delay'
+  | 'waitForSelector'
+  | 'captureTimeout'
+  | 'settle'
+  | 'network'
+  | 'threshold'
+  | 'minDiffPercent'
+>;
+
 /** Project config, from juxtapose.config.{ts,js,json} or package.json#juxtapose. */
 export interface ProjectConfig {
   /** Which workbench. Autodetected when omitted. */
@@ -477,6 +504,10 @@ export interface ProjectConfig {
    *  name wins; a story sets one to `false` to opt out. Applies to every
    *  platform, the urls list included. */
   variants?: Record<string, VariantSpec | false>;
+  /** Per-story overrides by story id glob, for a workbench you don't own.
+   *  Layered over the story's own `parameters.juxtapose`; see
+   *  docs/configuration.md. A key matching a base id covers its variants. */
+  stories?: Record<string, StoryOverride>;
   storage?: StorageConfig;
   /** `jux mcp` settings. */
   mcp?: {

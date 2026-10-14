@@ -9,7 +9,13 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { EnumerateTarget, Platform } from '../platform.js';
-import type { StoryManifest, StoryParams, VariantSpec, Viewport } from '../types.js';
+import type {
+  StoryManifest,
+  StoryOverride,
+  StoryParams,
+  VariantSpec,
+  Viewport,
+} from '../types.js';
 import { expandVariants } from './variants.js';
 
 /** A preview that hasn't produced its parameters in this long is broken, not
@@ -23,6 +29,8 @@ export interface PrepareOptions {
   viewport: Viewport;
   /** `ProjectConfig.variants`. */
   projectVariants?: Record<string, VariantSpec | false>;
+  /** `ProjectConfig.stories`. */
+  projectStories?: Record<string, StoryOverride>;
   onWarning?: (message: string) => void;
   timeoutMs?: number;
   /** Keep discovered params on disk, keyed by the platform's
@@ -45,7 +53,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
  */
 export async function discoverParams(
   stories: readonly StoryManifest[],
-  opts: Omit<PrepareOptions, 'projectVariants'>,
+  opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories'>,
 ): Promise<StoryManifest[]> {
   const discover = opts.platform.discoverParams?.bind(opts.platform);
   if (!discover || stories.length === 0) return [...stories];
@@ -65,7 +73,7 @@ export async function discoverParams(
 /** One preview load; undefined (after a warning) when it can't be read. */
 async function discoverLive(
   discover: NonNullable<Platform['discoverParams']>,
-  opts: Omit<PrepareOptions, 'projectVariants'>,
+  opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories'>,
 ): Promise<Map<string, StoryParams> | undefined> {
   let found: Map<string, StoryParams>;
   const context = await opts.browser.newContext({ viewport: opts.viewport });
@@ -99,7 +107,7 @@ async function discoverLive(
 /** The platform's fingerprint of what it would discover from, salted with
  *  the platform and cache schema; undefined disables the cache. */
 async function cacheKey(
-  opts: Omit<PrepareOptions, 'projectVariants'>,
+  opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories'>,
 ): Promise<string | undefined> {
   if (!opts.cache || !opts.platform.discoveryKey) return undefined;
   try {
@@ -154,5 +162,9 @@ export async function prepareCaptures(
   stories: readonly StoryManifest[],
   opts: PrepareOptions,
 ): Promise<StoryManifest[]> {
-  return expandVariants(await discoverParams(stories, opts), opts.projectVariants);
+  return expandVariants(
+    await discoverParams(stories, opts),
+    opts.projectVariants,
+    opts.projectStories,
+  );
 }

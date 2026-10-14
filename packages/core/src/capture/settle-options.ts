@@ -18,6 +18,7 @@ import type {
 } from '../types.js';
 import { SettleConfigError } from './config-errors.js';
 import { checkNetwork } from './network-policy.js';
+import { checkStoryOverrides } from './story-overrides.js';
 
 export { SettleConfigError };
 
@@ -122,7 +123,7 @@ export function parsePattern(source: string): UrlPattern {
   };
 }
 
-function globToRegExp(glob: string): RegExp {
+export function globToRegExp(glob: string): RegExp {
   let re = '';
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]!;
@@ -291,6 +292,7 @@ export function checkPatterns(
 
 /** The project config's settle options: `settle`, `waitForSelector`, `delay`. */
 export function checkProjectSettle(config: {
+  stories?: unknown;
   settle?: unknown;
   network?: unknown;
   waitForSelector?: unknown;
@@ -311,6 +313,7 @@ export function checkProjectSettle(config: {
     );
   checkSettle(config.settle, where);
   checkNetwork(config.network, where);
+  checkStoryOverrides(config.stories, where);
   if (config.waitForSelector !== undefined && typeof config.waitForSelector !== 'string')
     throw new SettleConfigError(`${where}: waitForSelector must be a CSS selector`);
   if (
