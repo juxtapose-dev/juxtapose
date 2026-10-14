@@ -404,7 +404,8 @@ async function ensureColorScheme(page: Page, scheme: ColorScheme): Promise<void>
 }
 
 /**
- * Inject the freeze stylesheet, once per page.
+ * Inject the freeze stylesheet, once per page, and freeze open shadow roots,
+ * on every capture.
  *
  * Note the interaction with warm-page reuse: the style tag survives a story
  * switch but not a navigation, so a story with `animations: 'play'` landing on
@@ -414,13 +415,19 @@ async function ensureColorScheme(page: Page, scheme: ColorScheme): Promise<void>
  */
 async function freezeAnimations(page: Page, params: StoryParams): Promise<void> {
   if (params.animations === 'play') return;
-  if (styleInjected.has(page)) return;
-  await page.addStyleTag({ content: FREEZE_ANIMATIONS_CSS }).catch(() => {});
+  if (!styleInjected.has(page)) {
+    await page.addStyleTag({ content: FREEZE_ANIMATIONS_CSS }).catch(() => {});
+    styleInjected.add(page);
+  }
   // A document stylesheet stops at a shadow boundary (issue #152): the idle
-  // init script adopts the same rules into every open shadow root, now and
-  // as later ones attach, until the next navigation. Closed roots are out of
-  // reach. Without the init script (it could not be installed) the shadow
-  // roots stay unfrozen, as they always were.
+  // init script adopts the same rules into every open shadow root of this
+  // document, now and as later ones attach, until the next navigation.
+  // Every capture, not once per page like the style tag: a warm switch can
+  // add declarative roots (no attachShadow call), and this walk finds them
+  // before the render signal. One that appears later still gets frozen,
+  // when the idle wait starts. Closed roots are out of reach. Without the
+  // init script (it could not be installed) shadow roots stay unfrozen, as
+  // they always were.
   await page
     .evaluate(
       (css: string) =>
@@ -430,7 +437,6 @@ async function freezeAnimations(page: Page, params: StoryParams): Promise<void> 
       FREEZE_ANIMATIONS_CSS,
     )
     .catch(() => {});
-  styleInjected.add(page);
 }
 
 function assertSelectors(params: StoryParams): void {

@@ -219,23 +219,44 @@ const IDLE_INIT = `(function () {
   // not waited for (docs/configuration.md).
   var roots = [], rootSeen = new WeakSet(), freezeSheet = null;
   var SRP = ShadowRoot.prototype, ASS = Object.getOwnPropertyDescriptor(SRP, 'adoptedStyleSheets');
-  // The freeze sheet goes last, so a component's own rules never follow it.
+  // Appended after the page's sheets on every assignment. Not a guarantee
+  // of order (adoptedStyleSheets.push and splice bypass the setter), and
+  // not needed for one: its rules are !important on a universal selector,
+  // so only another !important rule on the same properties competes.
   var withFreeze = function (list) { var out = [];
     for (var i = 0; i < list.length; i++) if (list[i] !== freezeSheet) out.push(list[i]);
     out.push(freezeSheet); return out; };
-  var freezeRoot = function (r) { if (freezeSheet && ASS) ASS.set.call(r, withFreeze(ASS.get.call(r))); };
+  // Only roots of this document: a sheet constructed here can't be adopted
+  // into another one (an iframe, createHTMLDocument, DOMParser or template
+  // content), and the native setter throws NotAllowedError. Those roots
+  // stay unfrozen. A root whose host moves to another document later loses
+  // the sheet there (the setter below drops it).
+  var freezeRoot = function (r) {
+    if (freezeSheet && ASS && r.ownerDocument === document) ASS.set.call(r, withFreeze(ASS.get.call(r))); };
   var track = function (r) { if (rootSeen.has(r)) return; rootSeen.add(r);
     roots.push(typeof WeakRef === 'function' ? new WeakRef(r) : { deref: function () { return r; } });
-    MO.observe(r, MO_OPTS); freezeRoot(r); };
+    MO.observe(r, MO_OPTS);
+    // Called from attachShadow after the root exists: nothing here may make
+    // the page's own call throw.
+    try { freezeRoot(r); } catch (e) {} };
   var oAS = Element.prototype.attachShadow;
-  Element.prototype.attachShadow = function () { var r = oAS.apply(this, arguments);
+  // Named, with one parameter: the same name and length as the native.
+  var jAS = function attachShadow(init) { var r = oAS.apply(this, arguments);
     if (this.shadowRoot === r) track(r); return r; };
+  Element.prototype.attachShadow = jAS;
   // Lit and others assign adoptedStyleSheets after attaching, which would
   // drop the freeze sheet: keep it in the list on a root it was adopted into.
+  // The setter takes any iterable (a Set too), so it is read into an array.
   if (ASS && ASS.set) Object.defineProperty(SRP, 'adoptedStyleSheets', { configurable: true, enumerable: ASS.enumerable,
-    get: ASS.get, set: function (v) {
-      if (freezeSheet && rootSeen.has(this) && v && typeof v.length === 'number') v = withFreeze(v);
-      return ASS.set.call(this, v); } });
+    get: ASS.get, set: Object.defineProperty(function (v) {
+      if (freezeSheet && rootSeen.has(this) && v && typeof v === 'object') {
+        var list = typeof v.length === 'number' ? v : typeof v[Symbol.iterator] === 'function' ? Array.from(v) : null;
+        if (list) {
+          if (this.ownerDocument === document) v = withFreeze(list);
+          else { v = []; for (var i = 0; i < list.length; i++) if (list[i] !== freezeSheet) v.push(list[i]); }
+        }
+      }
+      return ASS.set.call(this, v); }, 'name', { value: ASS.set.name }) });
   var walk = function (root) { var els = root.querySelectorAll('*');
     for (var i = 0; i < els.length; i++) { var r = els[i].shadowRoot; if (r) { track(r); walk(r); } } };
   // Every tracked root still alive and in the document. The walk is not

@@ -45,6 +45,33 @@ const late = (ms: number) =>
   `<script>addEventListener('load', () => setTimeout(() => document.body.append(document.createElement('x-box')), ${ms}));</script>`;
 
 const PAGES: Record<string, string> = {
+  // Shadow roots in another document, made after the freeze: a sheet
+  // constructed in this document can't be adopted there, and the native
+  // calls must still succeed (review of #161).
+  '/foreign': doc(
+    `<div id="out" style="font: 10px/12px sans-serif; white-space: nowrap"></div><script>
+    const out = document.getElementById('out');
+    const add = (t) => { const d = document.createElement('div'); d.textContent = t; out.appendChild(d); };
+    const tryIt = (name, fn) => { try { fn(); add(name + ' ok'); } catch (e) { add(name + ' threw ' + e.name); } };
+    customElements.define('x-ce', class extends HTMLElement { connectedCallback() {
+      if (this.shadowRoot) return;
+      tryIt('iframe', () => { this.attachShadow({ mode: 'open' }).innerHTML = '<b>ok</b>'; }); } });
+    const host = document.createElement('div'); host.attachShadow({ mode: 'open' }).innerHTML = '<i>host</i>';
+    document.body.appendChild(host);
+    addEventListener('load', () => setTimeout(() => {
+      const f = document.createElement('iframe'); document.body.appendChild(f);
+      const fd = f.contentDocument;
+      fd.body.appendChild(document.createElement('x-ce'));
+      tryIt('adopted', () => { fd.adoptNode(host); fd.body.appendChild(host); host.shadowRoot.adoptedStyleSheets = []; });
+      tryIt('created', () => { document.implementation.createHTMLDocument('').createElement('div').attachShadow({ mode: 'open' }); });
+      tryIt('template', () => { const t = document.createElement('template'); t.innerHTML = '<div></div>';
+        t.content.firstChild.attachShadow({ mode: 'open' }); });
+      tryIt('set', () => { const r = document.createElement('div').attachShadow({ mode: 'open' });
+        const s = new CSSStyleSheet(); r.adoptedStyleSheets = new Set([s]);
+        // The page's sheet, then the freeze sheet.
+        if (r.adoptedStyleSheets.length !== 2 || r.adoptedStyleSheets[0] !== s) throw new Error('lost'); });
+    }, 100));</script>`,
+  ),
   // Where every frozen box below ends up: no animation, opacity 1.
   '/static': doc(host(`div { ${BOX} }`) + '<x-box></x-box>'),
   '/spin': doc(
@@ -215,6 +242,22 @@ describe.skipIf(!chrome)('open shadow roots in Chrome', { timeout: 30_000 }, () 
       timeoutMs: 600,
       pending: ['1 image still loading: /never-image'],
     });
+  });
+
+  // On the first version of this fix the freeze sheet was forced into roots
+  // of other documents: attachShadow threw NotAllowedError after attaching,
+  // and so did adoptedStyleSheets = [] on a host moved to an iframe.
+  it("never breaks a page's shadow-root calls in another document", async () => {
+    const [s] = await snap(['/foreign']);
+    expect(texts(s!).filter(Boolean)).toEqual(
+      expect.arrayContaining([
+        'iframe ok',
+        'adopted ok',
+        'created ok',
+        'template ok',
+        'set ok',
+      ]),
+    );
   });
 
   it('does not wait for a hidden lazy image inside a shadow root', async () => {
