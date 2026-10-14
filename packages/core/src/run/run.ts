@@ -42,6 +42,7 @@ import type { CauseIndex } from '../analysis/cause.js';
 import { shellQuote } from '../shell-quote.js';
 import { captureFlags, settleFlag, type SettleLayer } from '../capture/settle-options.js';
 import { resolveNetwork } from '../capture/network-rules.js';
+import { groupFlakes } from '../flake/group.js';
 import { analyzeFlake, type FlakeCapture } from '../flake/analyze.js';
 import type { NetworkCoverage } from '../flake/classify.js';
 
@@ -250,6 +251,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
               before,
               flakeCapture(outcome.snapshot),
               coverageOf(outcome.story, opts),
+              opts.config?.freshRenderer !== false,
             )
           : undefined;
         if (flake) first.flake = flake;
@@ -278,6 +280,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   // localeCompare is not.
   results.sort((a, b) => compareCodeUnits(a.storyId, b.storyId));
   const groups = computeGroups(results);
+  const flakeGroups = groupFlakes(
+    results.flatMap((r) => (r.flake ? [{ storyId: r.storyId, flake: r.flake }] : [])),
+  );
 
   return {
     runId: opts.runId,
@@ -292,6 +297,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     results,
     summary,
     ...(groups.length > 0 ? { groups } : {}),
+    ...(flakeGroups.length > 0 ? { flakeGroups } : {}),
     durationMs: Date.now() - started,
     startedAt: startedAt.toISOString(),
   };
@@ -408,9 +414,10 @@ async function tryFlake(
   first: FlakeCapture,
   second: FlakeCapture,
   covered: NetworkCoverage,
+  freshRenderer: boolean,
 ): Promise<DiffResult['flake']> {
   try {
-    return await analyzeFlake({ storyId, first, second, covered });
+    return await analyzeFlake({ storyId, first, second, covered, freshRenderer });
   } catch {
     return undefined;
   }

@@ -15,6 +15,7 @@ const base: FlakeObservations = {
   storyId: 'card--basic',
   settlePending: [],
   flags: [],
+  reused: [],
   mismatchPercent: 0.5,
   structureIdentical: false,
   externals: [],
@@ -70,7 +71,7 @@ describe('each cause', () => {
         ],
       }),
     );
-    expect(f.fix?.stories['card--basic']?.network?.rules).toEqual([
+    expect(f.fix?.stories?.['card--basic']?.network?.rules).toEqual([
       { match: '/hero.jpg', action: 'placeholder' },
       { match: '/embed', action: 'placeholder' },
       { match: '/track', action: 'block' },
@@ -129,6 +130,32 @@ describe('each cause', () => {
     expect(f.fix).toEqual({
       stories: { 'card--basic': { network: { external: { frames: 'placeholder' } } } },
     });
+  });
+
+  it('order-dependence: a reused renderer with freshRenderer off gets the project setting', () => {
+    const f = classifyFlake(
+      obs({ flags: ['renderer-reused'], reused: ['second'], freshRendererOn: false }),
+    );
+    expect(f.cause).toBe('order-dependence');
+    expect(f.confidence).toBe('medium');
+    expect(f.evidence.reusedIn).toEqual(['second']);
+    // freshRenderer is a project option with no per-story form.
+    expect(f.fix).toEqual({ freshRenderer: true });
+    expect(describeFlake(f)).toMatch(
+      /fix: freshRenderer = true \(project setting\) \(medium confidence\)$/,
+    );
+  });
+
+  it('order-dependence: not suggested when freshRenderer is already on', () => {
+    const f = classifyFlake(
+      obs({ flags: ['renderer-reused'], reused: ['first'], freshRendererOn: true }),
+    );
+    expect(f.cause).not.toBe('order-dependence');
+  });
+
+  it('order-dependence: either capture reusing is enough, both named', () => {
+    const f = classifyFlake(obs({ reused: ['first', 'second'] }));
+    expect(f.evidence.reusedIn).toEqual(['first', 'second']);
   });
 
   it('async-element: an element in one capture only gets waitForSelector', () => {
@@ -193,7 +220,7 @@ describe('each cause', () => {
     const f = classifyFlake(obs({ textChanges: [quote, clock] }));
     expect(f.cause).toBe('clock');
     expect(f.confidence).toBe('medium');
-    expect(f.fix?.stories['card--basic']?.mask).toEqual(['.clock']);
+    expect(f.fix?.stories?.['card--basic']?.mask).toEqual(['.clock']);
   });
 
   it('render-drift: identical structure and a small delta has no fix', () => {
@@ -209,8 +236,11 @@ describe('each cause', () => {
         structureIdentical: true,
         mismatchPercent: 0.02,
         flags: ['renderer-reused'],
+        reused: ['second'],
+        freshRendererOn: true,
       }),
     );
+    expect(f.cause).toBe('render-drift');
     expect(f.confidence).toBe('high');
   });
 
@@ -239,6 +269,7 @@ describe('precedence: the first confident match wins', () => {
     settlePending: pending,
     externals: [image, frame],
     oneSided: [late],
+    reused: ['second'],
     textChanges: [clock],
     structureIdentical: true,
     mismatchPercent: 0.01,
@@ -249,11 +280,18 @@ describe('precedence: the first confident match wins', () => {
       ['settle-timeout', {}],
       ['external-image', { settlePending: [] }],
       ['embed', { settlePending: [], externals: [frame] }],
-      ['async-element', { settlePending: [], externals: [] }],
-      ['clock', { settlePending: [], externals: [], oneSided: [] }],
+      ['order-dependence', { settlePending: [], externals: [] }],
+      ['async-element', { settlePending: [], externals: [], reused: [] }],
+      ['clock', { settlePending: [], externals: [], reused: [], oneSided: [] }],
       [
         'render-drift',
-        { settlePending: [], externals: [], oneSided: [], textChanges: [] },
+        {
+          settlePending: [],
+          externals: [],
+          reused: [],
+          oneSided: [],
+          textChanges: [],
+        },
       ],
     ];
     for (const [cause, change] of order)
@@ -295,6 +333,7 @@ describe('every fix is a patch the config accepts', () => {
     ['external-image', { externals: [image] }],
     ['embed', { externals: [frame] }],
     ['async-element', { oneSided: [late] }],
+    ['order-dependence', { reused: ['first'] }],
     ['clock', { textChanges: [clock] }],
     ['random-content', { textChanges: [quote] }],
     ['a variant story id', { storyId: 'card--basic__dark', externals: [image] }],
@@ -303,7 +342,9 @@ describe('every fix is a patch the config accepts', () => {
     const f = classifyFlake(obs(o));
     expect(f.fix).not.toBeNull();
     expect(accepted(f)).toBe(true);
-    expect(Object.keys(f.fix!.stories)).toEqual([o.storyId ?? 'card--basic']);
+    // Story-scoped, except the project-only freshRenderer.
+    if (f.cause !== 'order-dependence')
+      expect(Object.keys(f.fix!.stories!)).toEqual([o.storyId ?? 'card--basic']);
   });
 
   it('the test would notice a patch the schema refuses', () => {
@@ -383,6 +424,36 @@ describe('looksLikeTime', () => {
     '1m 30s',
     '1760438400',
     'Updated 3 hours ago by sam',
+    'October 2026',
+    'octubre de 2026',
+    'Tuesday',
+    'Tue',
+    'Tue 14',
+    'Sat, 10:30',
+    'Dienstag',
+    'Monday Motors', // accepted: a changed weekday word is a clock far more often
+    'today',
+    'Yesterday at noon',
+    'tomorrow',
+    '2026/10/14',
+    '14 oct',
+    'oct 14',
+    'May 3',
+    '3 March',
+    '14 march 2026',
+    'march 14, 2026',
+    'may 2026',
+    'Okt 14',
+    '14. Oktober 2026',
+    '14 octobre 2026',
+    '14 de octubre de 2026',
+    '14 ottobre 2026',
+    '14 de outubro de 2026',
+    '14 oktober 2026',
+    '14 août',
+    '2026年10月14日',
+    '10月14日',
+    '2026년 10월',
   ])('%s is a time', (t) => expect(looksLikeTime(t)).toBe(true));
 
   it.each([
@@ -399,6 +470,18 @@ describe('looksLikeTime', () => {
     '5 min read',
     'may 3 things',
     'ratio 3:2',
+    'march forward',
+    'may be',
+    'March forward',
+    'May be',
+    'mar 2 items',
+    'The Sun shines',
+    'Sat on the mat',
+    'Wednesday1', // not a whole word
+    'Tuesdays are', // not a whole word
+    'v2026',
+    'Item 14 of 20',
+    'monkey',
     '1234567',
     '',
   ])('%s is not', (t) => expect(looksLikeTime(t)).toBe(false));

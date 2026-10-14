@@ -112,6 +112,7 @@ export async function handoffCommand(
       ? `jux diff ${shellQuote(baselineImage)} ${shellQuote(currentImage)} --crops --project ${shellQuote(ctx.projectRoot)}`
       : undefined;
 
+  const flakeGroup = report.flakeGroups?.find((g) => g.storyIds.includes(storyId));
   const variant = handoffVariant(result);
   const payload: HandoffPayload = {
     storyId,
@@ -119,6 +120,7 @@ export async function handoffCommand(
     status: result.status,
     ...(result.unstable ? { unstable: result.unstable } : {}),
     ...(result.flake ? { flake: result.flake } : {}),
+    ...(flakeGroup ? { flakeGroup } : {}),
     mismatchPercent: result.mismatchPercent,
     mismatchPixels: result.mismatchPixels,
     changedRegions: result.changedRegions,

@@ -39,6 +39,8 @@ export interface FlakeAnalysisInput {
   second: FlakeCapture;
   /** What the story's network config already answers; none when unknown. */
   covered?: NetworkCoverage;
+  /** `freshRenderer` is effective for this run; leave undefined when unknown. */
+  freshRenderer?: boolean;
 }
 
 /** Longest changed text kept in the evidence. */
@@ -128,6 +130,12 @@ export async function analyzeFlake(input: FlakeAnalysisInput): Promise<Flake> {
     storyId,
     settlePending: [...new Set(settlePending)],
     flags,
+    reused: (['first', 'second'] as const).filter((side) =>
+      input[side].flags?.includes('renderer-reused'),
+    ),
+    ...(input.freshRenderer !== undefined
+      ? { freshRendererOn: input.freshRenderer }
+      : {}),
     mismatchPercent: pixels.mismatchPercent,
     structureIdentical:
       a !== undefined && b !== undefined && a.structureHash === b.structureHash,

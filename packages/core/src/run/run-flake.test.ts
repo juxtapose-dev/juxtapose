@@ -133,3 +133,23 @@ test('a story that already placeholders images is not told to do it again', asyn
   expect(flaky.unstable).toBeDefined();
   expect(flaky.flake?.cause).not.toBe('external-image');
 });
+
+test('three unstable stories under one host add a run-level group; two do not', async () => {
+  const three = await run([story('c--1'), story('a--1'), story('b--1')]);
+  expect(three.flakeGroups).toEqual([
+    {
+      cause: 'external-image',
+      host: 'picsum.photos',
+      storyIds: ['a--1', 'b--1', 'c--1'],
+      fix: {
+        network: {
+          rules: [{ match: 'https://picsum.photos/**', action: 'placeholder' }],
+        },
+      },
+    },
+  ]);
+  // The per-story flake stays.
+  expect(three.results.every((r) => r.flake?.cause === 'external-image')).toBe(true);
+  const two = await run([story('a--1'), story('b--1')]);
+  expect(two.flakeGroups).toBeUndefined();
+});

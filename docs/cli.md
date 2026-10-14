@@ -124,16 +124,28 @@ the line.
 
 `cause` is the first of these that matches, in this order:
 
-| Cause            | Evidence                                                       | Fix                                                 |
-| ---------------- | -------------------------------------------------------------- | --------------------------------------------------- |
-| `settle-timeout` | A request was still pending at the settle cap.                 | A `network.rules` entry for that path.              |
-| `external-image` | A third-party image or background is where the pixels changed. | `network.external.images: "placeholder"`.           |
-| `embed`          | A third-party iframe is where the pixels changed.              | `network.external.frames: "placeholder"`.           |
-| `async-element`  | An element is in only one of the two captures.                 | `waitForSelector` for that element.                 |
-| `clock`          | Text that changed holds a time, a date or a duration.          | `mask` for that element.                            |
-| `random-content` | Other text changed.                                            | `mask` for that element (low confidence).           |
-| `render-drift`   | The page structure is identical and under 2% of pixels differ. | None. Report a jux bug and confirm `freshRenderer`. |
-| `unknown`        | None of the above.                                             | None.                                               |
+| Cause              | Evidence                                                                                   | Fix                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `settle-timeout`   | A request was still pending at the settle cap.                                             | A `network.rules` entry for that path.                             |
+| `external-image`   | A third-party image or background is where the pixels changed.                             | `network.external.images: "placeholder"`.                          |
+| `embed`            | A third-party iframe is where the pixels changed.                                          | `network.external.frames: "placeholder"`.                          |
+| `order-dependence` | A capture ran in a renderer process an earlier story had used, and `freshRenderer` is off. | `freshRenderer: true` (project setting; it has no per-story form). |
+| `async-element`    | An element is in only one of the two captures.                                             | `waitForSelector` for that element.                                |
+| `clock`            | Text that changed holds a time, a date or a duration.                                      | `mask` for that element.                                           |
+| `random-content`   | Other text changed.                                                                        | `mask` for that element (low confidence).                          |
+| `render-drift`     | The page structure is identical and under 2% of pixels differ.                             | None. Report a jux bug and confirm `freshRenderer`.                |
+| `unknown`          | None of the above.                                                                         | None.                                                              |
+
+When three or more unstable stories in one run share a cause and a third-party
+host (`external-image`, `embed`), or are `order-dependence`, `report.json` also
+has a run-level `flakeGroups: [{ cause, host?, storyIds, fix }]`, where `fix`
+is one project-level patch (for a host, a `network.rules` entry for
+`https://<host>/**`). Each story keeps its own `flake`. `jux run` and
+`jux diff --runs` print one line for each group in place of the per-story
+lines, and `jux handoff` adds it to a story in the group. Date and time
+recognition covers numeric, English, German, French, Spanish, Italian,
+Portuguese, Dutch and CJK dates, weekday names, and "today", "yesterday" and
+"tomorrow"; a changed label that holds a weekday word counts as a clock.
 
 `confidence` is `high`, `medium` or `low`. The cause is a diagnosis from the two
 captures, not a proof: check that the fix is what you intend before you apply

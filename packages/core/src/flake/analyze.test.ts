@@ -143,3 +143,23 @@ test('identical structure with a tiny pixel delta is render drift; a missing str
   });
   expect(unknown.cause).toBe('unknown');
 });
+
+test('a capture that reused a renderer is order dependence unless freshRenderer is on', async () => {
+  const s = structure([el({})], 'same');
+  const input = {
+    storyId: 's',
+    first: { image: await frame(null), structure: s },
+    second: {
+      image: await frame({ x: 30, y: 30 }),
+      structure: s,
+      flags: ['renderer-reused' as const],
+    },
+  };
+  const off = await analyzeFlake({ ...input, freshRenderer: false });
+  expect(off.cause).toBe('order-dependence');
+  expect(off.evidence.reusedIn).toEqual(['second']);
+  expect(off.fix).toEqual({ freshRenderer: true });
+  expect((await analyzeFlake({ ...input, freshRenderer: true })).cause).toBe(
+    'render-drift',
+  );
+});

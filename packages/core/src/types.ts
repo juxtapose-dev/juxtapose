@@ -354,6 +354,7 @@ export const FLAKE_CAUSES = [
   'settle-timeout',
   'external-image',
   'embed',
+  'order-dependence',
   'async-element',
   'clock',
   'random-content',
@@ -383,15 +384,34 @@ export interface FlakeEvidence {
   pending?: string[];
   /** `async-element`: the capture the element is missing from is the other. */
   presentIn?: FlakeSide;
+  /** `order-dependence`: the captures that ran in a renderer process an
+   *  earlier story had used. */
+  reusedIn?: FlakeSide[];
   /** `render-drift` and `unknown`: how much of the frame differs. */
   mismatchPercent?: number;
   flags?: CaptureFlag[];
 }
 
-/** An exact patch for `juxtapose.config.json`: merge it in. Story-scoped, so
- *  it changes nothing for other stories. */
+/** An exact patch for `juxtapose.config.json`: merge it in (arrays append).
+ *  Story-scoped under `stories` where the option exists per story; a
+ *  project-only option (`freshRenderer`) or a fix shared by a group of stories
+ *  sits at the top level. */
 export interface FlakeFix {
-  stories: Record<string, StoryOverride>;
+  stories?: Record<string, StoryOverride>;
+  freshRenderer?: boolean;
+  network?: NetworkParams;
+}
+
+/** Several unstable stories with one project-level fix: the same cause and
+ *  host, or the same project-scoped cause. */
+export interface FlakeGroup {
+  cause: FlakeCause;
+  /** `external-image` and `embed`: the third-party host they share. */
+  host?: string;
+  /** At least 3, code-unit sorted. */
+  storyIds: string[];
+  /** One patch for the whole project instead of one per story. */
+  fix: FlakeFix;
 }
 
 export interface Flake {
@@ -428,6 +448,8 @@ export interface RunReport {
   summary: Record<DiffStatus, number>;
   /** Present when at least one signature is shared by ≥2 failing stories. */
   groups?: RunGroup[];
+  /** Present when at least 3 unstable stories share a project-level fix. */
+  flakeGroups?: FlakeGroup[];
   durationMs: number;
   startedAt: string;
 }

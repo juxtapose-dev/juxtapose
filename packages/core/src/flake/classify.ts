@@ -14,6 +14,7 @@ import type {
   FlakeConfidence,
   FlakeFix,
   FlakeSide,
+  StoryOverride,
 } from '../types.js';
 import type { NetworkRule } from '../config/schema.js';
 import { looksLikeTime } from './time-text.js';
@@ -54,6 +55,11 @@ export interface FlakeObservations {
   /** What each capture's settle wait was still waiting on at its cap. */
   settlePending: string[];
   flags: CaptureFlag[];
+  /** The captures that ran in a renderer process an earlier story used. */
+  reused: FlakeSide[];
+  /** `freshRenderer` is on for this run, so order dependence is already
+   *  addressed; unknown (undefined) is treated as not on. */
+  freshRendererOn?: boolean;
   mismatchPercent: number;
   /** Both captures had a structure and the two are the same. */
   structureIdentical: boolean;
@@ -78,6 +84,7 @@ export function classifyFlake(o: FlakeObservations): Flake {
     settleTimeout(o) ??
     externalImage(o) ??
     embed(o) ??
+    orderDependence(o) ??
     asyncElement(o) ??
     textual(o) ??
     renderDrift(o) ?? {
@@ -94,7 +101,7 @@ export function classifyFlake(o: FlakeObservations): Flake {
 }
 
 /** A patch that sets `override` on this story alone. */
-const storyFix = (storyId: string, override: FlakeFix['stories'][string]): FlakeFix => ({
+const storyFix = (storyId: string, override: StoryOverride): FlakeFix => ({
   stories: { [storyId]: override },
 });
 
@@ -202,6 +209,21 @@ function embed(o: FlakeObservations): Flake | undefined {
       host: hostOf(hit.ref.origin),
     },
     fix: storyFix(o.storyId, { network: { external: { frames: 'placeholder' } } }),
+  };
+}
+
+// -- order-dependence --------------------------------------------------------
+
+function orderDependence(o: FlakeObservations): Flake | undefined {
+  // With freshRenderer on, a reused renderer is Chrome refusing a new process,
+  // which no setting changes; render-drift reports it.
+  if (o.reused.length === 0 || o.freshRendererOn === true) return undefined;
+  return {
+    cause: 'order-dependence',
+    confidence: 'medium',
+    evidence: { reusedIn: o.reused, flags: o.flags },
+    // freshRenderer has no per-story form: the project-level patch it is.
+    fix: { freshRenderer: true },
   };
 }
 

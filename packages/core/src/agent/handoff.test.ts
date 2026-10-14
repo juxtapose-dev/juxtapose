@@ -39,6 +39,27 @@ const fixture = JSON.parse(
 };
 
 describe('buildHandoffPrompt', () => {
+  it('a story in a flake group also gets the shared project fix', () => {
+    const out = buildHandoffPrompt({
+      ...base,
+      status: 'new',
+      unstable: { hashes: ['a', 'b'] },
+      flakeGroup: {
+        cause: 'external-image',
+        host: 'picsum.photos',
+        storyIds: ['a', 'b', 'c'],
+        fix: {
+          network: {
+            rules: [{ match: 'https://picsum.photos/**', action: 'placeholder' }],
+          },
+        },
+      },
+    });
+    expect(out).toContain(
+      'Shared fix: 3 stories: external images from picsum.photos; fix: network.rules += {"match":"https://picsum.photos/**","action":"placeholder"}',
+    );
+  });
+
   it('an unstable story gets the flake line: the cause, the evidence and the exact fix', () => {
     const out = buildHandoffPrompt({
       ...base,

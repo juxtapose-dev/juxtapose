@@ -12,6 +12,9 @@ import {
   compareCodeUnits,
   decodeStructure,
   describeFlake,
+  describeFlakeGroup,
+  groupFlakes,
+  listStoryIds,
   encodeStoryId,
   hashImage,
   parseRunReport,
@@ -175,6 +178,10 @@ export async function diffRuns(
   const c = compareRuns(sa, sb);
   const clean = c.different.length === 0 && c.missing.length === 0;
   const flakes = await explainDifferences(sa, sb, c.different);
+  const flakeGroups = groupFlakes(
+    [...flakes].map(([storyId, flake]) => ({ storyId, flake })),
+  );
+  const grouped = new Set(flakeGroups.flatMap((g) => g.storyIds));
   if (flags.json) {
     io.out(
       JSON.stringify({
@@ -188,6 +195,7 @@ export async function diffRuns(
         },
         different: c.different,
         ...(flakes.size > 0 ? { flake: Object.fromEntries(flakes) } : {}),
+        ...(flakeGroups.length > 0 ? { flakeGroups } : {}),
         missing: c.missing,
       }) + '\n',
     );
@@ -199,8 +207,10 @@ export async function diffRuns(
     for (const id of c.different) {
       lines.push(`  different  ${id}`);
       const flake = flakes.get(id);
-      if (flake) lines.push(`    ${describeFlake(flake)}`);
+      if (flake && !grouped.has(id)) lines.push(`    ${describeFlake(flake)}`);
     }
+    for (const g of flakeGroups)
+      lines.push(`  ${describeFlakeGroup(g)}`, `    ${listStoryIds(g.storyIds)}`);
     for (const m of c.missing)
       lines.push(`  only in ${m.in === 'a' ? sa.runId : sb.runId}  ${m.storyId}`);
     io.out(lines.join('\n') + '\n');
