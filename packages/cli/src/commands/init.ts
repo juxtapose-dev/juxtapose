@@ -13,6 +13,8 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import {
   approveCapture,
+  committedPaths,
+  ignoredPaths,
   acquireBrowser,
   installChrome,
   resolveChrome,
@@ -42,6 +44,7 @@ import {
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
 import { installWithProxy } from './browser.js';
+import { ensureIgnored } from '../gitignore.js';
 
 const CONFIG_NAME = 'juxtapose.config.json';
 
@@ -94,6 +97,11 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     await writeFile(configPath, JSON.stringify(defaultConfig(ctx), null, 2) + '\n');
     say(`Wrote ${CONFIG_NAME}.`);
   }
+
+  // Before capturing, for the same reason as the config: nothing may reach a
+  // commit that should not, even if the capture below dies halfway.
+  const added = await ensureIgnored(ctx.projectRoot, ignoredPaths(ctx.config.storage));
+  if (added.length > 0) say(`Added ${added.join(', ')} to .gitignore.`);
 
   const server = ctx.origin ? null : await serveStatic(ctx.buildDir!);
   const baseUrl = ctx.origin ?? server!.url;
@@ -289,9 +297,16 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     }
 
     say('');
-    say('Commit the baselines so everyone compares against the same thing:');
+    const repoBacked = ['git', 'fs'].includes(ctx.config.storage?.kind ?? '');
+    say(
+      repoBacked
+        ? 'Commit the baselines so everyone compares against the same thing:'
+        : 'Commit the hashes so everyone compares against the same thing. Images stay in\nthe local cache and are never committed:',
+    );
     say('');
-    say(`  git add ${CONFIG_NAME} juxtapose.manifest.json .juxtapose/baselines`);
+    say(
+      `  git add ${[CONFIG_NAME, ...committedPaths(ctx.config.storage), '.gitignore'].join(' ')}`,
+    );
     say(`  git commit -m "Add juxtapose visual baselines"`);
     say('');
     say('From now on `jux run` captures only what your changes could affect.');

@@ -22,6 +22,7 @@ Usage
   jux run [options]              capture affected stories and compare to baselines
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
+  jux doctor [--json]            warn if snapshot images are committed, and print the fix
   jux handoff <storyId>          print an agent prompt for one failing story
   jux snap <url>… [options]      capture pages: pixels + structure, no workbench
   jux browser install|path|status|start|stop  manage the pinned and warm browser (install downloads once, ~100 MB)
@@ -207,6 +208,10 @@ async function main(argv: string[]): Promise<number> {
     case 'check': {
       const { checkCommand } = await import('./commands/check.js');
       return checkCommand(flags);
+    }
+    case 'doctor': {
+      const { doctorCommand } = await import('./commands/doctor.js');
+      return doctorCommand(flags);
     }
     case 'handoff': {
       const { handoffCommand } = await import('./commands/handoff.js');
