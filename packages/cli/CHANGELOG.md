@@ -1,5 +1,22 @@
 # @juxtapose/cli
 
+## 0.15.0
+
+### Minor Changes
+
+- e3608de: An unstable story now says why it flaked and what to change (#190, step 1). `report.json` gains `flake: { cause, confidence, evidence, fix }` on a story whose two run captures differed, and `jux diff --runs` explains each story that differs the same way. `cause` is one of `settle-timeout`, `external-image`, `embed`, `async-element`, `clock`, `random-content`, `render-drift` or `unknown`, from the first check that matches. `fix` is an exact patch for `juxtapose.config.json`, scoped to the story (`stories["card--basic"].network.external.images = "placeholder"`), or `null` when no config change helps. `jux run`, `jux diff --runs` and `jux handoff` print one line for it, and the MCP `run` result carries the object. The structure snapshot records the origin and path of third-party images, backgrounds and iframes (not part of `structureHash`, and read from the same browser response, so captures are unchanged). `@juxtapose/core` exports `analyzeFlake`, `describeFlake`, `formatFix` and the `Flake` types.
+
+  A new `order-dependence` cause (a capture reused a renderer process while `freshRenderer` is off) suggests the project-level `freshRenderer: true`. When three or more unstable stories share a cause and host, or are order dependent, `report.json` and `jux diff --runs --json` add `flakeGroups` with one project-level patch, and the text output prints one line per group. The clock check also recognises month-and-year, weekday names, today/yesterday/tomorrow, `2026/10/14`, lowercase day-month, German, French, Spanish, Italian, Portuguese and Dutch month names, and CJK dates.
+
+  Structure sidecars gain an `external` field (the origin and path of third-party images, backgrounds and frames) on elements that have one, so committed sidecars change once for pages with third-party resources. `structureHash` is unchanged. A settle report at the cap now also lists the pending requests by full URL (`requests`, `requestsOmitted`, `origin`). A suggested settle-timeout fix is only ever a `type:Image` or `type:Document` placeholder rule for a third-party host; jux never suggests blocking a stylesheet, script, font, API call or first-party request. `jux run` reads the first capture of an unstable story back from the run directory instead of keeping it in memory.
+
+### Patch Changes
+
+- Updated dependencies [e3608de]
+  - @juxtapose/core@0.15.0
+  - @juxtapose/adapter-ladle@0.3.10
+  - @juxtapose/adapter-storybook@0.4.6
+
 ## 0.14.0
 
 ### Minor Changes
