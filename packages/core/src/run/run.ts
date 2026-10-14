@@ -21,7 +21,12 @@ import type {
   Viewport,
 } from '../types.js';
 import { capturePool } from '../capture/pool.js';
-import { resolveStatus, toDiffStatus, type AncestryCheck } from '../baseline/status.js';
+import {
+  hashImage,
+  resolveStatus,
+  toDiffStatus,
+  type AncestryCheck,
+} from '../baseline/status.js';
 import { decodeStructure } from '../capture/structure.js';
 import { structuralDiff } from '../diff/structural.js';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
@@ -193,6 +198,7 @@ async function judge(
     storyId: story.storyId,
     ...variantOf(story),
     status,
+    hash: hashImage(snapshot.image),
     mismatchPixels: 0,
     mismatchPercent: 0,
     changedRegions: [],

@@ -320,6 +320,11 @@ export interface DiffResult {
    *  can say the conditions it was captured under without re-enumerating. */
   variantParams?: Omit<VariantSpec, 'extends'>;
   status: DiffStatus;
+  /** sha256 of the current capture's WebP: the same hash `baseline/` compares,
+   *  so two runs are byte-identical per story exactly when these match. Absent
+   *  on skipped and errored stories (nothing was captured) and on reports
+   *  written before it was recorded. */
+  hash?: string;
   mismatchPixels: number;
   mismatchPercent: number;
   /** Bounding boxes of changed clusters. Empty unless status is 'fail'. */

@@ -161,6 +161,15 @@ token edit bundled into the component chunk, beside a label edit in the
 story, lists only the story file, and the token may be what changed the
 pixels.
 
+## Comparing two runs
+
+`jux diff --runs <runA> <runB> --json` answers "did these two runs capture the
+same pixels" from the `hash` on each `report.json` result, without a browser or
+a pixel diff. It prints `juxtapose.run-diff/v1`
+(`{ a, b, summary, different[], missing[] }`) and exits 0 only when every story
+is identical. `hash` is not in the verdict text agents read, so it costs
+nothing against its size budget.
+
 ## The page set (`juxtapose.verdict-set/v1`)
 
 `jux diff --prefix before after --json` pairs `before-<slug>` with
