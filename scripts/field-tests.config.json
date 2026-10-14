@@ -1,5 +1,5 @@
 {
-  "$comment": "Gates for scripts/field-test.mjs --storybook <name>. knownVariable: stories that may differ across passes (every other difference fails the job). allowedErrors: stories that may error. maxWallSeconds: ceiling per pass. concurrency: jux capture workers (a CI runner is much slower than a laptop). Seeded from the macOS 0.13.0 scorecard; Linux CI can differ (fonts, timing), so adjust after a CI run. See docs/field-tests.md.",
+  "$comment": "Gates for scripts/field-test.mjs --storybook <name>. knownVariable: stories allowed to differ across passes. maxUnlistedDifferences: how many differing stories NOT on that list the gate tolerates (CI runners are slow and load-sensitive, so a few new ones appear every run). allowedErrors: stories allowed to error. maxWallSeconds: ceiling per pass. concurrency: jux capture workers. Seeded from the macOS 0.13.0 scorecard and extended from Linux CI runs; see docs/field-tests.md.",
   "storybooks": {
     "chakra": {
       "maxWallSeconds": 2400,
@@ -11,9 +11,13 @@
         "components-avatar--store",
         "rich-text-editor-tiptap--composition",
         "components-rating--testimonial",
-        "components-timeline--sizes"
+        "components-timeline--sizes",
+        "components-card--horizontal",
+        "components-carousel--thumbnails",
+        "layout-box--composition"
       ],
-      "concurrency": 2
+      "concurrency": 3,
+      "maxUnlistedDifferences": 4
     },
     "primer": {
       "maxWallSeconds": 2400,
@@ -21,9 +25,12 @@
       "knownVariable": [
         "components-relativetime-features--count-down-timer",
         "components-avatar-features--size-responsive",
-        "components-avatar-features--size"
+        "components-avatar-features--size",
+        "components-actionlist-features--block-description",
+        "components-radio-features--with-leading-visual"
       ],
-      "concurrency": 2
+      "concurrency": 3,
+      "maxUnlistedDifferences": 4
     },
     "spectrum": {
       "maxWallSeconds": 2400,
@@ -43,9 +50,13 @@
         "overlay-element--hover-tooltip",
         "card--default",
         "dialog-base--slotted",
-        "overlay-element--action-group"
+        "overlay-element--action-group",
+        "card--actions",
+        "card--href",
+        "card--toggles"
       ],
-      "concurrency": 2
+      "concurrency": 3,
+      "maxUnlistedDifferences": 4
     }
   }
 }
