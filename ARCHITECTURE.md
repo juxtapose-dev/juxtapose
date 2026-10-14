@@ -117,7 +117,7 @@ and false diffs train people to ignore the tool. The pipeline, in order:
    not a painted frame; without this, captures intermittently catch an
    intermediate one. If the DOM, fonts, images or network moved during the
    barrier, the idle wait and the barrier run once more within the cap.
-9. **Screenshot** → PNG → lossless WebP.
+9. **Screenshot** → Chrome's lossless WebP (`quality: 100`), ICC chunk dropped.
 
 Everything except steps 5 and 6 is platform-neutral and lives in `core`; those
 two are the adapter's only contribution to settling.

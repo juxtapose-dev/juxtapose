@@ -45,11 +45,17 @@ export async function diffImages(
   const minDiffPercent = opts.minDiffPercent ?? DEFAULT_MIN_DIFF_PERCENT;
 
   // sharp sniffs the format, so baselines can be WebP and current can be PNG
-  // without an explicit conversion step.
-  const [a, b] = await Promise.all([
-    sharp(baseline).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
-    sharp(current).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
-  ]);
+  // without an explicit conversion step. The stored values, never a colour
+  // conversion: capture strips Chrome's ICC chunk, but an image that still
+  // carries one (a hand-made baseline, a raw Chrome WebP) would otherwise be
+  // converted through it, which moved channels by ±1 on gradients (40,800 of
+  // 4,096,000 on one 1280x800 frame) and called that a change.
+  const decode = (img: Buffer) =>
+    sharp(img, { ignoreIcc: true })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+  const [a, b] = await Promise.all([decode(baseline), decode(current)]);
 
   if (a.info.width !== b.info.width || a.info.height !== b.info.height) {
     // No meaningful pixel comparison exists across different dimensions.

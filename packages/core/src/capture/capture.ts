@@ -4,7 +4,6 @@ import { resolveRenderer } from './renderer.js';
 // each step exists. Because pass/fail is a byte-exact hash, every source of
 // nondeterminism left in this path becomes a false failure somewhere.
 
-import sharp from 'sharp';
 import { emulatedMedia, FRESH_RENDERER_URL, type Page } from '../browser/page.js';
 import { assertCssSelector } from '../browser/selectors.js';
 import type { Platform } from '../platform.js';
@@ -34,6 +33,7 @@ import { applyNetworkPolicy, checkNetwork } from './network-policy.js';
 import { resolveNetwork, liveNetworkDiffers } from './network-rules.js';
 import { layerCapture, layerNetwork } from './layers.js';
 import { captureStructure, type StructureCaptureTimings } from './structure.js';
+import { canonicalWebp } from './encoder.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 2000;
@@ -41,9 +41,6 @@ const DEFAULT_CAPTURE_TIMEOUT_MS = 2000;
 export interface CaptureDeps {
   platform: Platform;
   baseUrl: string;
-  /** WebP encode effort, 0-6. Higher is smaller and slower. Capture is
-   *  browser-bound, so 0 is the right default — the bytes are transient. */
-  webpEffort?: number;
   /**
    * Reuse a warm page and switch stories over the platform's channel instead
    * of navigating. Roughly 4x faster per story.
@@ -535,7 +532,10 @@ async function captureStoryDocument(
   checkResponse();
   phase('screenshot');
   const tShot = performance.now();
-  const png = await page.screenshot(params.mask?.length ? { mask: params.mask } : {});
+  const shot = await page.screenshot({
+    ...(params.mask?.length ? { mask: params.mask } : {}),
+    format: 'webp',
+  });
   const screenshotMs = performance.now() - tShot;
 
   // LOSSLESS, deliberately, and it is not a size-vs-quality preference.
@@ -549,12 +549,17 @@ async function captureStoryDocument(
   //
   // Measured: 3537 changed pixels from a single recoloured button spread over
   // all 800 rows and all 1280 columns. With lossless, zero pixels differ from
-  // the source. Costs ~4x the bytes; buys a diff that means something.
+  // the source.
+  //
+  // Chrome encodes it (quality 100 is its lossless VP8L; see encoder.ts), so
+  // Node no longer decodes a PNG and re-encodes it through sharp. On Chrome
+  // 151 the WebP decodes to the same pixels as Chrome's PNG on noise,
+  // gradient, text, UI, translucent and display-p3 pages (0 of 4,096,000
+  // channels differ). What is left here is dropping the ICC chunk, about
+  // 0.15 ms.
   phase('encode');
   const tEncode = performance.now();
-  const image = await sharp(png)
-    .webp({ lossless: true, effort: deps.webpEffort ?? 0 })
-    .toBuffer();
+  const image = canonicalWebp(shot);
   const encodeMs = performance.now() - tEncode;
   const timings = captureTimings(performance.now() - t0, {
     navigate: acc.navigate,
