@@ -9,6 +9,11 @@ import { chromeForTests } from '../browser/__tests__/helpers.js';
 import type { Platform } from '../platform.js';
 import type { StoryManifest } from '../types.js';
 import { capturePool, type CaptureOutcome } from './pool.js';
+import { captureStory } from './capture.js';
+import { explainCapture } from './explain.js';
+import { ProvenanceLog } from './provenance.js';
+import { expandVariants } from './variants.js';
+import type { SettleLayer } from './settle-options.js';
 
 const chrome = chromeForTests();
 let server: Server;
@@ -171,5 +176,74 @@ describe.skipIf(!chrome)('budget vs slow navigation', () => {
     }
     expect(out[0]!.error).toBeUndefined();
     expect(out[0]!.snapshot?.settle?.status).toBe('timeout');
+  }, 60_000);
+});
+
+describe.skipIf(!chrome)('layer order: captureStory and explain agree', () => {
+  // The budget captureStory announces is the resolved settle cap plus the
+  // resolved delay, so it shows which layer won without a screenshot.
+  async function budgetOf(
+    params: StoryManifest['params'],
+    layers: { project?: SettleLayer; call?: SettleLayer },
+  ): Promise<{ budget: number; explained: Record<string, unknown> }> {
+    const browser = await Browser.launch({ executablePath: chrome!.path });
+    try {
+      const context = await browser.newContext({ viewport: { width: 100, height: 50 } });
+      const page = await context.newPage();
+      const log = new ProvenanceLog();
+      const [capture] = expandVariants(
+        [{ ...story('layered'), params }],
+        undefined,
+        undefined,
+        log,
+      );
+      let budget = -1;
+      await captureStory(
+        page,
+        capture!,
+        {
+          platform,
+          baseUrl: base,
+          structure: false,
+          settleLayers: layers,
+          onSettleBudget: (ms) => (budget = ms),
+        },
+        { width: 100, height: 50 },
+      );
+      const e = explainCapture(capture!, log, {
+        config: {
+          ...(layers.project?.settle ? { settle: layers.project.settle } : {}),
+          ...(layers.project?.delay !== undefined ? { delay: layers.project.delay } : {}),
+        },
+        ...(layers.call ? { call: layers.call } : {}),
+      });
+      return {
+        budget,
+        explained: Object.fromEntries(e.settings.map((x) => [x.setting, x.value])),
+      };
+    } finally {
+      await browser.close();
+    }
+  }
+
+  it('settle: call beats story beats project, and explain reports the same value', async () => {
+    const r = await budgetOf(
+      { settle: { timeout: 3000 } },
+      { project: { settle: { timeout: 5000 } }, call: { settle: { timeout: 4000 } } },
+    );
+    expect(r.budget).toBe(4000);
+    expect(r.explained['settle.timeout']).toBe(4000);
+    const noCall = await budgetOf(
+      { settle: { timeout: 3000 } },
+      { project: { settle: { timeout: 5000 } } },
+    );
+    expect(noCall.budget).toBe(3000);
+    expect(noCall.explained['settle.timeout']).toBe(3000);
+  }, 60_000);
+
+  it('delay with the call unset: story beats project, and explain agrees', async () => {
+    const r = await budgetOf({ delay: 30 }, { project: { delay: 700 } });
+    expect(r.budget).toBe(1500 + 30);
+    expect(r.explained['delay']).toBe(30);
   }, 60_000);
 });

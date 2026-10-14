@@ -174,3 +174,25 @@ export function checkRulePlaceholders(
       );
   });
 }
+
+/** Whether the policy with the live parameters' `network` folded in differs
+ *  from the one applied. A value the policy cannot be built from differs. */
+export function liveNetworkDiffers(
+  applied: NetworkPolicy,
+  project: NetworkParams | undefined,
+  live: NetworkParams | undefined,
+): boolean {
+  try {
+    return policyKey(resolveNetwork(project, live)) !== policyKey(applied);
+  } catch {
+    return true;
+  }
+}
+
+/** A policy as comparable text. */
+function policyKey(p: NetworkPolicy): string {
+  return JSON.stringify({
+    ...p,
+    rules: p.rules.map((r) => [r.pattern.source, r.action]),
+  });
+}

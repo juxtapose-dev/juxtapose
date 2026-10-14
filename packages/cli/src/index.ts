@@ -11,6 +11,7 @@ import { EXIT } from './exit-codes.js';
 import { isRecord } from './guards.js';
 import { checkArgs, SPECS } from './cli-args.js';
 import { UserError } from './user-error.js';
+import { distance } from './suggest.js';
 import { BROWSER_HELP } from './commands/browser-help.js';
 
 const HEAD = `
@@ -24,6 +25,9 @@ Usage
   jux handoff <storyId>          print an agent prompt for one failing story
   jux snap <url>… [options]      capture pages: pixels + structure, no workbench
   jux browser install|path|status|start|stop  manage the pinned and warm browser (install downloads once, ~100 MB)
+  jux config --explain <storyId> [--json]
+                                 the effective capture settings for one story or variant key, and
+                                 which layer each came from (config, story, stories glob, variant, CLI)
   jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix, two runs with --runs)
   jux mcp [--project <dir>] [--concurrency <n>]
                                  MCP server on stdio for coding agents: snap, diff, run, check, handoff, approve
@@ -108,7 +112,8 @@ function commandHelp(command: string): string {
   let text = `Usage\n${out.join('\n')}\n`;
   if (command === 'browser') return text + '\n' + BROWSER_HELP;
   text += COMMON;
-  if (command === 'run' || command === 'snap') text += SETTLE_HELP;
+  if (command === 'run' || command === 'snap' || command === 'config')
+    text += SETTLE_HELP;
   if (command === 'diff') text += '\n' + DIFF_HELP;
   return text;
 }
@@ -164,6 +169,7 @@ async function main(argv: string[]): Promise<number> {
       chrome: { type: 'string' },
       'no-daemon': { type: 'boolean', default: false },
       'no-fresh-renderer': { type: 'boolean', default: false },
+      explain: { type: 'string' },
     },
   });
 
@@ -214,6 +220,10 @@ async function main(argv: string[]): Promise<number> {
       const { browserCommand } = await import('./commands/browser.js');
       return browserCommand(argv.slice(1), values.json === true);
     }
+    case 'config': {
+      const { configCommand } = await import('./commands/config.js');
+      return configCommand(flags);
+    }
     case 'diff': {
       const { diffCommand } = await import('./commands/diff.js');
       return diffCommand(positionals[0], positionals[1], flags);
@@ -237,27 +247,11 @@ const COMMANDS = [
   'check',
   'handoff',
   'snap',
+  'config',
   'diff',
   'browser',
   'mcp',
 ];
-
-function distance(a: string, b: string): number {
-  // Every row has b.length + 1 cells and j stays within 1..b.length, so the
-  // indexed reads below are always in range.
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const row = [i];
-    for (let j = 1; j <= b.length; j++)
-      row[j] = Math.min(
-        prev[j]! + 1,
-        row[j - 1]! + 1,
-        prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
-      );
-    prev = row;
-  }
-  return prev[b.length]!;
-}
 
 /** " Did you mean 'diff'?" when a command is within edit distance 2. */
 function suggest(command: string): string {

@@ -299,6 +299,18 @@ shows what the four stories have in common:
 and ends with the shell-quoted `jux diff … --crops --project …` command for
 that story.
 
+## Which setting won (`juxtapose.explain/v1`)
+
+Settings layer across the project config, story parameters, `stories`
+overrides, variants, live parameters and flags. Before changing one, ask which
+layer sets it now: `jux config --explain <storyId> --json`, or the MCP
+`explain` tool. A story id gives the default capture and the keys of its
+variants; a capture key (`<id>__<variant>`) gives one variant. Every setting
+comes with `source`, the layer that decided it, so the edit goes in the right
+place (a `stories` glob beats the story's own parameters, so editing the story
+does nothing). Nothing is captured. See
+[the CLI reference](cli.md#which-setting-won-jux-config---explain) for the shape.
+
 ## Claude Code skill
 
 `plugins/claude-code/` is a Claude Code plugin with one skill,

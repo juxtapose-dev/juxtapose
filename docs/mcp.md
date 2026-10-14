@@ -104,7 +104,7 @@ for each failing story. Call `approve` only when the user asks you to.
 
 ## Tools
 
-The server exposes six tools. Each result's first text block holds the
+The server exposes seven tools. Each result's first text block holds the
 command's JSON, unless noted. When the command also printed a warning, such as
 an approved story whose structure was not saved, a successful result carries
 it as a second text block. The JSON itself never changes shape.
@@ -221,6 +221,22 @@ JSON form.
 | -------- | ------ | ----------- |
 | `story`  | string | A story id. |
 
+### explain
+
+Says which settings one story or variant key would be captured with, and which
+layer each came from, without capturing. Same result as `jux config --explain
+<story> --json` (`juxtapose.explain/v1`; see
+[the CLI reference](cli.md#which-setting-won-jux-config---explain)). Call it
+before changing a setting, to see which layer wins. It needs no earlier run.
+
+| Argument  | Type   | Description                                                        |
+| --------- | ------ | ------------------------------------------------------------------ |
+| `story`   | string | A story id, which also lists its variants' keys, or a capture key. |
+| `settle`  | object | As for `run`; shows as the `cli` layer, as the flags would.        |
+| `network` | object | As for `run`.                                                      |
+
+An id that matches nothing is a tool error that suggests the closest ones.
+
 ### approve
 
 Promotes the last run's captures of the named stories to baselines. Same result
@@ -286,12 +302,12 @@ can arrive in a different order from the requests; match them by `id`.
 Before a call starts, the server works out everything it reads and writes, and
 waits until it can have all of it at once:
 
-| Tool               | Reads                                                             | Writes                                 |
-| ------------------ | ----------------------------------------------------------------- | -------------------------------------- |
-| `snap`             |                                                                   | the `as` snap, or every `<asPrefix>-*` |
-| `diff`             | the `a` and `b` snaps, or every `<a>-*` and `<b>-*` with `prefix` | with `crops`, that pair's crops        |
-| `check`, `handoff` | the last run                                                      |                                        |
-| `run`, `approve`   | everything                                                        | everything                             |
+| Tool                          | Reads                                                             | Writes                                 |
+| ----------------------------- | ----------------------------------------------------------------- | -------------------------------------- |
+| `snap`                        |                                                                   | the `as` snap, or every `<asPrefix>-*` |
+| `diff`                        | the `a` and `b` snaps, or every `<a>-*` and `<b>-*` with `prefix` | with `crops`, that pair's crops        |
+| `check`, `handoff`, `explain` | the last run                                                      |                                        |
+| `run`, `approve`              | everything                                                        | everything                             |
 
 Two calls overlap only when neither writes what the other reads or writes:
 
