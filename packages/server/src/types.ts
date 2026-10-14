@@ -37,7 +37,9 @@ export interface ReviewSource {
   progress(): Promise<RunProgress>;
   image(kind: ImageKind, storyId: string): Promise<Buffer | null>;
   handoff(storyId: string): Promise<string | null>;
-  approve(storyId: string): Promise<void>;
+  /** Refuses (UnstableCaptureError) a capture the run saw come out two ways
+   *  unless `allowUnstable`. */
+  approve(storyId: string, allowUnstable?: boolean): Promise<void>;
   /** Capture a subset, or everything when `storyIds` is omitted. */
   run(storyIds?: string[]): Promise<void>;
   cancel(): Promise<void>;

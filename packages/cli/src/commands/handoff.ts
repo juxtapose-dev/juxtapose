@@ -80,6 +80,7 @@ export async function handoffCommand(
       {
         storyId,
         status: result.status,
+        ...(result.unstable ? { unstable: result.unstable } : {}),
         mismatchPercent: result.mismatchPercent,
         mismatchPixels: result.mismatchPixels,
         viewport,
@@ -115,6 +116,7 @@ export async function handoffCommand(
     storyId,
     storyTitle: story ? `${story.title} — ${story.name}` : storyId,
     status: result.status,
+    ...(result.unstable ? { unstable: result.unstable } : {}),
     mismatchPercent: result.mismatchPercent,
     mismatchPixels: result.mismatchPixels,
     changedRegions: result.changedRegions,

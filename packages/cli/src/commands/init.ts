@@ -26,6 +26,8 @@ import {
   VariantConfigError,
   checkProjectSettle,
   DEFAULT_VIEWPORT,
+  UnstableCaptureError,
+  type DiffResult,
 } from '@juxtapose/core';
 import {
   resolveContext,
@@ -174,6 +176,12 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
       onArtifact: (a) => writeArtifact(runDir, a),
+      onRecheck: (done, total) => {
+        if (!ctx.json) {
+          process.stdout.write(`
+  ${`${done}/${total} rechecked`.padEnd(30)}`);
+        }
+      },
       onProgress: (done, total) => {
         // Pad to a fixed width so a shorter line never leaves characters
         // from the previous, longer one behind.
@@ -200,9 +208,24 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     const approvedBy = process.env.JUXTAPOSE_USER ?? process.env.USER ?? 'unknown';
     const approvedAt = new Date().toISOString();
 
+    // A first baseline is where a flake is most likely to be locked in, so
+    // init holds to the same two-identical-captures rule as `jux approve`.
+    const { approvable, refused } = partitionForInit(
+      capturable,
+      flags['allow-unstable'] === true,
+    );
+    for (const r of refused) {
+      process.stderr.write(
+        `jux: skipped ${r.storyId}: ${
+          new UnstableCaptureError(r.storyId, r.unstable!, {
+            freshRenderer: ctx.config.freshRenderer !== false,
+          }).message
+        }\n`,
+      );
+    }
+
     let approved = 0;
-    for (const result of capturable) {
-      if (result.status === 'fail') continue;
+    for (const result of approvable) {
       const imagePath = capturePath(runDir, result.storyId);
       const image = await readFile(imagePath).catch(() => null);
       if (!image) continue;
@@ -228,10 +251,11 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
           stories: stories.length,
           approved,
           failed: failed.length,
+          unstable: refused.map((r) => r.storyId),
           config: alreadyConfigured ? null : CONFIG_NAME,
         }) + '\n',
       );
-      return failed.length > 0 ? 1 : 0;
+      return failed.length > 0 || refused.length > 0 ? 1 : 0;
     }
 
     say(`Approved ${approved} ${plural(approved, 'baseline', 'baselines')}.`);
@@ -248,6 +272,17 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       say('These have no baseline. Fix them, then run `jux run` again.');
     }
 
+    if (refused.length > 0) {
+      say('');
+      say(
+        `${refused.length} ${plural(refused.length, 'story', 'stories')} not baselined (unstable or unconfirmed): ${refused
+          .slice(0, 5)
+          .map((r) => r.storyId)
+          .join(', ')}`,
+      );
+      say('Fix them, or run `jux init --allow-unstable` to baseline them anyway.');
+    }
+
     say('');
     say('Commit the baselines so everyone compares against the same thing:');
     say('');
@@ -256,7 +291,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     say('');
     say('From now on `jux run` captures only what your changes could affect.');
 
-    return failed.length > 0 ? 1 : 0;
+    return failed.length > 0 || refused.length > 0 ? 1 : 0;
   } finally {
     await browser.close().catch(() => {});
     await server?.close();
@@ -295,3 +330,20 @@ const capturePath = (runDir: string, storyId: string) =>
   path.join(runDir, 'images', `${encodeStoryId(storyId)}-current.webp`);
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+/** Which first-run results init may baseline: never a failure (it has no
+ *  image worth keeping), and never an unstable or unconfirmed capture unless
+ *  the caller asked for `--allow-unstable`. */
+export function partitionForInit(
+  results: DiffResult[],
+  allowUnstable: boolean,
+): { approvable: DiffResult[]; refused: DiffResult[] } {
+  const approvable: DiffResult[] = [];
+  const refused: DiffResult[] = [];
+  for (const r of results) {
+    if (r.status === 'fail' || r.status === 'skip') continue;
+    if (r.unstable && !allowUnstable) refused.push(r);
+    else approvable.push(r);
+  }
+  return { approvable, refused };
+}

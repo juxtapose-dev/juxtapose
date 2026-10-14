@@ -21,6 +21,8 @@ export interface CommonFlags extends SettleFlags {
   concurrency?: string;
   since?: string;
   all?: boolean;
+  /** `jux approve --allow-unstable`: baseline stories whose run captures differed. */
+  'allow-unstable'?: boolean;
   story?: string[];
   run?: string;
   comment?: boolean;

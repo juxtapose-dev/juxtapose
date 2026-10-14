@@ -248,3 +248,42 @@ test('a base id with variants does not re-approve its passing default', async ()
   await approveCommand({ json: true, project: root, story: ['card'] }, { io: exact });
   expect(JSON.parse(exact.stdout()).approved).toEqual(['card']);
 });
+
+// Approval requires two identical captures (#148).
+test('approve refuses an unstable story, names it, still approves the rest, exits 1', async () => {
+  const root = project({ platform: 'urls', urls });
+  const run = path.join(root, '.juxtapose', 'runs', 'r1');
+  mkdirSync(path.join(run, 'images'), { recursive: true });
+  const results = [
+    { storyId: 'rand', status: 'new', unstable: { hashes: ['a', 'b'] } },
+    { storyId: 'steady', status: 'new' },
+  ];
+  writeFileSync(path.join(run, 'report.json'), JSON.stringify({ runId: 'r1', results }));
+  for (const r of results) {
+    writeFileSync(
+      path.join(run, 'images', `${encodeStoryId(r.storyId)}-current.webp`),
+      Buffer.from(r.storyId),
+    );
+  }
+
+  const io = captureIo();
+  expect(await approveCommand({ json: true, project: root, all: true }, { io })).toBe(1);
+  const out = JSON.parse(io.stdout()) as {
+    approved: string[];
+    failed: { storyId: string; reason: string; unstable?: boolean }[];
+  };
+  expect(out.approved).toEqual(['steady']);
+  expect(out.failed).toHaveLength(1);
+  expect(out.failed[0]).toMatchObject({ storyId: 'rand', unstable: true });
+  expect(out.failed[0]!.reason).toMatch(/unstable.*mask.*stories/s);
+  expect(Object.keys(manifestOf(root).baselines)).toEqual(['steady']);
+
+  const io2 = captureIo();
+  expect(
+    await approveCommand(
+      { json: true, project: root, all: true, 'allow-unstable': true },
+      { io: io2 },
+    ),
+  ).toBe(0);
+  expect(JSON.parse(io2.stdout())).toEqual({ approved: ['rand', 'steady'], failed: [] });
+});

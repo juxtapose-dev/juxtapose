@@ -10,6 +10,7 @@
 // pull request who has checked nothing out.
 
 import type { RunReport, DiffResult } from '../types.js';
+import { describeUnstable } from '../baseline/approve.js';
 import { captureLabel, describeMagnitude } from './format.js';
 
 export interface HtmlReportOptions {
@@ -123,6 +124,7 @@ function storySection(
   <${level}${level === 'h3' ? ` title="${escapeHtml(title)}"` : ''}>
     <span class="badge ${result.status}">${statusLabel(result.status)}</span>
     ${escapeHtml(label)}
+    ${result.unstable ? `<span class="pct">${escapeHtml(describeUnstable(result.unstable))}</span>` : ''}
     ${result.status === 'fail' ? `<span class="pct">${escapeHtml(describeMagnitude(result))}</span>` : ''}
   </${level}>
   ${result.error ? `<p class="error">${escapeHtml(result.error)}</p>` : ''}

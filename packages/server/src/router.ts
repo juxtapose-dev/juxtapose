@@ -5,7 +5,7 @@
 // own Vite dev server where an extra HTTP stack would just be in the way.
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { VariantConfigError } from '@juxtapose/core';
+import { UnstableCaptureError, VariantConfigError } from '@juxtapose/core';
 import type { ImageKind, ReviewSource } from './types.js';
 
 /** Mounted under this prefix so it cannot collide with workbench routes. */
@@ -41,6 +41,10 @@ export function createRouter(source: ReviewSource): Handler {
     } catch (err) {
       // A variant declaration error is the user's to fix: a 400 with the
       // message names the story and variant.
+      if (err instanceof UnstableCaptureError) {
+        json(res, 409, { error: err.message });
+        return true;
+      }
       if (err instanceof VariantConfigError) {
         json(res, 400, { error: err.message });
         return true;
@@ -111,7 +115,7 @@ async function route(
     const storyId = isRecord(body) ? body['storyId'] : undefined;
     if (typeof storyId !== 'string' || !storyId)
       return json(res, 400, { error: 'storyId required' });
-    await source.approve(storyId);
+    await source.approve(storyId, isRecord(body) && body['allowUnstable'] === true);
     return json(res, 200, { ok: true });
   }
 

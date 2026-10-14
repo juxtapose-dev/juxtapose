@@ -17,6 +17,7 @@ import type {
   Viewport,
 } from '../types.js';
 import { describeDeltas } from '../diff/structural/summary.js';
+import { describeUnstable } from '../baseline/approve.js';
 import { shellQuote } from '../shell-quote.js';
 import { compareCodeUnits } from '../report/format.js';
 
@@ -24,6 +25,8 @@ export interface HandoffPayload {
   storyId: string;
   storyTitle: string;
   status: DiffStatus;
+  /** The run's stability verdict; see DiffResult.unstable. */
+  unstable?: { hashes: string[]; unconfirmed?: string };
   mismatchPercent: number;
   mismatchPixels: number;
   changedRegions: ChangedRegion[];
@@ -109,6 +112,12 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   lines.push(`# Visual change: ${p.storyTitle}`);
   lines.push('');
   lines.push(`Story \`${p.storyId}\` is **${p.status}**.`);
+  if (p.unstable) {
+    lines.push(
+      '',
+      `**${describeUnstable(p.unstable)}.** Make the story deterministic first (mask the changing region, a \`stories\` override, or \`freshRenderer\`); approving it would baseline a flake.`,
+    );
+  }
   if (p.variant) {
     lines.push(
       `This capture is ${describeVariant(p.variant)}. Reproduce under those conditions; the story's default capture is a separate baseline.`,

@@ -26,6 +26,7 @@ import {
   startRun,
   adjacentStory,
   approvableCaptures,
+  approveAllPending,
   approveEach,
   capturesFor,
   describeFailures,
@@ -222,9 +223,14 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     setBusy(true);
     try {
       // Sequential on purpose. The server serializes these anyway, and firing
-      // them in parallel just makes a failure harder to attribute.
-      for (const item of pending) await approveStory(item.storyId).catch(() => {});
+      // them in parallel just makes a failure harder to attribute. A refusal
+      // (an unstable story) is shown, not swallowed.
+      const message = await approveAllPending(
+        pending.map((item) => item.storyId),
+        approveStory,
+      );
       await refresh();
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -465,6 +471,13 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
             </Toolbar>
 
             {result.error && <Muted role="alert">{result.error}</Muted>}
+            {result.unstable && (
+              <Muted role="alert">
+                {result.unstable.unconfirmed !== undefined
+                  ? `Unconfirmed: recheck failed (${result.unstable.unconfirmed})`
+                  : 'Unstable: two captures differed; approve refuses it'}
+              </Muted>
+            )}
 
             <Compare
               baselineUrl={

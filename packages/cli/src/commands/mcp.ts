@@ -269,6 +269,11 @@ export const TOOLS: Tool[] = [
           description:
             'Exact story ids or capture keys from the last run; a story id approves all its variants',
         },
+        allowUnstable: {
+          type: 'boolean',
+          description:
+            'Approve stories the run captured twice with different results. Off by default: an unstable story is refused and listed in `failed`; fix it (mask, `stories` override, freshRenderer) instead unless the user insists.',
+        },
       },
       required: ['stories'],
     },
@@ -726,7 +731,18 @@ export class McpServer {
           );
         const { approveCommand } = await import('./approve.js');
         return this.invoke(
-          (s) => approveCommand({ ...this.common(), run: runDir, story: stories }, s),
+          (s) =>
+            approveCommand(
+              {
+                ...this.common(),
+                run: runDir,
+                story: stories,
+                ...(bool(args, 'allowUnstable') === true
+                  ? { 'allow-unstable': true }
+                  : {}),
+              },
+              s,
+            ),
           signal,
         );
       },

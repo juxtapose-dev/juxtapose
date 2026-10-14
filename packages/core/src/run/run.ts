@@ -60,6 +60,8 @@ export interface RunOptions {
   /** Receives each story's images so the caller decides where they land. */
   onArtifact?: (artifact: RunArtifact) => Promise<void>;
   onProgress?: (done: number, total: number, storyId: string) => void;
+  /** Progress of the second-capture pass over new and failing stories. */
+  onRecheck?: (done: number, total: number, storyId: string) => void;
   /** Non-fatal capture notices; the caller decides where they go. */
   onWarning?: (message: string) => void;
   signal?: AbortSignal;
@@ -88,8 +90,10 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const p = opts.phases ?? phases();
   const manifest = await p.time('baselines', () => opts.store.readManifest());
   const results: DiffResult[] = [];
+  const firstPassWarnings = new Set<string>();
+  const toConfirm = new Map<string, DiffResult>();
 
-  const pool = capturePool(opts.stories, {
+  const poolOptions = (onProgress: RunOptions['onProgress']) => ({
     browser: opts.browser,
     platform: opts.platform,
     baseUrl: opts.baseUrl,
@@ -102,8 +106,15 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       ? { storyTimeoutMs: opts.config.storyTimeout }
       : {}),
     viewport,
-    onProgress: opts.onProgress,
-    ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
+    onProgress,
+    ...(opts.onWarning
+      ? {
+          onWarning: (m: string) => {
+            firstPassWarnings.add(m);
+            opts.onWarning!(m);
+          },
+        }
+      : {}),
     settleLayers: {
       project: {
         ...(opts.config?.settle ? { settle: opts.config.settle } : {}),
@@ -117,6 +128,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     },
     signal: opts.signal,
   });
+  const pool = capturePool(opts.stories, poolOptions(opts.onProgress));
 
   // Capture is measured as the whole streamed loop rather than per story: the
   // pool runs `concurrency` pages at once, so summing per-story durations would
@@ -169,7 +181,60 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       continue;
     }
 
-    results.push(await judge(outcome.snapshot, outcome.story, manifest, opts, p));
+    const result = await judge(outcome.snapshot, outcome.story, manifest, opts, p);
+    results.push(result);
+    if ((result.status === 'new' || result.status === 'fail') && result.hash) {
+      toConfirm.set(result.storyId, result);
+    }
+  }
+
+  // Approval turns a capture into a baseline, so a flaky one is only caught
+  // for free here, while the browser is open. Only stories that could be
+  // approved are captured again (new and changed ones); a passing story
+  // already matched a recorded hash and costs nothing extra.
+  //
+  // Fail closed: a story is stable only if its second capture produced an
+  // image with the same hash. An error, timeout, skip or abort leaves it
+  // `unconfirmed`, which approve refuses just like an unstable one.
+  if (toConfirm.size > 0) {
+    const again = opts.stories.filter((s) => toConfirm.has(s.storyId));
+    const unseen = new Set(toConfirm.keys());
+    const seenWarnings = new Set<string>();
+    const warnOnce = opts.onWarning
+      ? (m: string) => {
+          // The first pass already said this; don't repeat it per pool.
+          if (!seenWarnings.has(m) && !firstPassWarnings.has(m)) {
+            seenWarnings.add(m);
+            opts.onWarning!(m);
+          }
+        }
+      : undefined;
+    let rechecked = 0;
+    for await (const outcome of capturePool(again, {
+      ...poolOptions(undefined),
+      onProgress: (_d, _t, id) => opts.onRecheck?.(++rechecked, again.length, id),
+      ...(warnOnce ? { onWarning: warnOnce } : {}),
+    })) {
+      const first = toConfirm.get(outcome.story.storyId);
+      if (!first) continue;
+      unseen.delete(first.storyId);
+      if (!outcome.snapshot) {
+        first.unstable = {
+          hashes: [first.hash!],
+          unconfirmed: outcome.error?.message ?? 'recheck capture produced no snapshot',
+        };
+        continue;
+      }
+      const second = hashImage(outcome.snapshot.image);
+      if (second !== first.hash) first.unstable = { hashes: [first.hash!, second] };
+      if (opts.signal?.aborted) break;
+    }
+    for (const id of unseen) {
+      toConfirm.get(id)!.unstable = {
+        hashes: [toConfirm.get(id)!.hash!],
+        unconfirmed: 'run aborted before the recheck capture',
+      };
+    }
   }
 
   // Diffing and cause tracing happen inside the loop; subtract both to

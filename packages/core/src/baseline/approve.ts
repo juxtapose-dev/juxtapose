@@ -10,6 +10,41 @@ import { errorMessage } from '../browser/guards.js';
 import { decodeStructure } from '../capture/structure.js';
 import type { ApprovalMeta, BaselineStore } from '../types.js';
 
+/**
+ * Refusal to approve a capture the run saw come out two different ways.
+ * Baselining it would turn a flake into a permanently red story.
+ */
+export class UnstableCaptureError extends Error {
+  constructor(
+    readonly storyId: string,
+    unstable: { hashes: string[]; unconfirmed?: string },
+    opts: { freshRenderer?: boolean } = {},
+  ) {
+    // Only suggest freshRenderer when it is off (or unknown): it is on by
+    // default, so telling someone to set it is usually noise.
+    const fixes =
+      'mask the changing region, add a `stories` override in config' +
+      (opts.freshRenderer === true ? '' : ', or turn `freshRenderer` on');
+    const override = 'CLI --allow-unstable, MCP allowUnstable';
+    super(
+      unstable.unconfirmed !== undefined
+        ? `story '${storyId}' could not be confirmed stable: the recheck capture failed ` +
+            `(${unstable.unconfirmed}), so approving it would rest on one capture. Re-run it, ` +
+            `or approve anyway (${override}).`
+        : `story '${storyId}' is unstable: two captures of it differed, so approving it would ` +
+            `baseline a flake. Fix the cause (${fixes}), or approve anyway (${override}).`,
+    );
+    this.name = 'UnstableCaptureError';
+  }
+}
+
+/** One line for any surface that lists a result: why approval is refused. */
+export function describeUnstable(u: { hashes: string[]; unconfirmed?: string }): string {
+  return u.unconfirmed !== undefined
+    ? `unconfirmed: recheck capture failed (${u.unconfirmed})`
+    : 'unstable: two captures differed; approve refuses it';
+}
+
 export interface RunStructure {
   gz: Buffer;
   structureHash: string;

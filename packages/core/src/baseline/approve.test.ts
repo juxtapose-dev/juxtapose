@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { encodeStructure } from '../capture/structure.js';
 import type { BaselineStore, StructureSnapshot } from '../types.js';
 import { approveCapture, readRunStructure } from './approve.js';
@@ -83,4 +83,37 @@ test('a putStructure failure is reported, not thrown: the image is approved', as
     approveCapture(store, 'a', Buffer.from('img'), meta, image),
   ).resolves.toEqual({ structureError: 'disk full' });
   expect(puts).toHaveLength(1);
+});
+
+import { UnstableCaptureError } from './approve.js';
+
+describe('UnstableCaptureError', () => {
+  test("names the story and does not name one surface's flag only", () => {
+    const msg = new UnstableCaptureError('card--x', { hashes: ['a', 'b'] }).message;
+    expect(msg).toContain('card--x');
+    expect(msg).toContain('--allow-unstable');
+    expect(msg).toContain('allowUnstable');
+  });
+  test('an unconfirmed capture says the recheck failed, with the reason', () => {
+    const msg = new UnstableCaptureError('s', {
+      hashes: ['a'],
+      unconfirmed: 'timed out',
+    }).message;
+    expect(msg).toMatch(/recheck/i);
+    expect(msg).toContain('timed out');
+  });
+  test('does not suggest freshRenderer when it is already on', () => {
+    const on = new UnstableCaptureError(
+      's',
+      { hashes: ['a', 'b'] },
+      { freshRenderer: true },
+    );
+    expect(on.message).not.toContain('freshRenderer');
+    const off = new UnstableCaptureError(
+      's',
+      { hashes: ['a', 'b'] },
+      { freshRenderer: false },
+    );
+    expect(off.message).toContain('freshRenderer');
+  });
 });

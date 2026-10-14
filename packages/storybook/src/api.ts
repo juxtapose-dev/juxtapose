@@ -250,3 +250,13 @@ export function describeFailures(
 ): string {
   return failed.map((f) => `${f.id} (${f.reason})`).join(', ');
 }
+
+/** Approve every id in order; the message to show when some were refused
+ *  (an unstable story answers 409), or null when all went through. */
+export async function approveAllPending(
+  ids: readonly string[],
+  approve: (id: string) => Promise<unknown>,
+): Promise<string | null> {
+  const failed = await approveEach(ids, approve);
+  return failed.length > 0 ? `Could not approve ${describeFailures(failed)}` : null;
+}
