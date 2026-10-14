@@ -22,6 +22,7 @@ import { errorMessage } from '../guards.js';
 import { snapName } from '../snap-name.js';
 import { snapsDir } from '../snaps-dir.js';
 import { firstSymlink, symlinkRefusal, writeFresh } from '../symlink-guard.js';
+import { diffRuns } from './diff-runs.js';
 import { stdio, type Io, type Session } from '../io.js';
 
 export interface DiffFlags {
@@ -29,6 +30,7 @@ export interface DiffFlags {
   project?: string;
   crops?: boolean;
   prefix?: boolean;
+  runs?: boolean;
 }
 
 export type ReadSnap =
@@ -94,6 +96,15 @@ export async function diffCommand(
   flags: DiffFlags,
   { io = stdio }: Session = {},
 ): Promise<number> {
+  if (flags.runs) {
+    if (!a || !b || flags.crops || flags.prefix) {
+      io.err(
+        'jux diff: --runs takes two run ids or run directories, e.g. `jux diff --runs <runA> <runB>`, and no --crops or --prefix.\n',
+      );
+      return EXIT.usage;
+    }
+    return diffRuns(a, b, flags, io);
+  }
   if (!a || !b) {
     io.err(
       'jux diff: needs two snap names, e.g. `jux diff before after`. Take them with `jux snap <url> --as before` and `--as after`.\n',

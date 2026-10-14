@@ -304,3 +304,14 @@ test('a capture at the settle cap is flagged on every status, in the verdict too
   expect(green).not.toHaveProperty('flags');
   expect(green).not.toHaveProperty('settle');
 });
+
+// #129: a determinism check between runs reads this instead of re-hashing
+// images/*-current.webp by hand.
+test('every captured result carries the sha256 the baseline compares', async () => {
+  const pass = await run(store('ok'), 'green');
+  expect(pass.results[0].status).toBe('pass');
+  expect(pass.results[0].hash).toBe(hashImage(Buffer.from('current-bytes')));
+  // A failure records the current capture's hash too, not the baseline's.
+  const fail = await run(store('ok'));
+  expect(fail.results[0].hash).toBe(hashImage(Buffer.from('current-bytes')));
+});

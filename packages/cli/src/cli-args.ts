@@ -53,7 +53,7 @@ export const SPECS: Record<string, Spec> = {
     ],
     max: Infinity,
   },
-  diff: { flags: ['json', 'project', 'prefix', 'crops'], max: 2 },
+  diff: { flags: ['json', 'project', 'prefix', 'runs', 'crops'], max: 2 },
   mcp: { flags: ['project', 'concurrency', 'chrome', 'no-daemon'], max: 0 },
 };
 

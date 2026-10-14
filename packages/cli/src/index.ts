@@ -24,7 +24,7 @@ Usage
   jux handoff <storyId>          print an agent prompt for one failing story
   jux snap <url>… [options]      capture pages: pixels + structure, no workbench
   jux browser install|path|status|start|stop  manage the pinned and warm browser (install downloads once, ~100 MB)
-  jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix)
+  jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix, two runs with --runs)
   jux mcp [--project <dir>] [--concurrency <n>]
                                  MCP server on stdio for coding agents: snap, diff, run, check, handoff, approve
                                  (--concurrency: snaps at once, 1-16, default half the cores up to 4)
@@ -60,6 +60,11 @@ Settle options (snap, run; over the story's and the config's settle)
 const DIFF_HELP = `diff
   <a>, <b>                       snap names (from --as), or paths to .webp files
   --prefix                       pair <a>-<slug> with <b>-<slug> and verdict every page
+  --runs                         <a>, <b> are run ids (under .juxtapose/runs) or run directories:
+                                 compare each story's capture hash, no browser. Prints identical and
+                                 different counts and the differing story ids; --json is
+                                 juxtapose.run-diff/v1 {a, b, summary, different[], missing[]}
+                                 (missing: a story in only one run). Exit 0 identical, 1 otherwise.
   --json                         the verdict as juxtapose.verdict/v1 JSON (byte-stable)
   --crops                        also write side-by-side strips (baseline | current) per changed
                                  region, unexplained first, to .juxtapose/crops/<a>~vs~<b>/ and list
@@ -134,6 +139,7 @@ async function main(argv: string[]): Promise<number> {
       as: { type: 'string' },
       'as-prefix': { type: 'string' },
       prefix: { type: 'boolean', default: false },
+      runs: { type: 'boolean', default: false },
       viewport: { type: 'string' },
       'wait-for': { type: 'string' },
       delay: { type: 'string' },
