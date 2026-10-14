@@ -1,6 +1,6 @@
 ---
-'@juxtapose/core': patch
-'@juxtapose/cli': patch
+'@juxtapose/core': minor
+'@juxtapose/cli': minor
 ---
 
 **Default change:** each cold capture after a page's first now starts in a new Chrome renderer process (#153). The new `freshRenderer` config option (default `true`) controls this, and `--no-fresh-renderer` turns it off for one `jux run` or `jux snap`.
