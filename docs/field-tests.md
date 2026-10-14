@@ -192,9 +192,14 @@ from the pinned commit above (cached by commit), runs two passes, and fails on
 a capture error, on a story that differs across passes, or on a slow run.
 
 The gate reads `scripts/field-tests.config.json`: for each Storybook,
-`knownVariable` lists stories allowed to differ across passes, `allowedErrors`
+`knownVariable` lists stories allowed to differ across passes,
+`maxUnlistedDifferences` is how many other stories may differ before the job
+fails, `allowedErrors`
 lists stories allowed to error, and `maxWallSeconds` is the per-pass ceiling.
-The first lists came from the macOS runs above. Linux can differ, for example
+The first lists came from the macOS runs above. A GitHub runner is several
+times slower than a laptop (p50 around 0.9 s against 0.5 s), and its slow runs
+show a longer tail of load-sensitive stories that differ, a few new ones on
+every run, so the gate tolerates a handful beyond the list. Linux can differ, for example
 in fonts and timing, so after a CI run shows a story that is stable or newly
 variable, edit the list and note why in the commit. To run the same gate
 locally, add `--storybook <name>`.

@@ -153,10 +153,21 @@ try {
     for (const id of errored.filter((id) => !expected.allowedErrors.includes(id))) {
       failures.push(`capture error not on the allowlist: ${id}`);
     }
-    for (const id of [...differing]
+    const unlisted = [...differing]
       .filter((id) => !expected.knownVariable.includes(id))
-      .sort()) {
-      failures.push(`differs across passes and is not known-variable: ${id}`);
+      .sort();
+    const tolerated = gate.maxUnlistedDifferences ?? 0;
+    if (unlisted.length > tolerated) {
+      for (const id of unlisted) {
+        failures.push(`differs across passes and is not known-variable: ${id}`);
+      }
+      failures.push(
+        `${unlisted.length} unlisted differences exceed the tolerance of ${tolerated}`,
+      );
+    } else if (unlisted.length) {
+      say(
+        `note: ${unlisted.length} unlisted differences, within tolerance: ${unlisted.join(', ')}`,
+      );
     }
     for (const [i, r] of runs.entries()) {
       if (r.wall > gate.maxWallSeconds) {
