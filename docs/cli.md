@@ -5,6 +5,7 @@
 | `jux init`                           | set up config and `.gitignore`, and capture the first baselines                   |
 | `jux doctor [--fix]`                 | warn if baseline images are tracked by git, and print the migration commands      |
 | `jux run`                            | capture affected stories and compare to baselines                                 |
+| `jux run --since <ref>`              | capture only the stories a change since `<ref>` can reach (see below)             |
 | `jux run --all`                      | capture everything, skipping change analysis                                      |
 | `jux approve --all`                  | promote the last run's captures to baselines (hash and structure; image to cache) |
 | `jux approve --story <id>`           | approve one story                                                                 |
@@ -23,6 +24,56 @@
 unknown option, or a positional a command does not take (`jux run some-id`),
 exits 2 with a one-line message; it is never ignored. Use `jux run --story <id>`
 to run one story. A missing workbench exits 2 with its own message.
+
+## Capture only what a change reaches: `jux run --since`
+
+`jux run --since <ref>` diffs the working tree against `<ref>` (committed,
+uncommitted and untracked files all count) and captures the stories whose
+import graph contains a changed file. Editing `ui/Legend.tsx` captures the
+stories that import it, directly or through other modules. Without `--since`,
+`jux run` captures everything and prints `no-baseline`, which means "no ref to
+compare against".
+
+The graph comes from the build. Vite's own manifest lists chunks, not the
+modules bundled into them, so a shared component never appears in it. The
+juxtapose Vite plugin records every source module and what it imports to
+`.vite/juxtapose-modules.json` in the build directory:
+
+- **Storybook:** automatic. The `@juxtapose/storybook` addon adds the plugin to
+  `storybook build`. Rebuild after upgrading, since a build made earlier has no
+  graph.
+- **Ladle, or any Vite workbench:** add it to `vite.config.js`. Ladle reads that
+  file for `ladle build`:
+
+  ```js
+  import { juxtaposeModuleGraph } from '@juxtapose/core/vite';
+
+  export default { plugins: [juxtaposeModuleGraph()] };
+  ```
+
+  `@juxtapose/core` must be a direct dependency under pnpm.
+
+You don't need `build.manifest: true` for this. The Vite manifest is still read
+as a fallback for builds made without the plugin, and by the `cause` trace.
+
+Unknown means everything. Each of these captures every story, and the line
+`jux run` prints says why:
+
+| printed reason                               | why it captured everything                                                                                                                                                            |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dependency-changed`                         | a lockfile changed (also a project's own, one level below the repository root)                                                                                                        |
+| `config-changed`                             | `tsconfig*.json`, a juxtapose config or the project's `package.json`, or a workbench config dir (`.storybook`, `.ladle`) changed                                                      |
+| `unmapped-change: <file> is not in …`        | a changed file is not in the build's module graph: a public asset, a server file, a deleted module, or a file added since the build. One such file is enough, even beside mapped ones |
+| `shared-entry-changed: <file> is imported …` | a changed file is imported by something that is not a story, such as the Storybook preview or a global stylesheet it imports, so it runs for every story                              |
+| `no-match-fallback`                          | no module graph in the build (the detail says to add the plugin and rebuild), or the changed files reach no story                                                                     |
+| `git-unavailable`                            | git could not list the changes (not a repository, or `<ref>` unusable)                                                                                                                |
+
+Prose docs (`.md`, `.rst`, `.adoc`), `LICENSE*`, `CHANGELOG*`, `CODEOWNERS`,
+git and editor dotfiles and `.github/` never reach a story and never escalate.
+A story whose file is missing from the graph is always captured. If you
+rebuild only some of the time, rebuild before `--since` runs: the graph
+describes the build, so a stale build gives stale edges for files you didn't
+change.
 
 ## Check the repo: `jux doctor`
 

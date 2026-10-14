@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@juxtapose/cli": "workspace:*",
+    "@juxtapose/core": "workspace:*",
     "@ladle/react": "^5.0.3",
     "@types/react": "^18.3.12"
   }

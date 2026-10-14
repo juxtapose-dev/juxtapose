@@ -24,6 +24,7 @@
     ".": "./dist/index.js",
     "./browser": "./dist/browser/index.js",
     "./format": "./dist/report/format.js",
+    "./vite": "./dist/analysis/vite-plugin.js",
     "./schema.json": "./schema.json",
     "./package.json": "./package.json"
   },

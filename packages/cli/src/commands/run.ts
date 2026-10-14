@@ -236,7 +236,9 @@ export async function runCommand(
     if (affected) {
       const ids = new Set(affected.stories.map((s) => s.storyId));
       selection = stories.filter((s) => ids.has(platformStoryId(s)));
-      reason = affected.reason;
+      reason = affected.detail
+        ? `${affected.reason}: ${affected.detail}`
+        : affected.reason;
     } else {
       const { selected, unknown } = selectByStoryId(stories, flags.story ?? []);
       if (unknown.length > 0) return reportUnknown(unknown);

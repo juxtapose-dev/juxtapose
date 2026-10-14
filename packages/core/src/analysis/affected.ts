@@ -15,6 +15,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isRecord, isStringArray } from '../browser/guards.js';
 import type { StoryManifest } from '../types.js';
+import { loadModuleGraph, type ModuleGraph } from './module-graph.js';
 
 interface ViteManifestEntry {
   /** Always written by Vite; never read here, so not required of the file. */
@@ -64,9 +65,14 @@ export interface AffectedResult {
     | 'config-changed'
     | 'dependency-changed'
     | 'graph-walk'
+    | 'unmapped-change'
+    | 'shared-entry-changed'
     | 'no-match-fallback'
     | 'git-unavailable'
     | 'no-changes';
+  /** What to look at when `reason` escalated: the file that could not be
+   *  mapped, or how to get a graph. Printed beside the reason. */
+  detail?: string;
 }
 
 const LOCKFILES = new Set([
@@ -144,23 +150,53 @@ export async function resolveAffected(
   if (changed.length === 0) return { stories: [], reason: 'no-changes' };
 
   const prefix = gitProjectPrefix(opts.projectRoot);
-  for (const file of changed) {
-    if (isLockfileChange(file)) return { stories, reason: 'dependency-changed' };
+  // Git paths are repository-relative; the module graph and the manifest are
+  // project-relative (#96). The global-change rules look at both forms: a
+  // project below the repository top has its own lockfile, tsconfig and
+  // config dir, which only the project-relative form shows.
+  const files = changed.map((repoPath) => ({
+    repoPath,
+    path: repoToProjectPath(repoPath, prefix),
+  }));
+  for (const { repoPath, path: file } of files) {
+    if (isLockfileChange(repoPath)) return { stories, reason: 'dependency-changed' };
+    if (isTsconfigChange(repoPath)) return { stories, reason: 'config-changed' };
+    if (isJuxtaposeConfigChange(repoPath)) return { stories, reason: 'config-changed' };
+    if (isProjectPackageJson(repoPath, prefix))
+      return { stories, reason: 'config-changed' };
+    if (file !== 'package.json' && isLockfileChange(file))
+      return { stories, reason: 'dependency-changed' };
     if (isTsconfigChange(file)) return { stories, reason: 'config-changed' };
-    if (isJuxtaposeConfigChange(file)) return { stories, reason: 'config-changed' };
-    if (isProjectPackageJson(file, prefix)) return { stories, reason: 'config-changed' };
-    if (isConfigChange(file, opts.configDirs))
+    if (
+      isConfigChange(repoPath, opts.configDirs) ||
+      isConfigChange(file, opts.configDirs)
+    )
       return { stories, reason: 'config-changed' };
   }
+
+  const graph = opts.buildDir ? await loadModuleGraph(opts.buildDir) : null;
+  if (graph) return walkModuleGraph(stories, files, graph, opts.projectRoot);
 
   const manifest = opts.buildDir ? await loadViteManifest(opts.buildDir) : null;
   if (!manifest) {
     // Without a bundler graph we can't prove what's unaffected. Say so rather
     // than guessing with filename heuristics.
-    return { stories, reason: 'no-match-fallback' };
+    return { stories, reason: 'no-match-fallback', detail: NO_GRAPH_HINT };
   }
 
-  const affected = walkDependents(buildReverseGraph(manifest), changed);
+  // The manifest names story files and the odd entry, but not the modules
+  // Rollup bundled into chunks. A changed file it does not name could be
+  // inside any of them, so one unnamed file (beside a story edit, say) must
+  // not let the named ones narrow the run.
+  const named = new Set(Object.values(manifest).flatMap((e) => (e.src ? [e.src] : [])));
+  if (files.some((f) => !named.has(f.path) && !isNeverBundled(f))) {
+    return { stories, reason: 'no-match-fallback', detail: NO_GRAPH_HINT };
+  }
+
+  const affected = walkDependents(
+    buildReverseGraph(manifest),
+    files.map((f) => f.path),
+  );
 
   const matched = stories.filter((s) => {
     const rel = toPosixRelative(opts.projectRoot, s.componentPath);
@@ -170,9 +206,129 @@ export async function resolveAffected(
   // Files changed but nothing matched — the change is outside the graph we
   // know about. Could be a public asset, a global stylesheet, a util the
   // manifest didn't record. Capture everything.
-  if (matched.length === 0) return { stories, reason: 'no-match-fallback' };
+  if (matched.length === 0) {
+    return { stories, reason: 'no-match-fallback', detail: NO_GRAPH_HINT };
+  }
 
   return { stories: matched, reason: 'graph-walk' };
+}
+
+const NO_GRAPH_HINT =
+  'the build has no module graph; add the juxtapose Vite plugin (the Storybook addon does) and rebuild';
+
+/** A changed file in both forms: git's, and the project-relative one the
+ *  graph and manifest hold. */
+interface ChangedPath {
+  repoPath: string;
+  path: string;
+}
+
+/**
+ * The module-graph walk: changed files up through their importers to the
+ * stories that reach them.
+ *
+ * Three ways it declines to narrow, each a full run with a reason:
+ * - a changed file the graph has no node for (a public asset, a server file,
+ *   a deleted module) could affect anything;
+ * - a changed file whose importers end at a module that is not a story file
+ *   (the preview, a global stylesheet it imports) runs for every story;
+ * - a story whose file is not in the graph is always included, since nothing
+ *   proves it unaffected.
+ */
+function walkModuleGraph(
+  stories: StoryManifest[],
+  files: ChangedPath[],
+  graph: ModuleGraph,
+  projectRoot: string,
+): AffectedResult {
+  const unmapped = files.filter((f) => !graph.has(f.path) && !isNeverBundled(f));
+  if (unmapped.length > 0) {
+    return {
+      stories,
+      reason: 'unmapped-change',
+      detail: `${listFiles(unmapped.map((f) => f.path))} is not in the build's module graph`,
+    };
+  }
+
+  const storyFiles = new Set(
+    stories.map((s) => toPosixRelative(projectRoot, s.componentPath)),
+  );
+  const reverse = reverseOf(graph);
+  const reached = walkDependents(
+    reverse,
+    files.map((f) => f.path).filter((p) => graph.has(p)),
+  );
+
+  // A module nothing imports that is not a story file. Storybook's virtual
+  // entry imports the preview and every story file, and the plugin leaves
+  // virtual modules out, so this is what the preview (and everything it
+  // imports) looks like from here.
+  const entries = [...reached]
+    .filter((f) => (reverse.get(f)?.size ?? 0) === 0 && !storyFiles.has(f))
+    .sort();
+  if (entries.length > 0) {
+    return {
+      stories,
+      reason: 'shared-entry-changed',
+      detail: `${listFiles(entries)} is imported outside any story (preview, global styles), so it reaches every story`,
+    };
+  }
+
+  const matched = stories.filter((s) => {
+    const rel = toPosixRelative(projectRoot, s.componentPath);
+    return reached.has(rel) || !graph.has(rel);
+  });
+  if (matched.length === 0) {
+    return {
+      stories,
+      reason: 'no-match-fallback',
+      detail: 'the changed files reach no story in the module graph',
+    };
+  }
+  return { stories: matched, reason: 'graph-walk' };
+}
+
+function reverseOf(graph: ModuleGraph): Map<string, Set<string>> {
+  const reverse = new Map<string, Set<string>>();
+  for (const [importer, imports] of graph) {
+    for (const imported of imports) {
+      let set = reverse.get(imported);
+      if (!set) reverse.set(imported, (set = new Set()));
+      set.add(importer);
+    }
+  }
+  return reverse;
+}
+
+/** A short list for a reason line: the first few, then a count. */
+function listFiles(files: string[]): string {
+  const shown = files.slice(0, 3).join(', ');
+  return files.length > 3 ? `${shown} and ${files.length - 3} more` : shown;
+}
+
+/** A repository-relative path as the project-relative one the graph and
+ *  manifest hold. `prefix` is the project's place in the repository
+ *  (`apps/web/`, '' at the top). A file outside the project keeps a `../`
+ *  path, as the plugin records modules there. */
+export function repoToProjectPath(repoPath: string, prefix: string): string {
+  if (prefix === '') return repoPath;
+  if (repoPath.startsWith(prefix)) return repoPath.slice(prefix.length);
+  return path.posix.relative(prefix.replace(/\/$/, ''), repoPath);
+}
+
+const NEVER_BUNDLED_EXT = /\.(?:md|markdown|mdown|rst|adoc)$/i;
+const NEVER_BUNDLED_NAME =
+  /^(?:LICENSE.*|CHANGELOG.*|AUTHORS.*|CODEOWNERS|\.gitignore|\.gitattributes|\.editorconfig)$/;
+
+/** Files no bundler imports: prose docs, licences, git and editor dotfiles,
+ *  `.github/`. `.mdx` is not one: it compiles to a module. */
+export function isNeverBundled(f: ChangedPath): boolean {
+  const name = f.path.slice(f.path.lastIndexOf('/') + 1);
+  return (
+    NEVER_BUNDLED_EXT.test(name) ||
+    NEVER_BUNDLED_NAME.test(name) ||
+    f.repoPath.startsWith('.github/')
+  );
 }
 
 /**
@@ -204,6 +360,15 @@ export async function resolveAffectedFromPaths(
   );
 
   if (opts.buildDir) {
+    // The module graph names components the manifest's chunks hide.
+    const graph = await loadModuleGraph(opts.buildDir);
+    if (graph) {
+      const affected = walkDependents(reverseOf(graph), changed);
+      const matched = stories.filter((s) =>
+        affected.has(toPosixRelative(opts.projectRoot, s.componentPath)),
+      );
+      if (matched.length > 0) return matched;
+    }
     const manifest = await loadViteManifest(opts.buildDir);
     if (manifest) {
       const affected = walkDependents(buildReverseGraph(manifest), changed);
