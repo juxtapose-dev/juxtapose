@@ -7,6 +7,20 @@ on:
   schedule:
     - cron: '23 5 * * *'
   workflow_dispatch:
+    inputs:
+      storybook:
+        description: Which Storybook to test
+        type: choice
+        options: [all, chakra, primer, spectrum]
+        default: all
+      stories:
+        description: 'Story ids to capture, comma-separated (empty = all). Setting this skips the gate: it is an investigation run.'
+        type: string
+        default: ''
+      passes:
+        description: Capture passes
+        type: string
+        default: '2'
   pull_request:
     paths:
       - 'packages/core/src/capture/**'
@@ -24,31 +38,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The matrix is built here so the `storybook` input can filter it; a job-level
+  # `if` cannot read the matrix context.
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        env:
+          PICK: ${{ inputs.storybook || 'all' }}
+        run: |
+          # `sha` is the commit docs/field-tests.md pins. `output` is where the
+          # repo's own build leaves the static Storybook, relative to its root.
+          all='[
+            {"name":"chakra","repo":"chakra-ui/chakra-ui","sha":"fa9696f328ea5a0df8685c6d8460edbd779b63b9","node":"24","output":"storybook-static"},
+            {"name":"primer","repo":"primer/react","sha":"7f5303d803986887187d86dcebaeda22a4dc6823","node":"24","output":"packages/react/storybook-static"},
+            {"name":"spectrum","repo":"adobe/spectrum-web-components","sha":"9d8151f41f7cd363613aa4f3f1ae17739e69dd65","node":"24","output":"1st-gen/projects/documentation/dist/storybook"}
+          ]'
+          matrix=$(jq -c --arg p "$PICK" '{include: map(select($p == "all" or .name == $p))}' <<< "$all")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   field-test:
     name: field test (${{ matrix.name }})
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # `sha` is the commit docs/field-tests.md pins. `output` is where the
-          # repo's own build leaves the static Storybook, relative to its root.
-          - name: chakra
-            repo: chakra-ui/chakra-ui
-            sha: fa9696f328ea5a0df8685c6d8460edbd779b63b9
-            node: '24'
-            output: storybook-static
-          - name: primer
-            repo: primer/react
-            sha: 7f5303d803986887187d86dcebaeda22a4dc6823
-            node: '24'
-            output: packages/react/storybook-static
-          - name: spectrum
-            repo: adobe/spectrum-web-components
-            sha: 9d8151f41f7cd363613aa4f3f1ae17739e69dd65
-            node: '24'
-            output: 1st-gen/projects/documentation/dist/storybook
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       STORYBOOK_DISABLE_TELEMETRY: '1'
     steps:
@@ -154,13 +173,25 @@ jobs:
           path: ${{ runner.temp }}/sb-cache
           key: ${{ matrix.name }}-${{ matrix.sha }}-${{ runner.os }}
 
-      - name: Field test (two passes)
+      # Two passes over every story by default. A dispatch can set `passes` and
+      # `stories`; with `stories` the script is an investigation run: it skips
+      # the gate and only reports and copies images. Inputs go through env, not
+      # into the script text.
+      - name: Field test
+        env:
+          STORIES: ${{ inputs.stories }}
+          PASSES: ${{ inputs.passes || '2' }}
         run: |
           mkdir -p "$OUT_DIR"
-          node scripts/field-test.mjs "$SB_CACHE" 2 --storybook "${{ matrix.name }}" \
-            --json "$OUT_DIR/result.json" --report-dir "$OUT_DIR"
+          case "$PASSES" in '' | *[!0-9]*) echo "passes must be a number" >&2; exit 2 ;; esac
+          args=()
+          if [ -n "$STORIES" ]; then args+=(--stories "$STORIES"); fi
+          node scripts/field-test.mjs "$SB_CACHE" "$PASSES" --storybook "${{ matrix.name }}" \
+            "${args[@]}" --json "$OUT_DIR/result.json" --report-dir "$OUT_DIR"
           echo "cache-hit=${{ steps.sb.outputs.cache-hit || 'false' }}" >> "$GITHUB_STEP_SUMMARY"
 
+      # field-out holds result.json, the report.json files and images/ (the
+      # captures of every story that differed or errored, per pass).
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -3,7 +3,7 @@
 // identically across the passes, plus wall time and per-story timing.
 //
 // Usage: node scripts/field-test.mjs <buildDir> [passes] [--storybook <name>]
-//          [--json <file>] [--report-dir <dir>]
+//          [--json <file>] [--report-dir <dir>] [--stories <id,id,...>]
 //
 // With --storybook, the run is also a gate: it reads that Storybook's entry in
 // scripts/field-tests.config.json and exits 1 if a capture errored and is not
@@ -11,7 +11,14 @@
 // `knownVariable`, or if the wall time of any pass exceeds `maxWallSeconds`.
 // The human summary goes to stdout and, when set, to $GITHUB_STEP_SUMMARY.
 // --json writes the machine-readable result; --report-dir copies each pass's
-// report.json into that directory.
+// report.json into that directory. With --report-dir, every story whose hash
+// differs between any pass and pass 1 (and every story that errored) also has
+// its capture image and structure sidecar from each pass copied to
+// <dir>/images/<storyId>/pass-<n>-<hash8>.webp, with a diff.md listing the
+// hashes, up to a total of 200 MB.
+//
+// --stories captures only the listed story ids (one `jux run --story` each)
+// and turns the run into an investigation: the gate is skipped, nothing fails.
 //
 // Each pass is one `jux run --all` with a fresh browser launch and its own
 // temporary state dir. Every later pass is compared with pass 1 through
@@ -26,6 +33,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -37,7 +45,7 @@ const flags = {};
 const positional = [];
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
-  if (['--storybook', '--json', '--report-dir'].includes(argv[i]))
+  if (['--storybook', '--json', '--report-dir', '--stories'].includes(argv[i]))
     flags[argv[i]] = argv[++i];
   else positional.push(argv[i]);
 }
@@ -45,10 +53,15 @@ const [buildArg, passArg = '3'] = positional;
 const passes = Number(passArg);
 if (!buildArg || !Number.isInteger(passes) || passes < 2) {
   console.error(
-    'usage: node scripts/field-test.mjs <buildDir> [passes >= 2] [--storybook <name>] [--json <file>] [--report-dir <dir>]',
+    'usage: node scripts/field-test.mjs <buildDir> [passes >= 2] [--storybook <name>] [--json <file>] [--report-dir <dir>] [--stories <id,id,...>]',
   );
   process.exit(2);
 }
+const storyIds = (flags['--stories'] ?? '')
+  .split(',')
+  .map((id) => id.trim())
+  .filter(Boolean);
+const investigate = storyIds.length > 0;
 const gate = flags['--storybook']
   ? JSON.parse(
       readFileSync(path.resolve(import.meta.dirname, 'field-tests.config.json'), 'utf8'),
@@ -78,6 +91,14 @@ writeFileSync(
     ...(gate?.concurrency ? { concurrency: gate.concurrency } : {}),
   }),
 );
+const MAX_IMAGE_BYTES = 200 * 1024 * 1024;
+const hash8 = (h) => (h ?? 'nohash').replace(/^sha256:/, '').slice(0, 8);
+// Mirrors encodeStoryId in packages/core/src/baseline/git-store.ts.
+const encodeStoryId = (id) =>
+  id.replace(
+    /[^a-zA-Z0-9_-]/g,
+    (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0'),
+  );
 const jux = (args, state) =>
   run('node', [cli, ...args, '--project', project], {
     env: { ...process.env, JUX_STATE_DIR: state },
@@ -90,6 +111,62 @@ const say = (line) => {
   console.log(line);
   lines.push(line);
 };
+// Copy each differing or errored story's capture from every pass's run dir.
+// `jux run` writes <encoded id>-current.webp and -current.structure.json.gz
+// there; the recheck capture is not stored, only its hash (in diff.md).
+function copyImages(runs, ids, reportDir) {
+  let bytes = 0;
+  let skipped = 0;
+  let copied = 0;
+  for (const id of ids) {
+    const dir = path.join(reportDir, 'images', encodeStoryId(id));
+    mkdirSync(dir, { recursive: true });
+    const rows = [
+      `# ${id}`,
+      '',
+      '| pass | run | hash | recheck hash | error |',
+      '| --- | --- | --- | --- | --- |',
+    ];
+    for (const [i, r] of runs.entries()) {
+      const e = r.byStory.get(id);
+      rows.push(
+        `| ${i + 1} | ${r.runId} | ${e?.hash ?? '-'} | ${e?.recheck ?? '-'} | ${e?.error ? JSON.stringify(e.error).slice(0, 200) : '-'} |`,
+      );
+      if (!e?.hash) continue;
+      const base = path.join(
+        project,
+        '.juxtapose/runs',
+        r.runId,
+        'images',
+        `${encodeStoryId(id)}-current`,
+      );
+      for (const [src, name] of [
+        [`${base}.webp`, `pass-${i + 1}-${hash8(e.hash)}.webp`],
+        [`${base}.structure.json.gz`, `pass-${i + 1}-${hash8(e.hash)}.structure.json.gz`],
+      ]) {
+        if (!existsSync(src)) continue;
+        const size = statSync(src).size;
+        if (bytes + size > MAX_IMAGE_BYTES) {
+          skipped++;
+          continue;
+        }
+        copyFileSync(src, path.join(dir, name));
+        bytes += size;
+        copied++;
+      }
+    }
+    const distinct = new Set(runs.map((r) => r.byStory.get(id)?.hash));
+    rows.push('', `${distinct.size} distinct hash(es) across ${runs.length} passes.`, '');
+    writeFileSync(path.join(dir, 'diff.md'), rows.join('\n'));
+  }
+  if (!ids.length) return '';
+  return (
+    `images: copied ${copied} files (${(bytes / 1048576).toFixed(1)} MB) for ${ids.length} stories` +
+    (skipped
+      ? `; SKIPPED ${skipped} files, the ${MAX_IMAGE_BYTES / 1048576} MB cap was reached`
+      : '')
+  );
+}
 const percentile = (sorted, p) =>
   sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
 
@@ -99,7 +176,15 @@ try {
     const state = mkdtempSync(path.join(tmpdir(), 'jux-field-state-'));
     const started = Date.now();
     try {
-      const { stdout } = await jux(['run', '--all', '--json', '--no-daemon'], state);
+      const { stdout } = await jux(
+        [
+          'run',
+          ...(investigate ? storyIds.flatMap((id) => ['--story', id]) : ['--all']),
+          '--json',
+          '--no-daemon',
+        ],
+        state,
+      );
       const wall = (Date.now() - started) / 1000;
       const { runId } = JSON.parse(stdout);
       const report = JSON.parse(
@@ -108,7 +193,18 @@ try {
       const ms = report.results.map((r) => r.durationMs).sort((a, b) => a - b);
       const errors = report.results.filter((r) => r.error).length;
       const errored = report.results.filter((r) => r.error).map((r) => r.storyId);
-      runs.push({ runId, wall, results: report.results.length, errored });
+      runs.push({
+        runId,
+        wall,
+        results: report.results.length,
+        errored,
+        byStory: new Map(
+          report.results.map((r) => [
+            r.storyId,
+            { hash: r.hash, error: r.error, recheck: r.unstable?.hashes?.[1] },
+          ]),
+        ),
+      });
       if (flags['--report-dir']) {
         mkdirSync(flags['--report-dir'], { recursive: true });
         copyFileSync(
@@ -142,9 +238,22 @@ try {
     );
   }
 
+  if (flags['--report-dir']) {
+    const toCopy = new Set(differing);
+    for (const r of runs) for (const id of r.errored) toCopy.add(id);
+    // Differs by hash between any pass and pass 1, even if `jux diff` agreed.
+    for (const [id, first] of runs[0].byStory) {
+      if (runs.some((r) => r.byStory.get(id)?.hash !== first.hash)) toCopy.add(id);
+    }
+    const note = copyImages(runs, [...toCopy].sort(), flags['--report-dir']);
+    if (note) say(note);
+  }
+
   const failures = [];
   let expected = { knownVariable: [], allowedErrors: [] };
-  if (gate) {
+  if (investigate) {
+    say('investigation run (--stories): gate skipped');
+  } else if (gate) {
     expected = {
       knownVariable: gate.knownVariable ?? [],
       allowedErrors: gate.allowedErrors ?? [],
@@ -189,11 +298,15 @@ try {
       JSON.stringify(
         {
           storybook: flags['--storybook'] ?? null,
-          passes: runs.map(({ runId, wall, results, errored }) => ({
+          passes: runs.map(({ runId, wall, results, errored, byStory }) => ({
             runId,
             wall,
             results,
             errored,
+            // Per-story hashes only for an investigation, to keep result.json small.
+            ...(investigate
+              ? { hashes: Object.fromEntries([...byStory].map(([k, v]) => [k, v.hash])) }
+              : {}),
           })),
           comparisons,
           differing: [...differing].sort(),

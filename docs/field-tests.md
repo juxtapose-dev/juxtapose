@@ -204,6 +204,22 @@ in fonts and timing, so after a CI run shows a story that is stable or newly
 variable, edit the list and note why in the commit. To run the same gate
 locally, add `--storybook <name>`.
 
+When a story differs across passes, the artifact also holds its captures: for
+each story that differed or errored, `images/<storyId>/` has the image and
+structure sidecar from every pass (`pass-<n>-<hash8>.webp`) and a `diff.md`
+that lists the hashes, capped at 200 MB in total. The recheck capture that
+`jux run` takes is not stored, only its hash. To investigate a story, start
+the workflow by hand with `stories` set. This skips the gate and only reports
+and uploads images. For example:
+
+```sh
+gh workflow run field-tests.yml -f storybook=spectrum \
+  -f stories=card--toggles,card--default -f passes=20
+```
+
+Locally, pass the same list to the script as `--stories <id,id,...>`; the pass
+count stays the second argument.
+
 ### Run the script
 
 `scripts/field-test.mjs` does steps 2 to 4 for fresh passes. It takes a
