@@ -57,20 +57,23 @@ beforeAll(async () => {
   );
   await writeFile(
     path.join(build, MODULE_GRAPH_FILE),
-    serializeModuleGraph({
-      'stories/Button.stories.tsx': ['ui/Button.tsx'],
-      'stories/Card.stories.tsx': ['ui/Card.tsx'],
-      'stories/Plain.stories.tsx': [],
-      'ui/Button.tsx': ['ui/tokens.ts'],
-      'ui/Card.tsx': ['ui/Legend.tsx', 'ui/tokens.ts'],
-      'ui/Legend.tsx': ['ui/legend.css'],
-      'ui/legend.css': [],
-      'ui/tokens.ts': [],
-      // Imported by Storybook's virtual entry, which the plugin leaves out, so
-      // no story reaches it: it runs for every story.
-      'src/preview.ts': ['src/global.css'],
-      'src/global.css': [],
-    }),
+    serializeModuleGraph(
+      {
+        'stories/Button.stories.tsx': ['ui/Button.tsx'],
+        'stories/Card.stories.tsx': ['ui/Card.tsx'],
+        'stories/Plain.stories.tsx': [],
+        'ui/Button.tsx': ['ui/tokens.ts'],
+        'ui/Card.tsx': ['ui/Legend.tsx', 'ui/tokens.ts'],
+        'ui/Legend.tsx': ['ui/legend.css'],
+        'ui/legend.css': [],
+        'ui/tokens.ts': [],
+        // Imported by Storybook's virtual entry, which the plugin leaves out, so
+        // no story reaches it: it runs for every story.
+        'src/preview.ts': ['src/global.css'],
+        'src/global.css': [],
+      },
+      { root: proj },
+    ),
   );
   set = [
     storyAt('button--a', path.join(proj, 'stories/Button.stories.tsx')),
@@ -208,13 +211,16 @@ describe('a project below the repository top (#96)', () => {
       await mkdir(path.join(dist, '.vite'), { recursive: true });
       await writeFile(
         path.join(dist, MODULE_GRAPH_FILE),
-        serializeModuleGraph({
-          'stories/A.stories.tsx': ['ui/A.tsx', '../shared/x.ts'],
-          'stories/B.stories.tsx': ['ui/B.tsx'],
-          'ui/A.tsx': [],
-          'ui/B.tsx': [],
-          '../shared/x.ts': [],
-        }),
+        serializeModuleGraph(
+          {
+            'stories/A.stories.tsx': ['ui/A.tsx', '../shared/x.ts'],
+            'stories/B.stories.tsx': ['ui/B.tsx'],
+            'ui/A.tsx': [],
+            'ui/B.tsx': [],
+            '../shared/x.ts': [],
+          },
+          { root: web },
+        ),
       );
       const s = [
         storyAt('a', path.join(web, 'stories/A.stories.tsx')),
@@ -233,6 +239,186 @@ describe('a project below the repository top (#96)', () => {
       expect([beside.reason, ids(beside)]).toEqual(['graph-walk', ['a']]);
     } finally {
       await rm(repo, { recursive: true, force: true });
+    }
+  });
+});
+
+// The review round on #213: gaps a graph of JavaScript imports alone leaves.
+describe('what the graph cannot prove', () => {
+  let dir: string;
+  const storiesIn = (d: string, ...names: string[]) =>
+    names.map((n) => storyAt(`${n}--a`, path.join(d, `stories/${n}.stories.tsx`)));
+
+  const write = async (
+    modules: Record<string, string[]>,
+    meta: Parameters<typeof serializeModuleGraph>[1],
+    d = dir,
+  ) => {
+    await mkdir(path.join(d, 'sb', '.vite'), { recursive: true });
+    await writeFile(
+      path.join(d, 'sb', MODULE_GRAPH_FILE),
+      serializeModuleGraph(modules, meta),
+    );
+  };
+
+  const go = (
+    d: string,
+    s: StoryManifest[],
+    files: string[],
+    extra: { origin?: string } = {},
+  ) =>
+    resolveAffected(s, 'HEAD~1', {
+      projectRoot: d,
+      configDirs: ['.storybook'],
+      buildDir: path.join(d, 'sb'),
+      changedFiles: files,
+      ...extra,
+    });
+
+  beforeAll(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'jux-gaps-'));
+  });
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('H1: a changed stylesheet cannot be narrowed when some reference was not followed', async () => {
+    // tokens.css is imported by A from JS and by B from a CSS @import the
+    // plugin could not resolve: the graph shows only A.
+    await write(
+      {
+        'stories/A.stories.tsx': ['ui/A.tsx'],
+        'stories/B.stories.tsx': ['ui/B.css'],
+        'ui/A.tsx': ['ui/tokens.css'],
+        'ui/B.css': [],
+        'ui/tokens.css': [],
+      },
+      { root: dir, opaque: { 'ui/B.css': 'unresolved reference ./tokens.css' } },
+    );
+    const s = storiesIn(dir, 'A', 'B');
+    const r = await go(dir, s, ['ui/tokens.css']);
+    expect(r.reason).toBe('asset-changed');
+    expect(r.detail).toMatch(/non-JS dependency edges are not tracked completely/);
+    expect(r.stories).toHaveLength(2);
+    // A code file is still narrowed: the bundler saw every JS edge.
+    expect(ids(await go(dir, s, ['ui/A.tsx']))).toEqual(['A--a']);
+  });
+
+  it('H1: with every reference followed, a stylesheet edge narrows', async () => {
+    await write(
+      {
+        'stories/A.stories.tsx': ['ui/A.tsx'],
+        'stories/B.stories.tsx': ['ui/B.css'],
+        'ui/A.tsx': ['ui/tokens.css'],
+        'ui/B.css': ['ui/tokens.css'],
+        'ui/tokens.css': [],
+      },
+      { root: dir },
+    );
+    const r = await go(dir, storiesIn(dir, 'A', 'B'), ['ui/tokens.css']);
+    expect([r.reason, ids(r)]).toEqual(['graph-walk', ['A--a', 'B--a']]);
+  });
+
+  it('H1: a build with web workers does not narrow a non-story change', async () => {
+    await write(
+      {
+        'stories/A.stories.tsx': ['ui/A.tsx'],
+        'stories/B.stories.tsx': [],
+        'ui/A.tsx': [],
+      },
+      { root: dir, workers: true },
+    );
+    const s = storiesIn(dir, 'A', 'B');
+    expect((await go(dir, s, ['ui/A.tsx'])).reason).toBe('unmapped-change');
+    expect(ids(await go(dir, s, ['stories/B.stories.tsx']))).toEqual(['B--a']);
+  });
+
+  it('H2: a preview that every story imports (CSF factories) reaches every story', async () => {
+    await write(
+      {
+        'stories/D.stories.tsx': ['.storybook/preview.tsx', 'ui/D.tsx'],
+        'stories/E.stories.tsx': ['.storybook/preview.tsx'],
+        '.storybook/preview.tsx': ['theme/global.css', 'ui/Deco.tsx'],
+        'theme/global.css': [],
+        'ui/Deco.tsx': [],
+        'ui/D.tsx': [],
+      },
+      { root: dir },
+    );
+    const s = storiesIn(dir, 'D', 'E');
+    for (const f of ['theme/global.css', 'ui/Deco.tsx']) {
+      const r = await go(dir, s, [f]);
+      expect(r.reason).toBe('shared-entry-changed');
+      expect(r.stories).toHaveLength(2);
+    }
+    // A component only story D imports still narrows.
+    expect(ids(await go(dir, s, ['ui/D.tsx']))).toEqual(['D--a']);
+  });
+
+  it('M1: a docs page importing a component is a leaf, not a shared entry', async () => {
+    await write(
+      {
+        'stories/A.stories.tsx': ['ui/A.tsx'],
+        'stories/B.stories.tsx': [],
+        'docs/A.mdx': ['ui/A.tsx'],
+        'ui/A.tsx': [],
+      },
+      { root: dir },
+    );
+    const r = await go(dir, storiesIn(dir, 'A', 'B'), ['ui/A.tsx']);
+    expect([r.reason, ids(r)]).toEqual(['graph-walk', ['A--a']]);
+  });
+
+  it('H3: --origin never uses the build’s graph', async () => {
+    await write({ 'stories/A.stories.tsx': ['ui/A.tsx'], 'ui/A.tsx': [] }, { root: dir });
+    const r = await go(dir, storiesIn(dir, 'A'), ['ui/A.tsx'], {
+      origin: 'http://localhost:6006',
+    });
+    expect(r.reason).toBe('origin-run');
+  });
+
+  it('H3: a source modified after the build started means rebuild', async () => {
+    const d = await mkdtemp(path.join(tmpdir(), 'jux-stale-'));
+    try {
+      await mkdir(path.join(d, 'ui'), { recursive: true });
+      await writeFile(path.join(d, 'ui/A.tsx'), 'export {}');
+      const graph = { 'stories/A.stories.tsx': ['ui/A.tsx'], 'ui/A.tsx': [] };
+      await write(graph, { root: d, builtAt: Date.now() - 60_000 }, d);
+      const r = await go(d, storiesIn(d, 'A'), ['ui/A.tsx']);
+      expect(r.reason).toBe('stale-graph');
+      expect(r.detail).toMatch(/ui\/A\.tsx.*rebuild the workbench/);
+      await write(graph, { root: d, builtAt: Date.now() + 60_000 }, d);
+      expect((await go(d, storiesIn(d, 'A'), ['ui/A.tsx'])).reason).toBe('graph-walk');
+    } finally {
+      await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it('L2: a graph built relative to another root says so', async () => {
+    await write(
+      { 'stories/A.stories.tsx': ['ui/A.tsx'], 'ui/A.tsx': [] },
+      { root: '/elsewhere' },
+    );
+    const r = await go(dir, storiesIn(dir, 'A'), ['ui/A.tsx']);
+    expect(r.reason).toBe('graph-root-mismatch');
+    expect(r.detail).toContain('/elsewhere');
+    expect(r.detail).toContain(dir);
+  });
+
+  it('L4: a webpack build is not told to add a Vite plugin', async () => {
+    const d = await mkdtemp(path.join(tmpdir(), 'jux-webpack-'));
+    try {
+      await mkdir(path.join(d, 'sb'), { recursive: true });
+      await writeFile(
+        path.join(d, 'sb/project.json'),
+        JSON.stringify({ builder: '@storybook/builder-webpack5' }),
+      );
+      const r = await go(d, storiesIn(d, 'A'), ['ui/A.tsx']);
+      expect(r.reason).toBe('no-match-fallback');
+      expect(r.detail).toMatch(/not available for @storybook\/builder-webpack5/);
+      expect(r.detail).not.toMatch(/add the juxtapose Vite plugin/);
+    } finally {
+      await rm(d, { recursive: true, force: true });
     }
   });
 });

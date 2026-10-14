@@ -56,24 +56,39 @@ juxtapose Vite plugin records every source module and what it imports to
 You don't need `build.manifest: true` for this. The Vite manifest is still read
 as a fallback for builds made without the plugin, and by the `cause` trace.
 
-Unknown means everything. Each of these captures every story, and the line
-`jux run` prints says why:
+**What is tracked.** The bundler's own import graph (static and dynamic
+`import`, `import.meta.glob`), plus the references it resolves inside plugins,
+which the plugin parses from source: CSS `@import` and `url()`, Sass
+`@use`/`@forward`/`@import`, CSS-modules `composes … from`, and
+`new URL('./x', import.meta.url)`. The graph is stamped with the build's start
+time and root. Modules under `node_modules` are left out (a dependency change
+arrives as a lockfile change).
 
-| printed reason                               | why it captured everything                                                                                                                                                            |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dependency-changed`                         | a lockfile changed (also a project's own, one level below the repository root)                                                                                                        |
-| `config-changed`                             | `tsconfig*.json`, a juxtapose config or the project's `package.json`, or a workbench config dir (`.storybook`, `.ladle`) changed                                                      |
-| `unmapped-change: <file> is not in …`        | a changed file is not in the build's module graph: a public asset, a server file, a deleted module, or a file added since the build. One such file is enough, even beside mapped ones |
-| `shared-entry-changed: <file> is imported …` | a changed file is imported by something that is not a story, such as the Storybook preview or a global stylesheet it imports, so it runs for every story                              |
-| `no-match-fallback`                          | no module graph in the build (the detail says to add the plugin and rebuild), or the changed files reach no story                                                                     |
-| `git-unavailable`                            | git could not list the changes (not a repository, or `<ref>` unusable)                                                                                                                |
+**What escalates.** Unknown means everything. Each of these captures every
+story, and the line `jux run` prints says why:
+
+| printed reason                                | why it captured everything                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dependency-changed`                          | a lockfile changed (also a project's own, one level below the repository root)                                                                                                                                                                                               |
+| `config-changed`                              | `tsconfig*.json`, a juxtapose config or the project's `package.json`, or a workbench config dir (`.storybook`, `.ladle`) changed                                                                                                                                             |
+| `unmapped-change: <file> is not in …`         | a changed file is not in the build's module graph: a public asset, a server file, a deleted module, or a file added since the build. One such file is enough, even beside mapped ones. Also any non-story change in a build with web workers, whose imports are not followed |
+| `shared-entry-changed: <file> is imported …`  | a changed file is in the import closure of something that runs for every story: a module under `.storybook`/`.ladle` (the preview, even when each story imports it, as CSF factories do) or a module no story imports. Docs pages (`.mdx`) are leaves, not entries           |
+| `asset-changed: <file> (non-JS dependency …)` | a changed stylesheet or asset, in a build where the plugin saw a reference it could not follow (an unresolved `@import`, Tailwind, Stylus imports, a computed `new URL` path), so an importer edge to the file may be missing                                                |
+| `origin-run`                                  | `--origin` captures a running server, not the build in the build dir, so that build's graph does not describe it                                                                                                                                                             |
+| `stale-graph`                                 | a source file or changed file was modified after the build started: rebuild the workbench before `--since`                                                                                                                                                                   |
+| `graph-root-mismatch`                         | the build was made from another directory than the jux project root; the message names both. Build from the project root, or set `JUXTAPOSE_ROOT` for the build                                                                                                              |
+| `no-match-fallback`                           | no module graph in the build (the detail says to add the plugin and rebuild), or the changed files reach no story                                                                                                                                                            |
+| `git-unavailable`                             | git could not list the changes (not a repository, or `<ref>` unusable)                                                                                                                                                                                                       |
 
 Prose docs (`.md`, `.rst`, `.adoc`), `LICENSE*`, `CHANGELOG*`, `CODEOWNERS`,
 git and editor dotfiles and `.github/` never reach a story and never escalate.
-A story whose file is missing from the graph is always captured. If you
-rebuild only some of the time, rebuild before `--since` runs: the graph
-describes the build, so a stale build gives stale edges for files you didn't
-change.
+A story whose file is missing from the graph is always captured.
+
+**Rebuild before every `--since` run.** The captures come from the build, so a
+build older than your edit would be captured as it was. The graph records when
+the build started and refuses (`stale-graph`) when a file it describes, or a
+changed one, is newer. Under a webpack Storybook builder there is no graph and
+narrowing is not available.
 
 ## Check the repo: `jux doctor`
 
@@ -246,9 +261,9 @@ jux run --build-dir storybook-static
 jux run --origin https://storybook.chakra-ui.com/
 ```
 
-When you use `--origin`, jux doesn't serve a build. Keep `--build-dir` or
-`buildDir` set as well if you want `jux run` to use the build's manifest for
-change analysis. See [Capture a built or deployed Storybook](configuration.md#capture-a-built-or-deployed-storybook)
+When you use `--origin`, jux doesn't serve a build, and `--since` captures every
+story (`origin-run`): the running server is not the build in the build dir, so
+that build's import graph can't describe it. See [Capture a built or deployed Storybook](configuration.md#capture-a-built-or-deployed-storybook)
 for the precedence rules and caching behavior.
 
 ## Approval requires two identical captures

@@ -11,7 +11,8 @@
 // eager to give up.
 
 import { execFileSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { isRecord, isStringArray } from '../browser/guards.js';
 import type { StoryManifest } from '../types.js';
@@ -54,6 +55,8 @@ export interface AffectedOptions {
   buildDir?: string;
   /** Explicit file list, bypassing git. Used by the HMR path and by tests. */
   changedFiles?: string[];
+  /** A running workbench is being captured (`--origin`), not the build. */
+  origin?: string;
 }
 
 export interface AffectedResult {
@@ -67,6 +70,10 @@ export interface AffectedResult {
     | 'graph-walk'
     | 'unmapped-change'
     | 'shared-entry-changed'
+    | 'asset-changed'
+    | 'stale-graph'
+    | 'graph-root-mismatch'
+    | 'origin-run'
     | 'no-match-fallback'
     | 'git-unavailable'
     | 'no-changes';
@@ -174,14 +181,30 @@ export async function resolveAffected(
       return { stories, reason: 'config-changed' };
   }
 
+  // A dev server or deployed workbench is not the build in `buildDir`: its
+  // modules can differ from the graph's in ways nothing here can see.
+  if (opts.origin) {
+    return {
+      stories,
+      reason: 'origin-run',
+      detail:
+        '--origin captures a running server, not the build in the build dir, so that build’s import graph does not describe it',
+    };
+  }
+
+  const hint = opts.buildDir ? await noGraphHint(opts.buildDir) : NO_GRAPH_HINT;
   const graph = opts.buildDir ? await loadModuleGraph(opts.buildDir) : null;
-  if (graph) return walkModuleGraph(stories, files, graph, opts.projectRoot);
+  if (graph) {
+    const problem = await graphProblem(graph, opts.projectRoot, files);
+    if (problem) return { stories, ...problem };
+    return walkModuleGraph(stories, files, graph, opts.projectRoot, opts.configDirs);
+  }
 
   const manifest = opts.buildDir ? await loadViteManifest(opts.buildDir) : null;
   if (!manifest) {
     // Without a bundler graph we can't prove what's unaffected. Say so rather
     // than guessing with filename heuristics.
-    return { stories, reason: 'no-match-fallback', detail: NO_GRAPH_HINT };
+    return { stories, reason: 'no-match-fallback', detail: hint };
   }
 
   // The manifest names story files and the odd entry, but not the modules
@@ -190,7 +213,7 @@ export async function resolveAffected(
   // not let the named ones narrow the run.
   const named = new Set(Object.values(manifest).flatMap((e) => (e.src ? [e.src] : [])));
   if (files.some((f) => !named.has(f.path) && !isNeverBundled(f))) {
-    return { stories, reason: 'no-match-fallback', detail: NO_GRAPH_HINT };
+    return { stories, reason: 'no-match-fallback', detail: hint };
   }
 
   const affected = walkDependents(
@@ -207,7 +230,7 @@ export async function resolveAffected(
   // know about. Could be a public asset, a global stylesheet, a util the
   // manifest didn't record. Capture everything.
   if (matched.length === 0) {
-    return { stories, reason: 'no-match-fallback', detail: NO_GRAPH_HINT };
+    return { stories, reason: 'no-match-fallback', detail: hint };
   }
 
   return { stories: matched, reason: 'graph-walk' };
@@ -215,6 +238,88 @@ export async function resolveAffected(
 
 const NO_GRAPH_HINT =
   'the build has no module graph; add the juxtapose Vite plugin (the Storybook addon does) and rebuild';
+
+/** Storybook's `project.json` names its builder. A webpack build cannot carry
+ *  the Vite plugin, so telling its owner to add one would be wrong. */
+async function noGraphHint(buildDir: string): Promise<string> {
+  try {
+    const project: unknown = JSON.parse(
+      await readFile(path.join(buildDir, 'project.json'), 'utf8'),
+    );
+    const builder = isRecord(project) ? project['builder'] : undefined;
+    if (typeof builder === 'string' && !/vite/i.test(builder)) {
+      return `narrowing is not available for ${builder} builds (the module graph comes from a Vite plugin)`;
+    }
+  } catch {
+    // no project.json: not a Storybook build, or an old one
+  }
+  return NO_GRAPH_HINT;
+}
+
+/** Reasons the graph cannot be trusted for this run, checked before any edge
+ *  is read. Null when it can. */
+async function graphProblem(
+  graph: ModuleGraph,
+  projectRoot: string,
+  files: ChangedPath[],
+): Promise<Pick<AffectedResult, 'reason' | 'detail'> | null> {
+  if (!sameDir(graph.root, projectRoot)) {
+    return {
+      reason: 'graph-root-mismatch',
+      detail: `the build's module graph is relative to ${graph.root}, but the jux project root is ${projectRoot}; build from the project root, or set JUXTAPOSE_ROOT for the build`,
+    };
+  }
+  // The graph describes the sources as the build read them. A file modified
+  // since is not what it describes (a forgotten rebuild, a branch switch).
+  const stale = await newerThan(
+    graph.builtAt,
+    [...graph.modules.keys(), ...files.map((f) => f.path)].map((rel) =>
+      path.resolve(graph.root, rel),
+    ),
+  );
+  if (stale) {
+    return {
+      reason: 'stale-graph',
+      detail: `${toPosixRelative(graph.root, stale)} was modified after the workbench was built: rebuild the workbench`,
+    };
+  }
+  return null;
+}
+
+function sameDir(a: string, b: string): boolean {
+  const norm = (p: string) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
+  return norm(a) === norm(b);
+}
+
+/** The first of `files` modified after `time`, or null. Missing files (a
+ *  deleted module) are not newer. */
+async function newerThan(time: number, files: string[]): Promise<string | null> {
+  const BATCH = 256;
+  for (let i = 0; i < files.length; i += BATCH) {
+    const hits = await Promise.all(
+      files.slice(i, i + BATCH).map(async (f) => {
+        try {
+          return (await stat(f)).mtimeMs > time ? f : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const hit = hits.find((h) => h !== null);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** Source the bundler runs as code; everything else is a stylesheet or an
+ *  asset, whose importers are found by parsing rather than by the bundler. */
+const CODE_EXT = /\.(?:[cm]?[jt]sx?|vue|svelte|mdx)$/i;
 
 /** A changed file in both forms: git's, and the project-relative one the
  *  graph and manifest hold. */
@@ -240,8 +345,10 @@ function walkModuleGraph(
   files: ChangedPath[],
   graph: ModuleGraph,
   projectRoot: string,
+  configDirs: string[],
 ): AffectedResult {
-  const unmapped = files.filter((f) => !graph.has(f.path) && !isNeverBundled(f));
+  const modules = graph.modules;
+  const unmapped = files.filter((f) => !modules.has(f.path) && !isNeverBundled(f));
   if (unmapped.length > 0) {
     return {
       stories,
@@ -253,30 +360,75 @@ function walkModuleGraph(
   const storyFiles = new Set(
     stories.map((s) => toPosixRelative(projectRoot, s.componentPath)),
   );
-  const reverse = reverseOf(graph);
+
+  // A stylesheet or asset is reached through edges parsed from source, and the
+  // plugin records where it could not follow a reference. With any gap, an
+  // importer of this file may be missing, so it cannot be narrowed.
+  const gaps = Object.entries(graph.opaque);
+  if (gaps.length > 0) {
+    const asset = files.find((f) => modules.has(f.path) && !CODE_EXT.test(f.path));
+    if (asset) {
+      return {
+        stories,
+        reason: 'asset-changed',
+        detail: `${asset.path} (non-JS dependency edges are not tracked completely: ${gaps[0]![0]}: ${gaps[0]![1]})`,
+      };
+    }
+  }
+  // A worker's own imports are bundled by a build the plugin never sees.
+  if (graph.workers) {
+    const code = files.find((f) => modules.has(f.path) && !storyFiles.has(f.path));
+    if (code) {
+      return {
+        stories,
+        reason: 'unmapped-change',
+        detail: `${code.path} may be imported by a web worker, whose imports the module graph does not follow`,
+      };
+    }
+  }
+
+  const reverse = reverseOf(modules);
   const reached = walkDependents(
     reverse,
-    files.map((f) => f.path).filter((p) => graph.has(p)),
+    files.map((f) => f.path).filter((p) => modules.has(p)),
   );
 
-  // A module nothing imports that is not a story file. Storybook's virtual
-  // entry imports the preview and every story file, and the plugin leaves
-  // virtual modules out, so this is what the preview (and everything it
-  // imports) looks like from here.
-  const entries = [...reached]
-    .filter((f) => (reverse.get(f)?.size ?? 0) === 0 && !storyFiles.has(f))
+  // What runs for every story: modules under a workbench config dir (the
+  // preview, which a story may import itself, as CSF factories do), and any
+  // module nothing imports that is not a story or a docs page. Storybook's
+  // virtual entry imports the preview and every story file, and the plugin
+  // leaves virtual modules out, so the preview looks like a root from here.
+  // An .mdx page is a leaf, not an entry: docs are not captured.
+  const entries = [...modules.keys()]
+    .filter(
+      (f) =>
+        isConfigChange(f, configDirs) ||
+        ((reverse.get(f)?.size ?? 0) === 0 && !storyFiles.has(f) && !/\.mdx$/i.test(f)),
+    )
     .sort();
-  if (entries.length > 0) {
+  const shared = new Map<string, string>();
+  for (const entry of entries) {
+    for (const f of walkForward(modules, entry)) {
+      if (!shared.has(f)) shared.set(f, entry);
+    }
+  }
+  const hit = files.map((f) => f.path).filter((f) => shared.has(f));
+  if (hit.length > 0) {
+    const first = hit.sort()[0]!;
+    const entry = shared.get(first)!;
     return {
       stories,
       reason: 'shared-entry-changed',
-      detail: `${listFiles(entries)} is imported outside any story (preview, global styles), so it reaches every story`,
+      detail:
+        first === entry
+          ? `${entry} is imported outside any story (preview, global styles), so it reaches every story`
+          : `${first} is imported by ${entry}, which is imported outside any story (preview, global styles), so it reaches every story`,
     };
   }
 
   const matched = stories.filter((s) => {
     const rel = toPosixRelative(projectRoot, s.componentPath);
-    return reached.has(rel) || !graph.has(rel);
+    return reached.has(rel) || !modules.has(rel);
   });
   if (matched.length === 0) {
     return {
@@ -288,9 +440,22 @@ function walkModuleGraph(
   return { stories: matched, reason: 'graph-walk' };
 }
 
-function reverseOf(graph: ModuleGraph): Map<string, Set<string>> {
+/** Everything `start` imports, itself included. */
+function walkForward(modules: Map<string, string[]>, start: string): Set<string> {
+  const seen = new Set<string>();
+  const stack = [start];
+  while (stack.length > 0) {
+    const f = stack.pop()!;
+    if (seen.has(f)) continue;
+    seen.add(f);
+    for (const next of modules.get(f) ?? []) stack.push(next);
+  }
+  return seen;
+}
+
+function reverseOf(modules: Map<string, string[]>): Map<string, Set<string>> {
   const reverse = new Map<string, Set<string>>();
-  for (const [importer, imports] of graph) {
+  for (const [importer, imports] of modules) {
     for (const imported of imports) {
       let set = reverse.get(imported);
       if (!set) reverse.set(imported, (set = new Set()));
@@ -363,7 +528,7 @@ export async function resolveAffectedFromPaths(
     // The module graph names components the manifest's chunks hide.
     const graph = await loadModuleGraph(opts.buildDir);
     if (graph) {
-      const affected = walkDependents(reverseOf(graph), changed);
+      const affected = walkDependents(reverseOf(graph.modules), changed);
       const matched = stories.filter((s) =>
         affected.has(toPosixRelative(opts.projectRoot, s.componentPath)),
       );

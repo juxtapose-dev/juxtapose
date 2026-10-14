@@ -135,6 +135,7 @@ export async function runCommand(
             projectRoot: ctx.projectRoot,
             configDirs: [...ctx.platform.configDirs],
             buildDir: ctx.buildDir,
+            ...(ctx.origin ? { origin: ctx.origin } : {}),
           }),
         );
 

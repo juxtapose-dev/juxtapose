@@ -20,11 +20,29 @@ import { isRecord, isStringArray } from '../browser/guards.js';
  *  beside Vite's `.vite/manifest.json`. */
 export const MODULE_GRAPH_FILE = '.vite/juxtapose-modules.json';
 
-/** `importer → modules it imports` (static and dynamic), project-relative. */
-export type ModuleGraph = Map<string, string[]>;
+/** What the build knew about itself, beside the edges. */
+export interface ModuleGraphMeta {
+  /** The directory every path is relative to, absolute. A graph read by a run
+   *  from another root would compare unrelated paths. */
+  root: string;
+  /** When the build started (ms since the epoch). A source file modified later
+   *  is not what the graph describes. */
+  builtAt: number;
+  /** Modules whose references the plugin saw but could not follow, with why.
+   *  A changed stylesheet or asset cannot be narrowed when this is non-empty:
+   *  an importer edge to it may be missing. */
+  opaque: Record<string, string>;
+  /** A web worker is bundled by a separate build the plugin never sees. */
+  workers: boolean;
+}
 
-interface ModuleGraphFile {
-  version: 1;
+/** `importer → modules it imports` (static and dynamic), project-relative. */
+export interface ModuleGraph extends ModuleGraphMeta {
+  modules: Map<string, string[]>;
+}
+
+interface ModuleGraphFile extends ModuleGraphMeta {
+  version: 2;
   modules: Record<string, string[]>;
 }
 
@@ -37,7 +55,13 @@ export async function loadModuleGraph(buildDir: string): Promise<ModuleGraph | n
       await readFile(path.join(buildDir, MODULE_GRAPH_FILE), 'utf8'),
     );
     if (!isModuleGraphFile(parsed)) return null;
-    return new Map(Object.entries(parsed.modules));
+    return {
+      root: parsed.root,
+      builtAt: parsed.builtAt,
+      opaque: parsed.opaque,
+      workers: parsed.workers,
+      modules: new Map(Object.entries(parsed.modules)),
+    };
   } catch {
     return null;
   }
@@ -46,13 +70,28 @@ export async function loadModuleGraph(buildDir: string): Promise<ModuleGraph | n
 function isModuleGraphFile(v: unknown): v is ModuleGraphFile {
   return (
     isRecord(v) &&
-    v['version'] === 1 &&
+    v['version'] === 2 &&
+    typeof v['root'] === 'string' &&
+    typeof v['builtAt'] === 'number' &&
+    typeof v['workers'] === 'boolean' &&
+    isRecord(v['opaque']) &&
+    Object.values(v['opaque']).every((x) => typeof x === 'string') &&
     isRecord(v['modules']) &&
     Object.values(v['modules']).every(isStringArray)
   );
 }
 
-export function serializeModuleGraph(modules: Record<string, string[]>): string {
-  const file: ModuleGraphFile = { version: 1, modules };
+export function serializeModuleGraph(
+  modules: Record<string, string[]>,
+  meta: Partial<ModuleGraphMeta> & { root: string },
+): string {
+  const file: ModuleGraphFile = {
+    version: 2,
+    root: meta.root,
+    builtAt: meta.builtAt ?? Date.now(),
+    opaque: meta.opaque ?? {},
+    workers: meta.workers ?? false,
+    modules,
+  };
   return JSON.stringify(file);
 }
