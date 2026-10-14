@@ -259,8 +259,41 @@ function versions(): string {
   return lines.join('\n') + '\n';
 }
 
+/** A reader that stalls longer than this loses the tail rather than hanging us. */
+const FLUSH_LIMIT_MS = 30_000;
+
+/**
+ * Exit once everything written to stdout and stderr has left the process.
+ *
+ * Pipes are asynchronous on macOS: `process.stdout.write` returns before the
+ * bytes are in the pipe, and `process.exit()` discards what is still queued, so
+ * a reader that is slower than us saw output cut at 64 KiB (#135). We still
+ * call `process.exit` rather than set `process.exitCode`, because the warm
+ * browser daemon connection can hold the event loop open. An empty write
+ * completes only after every earlier write on that stream has, which is the
+ * drain signal. Bounded, so a reader that never reads cannot hang the process.
+ */
+async function exitAfterFlush(code: number): Promise<never> {
+  const drained = (stream: NodeJS.WriteStream): Promise<void> =>
+    new Promise<void>((resolve) => {
+      if (stream.destroyed || !stream.writable) return resolve();
+      stream.once('error', () => resolve());
+      stream.write('', () => resolve());
+    });
+  let timer: NodeJS.Timeout | undefined;
+  const limit = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, FLUSH_LIMIT_MS);
+  });
+  await Promise.race([
+    Promise.all([drained(process.stdout), drained(process.stderr)]),
+    limit,
+  ]);
+  clearTimeout(timer);
+  process.exit(code);
+}
+
 main(process.argv.slice(2))
-  .then((code) => process.exit(code))
+  .then((code) => exitAfterFlush(code))
   .catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(
@@ -269,5 +302,5 @@ main(process.argv.slice(2))
     if (process.env.JUX_DEBUG && err instanceof Error && err.stack)
       process.stderr.write(`${err.stack}\n`);
     // An unhandled throw is a tool failure, not "needs review".
-    process.exit(EXIT.failure);
+    return exitAfterFlush(EXIT.failure);
   });
