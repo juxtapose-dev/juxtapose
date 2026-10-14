@@ -52,14 +52,17 @@ After a story renders, juxtapose waits until the page has no pending work, then
 captures it. Pending work is any of the following:
 
 - A timer due within 1000 ms (`setTimeout`, or a `setInterval` before its first
-  tick). A timer that re-arms itself from its own callback with a delay of 16
-  ms or more, such as a poll or a clock, counts only for its first arm.
+  tick). A timer of 16 ms or more, set again from the same place in the code
+  after an earlier one there fired, counts only if the DOM changed since that
+  one fired. So a poll that changes nothing stops counting after its first
+  period, while a chain that reveals something at each step is waited for.
 - An animation frame callback, unless the page re-requests it from inside one
   for more than three frames, which is an animation loop.
 - A posted message not yet delivered, such as React's scheduler. Messages to a
   port that never delivers stop counting once deliveries stop.
-- A dedicated `Worker` that hasn't sent its first message, for up to 1000 ms
-  after it's created.
+- A dedicated `Worker` that hasn't answered a message posted to it, for up to
+  1000 ms after the post, or a new worker that hasn't sent anything yet, for up
+  to 300 ms after it's created.
 - A DOM change since the previous check.
 - A web font that is still loading.
 - An image that is still loading, unless it's lazy and either outside the
