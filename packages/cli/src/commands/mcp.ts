@@ -20,6 +20,7 @@ import { createInterface } from 'node:readline';
 import path from 'node:path';
 import {
   acquireBrowser,
+  checkNetwork,
   checkSettle,
   MAX_CROPS,
   MAX_SETTLE_TIMEOUT_MS,
@@ -122,6 +123,15 @@ const PROJECT = {
 
 // The config's `settle` shape, so an agent writes the same object it would
 // put in juxtapose.config.json. Over the story's and the project's.
+const NETWORK = {
+  type: 'object',
+  description:
+    "Third-party requests for this call. 'block' fails requests to origins other than the page's own, so an external image neither changes nor stalls the capture",
+  properties: {
+    external: { type: 'string', enum: ['allow', 'block'], description: 'Default allow' },
+  },
+};
+
 const SETTLE = {
   type: 'object',
   description:
@@ -183,6 +193,7 @@ export const TOOLS: Tool[] = [
           description: 'Fixed extra wait, ms; last resort',
         },
         settle: SETTLE,
+        network: NETWORK,
         mask: {
           type: 'array',
           items: { type: 'string' },
@@ -224,6 +235,7 @@ export const TOOLS: Tool[] = [
             'Story ids: a story id captures it with all its variants, a capture key (id__variant) just that capture',
         },
         settle: SETTLE,
+        network: NETWORK,
       },
     },
   },
@@ -287,13 +299,19 @@ const str = (args: Args, key: string, required = false): string | undefined => {
  *  config's own (the error names the argument). */
 function settleArg(args: Args): SettleFlags {
   let settle;
+  let network;
   try {
     settle = checkSettle(args['settle'] ?? undefined, "'settle'");
+    network = checkNetwork(args['network'] ?? undefined, "'network'");
   } catch (e) {
     throw new ArgError((e as Error).message.replace(/^jux: /, ''));
   }
-  if (!settle) return {};
+  const net: SettleFlags = network?.external
+    ? { 'network-external': network.external }
+    : {};
+  if (!settle) return net;
   return {
+    ...net,
     ...(settle.timeout !== undefined ? { 'settle-timeout': String(settle.timeout) } : {}),
     ...(settle.ready === true ? { 'settle-ready': true } : {}),
     ...(settle.ready === false ? { 'no-settle-ready': true } : {}),

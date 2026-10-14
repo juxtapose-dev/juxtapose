@@ -32,6 +32,7 @@ import {
   resolveSettle,
   type SettleLayer,
 } from './settle-options.js';
+import { applyNetworkPolicy, checkNetwork, resolveExternal } from './network-policy.js';
 import { captureStructure } from './structure.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
 
@@ -159,6 +160,14 @@ export async function captureStory(
     warmPages.delete(page);
   }
   pageCapture.set(page, { key: story.storyId, base: id });
+  // Before any request of this story: the policy is read from the layers
+  // known now (live params arrive after render, too late to block anything).
+  checkNetwork(params.network, `story '${story.storyId}'`);
+  await applyNetworkPolicy(
+    page,
+    resolveExternal(deps.settleLayers?.project, params, deps.settleLayers?.call),
+    deps.baseUrl,
+  );
   // Before the render is triggered, so a request or ready() call from this
   // story's render is never mistaken for the previous one's.
   await resetIdle(page, idle, warm);

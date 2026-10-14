@@ -54,4 +54,18 @@ describe('settle flags', () => {
       },
     );
   });
+
+  it('--network-external is its own layer, allow or block', () => {
+    expect(settleFromFlags({ 'network-external': 'block' }, 'jux run')).toEqual({
+      network: { external: 'block' },
+    });
+    expect(settleFlagArgs({ 'network-external': 'block' })).toEqual([
+      '--network-external',
+      'block',
+    ]);
+    expect(settleFromFlags({ 'network-external': 'replay' }, 'jux run')).toEqual({
+      error:
+        "jux run: --network-external must be allow or block, got 'replay'. Try --network-external block.",
+    });
+  });
 });

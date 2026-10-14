@@ -6,6 +6,7 @@ import {
   isSettleTimeout,
   MAX_SETTLE_TIMEOUT_MS,
   shellQuote,
+  type NetworkParams,
   type SettleParams,
 } from '@juxtapose/core';
 
@@ -16,6 +17,8 @@ export interface SettleFlags {
   'no-settle-ready'?: boolean;
   'settle-ignore'?: string[];
   'settle-require'?: string[];
+  /** `allow` or `block`: the config's `network.external`, for this call. */
+  'network-external'?: string;
 }
 
 /** The flags as a `settle` object, undefined when none is set; or the usage
@@ -23,8 +26,13 @@ export interface SettleFlags {
 export function settleFromFlags(
   flags: SettleFlags,
   command: string,
-): { settle?: SettleParams } | { error: string } {
+): { settle?: SettleParams; network?: NetworkParams } | { error: string } {
   const settle: SettleParams = {};
+  const external = flags['network-external'];
+  if (external !== undefined && external !== 'allow' && external !== 'block')
+    return {
+      error: `${command}: --network-external must be allow or block, got '${external}'. Try --network-external block.`,
+    };
   const raw = flags['settle-timeout'];
   if (raw !== undefined) {
     const n = /^\d+$/.test(raw) ? Number(raw) : NaN;
@@ -49,7 +57,10 @@ export function settleFromFlags(
     }
   }
   if (network.ignore || network.require) settle.network = network;
-  return Object.keys(settle).length > 0 ? { settle } : {};
+  return {
+    ...(Object.keys(settle).length > 0 ? { settle } : {}),
+    ...(external !== undefined ? { network: { external } } : {}),
+  };
 }
 
 /** The flags again, for a retry command that must repeat them. */
@@ -63,5 +74,7 @@ export function settleFlagArgs(flags: SettleFlags): string[] {
     out.push('--settle-ignore', shellQuote(p));
   for (const p of flags['settle-require'] ?? [])
     out.push('--settle-require', shellQuote(p));
+  if (flags['network-external'] !== undefined)
+    out.push('--network-external', shellQuote(flags['network-external']));
   return out;
 }

@@ -9,8 +9,15 @@
 //
 // Pure on purpose: nothing here touches a page, so every rule has a unit test.
 
-import type { CaptureFlag, SettleParams, SettleReport, StoryParams } from '../types.js';
+import type {
+  CaptureFlag,
+  NetworkParams,
+  SettleParams,
+  SettleReport,
+  StoryParams,
+} from '../types.js';
 import { SettleConfigError } from './config-errors.js';
+import { checkNetwork } from './network-policy.js';
 
 export { SettleConfigError };
 
@@ -143,6 +150,7 @@ export function matchPattern(
 /** One layer: the options a story, the project or a call can set. */
 export interface SettleLayer {
   settle?: SettleParams;
+  network?: NetworkParams;
   waitForSelector?: string;
   delay?: number;
 }
@@ -279,11 +287,13 @@ export function checkPatterns(
 /** The project config's settle options: `settle`, `waitForSelector`, `delay`. */
 export function checkProjectSettle(config: {
   settle?: unknown;
+  network?: unknown;
   waitForSelector?: unknown;
   delay?: unknown;
 }): void {
   const where = 'project config';
   checkSettle(config.settle, where);
+  checkNetwork(config.network, where);
   if (config.waitForSelector !== undefined && typeof config.waitForSelector !== 'string')
     throw new SettleConfigError(`${where}: waitForSelector must be a CSS selector`);
   if (

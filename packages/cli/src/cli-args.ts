@@ -8,6 +8,7 @@ const SETTLE = [
   'no-settle-ready',
   'settle-ignore',
   'settle-require',
+  'network-external',
 ] as const;
 const CONTEXT = ['project', 'build-dir', 'origin', 'platform', 'concurrency'] as const;
 
@@ -73,6 +74,7 @@ const TAKES_VALUE = new Set([
   'settle-timeout',
   'settle-ignore',
   'settle-require',
+  'network-external',
 ]);
 
 /** The one-line usage error for this command's arguments, or undefined if fine. */

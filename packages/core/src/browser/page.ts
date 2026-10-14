@@ -50,8 +50,17 @@ export class PageCrashedError extends Error {
  * through open shadow roots; anything else throws synchronously.
  */
 export interface Page {
-  /** Navigate and resolve on the main frame's `load`; rejects at `timeout` with the URL. */
-  goto(url: string, opts?: { timeout?: number }): Promise<void>;
+  /**
+   * Navigate and resolve on the main frame's `DOMContentLoaded` (default) or
+   * `load`; rejects at `timeout` with the URL. `load` waits for every
+   * subresource, so one request that never finishes holds it for the whole
+   * timeout; core leaves that wait to the settle step, which is capped and
+   * flags what it gave up on (issue #125).
+   */
+  goto(
+    url: string,
+    opts?: { timeout?: number; waitUntil?: 'domcontentloaded' | 'load' },
+  ): Promise<void>;
   url(): string;
   evaluate<R, A = undefined>(
     fn: string | ((arg: A) => R | Promise<R>),
@@ -514,23 +523,28 @@ export class CdpPage implements Page {
   }
 
   /**
-   * Page.navigate, then the main frame's `load` for the document that
-   * navigation created. The timeout covers the whole thing: Chrome answers
+   * Page.navigate, then the main frame's `DOMContentLoaded` (or `load`) for
+   * the document that navigation created. The timeout covers the whole thing: Chrome answers
    * Page.navigate only at commit or failure, so a server that never responds
    * never replies. A child frame's own `load` must not count (a same-process
    * iframe fires one for itself), nor may a late `load` from the previous
    * document: Playwright waits on the new document's loaderId.
    */
-  async goto(url: string, opts: { timeout?: number } = {}): Promise<void> {
+  async goto(
+    url: string,
+    opts: { timeout?: number; waitUntil?: 'domcontentloaded' | 'load' } = {},
+  ): Promise<void> {
     const timeout = opts.timeout ?? DEFAULT_TIMEOUT_MS;
-    const early: string[] = []; // loaderIds that fired load before navigate replied
+    const waitUntil = opts.waitUntil ?? 'domcontentloaded';
+    const eventName = waitUntil === 'load' ? 'load' : 'DOMContentLoaded';
+    const early: string[] = []; // loaderIds that fired the event before navigate replied
     let wanted: string | undefined;
     let onLoad!: () => void;
     const loaded = new Promise<void>((r) => (onLoad = r));
     const off = this.connection.on(
       'Page.lifecycleEvent',
       (e) => {
-        if (e.name !== 'load' || e.frameId !== this.targetId) return;
+        if (e.name !== eventName || e.frameId !== this.targetId) return;
         if (wanted === undefined) early.push(e.loaderId);
         else if (e.loaderId === wanted) onLoad();
       },
@@ -542,7 +556,7 @@ export class CdpPage implements Page {
         () =>
           reject(
             new TimeoutError(
-              `jux: navigation to ${url} did not fire load within ${timeout} ms`,
+              `jux: navigation to ${url} did not fire ${eventName} within ${timeout} ms`,
             ),
           ),
         timeout,
@@ -558,7 +572,7 @@ export class CdpPage implements Page {
       if (res.errorText)
         throw new Error(`jux: navigation to ${url} failed: ${res.errorText}`);
       // No loaderId: a same-document navigation (fragment change); the
-      // document is already loaded and no new `load` will fire.
+      // document is already loaded and no new event will fire.
       if (res.loaderId === undefined) return;
       wanted = res.loaderId;
       if (early.includes(wanted)) return;
