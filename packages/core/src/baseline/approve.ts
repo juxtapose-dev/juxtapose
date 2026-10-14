@@ -7,7 +7,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { errorMessage } from '../browser/guards.js';
-import { decodeStructure } from '../capture/structure.js';
+import { decodeStructure, formatStructure } from '../capture/structure.js';
 import type { ApprovalMeta, BaselineStore } from '../types.js';
 
 /**
@@ -46,7 +46,10 @@ export function describeUnstable(u: { hashes: string[]; unconfirmed?: string }):
 }
 
 export interface RunStructure {
+  /** The run's sidecar as written (gzip), for callers that forward it as is. */
   gz: Buffer;
+  /** The committed form: readable JSON, one element per line. */
+  stored: Buffer;
   structureHash: string;
 }
 
@@ -63,8 +66,10 @@ export async function readRunStructure(imagePath: string): Promise<RunStructure 
   );
   if (!gz) return null;
   try {
-    const { structureHash } = decodeStructure(gz);
-    return typeof structureHash === 'string' ? { gz, structureHash } : null;
+    const snapshot = decodeStructure(gz);
+    return typeof snapshot.structureHash === 'string'
+      ? { gz, stored: formatStructure(snapshot), structureHash: snapshot.structureHash }
+      : null;
   } catch {
     return null;
   }
@@ -94,7 +99,7 @@ export async function approveCapture(
   });
   if (!structure) return {};
   try {
-    await store.putStructure!(storyId, structure.gz);
+    await store.putStructure!(storyId, structure.stored);
     return {};
   } catch (err) {
     return { structureError: errorMessage(err) };

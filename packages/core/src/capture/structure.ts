@@ -521,9 +521,35 @@ function isStructureSnapshot(v: unknown): v is StructureSnapshot {
   );
 }
 
-/** Throws on a sidecar that is not one encodeStructure wrote; every caller catches. */
+/** gzip's two-byte magic. JSON never starts with 0x1f, so it tells the two
+ *  sidecar formats apart without a file extension. */
+export function isGzip(b: Buffer): boolean {
+  return b.length >= 2 && b[0] === 0x1f && b[1] === 0x8b;
+}
+
+/**
+ * The committed form of a structure sidecar: plain JSON, one element per line,
+ * keys in capture order. Committed sidecars are the only way CI (which has no
+ * baseline image) can say which element changed, and an approval's sidecar
+ * diff is how a reviewer sees it. gzip would make that diff opaque and
+ * one-line JSON would make it one unreadable line; this keeps `git diff`
+ * showing exactly the elements that moved. Still `JSON.parse`-able as is.
+ */
+export function formatStructure(s: StructureSnapshot): Buffer {
+  const { elements, ...head } = s;
+  const lines = Object.entries(head).map(
+    ([k, v]) => `${JSON.stringify(k)}:${JSON.stringify(v)}`,
+  );
+  const body = elements.map((e) => JSON.stringify(e)).join(',\n');
+  return Buffer.from(
+    `{\n${lines.join(',\n')},\n"elements":[${elements.length ? '\n' + body + '\n' : ''}]\n}\n`,
+  );
+}
+
+/** Throws on a sidecar that is not one encodeStructure or formatStructure
+ *  wrote; every caller catches. */
 export function decodeStructure(b: Buffer): StructureSnapshot {
-  const parsed: unknown = JSON.parse(gunzipSync(b).toString('utf8'));
+  const parsed: unknown = JSON.parse((isGzip(b) ? gunzipSync(b) : b).toString('utf8'));
   if (!isStructureSnapshot(parsed))
     throw new Error('not a juxtapose.structure/v1 sidecar');
   return parsed;

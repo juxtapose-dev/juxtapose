@@ -2,7 +2,11 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { encodeStructure } from '../capture/structure.js';
+import {
+  decodeStructure,
+  encodeStructure,
+  formatStructure,
+} from '../capture/structure.js';
 import type { BaselineStore, StructureSnapshot } from '../types.js';
 import { approveCapture, readRunStructure } from './approve.js';
 import { GitBaselineStore } from './git-store.js';
@@ -13,7 +17,25 @@ const structure: StructureSnapshot = {
   viewport: { width: 10, height: 10 },
   structureHash: 'f'.repeat(64),
   contentHeight: 10,
-  elements: [],
+  elements: [
+    {
+      path: 'html>body',
+      parent: null,
+      tag: 'body',
+      rect: { x: 0, y: 0, w: 10, h: 10 },
+      paintOrder: 0,
+      styles: {},
+    },
+    {
+      path: 'html>body>div#a',
+      parent: 0,
+      tag: 'div',
+      id: 'a',
+      rect: { x: 1, y: 1, w: 5, h: 5 },
+      paintOrder: 1,
+      styles: { color: 'red' },
+    },
+  ],
 };
 
 async function runImage(sidecar?: Buffer) {
@@ -36,6 +58,7 @@ test('readRunStructure: a valid sidecar returns its bytes and hash', async () =>
   const gz = encodeStructure(structure);
   expect(await readRunStructure(await runImage(gz))).toEqual({
     gz,
+    stored: formatStructure(structure),
     structureHash: structure.structureHash,
   });
 });
@@ -46,7 +69,7 @@ test('approveCapture writes the hash and the sidecar', async () => {
   const gz = encodeStructure(structure);
   const image = await runImage(gz);
   expect(await approveCapture(store, 'a', Buffer.from('img'), meta, image)).toEqual({});
-  expect(await store.getStructure('a')).toEqual(gz);
+  expect(decodeStructure((await store.getStructure('a'))!)).toEqual(structure);
   const manifest = JSON.parse(
     await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8'),
   );
