@@ -48,7 +48,7 @@ describe('network.external', () => {
     );
     expect(say({ rules: [{ action: 'block' }] })).toMatch(/network.rules\[0\]: match/);
     expect(say({ rules: [{ match: 'type:Script', action: 'placeholder' }] })).toBe(
-      "jux: project config: network.rules[0]: 'placeholder' only applies to Image, Document, Media requests, but 'type:Script' matches Script only. Use 'block'.",
+      "jux: project config: network.rules[0]: 'placeholder' only applies to Image, Document requests, but 'type:Script' matches Script only. Use 'block'.",
     );
     // detectable only by type: a URL rule is accepted and falls back to block at runtime
     expect(say({ rules: [{ match: 'https://x/**', action: 'placeholder' }] })).toBe('ok');

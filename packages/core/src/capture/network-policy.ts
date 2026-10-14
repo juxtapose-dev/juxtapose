@@ -17,9 +17,12 @@
 // a session this page does not hold (an out-of-process iframe; measured:
 // headless-shell ran a cross-site iframe in-process, and dedicated-worker
 // fetches were blocked, but a real Chrome with site isolation may differ).
-// data:, blob:, about: and file: URLs have no remote origin and are never
-// third-party (a rule can still match them); the top-level document is never
-// decided at all, so a story URL that redirects elsewhere still loads.
+// data: and blob: URLs never reach Fetch, so no rule or policy applies to
+// them; about: and file: URLs have no remote origin and are never third-party.
+// The top-level document is never decided at all, so a story URL that
+// redirects elsewhere still loads. Service-worker fetches bypass the policy
+// (issue #191). `images` covers what Chrome classifies as Image; an image
+// fetched with fetch() or XHR is Fetch/XHR and falls to `default`.
 
 import type { Page } from '../browser/page.js';
 import {
@@ -118,6 +121,7 @@ export async function applyNetworkPolicy(
           subframeDocument: e.resourceType === 'Document',
         });
     const id = e.requestId;
+    const origin = requestOrigin(e.request.headers);
     const done =
       verdict === 'allow'
         ? page.send('Fetch.continueRequest', { requestId: id })
@@ -133,7 +137,15 @@ export async function applyNetworkPolicy(
                 verdict === 'placeholder-image'
                   ? [
                       { name: 'Content-Type', value: 'image/png' },
-                      { name: 'Access-Control-Allow-Origin', value: '*' },
+                      // A credentialed CORS image needs the exact origin and
+                      // Allow-Credentials; `*` fails it.
+                      ...(origin
+                        ? [
+                            { name: 'Access-Control-Allow-Origin', value: origin },
+                            { name: 'Access-Control-Allow-Credentials', value: 'true' },
+                            { name: 'Vary', value: 'Origin' },
+                          ]
+                        : [{ name: 'Access-Control-Allow-Origin', value: '*' }]),
                       { name: 'Cache-Control', value: 'no-store' },
                     ]
                   : [
@@ -151,6 +163,12 @@ export async function applyNetworkPolicy(
   });
   applied.set(page, state);
   await page.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
+}
+
+function requestOrigin(headers: Record<string, string> | undefined): string | undefined {
+  if (!headers) return undefined;
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === 'origin');
+  return key && headers[key] && headers[key] !== 'null' ? headers[key] : undefined;
 }
 
 function originOf(url: string): string | undefined {

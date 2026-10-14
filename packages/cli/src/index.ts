@@ -58,7 +58,8 @@ Settle options (snap, run; over the story's and the config's settle)
                                  pattern: [type:<ResourceType>] [<glob>]; a glob starting with /
                                  matches the path, e.g. '/api/feed' or 'type:Fetch **/poll*'
   --network-external <mode>      allow (default) or block: block fails requests to origins other than
-                                 the page's own, so a third-party image neither changes nor stalls the capture
+                                 the page's own, so a third-party image neither changes nor stalls the capture;
+                                 applies to every resource type, overriding per-type entries from lower layers
   --network <json>               a config network object for this call: per-type actions and URL rules,
                                  e.g. '{"external":{"images":"placeholder"},"rules":[{"match":"https://ads.*/**","action":"block"}]}'
   --delay <ms>                   snap: fixed extra wait after settling; last resort

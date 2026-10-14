@@ -9,6 +9,8 @@ import { Browser } from '../browser/browser.js';
 import { chromeForTests } from '../browser/__tests__/helpers.js';
 import type { Snapshot, StoryParams } from '../types.js';
 import { snapPages } from './snap.js';
+import { applyNetworkPolicy } from './network-policy.js';
+import { resolveNetwork } from './network-rules.js';
 import type { SettleLayer } from './settle-options.js';
 
 const chrome = chromeForTests();
@@ -87,6 +89,11 @@ const PAGES: Record<string, () => string> = {
       `<img src="${other}/a.png" width="10" height="10"><img src="${other}/b.png" width="10" height="10">`,
     ),
   '/own-img': () => doc(`<img src="/own.png" width="10" height="10">`),
+  // A credentialed CORS image: needs the exact origin, not `*`.
+  '/cred-img': () =>
+    doc(
+      `<p id="r">pending</p><img crossorigin="use-credentials" src="${other}/cred.png" width="10" height="10" onload="r.textContent='loaded'" onerror="r.textContent='failed'">`,
+    ),
   '/video': () => doc(`<video src="${other}/v.mp4" width="40" height="30"></video>`),
 };
 
@@ -181,6 +188,50 @@ describe.skipIf(!chrome)('network.external by resource type', () => {
     expect(a.hits.some((h) => h.endsWith('/rand-frame-inner'))).toBe(false);
     const open = await snap('/rand-frame');
     expect(hash(open.snapshot)).not.toBe(hash(a.snapshot));
+  }, 60_000);
+
+  // Blocked and placeholder frames can render the same pixels, so read the
+  // outcome of the frame request itself: a placeholder finishes, a block fails.
+  it('a frame placeholder finishes the frame request; a block fails it', async () => {
+    const outcome = async (frames: 'placeholder' | 'block') => {
+      const context = await browser.newContext({ viewport: { width: 320, height: 240 } });
+      const page = await context.newPage();
+      try {
+        await applyNetworkPolicy(page, resolveNetwork({ external: { frames } }), base);
+        const ids = new Map<string, string>();
+        const done: string[] = [];
+        page.on?.('Network.requestWillBeSent', (e) =>
+          ids.set(e.requestId, e.request.url),
+        );
+        page.on?.('Network.loadingFinished', (e) =>
+          done.push(`finished ${ids.get(e.requestId)}`),
+        );
+        page.on?.('Network.loadingFailed', (e) =>
+          done.push(`failed ${ids.get(e.requestId)}`),
+        );
+        await page.goto(`${base}/rand-frame`, { waitUntil: 'load' });
+        await new Promise((r) => setTimeout(r, 300));
+        return done.filter((d) => d.endsWith('/rand-frame-inner'));
+      } finally {
+        await context.close();
+      }
+    };
+    const url = `${other}/rand-frame-inner`;
+    const placeholder = await outcome('placeholder');
+    expect(placeholder).toContain(`finished ${url}`);
+    expect(placeholder).not.toContain(`failed ${url}`);
+    expect(await outcome('block')).toContain(`failed ${url}`);
+  }, 60_000);
+
+  it('an image placeholder loads as a use-credentials image', async () => {
+    const r = await snap('/cred-img', {
+      network: { external: { images: 'placeholder' } },
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.snapshot?.structure?.elements.find((e) => e.id === 'r')?.text).toBe(
+      'loaded',
+    );
+    expect(r.hits.some((h) => h.endsWith('/cred.png'))).toBe(false);
   }, 60_000);
 
   it('a type entry overrides default, and only for that type', async () => {

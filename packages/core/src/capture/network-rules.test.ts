@@ -22,6 +22,12 @@ describe('mergeNetwork', () => {
         { external: { default: 'block', images: 'placeholder' } },
         { external: 'allow' },
       ),
+    ).toEqual({ external: { default: 'allow' } });
+    expect(
+      mergeNetwork(
+        { external: { default: 'block', images: 'placeholder' } },
+        { external: { default: 'allow' } },
+      ),
     ).toEqual({ external: { default: 'allow', images: 'placeholder' } });
     expect(
       mergeNetwork({ external: { frames: 'block' } }, { external: { media: 'block' } }),
@@ -35,6 +41,40 @@ describe('mergeNetwork', () => {
   it('leaves a string external as it was when only one side sets it', () => {
     expect(mergeNetwork(undefined, { external: 'block' })).toEqual({ external: 'block' });
     expect(mergeNetwork({ external: 'block' }, undefined)).toEqual({ external: 'block' });
+  });
+});
+
+describe('a string external at a higher layer', () => {
+  it('applies to every resource type, lifting a lower per-type entry', () => {
+    const pol = resolveNetwork({ external: { images: 'block' } }, { external: 'allow' });
+    expect(pol.images).toBeUndefined();
+    expect(
+      decide(pol, {
+        url: 'http://o/x.png',
+        resourceType: 'Image',
+        external: true,
+        subframeDocument: false,
+      }),
+    ).toBe('allow');
+    const blocked = resolveNetwork(
+      { external: { images: 'allow' } },
+      { external: 'block' },
+    );
+    expect(
+      decide(blocked, {
+        url: 'http://o/x.png',
+        resourceType: 'Image',
+        external: true,
+        subframeDocument: false,
+      }),
+    ).toBe('block');
+  });
+  it('keeps the lower rules, after its own', () => {
+    const pol = resolveNetwork(
+      { rules: [{ match: 'a', action: 'block' }] },
+      { external: 'allow' },
+    );
+    expect(pol.rules).toHaveLength(1);
   });
 });
 
@@ -111,6 +151,11 @@ describe('isActive', () => {
 });
 
 describe('placeholder rules that cannot hit a placeholderable type', () => {
+  it('refuses type:Media, which has no stand-in', () => {
+    expect(() =>
+      checkNetwork({ rules: [{ match: 'type:Media', action: 'placeholder' }] }, 'test'),
+    ).toThrow(/network.rules\[0\]: 'placeholder' only applies to Image, Document/);
+  });
   const bad = {
     network: { rules: [{ match: 'type:Script', action: 'placeholder' as const }] },
   };

@@ -76,13 +76,14 @@ describe('settle flags', () => {
       network: JSON.parse(json),
     });
     expect(settleFlagArgs({ network: json })).toEqual(['--network', `'${json}'`]);
-    // --network-external is the more specific flag: it layers over the object
+    // --network-external is a string form at a higher layer: that policy for
+    // every type, replacing the object's per-type entries
     expect(
       settleFromFlags({ network: json, 'network-external': 'block' }, 'jux snap'),
     ).toEqual({
       network: {
         ...JSON.parse(json),
-        external: { images: 'placeholder', default: 'block' },
+        external: { default: 'block' },
       },
     });
     expect(settleFromFlags({ network: '{' }, 'jux snap')).toEqual({

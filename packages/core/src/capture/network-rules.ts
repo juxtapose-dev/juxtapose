@@ -13,7 +13,7 @@ import { SettleConfigError } from './config-errors.js';
 import { matchPattern, parsePattern, type UrlPattern } from './url-pattern.js';
 
 /** Resource types a placeholder can stand in for. */
-export const PLACEHOLDER_TYPES = ['Image', 'Document', 'Media'] as const;
+export const PLACEHOLDER_TYPES = ['Image', 'Document'] as const;
 
 /** The object form of `network.external`, every field optional. */
 export interface ExternalTypes {
@@ -29,7 +29,9 @@ export function externalTypes(external: ExternalNetwork | undefined): ExternalTy
   return typeof external === 'string' ? { default: external } : external;
 }
 
-/** Layer `over` on `under`: the type map field by field, `over`'s rules
+/** Layer `over` on `under`: the type map field by field, except that a string
+ *  `over.external` means that policy for every resource type, so it replaces
+ *  `default` and clears `under`'s per-type entries. `over`'s rules
  *  before `under`'s (rules are checked in order, the first match wins, and a
  *  higher layer is checked first). Absent keys stay absent. */
 export function mergeNetwork(
@@ -38,10 +40,10 @@ export function mergeNetwork(
 ): NetworkParams | undefined {
   if (!under) return over;
   if (!over) return under;
-  const types: ExternalTypes = {
-    ...externalTypes(under.external),
-    ...externalTypes(over.external),
-  };
+  const types: ExternalTypes =
+    typeof over.external === 'string'
+      ? { default: over.external }
+      : { ...externalTypes(under.external), ...externalTypes(over.external) };
   const rules =
     under.rules || over.rules
       ? [...(over.rules ?? []), ...(under.rules ?? [])]

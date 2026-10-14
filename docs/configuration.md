@@ -328,6 +328,15 @@ documents, such as an `<iframe>`) and `media` (audio and video) each take
 override `default` for that type. The type is the one Chrome reports for the
 request. `placeholder` is not valid for `default`; it is a config error.
 
+`images` covers only what Chrome classifies as an image: `<img>`, CSS
+backgrounds and the like. An image you load with `fetch()` or `XMLHttpRequest`
+is a `Fetch` or `XHR` request, so it falls to `default`. To control it, add a
+[URL rule](#url-rules) such as `{ "match": "type:Fetch https://cdn.example.com/**", "action": "block" }`.
+
+`data:` and `blob:` URLs never reach the policy, so no rule or `external` entry
+applies to them. Requests that a service worker makes bypass the policy too
+([#191](https://github.com/juxtapose-dev/juxtapose/issues/191)).
+
 ```json
 {
   "network": {
@@ -386,8 +395,14 @@ It's layered like `settle`: the project config, then the story's
 (`--network-external block`, `--network '<json>'` with the same object as the
 config, or `network: { ... }` in the MCP `snap` and `run` tools). The type map
 merges field by field, so a story's `images: "block"` keeps the project's
-`frames`. Rules from a higher layer are checked before the lower layer's, so a
-story can allow a URL the project blocks. Only values known before navigation
+`frames`. The string form is the exception: `"external": "block"` (or the
+`--network-external` flag, or the MCP `external` argument) at a higher layer
+means that policy for every resource type, so it replaces `default` and clears
+the lower layers' per-type entries. For example, a project's `images: "block"`
+plus `--network-external allow` on the command line allows images. Rules from a
+higher layer are checked before the lower layer's. Because the first match wins,
+to lift a lower layer's rule, add a rule at the higher layer that matches the
+same URL, such as `{ "match": "https://cdn.example.com/**", "action": "allow" }`. Only values known before navigation
 apply, so a value that only the live Storybook preview declares is ignored.
 Recording and replaying external responses is tracked in #147 and isn't
 implemented.
