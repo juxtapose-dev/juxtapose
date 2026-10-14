@@ -342,7 +342,9 @@ export interface DiffResult {
   /** A new or failing story the run did not capture a second time, because
    *  `recheck` is "off", or is "new" and this one failed (#195). Nothing is
    *  known about its stability yet, so `jux approve` takes the confirming
-   *  capture itself before writing a baseline. Absent on every pass, skip and
+   *  capture itself before writing a baseline. Always set with an `unstable`
+   *  placeholder (`unconfirmed` starting "not rechecked") so older approvers
+   *  refuse it. Absent on every pass, skip and
    *  stale, and on stories the recheck covered. */
   unrechecked?: true;
   mismatchPixels: number;
@@ -474,7 +476,7 @@ export interface RunReport {
   totalCount: number;
   results: DiffResult[];
   /** The recheck mode the run used, after the config and the call were
-   *  layered. "off" explains why no story has `unstable` or `flake`. Absent on
+   *  layered. "off" explains why no story has a `flake`. Absent on
    *  reports written before the option existed (which always rechecked
    *  "changed"). */
   recheck?: RecheckMode;

@@ -19,7 +19,7 @@ import type {
   Viewport,
 } from '../types.js';
 import { describeDeltas } from '../diff/structural/summary.js';
-import { describeUnstable } from '../baseline/approve.js';
+import { describeUnstable, NOT_RECHECKED } from '../baseline/approve.js';
 import { describeFlake, describeFlakeGroup } from '../flake/describe.js';
 import { shellQuote } from '../shell-quote.js';
 import { BASELINE_IMAGE_UNAVAILABLE, compareCodeUnits } from '../report/format.js';
@@ -123,7 +123,12 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   lines.push(`# Visual change: ${p.storyTitle}`);
   lines.push('');
   lines.push(`Story \`${p.storyId}\` is **${p.status}**.`);
-  if (p.unstable) {
+  if (p.unstable?.unconfirmed?.startsWith(NOT_RECHECKED)) {
+    lines.push(
+      '',
+      `**${describeUnstable(p.unstable)}.** Nothing is known about its stability yet; \`jux approve\` confirms it before it becomes a baseline.`,
+    );
+  } else if (p.unstable) {
     lines.push(
       '',
       `**${describeUnstable(p.unstable)}.** Make the story deterministic first (mask the changing region, a \`stories\` override, or \`freshRenderer\`); approving it would baseline a flake.`,

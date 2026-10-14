@@ -30,5 +30,7 @@ test('run and config take the flags; approve and snap do not', () => {
   expect(checkArgs('config', { explain: 'a', recheck: 'off' }, [])).toBeUndefined();
   expect(checkArgs('run', { recheck: true }, [])).toContain('--recheck needs a value');
   expect(checkArgs('approve', { recheck: 'off' }, [])).toContain('unknown option');
+  // approve captures again for an unrechecked story, with the run's browser.
+  expect(checkArgs('approve', { chrome: '/x', 'no-daemon': true }, [])).toBeUndefined();
   expect(checkArgs('snap', { 'no-recheck': true }, [])).toContain('unknown option');
 });

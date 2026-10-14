@@ -99,7 +99,7 @@ test('"new" captures only new stories twice; a failing one is left to approve', 
   expect(r.recheck).toBe('new');
   const fail = r.results.find((x) => x.storyId === 'fail')!;
   expect(fail.unrechecked).toBe(true);
-  expect(fail.unstable).toBeUndefined();
+  expect(fail.unstable?.unconfirmed).toBe('not rechecked (recheck new)');
   expect(r.results.find((x) => x.storyId === 'fresh')!.unstable).toBeDefined();
   expect(r.results.find((x) => x.storyId === 'pass')!.unrechecked).toBeUndefined();
 });
@@ -111,10 +111,21 @@ test('"off" captures every story once, and says nothing was confirmed', async ()
   for (const id of ['fail', 'fresh']) {
     const x = r.results.find((s) => s.storyId === id)!;
     expect(x.unrechecked).toBe(true);
-    expect(x.unstable).toBeUndefined();
     expect(x.flake).toBeUndefined();
   }
   expect(readFirst).toBe(0);
+});
+
+test('an approver that only reads `unstable` (older versions) refuses every story captured once', async () => {
+  const r = await run({ recheck: 'off' });
+  const olderApproves = r.results.filter((x) => !x.unstable).map((x) => x.storyId);
+  // Only the passing story has no verdict to refuse, and it is never approved.
+  expect(olderApproves).toEqual(['pass']);
+  for (const id of ['fail', 'fresh'])
+    expect(r.results.find((x) => x.storyId === id)!.unstable).toMatchObject({
+      hashes: [expect.any(String)],
+      unconfirmed: 'not rechecked (recheck off)',
+    });
 });
 
 test('the config sets the mode, and the call overrides it', async () => {

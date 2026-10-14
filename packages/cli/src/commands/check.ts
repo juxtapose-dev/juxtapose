@@ -69,7 +69,7 @@ export async function checkCommand(
         blocking: blocking.map((r) => ({
           storyId: r.storyId,
           status: r.status,
-          ...(r.unstable ? { unstable: true } : {}),
+          ...(r.unstable && !r.unrechecked ? { unstable: true } : {}),
         })),
         runId: report.runId,
       }) + '\n',
@@ -81,7 +81,9 @@ export async function checkCommand(
       `jux: ${blocking.length} ${blocking.length === 1 ? 'story needs' : 'stories need'} review\n`,
     );
     for (const r of blocking.slice(0, 20)) {
-      io.out(`  ${r.status.padEnd(6)} ${r.storyId}${r.unstable ? '  (unstable)' : ''}\n`);
+      io.out(
+        `  ${r.status.padEnd(6)} ${r.storyId}${r.unstable && !r.unrechecked ? '  (unstable)' : ''}\n`,
+      );
     }
   }
 

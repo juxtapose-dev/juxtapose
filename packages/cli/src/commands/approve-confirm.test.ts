@@ -10,17 +10,20 @@ import { captureIo } from '../io.js';
 
 let confirmed: ConfirmOptions[] = [];
 let unstableIds = new Set<string>();
+let silent = new Set<string>();
 
 vi.mock('@juxtapose/core', async (orig) => ({
   ...(await orig<typeof import('@juxtapose/core')>()),
   confirmCaptures: async (o: ConfirmOptions): Promise<Confirmation[]> => {
     confirmed.push(o);
-    return o.stories.map((s) => ({
-      storyId: s.storyId,
-      ...(unstableIds.has(s.storyId)
-        ? { unstable: { hashes: [o.hashes.get(s.storyId)!, 'other'] } }
-        : {}),
-    }));
+    return o.stories
+      .filter((s) => !silent.has(s.storyId))
+      .map((s) => ({
+        storyId: s.storyId,
+        ...(unstableIds.has(s.storyId)
+          ? { unstable: { hashes: [o.hashes.get(s.storyId)!, 'other'] } }
+          : {}),
+      }));
   },
 }));
 
@@ -35,6 +38,7 @@ const lent = async () => {
 beforeEach(() => {
   confirmed = [];
   unstableIds = new Set();
+  silent = new Set();
   launched = 0;
 });
 afterEach(() => {
@@ -66,7 +70,15 @@ function project(): string {
         storyId: id,
         status: 'new',
         hash: `h-${id}`,
-        ...(id === 'twice' ? {} : { unrechecked: true }),
+        ...(id === 'twice'
+          ? {}
+          : {
+              unrechecked: true,
+              unstable: {
+                hashes: [`h-${id}`],
+                unconfirmed: 'not rechecked (recheck off)',
+              },
+            }),
       })),
     }),
   );
@@ -110,6 +122,14 @@ test('refuses an unrechecked story whose confirming capture differs', async () =
   expect(r.out.failed[0]!.reason).toMatch(/unstable: two captures of it differed/);
 });
 
+test('fails closed: an unrechecked story with no confirmation is refused', async () => {
+  silent = new Set(['flaky']);
+  const r = await approve();
+  expect(r.out.approved.sort()).toEqual(['steady', 'twice']);
+  expect(r.out.failed[0]).toMatchObject({ storyId: 'flaky', unstable: true });
+  expect(r.out.failed[0]!.reason).toMatch(/no confirming capture was taken/);
+});
+
 test('--allow-unstable approves without the confirming capture', async () => {
   unstableIds = new Set(['flaky']);
   const r = await approve({ 'allow-unstable': true });
@@ -122,7 +142,10 @@ test('a run that rechecked everything launches no browser at approve', async () 
   const root = project();
   const file = path.join(root, '.juxtapose', 'runs', 'r1', 'report.json');
   const report = JSON.parse(readFileSync(file, 'utf8'));
-  for (const r of report.results) delete r.unrechecked;
+  for (const r of report.results) {
+    delete r.unrechecked;
+    delete r.unstable;
+  }
   report.recheck = 'changed';
   writeFileSync(file, JSON.stringify(report));
   const io = captureIo();

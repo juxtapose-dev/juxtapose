@@ -7,6 +7,7 @@
 
 import type { RecheckMode } from '../config/schema.js';
 import { DEFAULT_RECHECK } from '../config/schema.js';
+import { NOT_RECHECKED } from '../baseline/approve.js';
 import type { Browser } from '../browser/browser.js';
 import { captureEnv } from '../capture/env.js';
 import type { Platform } from '../platform.js';
@@ -195,6 +196,14 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
         // Not captured again: say so, so approve knows to confirm it and a
         // missing `unstable` or `flake` is never read as "stable".
         result.unrechecked = true;
+        // Also an `unstable` verdict, so an approver older than `unrechecked`
+        // (the review server, an older `jux approve`) refuses it instead of
+        // baselining one capture. The current `jux approve` keys on
+        // `unrechecked` and confirms the story instead.
+        result.unstable = {
+          hashes: [result.hash],
+          unconfirmed: `${NOT_RECHECKED} (recheck ${recheck})`,
+        };
         continue;
       }
       toConfirm.set(result.storyId, result);

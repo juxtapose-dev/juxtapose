@@ -95,7 +95,7 @@ export function buildComment({
   lines.push(...table(rows));
   lines.push('');
 
-  const unstable = rows.filter((r) => r.unstable);
+  const unstable = rows.filter((r) => r.unstable && !r.unrechecked);
   if (unstable.length > 0) {
     lines.push(
       `${unstable.length} unstable (approve refuses them): ${unstable

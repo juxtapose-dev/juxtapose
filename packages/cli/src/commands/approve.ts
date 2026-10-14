@@ -92,7 +92,7 @@ export async function approveCommand(
         ctx,
         new Map(
           candidates.flatMap((r) =>
-            r.unrechecked && !r.unstable && r.hash ? [[r.storyId, r.hash] as const] : [],
+            r.unrechecked && r.hash ? [[r.storyId, r.hash] as const] : [],
           ),
         ),
         report.env,
@@ -106,7 +106,19 @@ export async function approveCommand(
   for (const result of candidates) {
     // The run captured this one twice and got two images. Refuse just this
     // story; the rest of the batch still goes through.
-    const unstable = result.unstable ?? confirmations.get(result.storyId)?.unstable;
+    // A story the run captured once carries a placeholder `unstable` for older
+    // approvers; here it is judged by the confirming capture alone, and one
+    // with no confirmation (it had no hash, or nothing ran) fails closed.
+    const confirmation = confirmations.get(result.storyId);
+    const unstable = result.unrechecked
+      ? (confirmation?.unstable ??
+        (confirmation
+          ? undefined
+          : {
+              hashes: result.hash ? [result.hash] : [],
+              unconfirmed: 'no confirming capture was taken',
+            }))
+      : result.unstable;
     if (unstable && !flags['allow-unstable']) {
       failed.push({
         storyId: result.storyId,

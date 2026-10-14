@@ -609,7 +609,7 @@ function explain(r: DiffResult, grouped: ReadonlySet<string>): string[] {
   const unstable =
     r.flake && !grouped.has(r.storyId)
       ? [describeFlake(r.flake)]
-      : r.unstable
+      : r.unstable && !r.unrechecked
         ? [describeUnstable(r.unstable)]
         : [];
   const v = r.structural;

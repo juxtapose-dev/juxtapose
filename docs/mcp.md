@@ -208,7 +208,7 @@ when none helps). See [Why it flaked](cli.md#why-it-flaked). `handoff` prints
 the same fix as one line. A run-level `flakeGroups` lists stories that share one project-level fix.
 
 With `recheck: "off"` (or `"new"`, for a failing story) the run captures a
-story once. Its result has `unrechecked: true`, no `unstable` and no `flake`,
+story once. Its result has `unrechecked: true`, a placeholder `unstable` (`not rechecked`) and no `flake`,
 and the report's `recheck` field names the mode. `approve` then captures it
 again before it writes the baseline. See
 [Choose what gets rechecked](cli.md#choose-what-gets-rechecked).

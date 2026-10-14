@@ -108,6 +108,7 @@ describe('RunDirSource.approve of a story the run captured once', () => {
       status: 'new',
       hash: 'h',
       unrechecked: true,
+      unstable: { hashes: ['h'], unconfirmed: 'not rechecked (recheck off)' },
       mismatchPixels: 0,
       mismatchPercent: 0,
       changedRegions: [],

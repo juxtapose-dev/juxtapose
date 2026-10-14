@@ -244,12 +244,21 @@ comes out different is refused as unstable, and one that can't be captured
 again is refused as unconfirmed. `--allow-unstable` skips the extra capture.
 The confirming capture uses the project config, not the settle flags you
 passed to `jux run`, and it needs the same browser and operating system as the
-run: otherwise it refuses the story and tells you to run again.
+run: otherwise it refuses the story and tells you to run again. Render flags that only
+`jux run` took, such as `--no-fresh-renderer` and the settle flags, aren't
+replayed, so a story that depended on them can differ and be refused; approval
+errs toward refusing, never toward granting. `jux approve` accepts `--chrome`
+and `--no-daemon` so the confirming capture can use the browser the run used.
 
-With the recheck off, stories carry no `unstable` and no `flake`: nothing was
-compared, so there is nothing to explain. `report.json` has `recheck: "off"`,
-and `jux run` prints a line saying so. The Storybook panel's approve button
-refuses an `unrechecked` story; use `jux approve`. `jux init` always rechecks.
+With the recheck off, stories carry no `flake`: nothing was compared, so
+there is nothing to explain. Each story captured once has `unrechecked: true`
+and also a placeholder `unstable: { unconfirmed: "not rechecked (recheck <mode>)" }`,
+so an older `jux approve`, review server or Storybook panel, which only read
+`unstable`, refuse it instead of baselining one capture. The current
+`jux approve` keys on `unrechecked` and confirms the story. `report.json` has
+`recheck: "off"`, and `jux run` prints a line saying so. The Storybook panel's
+approve button refuses an `unrechecked` story; use `jux approve`.
+`jux init` always rechecks.
 
 `jux approve`, `jux init`, the MCP `approve` tool and the Storybook panel all
 refuse an unstable story, name it, and approve the rest. The CLI exits 1; the
