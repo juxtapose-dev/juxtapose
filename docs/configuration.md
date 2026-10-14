@@ -239,6 +239,10 @@ Settle options come from five places. Each one overrides the one before it:
 highest layer that sets them. The `network.ignore` and `network.require` lists
 combine across layers, so a story adds patterns to the project's lists.
 
+Not sure which layer won? `jux config --explain <storyId>` prints the value
+each setting would have for one story or variant key and the layer it came
+from: see [Which setting won](cli.md#which-setting-won-jux-config---explain).
+
 An invalid value is a usage error. The command exits with status 2 and names
 where the value came from, such as `project config` or
 `story 'feed--default'`. A value that only the live Storybook preview declares

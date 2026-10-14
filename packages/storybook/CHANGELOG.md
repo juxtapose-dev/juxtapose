@@ -1,5 +1,22 @@
 # @juxtapose/storybook
 
+## 0.7.0
+
+### Minor Changes
+
+- 48258e9: Approving a baseline now requires two identical captures (#148). `jux run` captures each new or failing story a second time and records `unstable` in report.json when the hashes differ, or `unstable.unconfirmed` when the second capture fails, so an unverified story is never approved. Passing and stale stories are not rechecked (stale already matches a recorded hash), so a green run costs nothing extra; a first run and `jux init` take about 2x as long. `jux approve`, `jux init`, the MCP `approve` tool and the Storybook panel refuse an unstable story and name it, while approving the rest; the review server answers 409. Pass `--allow-unstable` (MCP: `allowUnstable`) to baseline one anyway. `jux run`, `check`, `handoff`, the PR comment and the HTML report mark unstable stories, and the panel's "approve all" now shows refusals instead of swallowing them.
+
+### Patch Changes
+
+- b40e080: One schema for the project config and story parameters (#178). `@juxtapose/core` now publishes `@juxtapose/core/schema.json`, a JSON Schema for `juxtapose.config.json` that gives editors completion, hover docs and validation. It also exports `JuxtaposeParameters`, the schemas themselves, and `registerFormats()` for checking them with TypeBox. The TypeScript types, the JSON Schema, the MCP tool argument shapes and the runtime checks are all derived from it. The runtime accepts and rejects exactly what it did before, with the same messages. An unknown key now prints a warning on stderr with the closest option it could mean; it never fails a command. Adds the `@sinclair/typebox` dependency. `jux init` writes a `$schema` line pinned to the installed version on jsDelivr, and `@juxtapose/cli` ships a copy of `schema.json` for offline use. `@juxtapose/storybook` exports `JuxtaposeParameters` and types `parameters.juxtapose` in CSF files (#180).
+- Updated dependencies [4638d64]
+- Updated dependencies [b40e080]
+- Updated dependencies [535c676]
+- Updated dependencies [48258e9]
+  - @juxtapose/core@0.14.0
+  - @juxtapose/server@0.7.0
+  - @juxtapose/adapter-storybook@0.4.5
+
 ## 0.6.4
 
 ### Patch Changes

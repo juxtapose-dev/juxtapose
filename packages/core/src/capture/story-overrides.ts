@@ -26,6 +26,7 @@ import { validate } from '../config/validate.js';
 import { globToRegExp } from './url-pattern.js';
 import { mergeSettle } from './settle-options.js';
 import { checkRulePlaceholders, mergeNetwork } from './network-rules.js';
+import { Trace } from './provenance.js';
 
 const isWild = (glob: string) => /[*?]/.test(glob);
 
@@ -80,6 +81,8 @@ export interface ResolvedOverride {
 export function resolveOverride(
   compiled: readonly CompiledOverride[],
   capture: { storyId: string; baseStoryId?: string },
+  /** Receives each matching glob's settings, in the order they are folded. */
+  layer?: Trace,
 ): ResolvedOverride | undefined {
   const hits = compiled
     .filter(
@@ -96,7 +99,10 @@ export function resolveOverride(
     );
   if (hits.length === 0) return undefined;
   let override: StoryOverride = {};
-  for (const h of hits) override = applyOverride(override, h.spec);
+  for (const h of hits) {
+    override = applyOverride(override, h.spec);
+    layer?.put(h.spec, { layer: 'stories', detail: h.glob }, 'override');
+  }
   return {
     override,
     matched: hits.map((h) => h.glob),
@@ -132,9 +138,16 @@ export function withOverride(
   story: StoryManifest,
   params: StoryParams,
   compiled: readonly CompiledOverride[],
+  trace?: Trace,
 ): StoryManifest {
-  const r = resolveOverride(compiled, story);
+  const layer = trace && new Trace();
+  const r = resolveOverride(compiled, story, layer);
   if (!r) return { ...story, params };
+  if (trace && layer) {
+    trace.apply(layer, 'override');
+    trace.overrideLayer = layer;
+    trace.matched = r.matched;
+  }
   const next: StoryManifest = {
     ...story,
     params: applyOverride(params, r.override),

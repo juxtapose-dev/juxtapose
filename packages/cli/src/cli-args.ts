@@ -60,6 +60,10 @@ export const SPECS: Record<string, Spec> = {
     ],
     max: Infinity,
   },
+  config: {
+    flags: ['json', ...CONTEXT, 'explain', 'chrome', 'no-daemon', ...SETTLE],
+    max: 0,
+  },
   diff: { flags: ['json', 'project', 'prefix', 'runs', 'crops'], max: 2 },
   mcp: { flags: ['project', 'concurrency', 'chrome', 'no-daemon'], max: 0 },
 };
@@ -69,6 +73,7 @@ const TAKES_VALUE = new Set([
   ...CONTEXT,
   'since',
   'story',
+  'explain',
   'chrome',
   'run',
   'as',

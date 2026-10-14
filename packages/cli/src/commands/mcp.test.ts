@@ -164,6 +164,7 @@ describe('jux mcp protocol', () => {
       'run',
       'check',
       'handoff',
+      'explain',
       'approve',
     ]);
     for (const t of tools) expect(t.inputSchema).toMatchObject({ type: 'object' });
@@ -188,6 +189,61 @@ describe('jux mcp protocol', () => {
     expect((await c.request('tools/call', { name: 'nope' })).error?.code).toBe(-32602);
     expect(await c.close()).toBe(0);
     expectOnlyProtocol(c.lines);
+  });
+
+  test('explain returns juxtapose.explain/v1 with the call layer on top, and refuses bad input', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'jux-mcp-explain-'));
+    writeFileSync(
+      path.join(root, 'juxtapose.config.json'),
+      JSON.stringify({
+        platform: 'urls',
+        settle: { timeout: 3000 },
+        urls: [
+          {
+            id: 'home',
+            url: 'http://127.0.0.1:1/',
+            variants: { dark: { colorScheme: 'dark' } },
+          },
+        ],
+      }),
+    );
+    try {
+      const c = new Client(root);
+      await handshake(c);
+      const ok = await c.call('explain', { story: 'home' });
+      expect(ok.isError).not.toBe(true);
+      const e = JSON.parse(text(ok));
+      expect(e).toMatchObject({
+        schema: 'juxtapose.explain/v1',
+        storyId: 'home',
+        variants: ['home__dark'],
+      });
+      expect(e.settings).toContainEqual({
+        setting: 'settle.timeout',
+        value: 3000,
+        source: [{ layer: 'project' }],
+      });
+      const over = JSON.parse(
+        text(await c.call('explain', { story: 'home__dark', settle: { timeout: 9000 } })),
+      );
+      expect(over.settings).toContainEqual({
+        setting: 'settle.timeout',
+        value: 9000,
+        source: [{ layer: 'mcp' }],
+      });
+      const unknown = await c.call('explain', { story: 'hom' });
+      expect(unknown.isError).toBe(true);
+      expect(text(unknown)).toMatch(/Did you mean 'home'/);
+      for (const args of [{}, { story: '' }]) {
+        const bad = await c.call('explain', args);
+        expect(bad.isError).toBe(true);
+        expect(text(bad)).toMatch(/story/);
+      }
+      await c.close();
+      expectOnlyProtocol(c.lines);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('approve rejects missing, empty and unknown ids as tool errors', async () => {

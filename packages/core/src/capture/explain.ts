@@ -1,0 +1,332 @@
+// `jux config --explain <storyId>` (issue #179): the settings one capture
+// would use, and which layer each came from.
+//
+// Values come from the real resolution (expandVariants, mergeLiveParams,
+// layerScalars, resolveSettle, resolveExternal, resolveThreshold); sources
+// come from the Trace those functions fill in. Nothing here decides a
+// precedence, it only stacks the project and call layers around the trace in
+// the order captureStory does.
+
+import type { Page } from '../browser/page.js';
+import { resolveMinDiffPercent, resolveThreshold } from '../diff/diff.js';
+import type { Platform } from '../platform.js';
+import { DEFAULT_VIEWPORT } from '../run/run.js';
+import type { ProjectConfig, StoryManifest, StoryParams } from '../types.js';
+import { externalTypes, liveNetworkDiffers, resolveNetwork } from './network-rules.js';
+import { layerCapture, layerNetwork, type CaptureLayers } from './layers.js';
+import { Trace, flatten, type ProvenanceLog, type Source } from './provenance.js';
+import { resolveSettle, type SettleLayer } from './settle-options.js';
+import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
+
+export type { Source } from './provenance.js';
+
+export interface ExplainedSetting {
+  setting: string;
+  value: unknown;
+  /** The layer that set it; several for a list that unions across layers. */
+  source: Source[];
+}
+
+export interface ExplainedRule {
+  match: string;
+  action: string;
+  source: Source;
+}
+
+export interface Explanation {
+  schema: 'juxtapose.explain/v1';
+  /** The capture key explained. */
+  storyId: string;
+  baseStoryId?: string;
+  variant?: string;
+  /** The variants this one extends, farthest first. */
+  extends?: string[];
+  /** On a story that has variants: their capture keys. */
+  variants?: string[];
+  /** The capture is not taken (a story, live or `stories` skip). */
+  skipped: boolean;
+  /** What matched this capture. */
+  matched: {
+    stories: string[];
+    /** The effective `network.rules` in evaluation order (first match wins,
+     *  higher layers first), each with the layer that wrote it. */
+    networkRules: ExplainedRule[];
+  };
+  settings: ExplainedSetting[];
+  /** Things that look like they should apply and do not. */
+  notes: string[];
+}
+
+export interface ExplainOptions {
+  config: ProjectConfig;
+  /** The per-call layer: CLI flags or MCP arguments. */
+  call?: SettleLayer;
+  /** Which caller supplied `call`: the CLI's flags (default) or MCP arguments. */
+  callLayer?: 'cli' | 'mcp';
+  /** Params read from the rendered preview, when the platform has them. */
+  live?: StoryParams;
+}
+
+const PROJECT: Source = { layer: 'project' };
+const DEFAULT: Source[] = [{ layer: 'default' }];
+
+/** Listed even when no layer sets them. */
+const ALWAYS = [
+  'skip',
+  'viewport',
+  'settle.timeout',
+  'settle.ready',
+  'network.external.default',
+  'threshold',
+  'minDiffPercent',
+];
+
+/** Read by captureStory (or the diff) before live params exist, so live
+ *  values for them are ignored. */
+const PRE_PARAMS = [
+  'threshold',
+  'minDiffPercent',
+  'captureTimeout',
+  'animations',
+  'captureAfterPlay',
+];
+
+/** The order settings print in; anything else follows alphabetically. */
+const ORDER = [
+  ...ALWAYS.slice(0, ALWAYS.indexOf('network.external.default') + 1),
+  'network.external.images',
+  'network.external.frames',
+  'network.external.media',
+  ...ALWAYS.slice(ALWAYS.indexOf('network.external.default') + 1),
+  'colorScheme',
+  'animations',
+  'captureAfterPlay',
+  'captureTimeout',
+  'mask',
+  'waitForSelector',
+  'delay',
+  'settle.network.ignore',
+  'settle.network.require',
+];
+
+function projectLayer(c: ProjectConfig): SettleLayer & StoryParams {
+  return {
+    ...(c.settle ? { settle: c.settle } : {}),
+    ...(c.network ? { network: c.network } : {}),
+    ...(c.waitForSelector !== undefined ? { waitForSelector: c.waitForSelector } : {}),
+    ...(c.delay !== undefined ? { delay: c.delay } : {}),
+    ...(c.viewport ? { viewport: c.viewport } : {}),
+    ...(c.threshold !== undefined ? { threshold: c.threshold } : {}),
+    ...(c.minDiffPercent !== undefined ? { minDiffPercent: c.minDiffPercent } : {}),
+  };
+}
+
+/** The value of a flat setting name in a params-like object. */
+function valueOf(params: StoryParams, setting: string): unknown {
+  let cur: unknown = params;
+  for (const part of setting.split('.')) {
+    if (typeof cur !== 'object' || cur === null) return undefined;
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return cur;
+}
+
+/** The captures of one story: the default one first, then its variants. */
+export function findCaptures(
+  captures: readonly StoryManifest[],
+  id: string,
+): { capture: StoryManifest; variants: string[] } | undefined {
+  const capture = captures.find((c) => c.storyId === id);
+  if (!capture) return undefined;
+  const variants =
+    capture.variant === undefined
+      ? captures.filter((c) => c.baseStoryId === id).map((c) => c.storyId)
+      : [];
+  return { capture, variants };
+}
+
+/** Reads a story's live params from the rendered preview, as a capture does
+ *  before its settle: show the story, let the platform settle, ask. */
+export function liveReader(
+  platform: Platform,
+  page: () => Promise<Page>,
+  baseUrl: string,
+  timeoutMs = 2000,
+): ((capture: StoryManifest) => Promise<StoryParams | undefined>) | undefined {
+  const read = platform.readLiveParams?.bind(platform);
+  if (!read) return undefined;
+  return async (capture) => {
+    const p = await page();
+    const id = platformStoryId(capture);
+    await platform.showStory(p, id, baseUrl);
+    await platform.settle(p, {
+      story: id === capture.storyId ? capture : { ...capture, storyId: id },
+      params: { ...capture.params },
+      timeoutMs,
+    });
+    return read(p, id);
+  };
+}
+
+export function explainCapture(
+  capture: StoryManifest,
+  log: ProvenanceLog,
+  opts: ExplainOptions,
+  variants: string[] = [],
+): Explanation {
+  const { config, call, live } = opts;
+  const callSource: Source = { layer: opts.callLayer ?? 'cli' };
+  const project = projectLayer(config);
+  const layers: CaptureLayers = { project, ...(call ? { call } : {}) };
+  const expansion = log.get(capture.storyId) ?? new Trace();
+
+  // The sources, stacked in the order layers.ts stacks the values: the
+  // project under the capture's own layers, the call over both. `pre` is
+  // before live params (what captureStory reads before it renders), `post`
+  // after.
+  const stack = (own: Trace): Trace => {
+    const t = new Trace();
+    t.put(project, PROJECT, 'override');
+    t.apply(own, 'override');
+    if (call) t.put(call, callSource, 'override');
+    return t;
+  };
+  const pre = stack(expansion);
+  const liveTrace = expansion.clone();
+  const merged: StoryParams = { ...capture.params };
+  Object.assign(merged, mergeLiveParams(capture, live));
+  // A platform whose discovery reads the same parameters (Storybook) reports
+  // them again live. A key live repeats from the story's own parameters
+  // decided nothing, so the trace leaves it with the layer that first set it.
+  if (live) {
+    const own = expansion.storyParams ?? capture.params;
+    const news = Object.fromEntries(
+      Object.entries(live).filter(([k, v]) => !deepEqual(v, own[k as keyof StoryParams])),
+    );
+    mergeLiveParams(capture, news, liveTrace);
+  }
+  const post = stack(liveTrace);
+
+  const params: StoryParams = { ...merged };
+  const layered = layerCapture(layers, params);
+  Object.assign(params, layered.scalars);
+  const resolved = resolveSettle(layered.settle);
+  const view: StoryParams = {
+    ...params,
+    ...(layered.settle ? { settle: layered.settle } : {}),
+  };
+
+  // Before live params exist, so live cannot change them.
+  const netParams = layerNetwork(layers, capture.params);
+  const policy = resolveNetwork(netParams);
+  const types = externalTypes(netParams?.external);
+
+  const optedOut =
+    capture.variant !== undefined && live?.variants?.[capture.variant] === false;
+  const skipped = optedOut || params.skip === true;
+
+  const names = new Set([
+    ...ALWAYS,
+    ...flatten(view).filter((n) => !n.startsWith('network.')),
+    ...flatten(project).filter((n) => !n.startsWith('network.')),
+    ...flatten(capture.params).filter((n) => PRE_PARAMS.includes(n)),
+    ...Object.keys(types).map((k) => `network.external.${k}`),
+  ]);
+
+  const fromPre = new Set(PRE_PARAMS);
+  const settings: ExplainedSetting[] = [];
+  const preValues = new Map<string, unknown>();
+  for (const setting of names) {
+    let value: unknown;
+    let source: Source[] | undefined;
+    switch (setting) {
+      case 'skip':
+        value = skipped;
+        if (optedOut)
+          source = [{ layer: 'live', detail: `variants.${capture.variant}: false` }];
+        break;
+      case 'viewport':
+        value = params.viewport ?? config.viewport ?? DEFAULT_VIEWPORT;
+        break;
+      case 'settle.timeout':
+        value = resolved.timeoutMs;
+        break;
+      case 'settle.ready':
+        value = resolved.ready;
+        break;
+      case 'network.external.default':
+        value = policy.default;
+        break;
+      case 'network.external.images':
+      case 'network.external.frames':
+      case 'network.external.media':
+        value = policy[setting.slice('network.external.'.length) as 'images'];
+        break;
+      case 'threshold':
+        value = resolveThreshold(capture.params, config);
+        break;
+      case 'minDiffPercent':
+        value = resolveMinDiffPercent(capture.params, config);
+        break;
+      default:
+        value = fromPre.has(setting)
+          ? (valueOf(capture.params, setting) ?? valueOf(project, setting))
+          : valueOf(view, setting);
+    }
+    if (value === undefined) continue;
+    if (fromPre.has(setting) || setting.startsWith('network.'))
+      preValues.set(setting, value);
+    const trace = fromPre.has(setting) || setting.startsWith('network.') ? pre : post;
+    settings.push({
+      setting,
+      value,
+      source: source ?? trace.sources.get(setting) ?? DEFAULT,
+    });
+  }
+  const rank = (s: string) => {
+    const i = ORDER.indexOf(s);
+    return i < 0 ? ORDER.length : i;
+  };
+  settings.sort(
+    (a, b) => rank(a.setting) - rank(b.setting) || (a.setting < b.setting ? -1 : 1),
+  );
+
+  const notes: string[] = [];
+  if (
+    live?.network !== undefined &&
+    call?.network === undefined &&
+    liveNetworkDiffers(policy, project.network, merged.network)
+  )
+    notes.push(
+      `the story's live parameters set network ${JSON.stringify(live.network)}, which is read before navigation and was ignored. Declare it in the project config or the command.`,
+    );
+  for (const k of PRE_PARAMS) {
+    const v = live?.[k as keyof StoryParams];
+    if (v === undefined || deepEqual(v, preValues.get(k))) continue;
+    notes.push(
+      k === 'threshold' || k === 'minDiffPercent'
+        ? `the story's live parameters set ${k} ${JSON.stringify(v)}, which the diff does not read from live parameters and was ignored. Declare it in the story's parameters, the project config or a stories override.`
+        : `the story's live parameters set ${k} ${JSON.stringify(v)}, which is read before live parameters are available and was ignored. Declare it in the story's parameters, the project config or a stories override.`,
+    );
+  }
+
+  const rules = netParams?.rules ?? [];
+  const networkRules: ExplainedRule[] = rules.map((r, i) => ({
+    match: r.match,
+    action: r.action,
+    source: pre.rules[i]?.source ?? DEFAULT[0]!,
+  }));
+
+  return {
+    schema: 'juxtapose.explain/v1',
+    storyId: capture.storyId,
+    ...(capture.baseStoryId !== undefined ? { baseStoryId: capture.baseStoryId } : {}),
+    ...(capture.variant !== undefined ? { variant: capture.variant } : {}),
+    ...(expansion.chain.length > 0 ? { extends: expansion.chain } : {}),
+    ...(variants.length > 0 ? { variants } : {}),
+    skipped,
+    matched: { stories: expansion.matched, networkRules },
+    settings,
+    notes,
+  };
+}

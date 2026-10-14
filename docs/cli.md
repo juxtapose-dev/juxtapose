@@ -10,6 +10,7 @@
 | `jux approve --all --allow-unstable` | also approve stories whose two run captures differed (see below)                 |
 | `jux check`                          | exit non-zero if anything still needs review — for CI                            |
 | `jux handoff <id>`                   | print an agent-ready prompt for one failing story                                |
+| `jux config --explain <id>`          | the effective settings for one story or variant key, and which layer set each    |
 | `jux snap <url>… --as <name>`        | capture a page (or several with `--as-prefix`): pixels + structure, no workbench |
 | `jux diff <a> <b> --json`            | tier-0 verdict: what changed between two snaps, no browser                       |
 | `jux diff <a> <b> --crops`           | the verdict plus side-by-side PNG strips per changed region, no browser          |
@@ -21,6 +22,95 @@
 unknown option, or a positional a command does not take (`jux run some-id`),
 exits 2 with a one-line message; it is never ignored. Use `jux run --story <id>`
 to run one story. A missing workbench exits 2 with its own message.
+
+## Which setting won: `jux config --explain`
+
+Capture settings layer across the project config, a story's
+`parameters.juxtapose`, the config's [`stories` overrides](configuration.md#override-stories-you-dont-own),
+variants (with their `extends` chain), the live parameters the preview reports
+once the story renders, and the flags of the command. `jux config --explain
+<id>` runs the same resolution as `jux run` for one story and prints each
+setting with its value and the layer that decided it. Nothing is captured.
+
+```
+$ jux config --explain card--default__mobile
+card--default__mobile  (variant mobile of card--default)
+matched stories globs: card--*, card--default__mobile
+
+SETTING                   VALUE        SOURCE
+skip                      false        default
+viewport                  375x812      variant mobile (story parameters)
+settle.timeout            4000         stories['card--default__mobile']
+settle.ready              false        default
+network.external.default  allow        default
+network.external.images   placeholder  project config
+threshold                 0.1          default
+minDiffPercent            0            default
+delay                     250          stories['card--*']
+
+network rules (first match wins):
+  allow       **/cdn/**  project config
+```
+
+`<id>` is a story id or a capture key (`<id>__<variant>`). A story id explains
+its default capture and lists the capture keys of its variants. An id that
+matches nothing exits 2 and suggests the closest ones. The settle and
+`--network-external` flags are accepted and show as `CLI flag`, so you can
+check what a command would change before running it.
+
+Sources are `default`, `project config`, `story parameters`,
+`stories['<glob>']` (each glob that set the value, or all that contributed to a
+list), `variant <name> (<where declared>)` (with `, extended by <name>` for a
+variant reached through `extends`), `live params`, `CLI flag` and `MCP arguments` (the MCP tool's `settle` and `network`). A list that
+unions across layers (`mask`, `settle.network.ignore`, `settle.network.require`)
+shows each contributor joined by `+`.
+
+`network.external` shows per resource type (`network.external.default`,
+`.images`, `.frames`, `.media`), each with its layer. `network.rules` print
+below the table in evaluation order: the first match wins, and a higher layer's
+rules come first. `--json` carries them as `matched.networkRules`
+(`{ match, action, source }`).
+
+Some settings are read before the story renders, so a different value in its
+live parameters is ignored: `network`, `captureTimeout`, `animations`,
+`captureAfterPlay`, and the diff tolerances `threshold` and `minDiffPercent`.
+They show the value that applies, from its real layer, and a note names the
+ignored live value. A live `variants: { <name>: false }` skips that variant, and
+shows as `skip true` from `live params`.
+
+Discovery runs as it does for `jux run`, with the same cache. A platform that
+reads parameters from the rendered preview (Storybook) also renders the one
+story to read them, so the command needs the pinned browser then; `--chrome` and
+`--no-daemon` work as they do for `jux run`.
+
+`--json` prints `juxtapose.explain/v1`:
+
+```json
+{
+  "schema": "juxtapose.explain/v1",
+  "storyId": "card--default__mobile",
+  "baseStoryId": "card--default",
+  "variant": "mobile",
+  "extends": ["dark"],
+  "skipped": false,
+  "matched": { "stories": ["card--*"], "networkRules": [] },
+  "settings": [
+    {
+      "setting": "viewport",
+      "value": { "width": 375, "height": 667 },
+      "source": [{ "layer": "variant", "detail": "mobile (story parameters)" }]
+    }
+  ],
+  "notes": []
+}
+```
+
+`variants` (capture keys) appears on a story that has them, `extends` on a
+variant that extends others (farthest first). `skipped` is true when the
+capture is not taken; the `skip` setting names who skipped it. `layer` is one
+of `default`, `project`, `story`, `stories`, `variant`, `live`, `cli`, `mcp`.
+`notes` lists settings that cannot take effect where they were set, such as a
+story's live `network.external`.
 
 `jux diff --runs <runA> <runB>` compares two runs by the `hash` each
 `report.json` result carries: the sha256 of that story's current capture, the

@@ -15,6 +15,7 @@ import { VariantsRuntimeSchema } from '../config/schema.js';
 import { validate } from '../config/validate.js';
 import { VariantConfigError } from './config-errors.js';
 import { checkSettle, mergeSettle } from './settle-options.js';
+import { Trace, type ProvenanceLog, type Source } from './provenance.js';
 import {
   applyOverride,
   checkStoryOverrides,
@@ -25,6 +26,8 @@ import {
 export { VARIANT_NAME } from '../config/schema.js';
 
 export const VARIANT_SEPARATOR = '__';
+
+const STORY: Source = { layer: 'story' };
 
 export { VariantConfigError } from './config-errors.js';
 
@@ -42,6 +45,9 @@ export const platformStoryId = (story: { storyId: string; baseStoryId?: string }
  * `projectStories` is the config's per-story overrides: folded over each
  * capture's params last, so they beat the story's and the variant's own.
  *
+ * `log`, when given, receives where each capture's settings came from.
+ * It changes nothing about the result.
+ *
  * Throws VariantConfigError on a bad name, a malformed spec, an unknown or
  * cyclic `extends`, a bad override, or two captures that would share a key.
  */
@@ -49,6 +55,7 @@ export function expandVariants(
   stories: readonly StoryManifest[],
   projectVariants?: Record<string, VariantSpec | false>,
   projectStories?: Record<string, StoryOverride>,
+  log?: ProvenanceLog,
 ): StoryManifest[] {
   const project = checkDeclared(projectVariants, 'project config');
   const overrides = compileOverrides(checkStoryOverrides(projectStories));
@@ -60,7 +67,10 @@ export function expandVariants(
     const { variants: ownRaw, colorScheme: _ignored, ...baseParams } = story.params;
     checkSettle(baseParams.settle, `story '${story.storyId}'`);
     checkNetwork(baseParams.network, `story '${story.storyId}'`);
-    const base = withOverride(story, baseParams, overrides);
+    const baseTrace = log?.for(story.storyId);
+    baseTrace?.put(baseParams, STORY, 'replace');
+    if (baseTrace) baseTrace.storyParams = baseParams;
+    const base = withOverride(story, baseParams, overrides, baseTrace);
     out.push(base);
 
     // A skipped story skips every variant: there is nothing to vary.
@@ -69,21 +79,36 @@ export function expandVariants(
     const own = checkDeclared(ownRaw, `story '${story.storyId}'`);
     // Story wins by name; `false` drops the name entirely.
     const merged = new Map<string, VariantSpec>();
+    const declaredBy = new Map<string, string>();
     for (const [name, spec] of Object.entries(project)) {
       if (spec !== false) merged.set(name, spec);
+      if (spec !== false) declaredBy.set(name, 'project config');
     }
     for (const [name, spec] of Object.entries(own)) {
       if (spec === false) merged.delete(name);
-      else merged.set(name, spec);
+      else {
+        merged.set(name, spec);
+        declaredBy.set(name, 'story parameters');
+      }
     }
 
     for (const name of [...merged.keys()].sort(compareCodeUnits)) {
-      const layer = resolveChain(story.storyId, name, merged);
+      const key = captureKey(story.storyId, name);
+      const trace = log?.for(key);
+      const variantLayer = trace && new Trace();
+      const layer = resolveChain(story.storyId, name, merged, declaredBy, variantLayer);
+      if (trace && variantLayer) {
+        trace.put(baseParams, STORY, 'replace');
+        trace.storyParams = baseParams;
+        trace.apply(variantLayer, 'fold');
+        trace.variantLayer = variantLayer;
+        trace.chain = variantLayer.chain;
+      }
       out.push(
         withOverride(
           {
             ...story,
-            storyId: captureKey(story.storyId, name),
+            storyId: key,
             baseStoryId: story.storyId,
             variant: name,
             variantParams: layer,
@@ -96,6 +121,7 @@ export function expandVariants(
             layer.network,
           ),
           overrides,
+          trace,
         ),
       );
     }
@@ -139,8 +165,11 @@ function resolveChain(
   storyId: string,
   name: string,
   merged: ReadonlyMap<string, VariantSpec>,
+  declaredBy: ReadonlyMap<string, string>,
+  trace?: Trace,
 ): Omit<VariantSpec, 'extends'> {
   const chain: VariantSpec[] = [];
+  const names: string[] = [];
   const seen: string[] = [];
   let cur: string | undefined = name;
   while (cur !== undefined) {
@@ -158,10 +187,22 @@ function resolveChain(
       );
     }
     chain.unshift(spec);
+    names.unshift(cur);
     cur = spec.extends;
   }
   const layer: VariantSpec = {};
-  for (const spec of chain) {
+  for (const [i, spec] of chain.entries()) {
+    const own = names[i]!;
+    trace?.put(
+      spec,
+      {
+        layer: 'variant',
+        detail:
+          `${own} (${declaredBy.get(own) ?? 'story parameters'})` +
+          (own === name ? '' : `, extended by ${name}`),
+      },
+      'fold',
+    );
     const settle = mergeSettle(layer.settle, spec.settle);
     const network = mergeNetwork(layer.network, spec.network);
     Object.assign(layer, spec);
@@ -169,6 +210,7 @@ function resolveChain(
     if (network) layer.network = network;
   }
   delete layer.extends;
+  if (trace) trace.chain = names.slice(0, -1);
   return layer;
 }
 
@@ -208,6 +250,9 @@ function withNetwork<T extends StoryParams>(
 export function mergeLiveParams(
   story: Pick<StoryManifest, 'params' | 'variantParams' | 'override'>,
   live: StoryParams | undefined,
+  /** The capture's trace from expansion; updated in place to say where live
+   *  params changed things. */
+  trace?: Trace,
 ): StoryParams {
   const params: StoryParams = { ...story.params };
   if (!live) return params;
@@ -221,7 +266,40 @@ export function mergeLiveParams(
   const layered = variantNetwork
     ? withNetwork(settled, settings.network ?? story.params.network, variantNetwork)
     : settled;
+  if (trace) traceLive(trace, settings, story, variantSettle !== undefined);
   return applyOverride(layered, story.override);
+}
+
+/** The trace of mergeLiveParams, step for step. */
+function traceLive(
+  trace: Trace,
+  settings: StoryParams,
+  story: Pick<StoryManifest, 'variantParams' | 'override'>,
+  variantSettles: boolean,
+): void {
+  const underSettle = new Trace();
+  for (const [k, v] of trace.sources)
+    if (k.startsWith('settle.')) underSettle.sources.set(k, v);
+  trace.put(settings, { layer: 'live' }, 'replace');
+  const variant = trace.variantLayer;
+  if (variant) {
+    // Object.assign(params, ..., variantParams): the variant's keys win over
+    // live's, its settle included...
+    const settleless = new Trace();
+    for (const [k, v] of variant.sources)
+      if (!k.startsWith('settle.')) settleless.sources.set(k, v);
+    trace.apply(settleless, 'replace');
+    if (variantSettles) {
+      // ...and then settle is rebuilt: live's (or the capture's own) under the variant's.
+      if (settings.settle === undefined)
+        for (const [k, v] of underSettle.sources) trace.sources.set(k, v);
+      const settle = new Trace();
+      for (const [k, v] of variant.sources)
+        if (k.startsWith('settle.')) settle.sources.set(k, v);
+      trace.apply(settle, 'fold');
+    }
+  }
+  if (story.override && trace.overrideLayer) trace.apply(trace.overrideLayer, 'override');
 }
 
 /**

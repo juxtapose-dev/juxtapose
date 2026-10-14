@@ -76,6 +76,7 @@ const NOT_CONFIG = [
   'docs/agents.md schema', // a verdict
   'docs/agents.md schema', // a crops result
   'docs/cli.md flake', // a run result's flake
+  'docs/cli.md schema', // an explain result
   'docs/mcp.md mcpServers', // MCP client settings
   'docs/mcp.md mcpServers',
 ];

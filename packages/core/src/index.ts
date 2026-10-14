@@ -102,6 +102,22 @@ export {
   VARIANT_NAME,
 } from './capture/variants.js';
 export { storyOverrideWarnings } from './capture/story-overrides.js';
+// Where each capture setting came from: `jux config --explain`.
+export {
+  ProvenanceLog,
+  Trace,
+  type Source,
+  type SourceLayer,
+} from './capture/provenance.js';
+export {
+  explainCapture,
+  findCaptures,
+  liveReader,
+  type Explanation,
+  type ExplainedSetting,
+  type ExplainedRule,
+  type ExplainOptions,
+} from './capture/explain.js';
 // Settle options: validation and layering shared by the CLI, the MCP server
 // and the review server, so a bad value is reported the same way everywhere.
 export {

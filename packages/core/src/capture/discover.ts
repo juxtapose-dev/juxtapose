@@ -17,6 +17,7 @@ import type {
   Viewport,
 } from '../types.js';
 import { expandVariants } from './variants.js';
+import type { ProvenanceLog } from './provenance.js';
 
 /** A preview that hasn't produced its parameters in this long is broken, not
  *  slow: the example's 17 stories take ~60 ms. */
@@ -31,6 +32,8 @@ export interface PrepareOptions {
   projectVariants?: Record<string, VariantSpec | false>;
   /** `ProjectConfig.stories`. */
   projectStories?: Record<string, StoryOverride>;
+  /** Receives where each capture's settings came from (`jux config --explain`). */
+  trace?: ProvenanceLog;
   onWarning?: (message: string) => void;
   timeoutMs?: number;
   /** Keep discovered params on disk, keyed by the platform's
@@ -41,6 +44,8 @@ export interface PrepareOptions {
 /** Bumped when the cached shape or what discovery reads changes. */
 const CACHE_SCHEMA = 1;
 const CACHE_FILE = 'discovered-params.json';
+/** Makes each write's temp file its own, for discoveries running at once in one process. */
+let tmpCounter = 0;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -53,7 +58,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
  */
 export async function discoverParams(
   stories: readonly StoryManifest[],
-  opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories'>,
+  opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories' | 'trace'>,
 ): Promise<StoryManifest[]> {
   const discover = opts.platform.discoverParams?.bind(opts.platform);
   if (!discover || stories.length === 0) return [...stories];
@@ -73,7 +78,7 @@ export async function discoverParams(
 /** One preview load; undefined (after a warning) when it can't be read. */
 async function discoverLive(
   discover: NonNullable<Platform['discoverParams']>,
-  opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories'>,
+  opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories' | 'trace'>,
 ): Promise<Map<string, StoryParams> | undefined> {
   let found: Map<string, StoryParams>;
   const context = await opts.browser.newContext({ viewport: opts.viewport });
@@ -107,7 +112,7 @@ async function discoverLive(
 /** The platform's fingerprint of what it would discover from, salted with
  *  the platform and cache schema; undefined disables the cache. */
 async function cacheKey(
-  opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories'>,
+  opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories' | 'trace'>,
 ): Promise<string | undefined> {
   if (!opts.cache || !opts.platform.discoveryKey) return undefined;
   try {
@@ -146,7 +151,7 @@ async function writeCache(
 ): Promise<void> {
   try {
     await mkdir(dir, { recursive: true });
-    const tmp = path.join(dir, `${CACHE_FILE}.${process.pid}.tmp`);
+    const tmp = path.join(dir, `${CACHE_FILE}.${process.pid}.${tmpCounter++}.tmp`);
     await writeFile(
       tmp,
       JSON.stringify({ key, params: Object.fromEntries(found) }) + '\n',
@@ -166,5 +171,6 @@ export async function prepareCaptures(
     await discoverParams(stories, opts),
     opts.projectVariants,
     opts.projectStories,
+    opts.trace,
   );
 }

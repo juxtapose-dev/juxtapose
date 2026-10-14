@@ -102,13 +102,21 @@ export function mergeSettle(
   };
 }
 
+/** Layers of `settle`, lowest first, merged as resolveSettle does. */
+export function mergeSettleLayers(
+  ...layers: Array<SettleParams | undefined>
+): SettleParams | undefined {
+  let merged: SettleParams | undefined;
+  for (const l of layers) merged = mergeSettle(merged, l);
+  return merged;
+}
+
 /** The settle wait for one capture, from its layers, lowest first. Assumes
  *  each layer passed checkSettle. */
 export function resolveSettle(
   ...layers: Array<SettleParams | undefined>
 ): ResolvedSettle {
-  let merged: SettleParams | undefined;
-  for (const l of layers) merged = mergeSettle(merged, l);
+  const merged = mergeSettleLayers(...layers);
   const timeoutMs = merged?.timeout ?? DEFAULT_SETTLE_TIMEOUT_MS;
   return {
     timeoutMs,

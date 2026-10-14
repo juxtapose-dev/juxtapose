@@ -26,15 +26,10 @@ import {
   waitForIdle,
   type IdleResult,
 } from './idle.js';
-import {
-  checkSettle,
-  layerScalars,
-  resolveSettle,
-  type SettleLayer,
-} from './settle-options.js';
+import { checkSettle, resolveSettle, type SettleLayer } from './settle-options.js';
 import { applyNetworkPolicy, checkNetwork } from './network-policy.js';
-import { resolveNetwork, type NetworkPolicy } from './network-rules.js';
-import type { NetworkParams } from '../config/schema.js';
+import { resolveNetwork, liveNetworkDiffers } from './network-rules.js';
+import { layerCapture, layerNetwork } from './layers.js';
 import { captureStructure } from './structure.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
 
@@ -218,11 +213,7 @@ export async function captureStory(
   // Before any request of this story: the policy is read from the layers
   // known now (live params arrive after render, too late to block anything).
   checkNetwork(params.network, `story '${story.storyId}'`);
-  const policy = resolveNetwork(
-    deps.settleLayers?.project?.network,
-    params.network,
-    deps.settleLayers?.call?.network,
-  );
+  const policy = resolveNetwork(layerNetwork(deps.settleLayers, params));
   await applyNetworkPolicy(page, policy, deps.baseUrl);
   // Before the render is triggered, so a request or ready() call from this
   // story's render is never mistaken for the previous one's.
@@ -331,17 +322,11 @@ export async function captureStory(
   // delay are call > story > project; settle merges field by field. Live
   // params can carry a `settle` discovery never saw, so it is checked here;
   // a bad one fails this story with the reason.
-  Object.assign(
-    params,
-    layerScalars(deps.settleLayers?.project, params, deps.settleLayers?.call),
-  );
+  const layered = layerCapture(deps.settleLayers, params);
+  Object.assign(params, layered.scalars);
   assertSelectors(params);
   checkSettle(params.settle, `story '${story.storyId}'`);
-  const settle = resolveSettle(
-    deps.settleLayers?.project?.settle,
-    params.settle,
-    deps.settleLayers?.call?.settle,
-  );
+  const settle = resolveSettle(layered.settle);
 
   phase('waitForSelector');
   // Settle must never throw on timeout (a slow story is a reviewable diff),
@@ -548,28 +533,6 @@ async function freezeAnimations(page: Page, params: StoryParams): Promise<void> 
 function assertSelectors(params: StoryParams): void {
   for (const sel of params.mask ?? []) assertCssSelector(sel);
   if (params.waitForSelector) assertCssSelector(params.waitForSelector);
-}
-
-/** Whether the policy with the live parameters' `network` folded in differs
- *  from the one applied. A value the policy cannot be built from differs. */
-function liveNetworkDiffers(
-  applied: NetworkPolicy,
-  project: NetworkParams | undefined,
-  live: NetworkParams | undefined,
-): boolean {
-  try {
-    return policyKey(resolveNetwork(project, live)) !== policyKey(applied);
-  } catch {
-    return true;
-  }
-}
-
-/** A policy as comparable text. */
-function policyKey(p: NetworkPolicy): string {
-  return JSON.stringify({
-    ...p,
-    rules: p.rules.map((r) => [r.pattern.source, r.action]),
-  });
 }
 
 /** The origin of the workbench the pages are served from, or undefined. */
