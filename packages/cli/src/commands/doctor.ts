@@ -13,7 +13,7 @@ import {
   ignoredPaths,
   shellQuote,
 } from '@juxtapose/core';
-import { loadConfig, type CommonFlags } from '../context.js';
+import { checkStorage, loadConfig, type CommonFlags } from '../context.js';
 import { missingIgnores } from '../gitignore.js';
 import { stdio, type Session } from '../io.js';
 
@@ -145,6 +145,7 @@ export async function doctorCommand(
 ): Promise<number> {
   const projectRoot = path.resolve(flags.project ?? process.cwd());
   const config = await loadConfig(projectRoot);
+  checkStorage(config);
   const issues = await findIssues(projectRoot, config.storage);
 
   if (flags.json === true) {

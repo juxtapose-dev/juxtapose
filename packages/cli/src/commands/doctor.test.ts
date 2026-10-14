@@ -177,3 +177,21 @@ test('a broader pattern or a parent .gitignore counts as covered', async () => {
   const root = await repo({ '.gitignore': '.juxtapose/\n' });
   expect(await findIssues(root, undefined, root)).toEqual([]);
 });
+
+test('storage.dir outside the project works for fs, and a bad cache dir is a usage error', async () => {
+  const fsRoot = await repo(
+    { 'package.json': '{}', '.gitignore': '.juxtapose/runs/\n' },
+    { storage: { kind: 'fs', dir: '../shared-baselines' } },
+  );
+  expect((await doctor(fsRoot)).code).toBe(0);
+  const bad = await repo(
+    { 'package.json': '{}' },
+    { storage: { kind: 'cache', dir: '../x' } },
+  );
+  await expect(
+    doctorCommand({ project: bad }, { io: captureIo() }),
+  ).rejects.toMatchObject({
+    name: 'UserError',
+    exit: 2,
+  });
+});

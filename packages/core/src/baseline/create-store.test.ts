@@ -50,30 +50,52 @@ test('the opt-in repo layout commits its image dir and ignores only runs', () =>
   expect(ignoredPaths({ kind: 'git' })).toEqual(['.juxtapose/runs/']);
 });
 
+const UNSAFE = ['a\nb', 'a\u0085b', 'a‮b', 'a b', '-rf', ''];
+
 test.each([
-  'a\nb',
-  'a\u0085b',
-  'a\u202eb',
-  'a\u2028b',
-  '-rf',
+  ...UNSAFE,
   '/abs',
   '..',
   'a/../b',
   'a*',
   'a[1]',
   '.',
-  '',
   '.juxtapose',
   '.juxtapose/structure',
   '.juxtapose/structure/x',
-])('storage.dir %j is refused by the runtime check and the schema', (dir) => {
+  // Windows separators count as separators.
+  '..\\x',
+  'a\\..\\b',
+  '.juxtapose\\structure',
+  '.juxtapose\\structure\\x',
+  '\\\\server\\share',
+  '\\abs',
+])('cache dir %j is refused by the runtime check and the schema', (dir) => {
   expect(() => createBaselineStore('/p', { kind: 'cache', dir })).toThrow(/storage\.dir/);
-  expect(() => createBaselineStore('/p', { kind: 'git', dir })).toThrow(/storage\.dir/);
   expect(Value.Check(StorageConfigSchema, { kind: 'cache', dir })).toBe(false);
 });
 
+test.each(UNSAFE)('git/fs dir %j is refused too', (dir) => {
+  for (const kind of ['git', 'fs'] as const) {
+    expect(() => createBaselineStore('/p', { kind, dir })).toThrow(/storage\.dir/);
+    expect(Value.Check(StorageConfigSchema, { kind, dir })).toBe(false);
+  }
+});
+
+// These worked before the cache store existed; "explicit git/fs unchanged"
+// includes a directory outside the project.
+test.each(['../shared-baselines', '/abs/baselines', 'a*', '.juxtapose/structure', '..'])(
+  'git/fs dir %j still works',
+  (dir) => {
+    for (const kind of ['git', 'fs'] as const) {
+      expect(() => createBaselineStore('/p', { kind, dir })).not.toThrow();
+      expect(Value.Check(StorageConfigSchema, { kind, dir })).toBe(true);
+    }
+  },
+);
+
 test.each(['tmp/imgs', '.juxtapose/cache/baselines', "it's a dir"])(
-  'storage.dir %j is allowed',
+  'cache dir %j is allowed',
   (dir) => {
     expect(Value.Check(StorageConfigSchema, { kind: 'cache', dir })).toBe(true);
     expect(() => createBaselineStore('/p', { kind: 'cache', dir })).not.toThrow();

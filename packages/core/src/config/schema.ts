@@ -585,21 +585,36 @@ const projectChecked = {
   ),
 };
 
+/** Characters no directory name should carry: C0, DEL and C1 controls, the line
+ *  separators U+2028/2029 and the bidi controls U+202A-202E, U+2066-2069. */
+const UNSAFE_CHARS = String.raw`\u0000-\u001f\u007f-\u009f  ‪-‮⁦-⁩`;
+
 /**
- * Where a storage directory may point. It comes from the repo's own config and
- * ends up in commands an agent is told to run, in `.gitignore` lines and in
- * path joins, so it is a relative path inside the project with nothing a shell,
- * a glob or a terminal could read as more than a name:
- * no absolute path, no `..`, no leading `-` (an option to `git rm`), no
- * `* ? [ ]`, no control characters (C0, DEL, C1), no line or bidi controls
- * (U+2028/2029, U+202A-202E, U+2066-2069), and not `.juxtapose` or
- * `.juxtapose/structure`, which hold the committed structure sidecars.
+ * Where the cache's directory may point. It goes into `.gitignore`, into
+ * commands an agent is told to run and into path joins, so it is a relative
+ * path inside the project with nothing a shell, a glob or a terminal could read
+ * as more than a name: no absolute path or UNC share, no `..`, no leading `-`
+ * (an option to `git rm`), no `* ? [ ]`, no unsafe characters, and not
+ * `.juxtapose` or `.juxtapose/structure`, which hold the committed structure
+ * sidecars. `\` counts as a separator everywhere `/` does, for Windows.
  */
 export const STORAGE_DIR_PATTERN =
-  '^(?!-)(?!/)(?![A-Za-z]:)(?!(?:\\./)*\\.{0,2}/?$)(?!(?:\\./)*\\.juxtapose/?$)(?!(?:\\./)*\\.juxtapose/structure(?:/|$))(?!(?:.*/)?\\.\\.(?:/|$))[^*?\\[\\]\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]+$';
+  String.raw`^(?!-)(?![/\\])(?![A-Za-z]:)(?!(?:\.[/\\])*\.{0,2}[/\\]?$)(?!(?:\.[/\\])*\.juxtapose[/\\]?$)(?!(?:\.[/\\])*\.juxtapose[/\\]structure(?:[/\\]|$))(?!(?:.*[/\\])?\.\.(?:[/\\]|$))[^*?\[\]` +
+  UNSAFE_CHARS +
+  String.raw`]+$`;
 
-const storageDir = (description: string) =>
+/**
+ * The repo-backed stores (`git`, `fs`) have always taken any path, including
+ * one outside the project (`../shared-baselines`), so only what can corrupt
+ * a printed command is refused: a leading `-` and the unsafe characters.
+ */
+export const REPO_STORE_DIR_PATTERN =
+  String.raw`^(?!-)[^` + UNSAFE_CHARS + String.raw`]+$`;
+
+const cacheDir = (description: string) =>
   Type.String({ pattern: STORAGE_DIR_PATTERN, description });
+const repoDir = (description: string) =>
+  Type.String({ pattern: REPO_STORE_DIR_PATTERN, description });
 
 export const StorageConfigSchema = Type.Union(
   [
@@ -607,7 +622,7 @@ export const StorageConfigSchema = Type.Union(
       {
         kind: Type.Literal('cache'),
         dir: Type.Optional(
-          storageDir(
+          cacheDir(
             'Local image cache directory, git-ignored. Default `.juxtapose/cache/baselines`.',
           ),
         ),
@@ -621,7 +636,7 @@ export const StorageConfigSchema = Type.Union(
     Type.Object(
       {
         kind: Type.Literal('git'),
-        dir: Type.Optional(storageDir('Baseline image directory.')),
+        dir: Type.Optional(repoDir('Baseline image directory.')),
       },
       {
         additionalProperties: false,
@@ -631,7 +646,7 @@ export const StorageConfigSchema = Type.Union(
     Type.Object(
       {
         kind: Type.Literal('fs'),
-        dir: storageDir('Baseline image directory.'),
+        dir: repoDir('Baseline image directory.'),
       },
       { additionalProperties: false },
     ),

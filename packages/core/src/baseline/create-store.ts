@@ -1,7 +1,11 @@
 // One place that maps the `storage` config onto a store, so the CLI and the
 // Storybook addon cannot disagree about where baselines are.
 
-import { STORAGE_DIR_PATTERN, type StorageConfig } from '../config/schema.js';
+import {
+  REPO_STORE_DIR_PATTERN,
+  STORAGE_DIR_PATTERN,
+  type StorageConfig,
+} from '../config/schema.js';
 import type { BaselineStore } from '../types.js';
 import {
   CacheBaselineStore,
@@ -12,20 +16,39 @@ import {
 import { GitBaselineStore } from './git-store.js';
 import { MANIFEST_NAME } from './manifest-file.js';
 
+/** A `storage` setting jux refuses; the CLI reports it as a usage error. */
+export class StorageConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StorageConfigError';
+  }
+}
+
 /**
- * A storage dir comes from the repo's config, and tools print it inside
- * commands an agent is told to run. Newlines and control characters have no
- * business in a directory name and would split or hide a printed command, so
- * they are refused at the one place every consumer passes through.
+ * A storage dir comes from the repo's own config, and tools print it inside
+ * commands an agent is told to run. The cache dir is held to the strict rule
+ * (it lands in `.gitignore`); `git`/`fs` keep accepting any path they always
+ * did, minus what could corrupt a printed command.
  */
-export function safeStorageDir(dir: string | undefined): string | undefined {
+export function safeStorageDir(
+  dir: string | undefined,
+  kind: 'cache' | 'git' | 'fs',
+): string | undefined {
   // The schema's own pattern, so the runtime backstop cannot drift from it:
   // config is cast, not validated, when it is loaded.
-  if (dir !== undefined && !new RegExp(STORAGE_DIR_PATTERN).test(dir))
-    throw new Error(
-      `storage.dir ${JSON.stringify(dir)} is not allowed: use a relative path inside the project, without \`..\`, glob characters, control characters or a leading '-', and not .juxtapose or .juxtapose/structure`,
+  const pattern = kind === 'cache' ? STORAGE_DIR_PATTERN : REPO_STORE_DIR_PATTERN;
+  if (dir !== undefined && !new RegExp(pattern).test(dir))
+    throw new StorageConfigError(
+      kind === 'cache'
+        ? `storage.dir ${JSON.stringify(dir)} is not allowed for the cache: use a relative path inside the project, without \`..\`, glob characters, control characters or a leading '-', and not .juxtapose or .juxtapose/structure`
+        : `storage.dir ${JSON.stringify(dir)} is not allowed: it must not start with '-' or contain control, line-separator or bidi characters`,
     );
   return dir;
+}
+
+/** Throws StorageConfigError for a setting jux would refuse; no store is made. */
+export function checkStorageConfig(storage: StorageConfig | undefined): void {
+  if (storage && storage.kind !== 's3') safeStorageDir(storage.dir, storage.kind);
 }
 
 export function createBaselineStore(
@@ -38,10 +61,16 @@ export function createBaselineStore(
   const chosen: StorageConfig = storage ?? { kind: 'cache' };
   switch (chosen.kind) {
     case 'cache':
-      return new CacheBaselineStore({ projectRoot, dir: safeStorageDir(chosen.dir) });
+      return new CacheBaselineStore({
+        projectRoot,
+        dir: safeStorageDir(chosen.dir, 'cache'),
+      });
     case 'git':
     case 'fs':
-      return new GitBaselineStore({ projectRoot, dir: safeStorageDir(chosen.dir) });
+      return new GitBaselineStore({
+        projectRoot,
+        dir: safeStorageDir(chosen.dir, chosen.kind),
+      });
     case 's3':
       throw new Error('the s3 baseline store is not implemented yet');
   }
@@ -54,7 +83,7 @@ export function createBaselineStore(
 export function committedPaths(storage: StorageConfig | undefined): string[] {
   const chosen: StorageConfig = storage ?? { kind: 'cache' };
   return chosen.kind === 'git' || chosen.kind === 'fs'
-    ? [MANIFEST_NAME, safeStorageDir(chosen.dir) ?? LEGACY_IMAGE_DIR]
+    ? [MANIFEST_NAME, safeStorageDir(chosen.dir, chosen.kind) ?? LEGACY_IMAGE_DIR]
     : [MANIFEST_NAME, STRUCTURE_DIR];
 }
 
@@ -67,7 +96,8 @@ export function committedPaths(storage: StorageConfig | undefined): string[] {
 export function ignoredPaths(storage: StorageConfig | undefined): string[] {
   const chosen: StorageConfig = storage ?? { kind: 'cache' };
   const runs = '.juxtapose/runs/';
-  const checked = chosen.kind === 's3' ? undefined : safeStorageDir(chosen.dir);
+  const checked =
+    chosen.kind === 's3' ? undefined : safeStorageDir(chosen.dir, chosen.kind);
   if (chosen.kind !== 'cache') return [runs];
   const dir = (checked ?? DEFAULT_CACHE_DIR).replace(/\/+$/, '');
   // The default sits under .juxtapose/cache/ so a future cache kind shares one entry.

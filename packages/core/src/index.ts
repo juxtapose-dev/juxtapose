@@ -146,6 +146,8 @@ export {
 } from './baseline/cache-store.js';
 export {
   createBaselineStore,
+  checkStorageConfig,
+  StorageConfigError,
   committedPaths,
   ignoredPaths,
 } from './baseline/create-store.js';
