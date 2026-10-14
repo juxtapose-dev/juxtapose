@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto';
 import type { DiffOutput } from './diff.js';
 import type {
+  CaptureFlag,
   Cause,
   ChangedRegion,
   Classification,
@@ -37,6 +38,9 @@ export interface StructuralDiffInput {
   escalate: { command: string };
   /** From `jux run --since`; `jux diff` has no changed-file set. */
   cause?: Cause;
+  /** The current capture's settle flag, if any (`settle-timeout`,
+   *  `settle-fallback`): appended to the verdict's flags. */
+  settleFlag?: CaptureFlag;
 }
 
 export const MAX_DELTAS = 20;
@@ -103,6 +107,8 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
   };
   const { classification, styleTags } = classify(ctx);
   const flags = computeFlags(ctx);
+  // Last, so the flags computeFlags orders keep their positions.
+  if (input.settleFlag) flags.push(input.settleFlag);
   const deltas: Delta[] = facts.slice(0, MAX_DELTAS).map((f) => f.delta);
   const summary = buildSummary({
     classification,

@@ -55,6 +55,15 @@ function current(storyId: string) {
     capturedAt: 't',
     durationMs: 1,
     ...(storyId === 'no-current' ? {} : { structure: CUR }),
+    ...(storyId.startsWith('capped')
+      ? {
+          settle: {
+            status: 'timeout' as const,
+            timeoutMs: 1500,
+            pending: ['1 request to /api/feed in flight (Fetch)'],
+          },
+        }
+      : {}),
   };
 }
 
@@ -78,6 +87,8 @@ function store(
           structureHash: BASE.structureHash,
         },
         'no-current': { ...meta, hash: 'nope' },
+        capped: { ...meta, hash: 'nope', structureHash: BASE.structureHash },
+        'capped-green': { ...meta, hash: hashImage(Buffer.from('current-bytes')) },
         // hash equals the captured bytes: this story passes
         green: {
           ...meta,
@@ -271,4 +282,25 @@ test('two failing stories with the same change are one group on the report', asy
 test('a run with no shared signature has no groups key', async () => {
   const r = await run(store('ok'));
   expect('groups' in r).toBe(false);
+});
+
+test('a capture at the settle cap is flagged on every status, in the verdict too', async () => {
+  const settle = {
+    status: 'timeout',
+    timeoutMs: 1500,
+    pending: ['1 request to /api/feed in flight (Fetch)'],
+  };
+  const failed = (await run(store('ok'), 'capped')).results[0]!;
+  expect(failed.status).toBe('fail');
+  expect(failed.flags).toEqual(['settle-timeout']);
+  expect(failed.settle).toEqual(settle);
+  expect(failed.structural?.flags.at(-1)).toBe('settle-timeout');
+  // A pass is still a pass, and still says it was captured at the cap.
+  const passed = (await run(store('ok'), 'capped-green')).results[0]!;
+  expect(passed.status).toBe('pass');
+  expect(passed.flags).toEqual(['settle-timeout']);
+  // And a capture that settled carries neither key.
+  const green = (await run(store('ok'), 'green')).results[0]!;
+  expect(green).not.toHaveProperty('flags');
+  expect(green).not.toHaveProperty('settle');
 });

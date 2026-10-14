@@ -24,6 +24,7 @@ import {
   type RunArtifact,
   prepareCaptures,
   VariantConfigError,
+  checkProjectSettle,
   DEFAULT_VIEWPORT,
 } from '@juxtapose/core';
 import {
@@ -44,6 +45,13 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
   const say = (msg: string) => {
     if (!ctx.json) process.stdout.write(msg + '\n');
   };
+  try {
+    checkProjectSettle(ctx.config);
+  } catch (err) {
+    if (!(err instanceof VariantConfigError)) throw err;
+    process.stderr.write(`${err.message}\n`);
+    return EXIT.usage;
+  }
 
   if (ctx.platform.name === 'urls') {
     process.stderr.write(

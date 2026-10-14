@@ -39,6 +39,27 @@ const fixture = JSON.parse(
 };
 
 describe('buildHandoffPrompt', () => {
+  it('a settle-timeout comes first, with what was pending and the knob for each case', () => {
+    for (const status of ['fail', 'new'] as const) {
+      const out = buildHandoffPrompt({
+        ...base,
+        status,
+        settle: {
+          status: 'timeout',
+          timeoutMs: 1500,
+          pending: ['1 request to /api/feed in flight (Fetch)'],
+        },
+      });
+      expect(out).toContain('**settle-timeout:** the page still had work at the 1500 ms');
+      expect(out).toContain('- 1 request to /api/feed in flight (Fetch)');
+      expect(out).toContain('`settle.network.ignore`');
+      expect(out.indexOf('settle-timeout')).toBeLessThan(
+        out.indexOf(status === 'new' ? 'no baseline yet' : 'What changed'),
+      );
+    }
+    expect(buildHandoffPrompt(base)).not.toContain('settle');
+  });
+
   it('leads with structured data, not images', () => {
     const out = buildHandoffPrompt(base);
     // The whole efficiency argument: data first, images as a fallback.

@@ -122,6 +122,8 @@ Captures pages, pixels and structure, under a name. Same result as
 | `asPrefix` | string              | Name prefix for `urls`. Snaps are named `<prefix>-<slug>`. |
 | `viewport` | `{ width, height }` | CSS pixels, each 1 to 10000. Default 1280×800.             |
 | `waitFor`  | string              | CSS selector to wait for before capturing.                 |
+| `delay`    | integer             | Fixed extra wait after settling, in ms. Last resort.       |
+| `settle`   | object              | Settle options for this call. See below.                   |
 | `mask`     | string[]            | CSS selectors to blank, such as clocks or random data.     |
 | `project`  | string              | Project directory: the server's `--project` or inside it.  |
 
@@ -129,7 +131,26 @@ Pass either `url` with `as` or `urls` with `asPrefix`.
 
 Result: for one `url`, the snap object (`name`, `image`, `structure`,
 `viewport`, `env`, `structureHash`, `elements`, `durationMs`). For `urls`,
-`{ prefix, snaps }`, where a page that failed is `{ url, error }`.
+`{ prefix, snaps }`, where a page that failed is `{ url, error }`. A snap
+captured at the settle cap also has `flags: ["settle-timeout"]` (or
+`["settle-fallback"]` when the wait couldn't run) and
+`settle: { status, timeoutMs, pending }`, where `pending` lists what the page
+was still doing.
+
+`settle` has the same shape as the `settle` key in
+[juxtapose config](configuration.md#settle), and it overrides the project's
+and the story's values for this call:
+
+| Field             | Type     | Description                                                                                                  |
+| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| `timeout`         | integer  | The cap on the wait, in ms, from 1 to 60000. Default 1500.                                                   |
+| `ready`           | boolean  | Wait for the page to call `window.__juxtapose.ready()`; `false` turns off a story's or the config's `ready`. |
+| `network.ignore`  | string[] | URL patterns never counted as pending.                                                                       |
+| `network.require` | string[] | URL patterns that must each complete before capture.                                                         |
+
+When a result has `settle-timeout`, read `pending` and call the tool again:
+add a request that never finishes to `network.ignore`, or raise `timeout` for
+slow work.
 
 ### diff
 
@@ -169,9 +190,14 @@ result as `jux run --json`: a `RunReport`.
 | `all`     | boolean  | Capture every story instead of the affected ones.   |
 | `since`   | string   | Git ref. Traces changed files since it for `cause`. |
 | `stories` | string[] | Story ids to capture.                               |
+| `settle`  | object   | Settle options for every story, as for `snap`.      |
 
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.
+
+A result captured at the settle cap has `flags: ["settle-timeout"]` (or
+`["settle-fallback"]`) and a
+`settle` object, whatever its `status`.
 
 ### check
 

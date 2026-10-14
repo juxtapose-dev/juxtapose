@@ -27,6 +27,7 @@ import {
   platformStoryId,
   selectByStoryId,
   VariantConfigError,
+  checkProjectSettle,
   DEFAULT_VIEWPORT,
   type StoryManifest,
   formatPercent,
@@ -47,6 +48,7 @@ import {
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
 import { stdio, type Io, type Session } from '../io.js';
+import { settleFromFlags } from '../settle-flags.js';
 
 const MAX_GROUPS_SHOWN = 10;
 
@@ -65,7 +67,17 @@ export async function runCommand(
     );
     return EXIT.usage;
   }
+  const call = settleFromFlags(flags, 'jux run');
+  if ('error' in call) {
+    io.err(`${call.error}\n`);
+    return EXIT.usage;
+  }
   const ctx = await resolveContext(flags);
+  try {
+    checkProjectSettle(ctx.config);
+  } catch (err) {
+    return variantError(err, io);
+  }
   const log = (msg: string) => {
     if (!ctx.json) io.err(msg + '\n');
   };
@@ -224,6 +236,7 @@ export async function runCommand(
       stories: selection,
       totalCount: stories.length,
       config: ctx.config,
+      ...(call.settle ? { settle: { settle: call.settle } } : {}),
       ancestry: isGitRepo(ctx.projectRoot)
         ? createAncestryCheck(ctx.projectRoot)
         : alwaysAncestor,
@@ -442,6 +455,33 @@ async function emit(
     io.out(`\n  report: ${path.join(runDir, 'report.json')}\n`);
     io.out(`  approve all: jux approve --all\n`);
   }
+  emitSettleTimeouts(report, io);
+}
+
+const MAX_SETTLE_SHOWN = 10;
+
+/** Captures taken at the settle cap, whatever their status: a pass taken
+ *  mid-update is as worth knowing about as a failure. */
+function emitSettleTimeouts(report: RunReport, io: Io): void {
+  const capped = report.results.filter((r) => r.settle);
+  if (capped.length === 0) return;
+  io.out(
+    `\n  settle flagged on ${capped.length} capture${capped.length === 1 ? '' : 's'} (may show a frame mid-update):\n`,
+  );
+  for (const r of capped.slice(0, MAX_SETTLE_SHOWN)) {
+    io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}  ${r.flags?.join(', ') ?? ''}\n`);
+    for (const p of r.settle!.pending) io.out(`         ${p}\n`);
+  }
+  if (capped.length > MAX_SETTLE_SHOWN)
+    io.out(`  …and ${capped.length - MAX_SETTLE_SHOWN} more (see report.json)\n`);
+  if (capped.some((r) => r.settle?.status === 'timeout'))
+    io.out(
+      `  settle-timeout: ignore what never finishes (settle.network.ignore), raise settle.timeout for slow work, or require what must load (settle.network.require)\n`,
+    );
+  if (capped.some((r) => r.settle?.status === 'fallback'))
+    io.out(
+      `  settle-fallback: the event-driven wait could not run (the page navigated or stopped answering); re-run before judging those captures\n`,
+    );
 }
 
 /**

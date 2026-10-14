@@ -37,7 +37,53 @@ export interface StoryParams {
   /** Set on a variant's resolved params; a variant-only field. The default
    *  capture is always light, so a story's own `colorScheme` is ignored. */
   colorScheme?: ColorScheme;
+  /** How the capture decides the page has finished. Layered over the project
+   *  config's `settle` and under per-call options. */
+  settle?: SettleParams;
 }
+
+/**
+ * The event-driven settle wait: the page is captured once it reports no
+ * pending timers, frames, messages, fonts or images and no counted request is
+ * in flight, or at `timeout`, whichever comes first.
+ */
+export interface SettleParams {
+  /** Hard cap on the wait, ms, 1 to 60000. Default 1500. At the cap the
+   *  page is captured anyway and the result is flagged `settle-timeout`. */
+  timeout?: number;
+  /** Also wait for the page to call `window.__juxtapose.ready()`. */
+  ready?: boolean;
+  network?: {
+    /** Requests never counted as pending. Added to the defaults
+     *  (`type:WebSocket`, `type:EventSource`, `type:Ping`, `type:Prefetch`). */
+    ignore?: string[];
+    /** Each pattern must see a matching request complete before the page
+     *  counts as settled. Wins over `ignore`. */
+    require?: string[];
+  };
+}
+
+/** Something about a capture that doesn't fail it but should be read.
+ *  `settle-timeout`: the settle wait hit its cap. `settle-fallback`: the
+ *  event-driven wait could not run and a weaker one stood in. */
+export type CaptureFlag = 'settle-timeout' | 'settle-fallback';
+
+/** Present on a capture whose settle wait hit its cap (`timeout`), or could
+ *  not run as designed (`fallback`). */
+export type SettleReport =
+  | {
+      status: 'timeout';
+      /** The cap that was hit, ms. */
+      timeoutMs: number;
+      /** What was still pending at the cap, one description per item, such
+       *  as `1 request to /api/feed in flight (Fetch)`. Never empty. */
+      pending: string[];
+    }
+  | {
+      status: 'fallback';
+      /** Why the event-driven wait could not run. Never empty. */
+      pending: string[];
+    };
 
 export type ColorScheme = 'light' | 'dark';
 
@@ -98,6 +144,8 @@ export interface Snapshot {
    *  Absent when structure capture failed or was disabled — it explains a
    *  failure, it never decides one. */
   structure?: StructureSnapshot;
+  /** Present only when the settle wait hit its cap. */
+  settle?: SettleReport;
 }
 
 export interface StructureRect {
@@ -190,7 +238,13 @@ export type Flag =
   | 'no-current-structure'
   /** Either side's content is taller than the viewport: changes below the
    *  fold are invisible to both pixels and structure. */
-  | 'below-fold';
+  | 'below-fold'
+  /** The current capture's settle wait hit its cap: the page may have been
+   *  captured mid-update. The result's `settle.pending` says what was left. */
+  | 'settle-timeout'
+  /** The current capture's event-driven settle wait could not run; a
+   *  fonts/images/quiet-DOM wait stood in. */
+  | 'settle-fallback';
 
 export type CauseKind =
   /** At least one changed file is in the story's import closure. */
@@ -282,6 +336,10 @@ export interface DiffResult {
   /** Tier-0 explanation of a failure. Present only when status is 'fail' and
    *  the current capture produced a structure; never consulted on pass. */
   structural?: StructuralVerdict;
+  /** Present only when non-empty. Never changes `status`. */
+  flags?: CaptureFlag[];
+  /** Present only with the `settle-timeout` flag. */
+  settle?: SettleReport;
   durationMs: number;
 }
 
@@ -387,6 +445,12 @@ export interface ProjectConfig {
   viewport?: Viewport;
   threshold?: number;
   minDiffPercent?: number;
+  /** Project-wide settle options; a story's `settle` is layered over them. */
+  settle?: SettleParams;
+  /** Project-wide `waitForSelector`; a story's own wins. */
+  waitForSelector?: string;
+  /** Project-wide `delay`, ms; a story's own wins. */
+  delay?: number;
   /** Variants every story gets, by name. A story's own variant of the same
    *  name wins; a story sets one to `false` to opt out. Applies to every
    *  platform, the urls list included. */

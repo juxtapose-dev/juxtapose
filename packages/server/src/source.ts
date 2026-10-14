@@ -27,6 +27,7 @@ import {
   prepareCaptures,
   selectByStoryId,
   VariantConfigError,
+  checkProjectSettle,
   type RunReport,
   type StoryManifest,
 } from '@juxtapose/core';
@@ -170,6 +171,10 @@ export class RunDirSource implements ReviewSource {
   }
 
   private async loadStories(): Promise<StoryManifest[]> {
+    // The project's settle options, checked like its variants: a
+    // SettleConfigError is a VariantConfigError, so it is cached and served
+    // as a config error naming `project config`, not a failure per story.
+    checkProjectSettle(this.opts.config);
     const enumerated = await this.indexStories();
     const projectVariants = this.opts.config.variants;
     // Discovery needs a page, so it only runs for a platform that has it; the

@@ -198,6 +198,19 @@ describe('jux mcp protocol', () => {
     const bad = await c.call('snap', { url: 'http://127.0.0.1:1/' });
     expect(bad.isError).toBe(true);
     expect(text(bad)).toMatch(/needs 'as'/);
+    // A bad settle argument names the argument and the field, before any capture.
+    const settle = await c.call('snap', {
+      url: 'http://127.0.0.1:1/',
+      as: 'x',
+      settle: { timeout: 0 },
+    });
+    expect(settle.isError).toBe(true);
+    expect(text(settle)).toMatch(/'settle': settle.timeout must be a whole number of ms/);
+    const pattern = await c.call('run', {
+      settle: { network: { ignore: ['type:Nope'] } },
+    });
+    expect(pattern.isError).toBe(true);
+    expect(text(pattern)).toMatch(/unknown resource type 'Nope'/);
     await c.close();
     expectOnlyProtocol(c.lines);
   });

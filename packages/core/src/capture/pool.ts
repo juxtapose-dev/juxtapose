@@ -12,6 +12,7 @@ import { PageCrashedError, type Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
 import type { Snapshot, StoryManifest, Viewport } from '../types.js';
 import { captureStory, type CaptureDeps } from './capture.js';
+import type { SettleLayer } from './settle-options.js';
 
 /**
  * Default parallelism.
@@ -38,6 +39,8 @@ export interface PoolOptions {
   warmSwitch?: boolean;
   /** Non-fatal notices from capture, e.g. an ignored live variant override. */
   onWarning?: (message: string) => void;
+  /** Settle options around each story's own; see CaptureDeps. */
+  settleLayers?: { project?: SettleLayer; call?: SettleLayer };
 }
 
 export interface CaptureOutcome {
@@ -105,6 +108,7 @@ export async function* capturePool(
       baseUrl: opts.baseUrl,
       warmSwitch: opts.warmSwitch,
       ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
+      ...(opts.settleLayers ? { settleLayers: opts.settleLayers } : {}),
     };
 
     try {

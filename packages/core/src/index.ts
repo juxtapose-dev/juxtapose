@@ -40,6 +40,9 @@ export type {
   UrlEntry,
   StorageConfig,
   BaselineStore,
+  SettleParams,
+  SettleReport,
+  CaptureFlag,
 } from './types.js';
 
 // Implementing a platform adapter.
@@ -58,6 +61,20 @@ export {
   VariantConfigError,
   VARIANT_NAME,
 } from './capture/variants.js';
+// Settle options: validation and layering shared by the CLI, the MCP server
+// and the review server, so a bad value is reported the same way everywhere.
+export {
+  checkSettle,
+  checkPatterns,
+  checkProjectSettle,
+  isSettleTimeout,
+  settleFlag,
+  SettleConfigError,
+  DEFAULT_SETTLE_TIMEOUT_MS,
+  MAX_SETTLE_TIMEOUT_MS,
+  DEFAULT_NETWORK_IGNORE,
+  type SettleLayer,
+} from './capture/settle-options.js';
 export {
   discoverParams,
   prepareCaptures,
