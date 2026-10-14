@@ -628,9 +628,15 @@ commands. Run `jux run --all` before you commit the untracking: the commit
 deletes the images from every clone that pulls it, and those clones then rely on
 their own run or a restored CI cache, and report structure only until then.
 
-`storage.dir` must be a relative path inside the project: no `..`, glob
-characters, control characters or leading `-`, and not `.juxtapose` or
-`.juxtapose/structure`. The cache is not pruned yet; see [CI](ci.md).
+A cache `dir` must be a relative path inside the project (`/` and `\` both
+separate): no `..`, absolute or UNC path, glob characters, control characters
+or leading `-`, and not `.juxtapose` or `.juxtapose/structure`. A `git` or `fs`
+`dir` keeps accepting any path, including one outside the project; only a
+leading `-` and control, line-separator and bidi characters are refused. A
+refused value is a usage error (exit 2). Half-written images go to
+`.juxtapose/tmp/` (or `<dir>.tmp/` for a custom cache dir), also ignored, and
+stale ones are deleted on the next write. The cache is not pruned yet; see
+[CI](ci.md).
 
 Structure sidecars are plain JSON, one element per line, so an approval's diff
 shows which elements moved. Legacy `.structure.json.gz` sidecars are still read.

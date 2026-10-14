@@ -38,6 +38,12 @@ It reports:
   `git rm --cached -- '<dir>/*.webp'`, the `.gitignore` lines, and a commit.
 - `untracked-images`: images that are neither tracked nor ignored, which the
   next `git add .` would commit.
+- `committed-paths-ignored`: `.gitignore` ignores `juxtapose.manifest.json` or
+  `.juxtapose/structure/`, so `git add` skips them and CI loses the structure
+  diffs. A broad `.juxtapose/` line cannot be undone by a later negation (git
+  does not re-include a file whose parent directory is excluded), so the fix
+  rewrites that line to `.juxtapose/*` and adds `!.juxtapose/structure/`. `jux
+init` warns about the same thing.
 - `missing-ignores`: `.gitignore` lines the project needs. Git decides, so a
   broader pattern or a parent `.gitignore` counts.
 
