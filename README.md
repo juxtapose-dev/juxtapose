@@ -128,6 +128,7 @@ and `--comment` posts the results on the pull request. See [CI](docs/ci.md).
 - [Commands](docs/cli.md): every `jux` command
 - [Configuration](docs/configuration.md): config file, masks, dynamic content
 - [Browser](docs/browser.md): install, your own Chromium, the warm browser
+- [Field tests](docs/field-tests.md): stability on three public Storybooks, and how to reproduce it
 - [CI](docs/ci.md): pull request comments and the HTML report
 - [Watch mode](docs/watch-mode.md): the Storybook addon
 - [Packages](docs/packages.md): what each package is for
