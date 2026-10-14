@@ -195,6 +195,10 @@ last step: `jux diff before after-color --crops` writes one PNG per changed regi
 — baseline on the left, current on the right, the region's box doubled for
 context, enlarged to at most 512px a side, unexplained regions first — to
 `.juxtapose/crops/before~vs~after-color/crop-N.png` and lists them. No browser.
+When a side is a `.webp` path instead of a snap name, its part of the dir name is the
+file's basename plus 8 hex characters of a hash of its absolute path
+(`X-current.1a2b3c4d~vs~X-current.5e6f7a8b`), so same-named images from different
+runs never share a dir. Read the dir from `dir` in `--json` output.
 
 ```
 style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure explains the changed region.

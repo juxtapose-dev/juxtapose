@@ -2,6 +2,7 @@
 // tier-0 verdict out, no browser. Exit 0 identical, 1 different, 2 usage,
 // 3 when an input exists but cannot be read.
 
+import { createHash } from 'node:crypto';
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -189,7 +190,7 @@ interface CropFile {
 }
 
 /** The tier-3 escalation: the verdict plus one strip per region, unexplained
- *  first, under .juxtapose/crops/<a>~vs~<b>/. The dir is emptied first so a
+ *  first, under .juxtapose/crops/<a>~vs~<b>/ (see cropDirName). The dir is emptied first so a
  *  stale crop from an earlier pair can never sit beside a fresh one. */
 async function writeCrops(
   a: string,
@@ -304,16 +305,22 @@ async function writeCrops(
   return EXIT.review;
 }
 
-/** `<a>~vs~<b>`: snapName output is [a-z0-9-] only, so `~` can never come
- *  from a name and ("x-vs-y","z") cannot collide with ("x","y-vs-z"). */
+/** `<a>~vs~<b>`. A snap name is [a-z0-9-] only, so `~` can never come from a
+ *  name and ("x-vs-y","z") cannot collide with ("x","y-vs-z"). A `.webp` path
+ *  input is its basename plus `.<8 hex of sha256(absolute path)>`: two run
+ *  images with the same basename in different dirs get different crops dirs,
+ *  and the `.` keeps a path side from ever equalling a snap name. */
 export function cropDirName(a: string, b: string): string {
   return `${cropName(a)}~vs~${cropName(b)}`;
 }
 
-/** A snap name, or a `.webp` path's basename, made file-safe for the crops dir. */
+/** A snap name, or a `.webp` path's basename plus a path hash, made file-safe
+ *  for the crops dir. */
 function cropName(ref: string): string {
-  const base = ref.endsWith('.webp') ? path.basename(ref, '.webp') : ref;
-  return snapName(base, base);
+  if (!ref.endsWith('.webp')) return snapName(ref, ref);
+  const base = path.basename(ref, '.webp');
+  const hash = createHash('sha256').update(path.resolve(ref)).digest('hex').slice(0, 8);
+  return `${snapName(base, base)}.${hash}`;
 }
 
 export interface PrefixPairing {
