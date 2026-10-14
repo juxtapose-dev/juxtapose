@@ -169,6 +169,36 @@ function copyImages(runs, ids, reportDir) {
 }
 const percentile = (sorted, p) =>
   sorted[Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1)];
+// Per-phase p50/p95 and total seconds from the results' `timings` (ms to 0.1).
+// Empty when the CLI under test predates them or nothing was captured.
+const PHASES = [
+  'navigate',
+  'freshRenderer',
+  'render',
+  'settle',
+  'paint',
+  'structure',
+  'screenshot',
+  'encode',
+  'other',
+];
+function phaseStats(results) {
+  const timed = results.filter((r) => r.timings);
+  if (!timed.length) return undefined;
+  const stats = {};
+  for (const name of PHASES) {
+    const v = timed.map((r) => r.timings[name] ?? 0).sort((a, b) => a - b);
+    stats[name] = {
+      p50: Math.round(percentile(v, 50)),
+      p95: Math.round(percentile(v, 95)),
+      totalSeconds: Math.round(v.reduce((a, b) => a + b, 0) / 100) / 10,
+    };
+  }
+  return stats;
+}
+const phaseLine = (stats) =>
+  'phases p50/p95 ms: ' +
+  PHASES.map((n) => `${n} ${stats[n].p50}/${stats[n].p95}`).join(', ');
 
 try {
   const runs = [];
@@ -203,6 +233,7 @@ try {
         wall,
         results: report.results.length,
         errored,
+        phases: phaseStats(report.results),
         byStory: new Map(
           report.results.map((r) => [
             r.storyId,
@@ -221,6 +252,8 @@ try {
         `pass ${i}: ${report.results.length} results, ${errors} errors, wall ${wall.toFixed(1)} s, ` +
           `p50 ${percentile(ms, 50)} ms, p95 ${percentile(ms, 95)} ms`,
       );
+      const phases = runs.at(-1).phases;
+      if (phases) say(`pass ${i}: ${phaseLine(phases)}`);
     } finally {
       rmSync(state, { recursive: true, force: true });
     }
@@ -303,11 +336,12 @@ try {
       JSON.stringify(
         {
           storybook: flags['--storybook'] ?? null,
-          passes: runs.map(({ runId, wall, results, errored, byStory }) => ({
+          passes: runs.map(({ runId, wall, results, errored, phases, byStory }) => ({
             runId,
             wall,
             results,
             errored,
+            ...(phases ? { phases } : {}),
             // Per-story hashes only for an investigation, to keep result.json small.
             ...(investigate
               ? { hashes: Object.fromEntries([...byStory].map(([k, v]) => [k, v.hash])) }

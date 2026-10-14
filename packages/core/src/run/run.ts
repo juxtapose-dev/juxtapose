@@ -383,6 +383,7 @@ async function judge(
     ...(captureFlags(snapshot).length > 0 ? { flags: captureFlags(snapshot) } : {}),
     ...(snapshot.settle ? { settle: snapshot.settle } : {}),
     durationMs: snapshot.durationMs,
+    ...(snapshot.timings ? { timings: snapshot.timings } : {}),
   };
 
   // pass / new / stale need no pixel work: there is either nothing to explain

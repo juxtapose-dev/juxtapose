@@ -7,6 +7,7 @@ import { emulatedMedia, FRESH_RENDERER_URL, type Page } from '../browser/page.js
 import { assertCssSelector } from '../browser/selectors.js';
 import type { Platform } from '../platform.js';
 import type {
+  CaptureTimings,
   ColorScheme,
   Snapshot,
   StoryManifest,
@@ -112,6 +113,10 @@ export async function captureStory(
   // Returns null when the story declares `skip` in its live params — see below.
 ): Promise<Snapshot | null> {
   const started = Date.now();
+  // Per-phase wall time, for `timings`. Only reads the clock around calls that
+  // were already there: nothing is added to, or moved in, the capture path.
+  const t0 = performance.now();
+  const acc = { navigate: 0, freshRenderer: 0, render: 0, settle: 0, paint: 0 };
   const phase = (name: string) => deps.onPhase?.(name);
   phase('page setup');
   // Copied, not aliased: live params get merged in below, and mutating the
@@ -203,7 +208,9 @@ export async function captureStory(
   // With freshRenderer off the page keeps its renderer and is only blanked
   // for those same-URL cases, as before #153.
   if (!warm && previous !== undefined && deps.freshRenderer !== false) {
+    const tFresh = performance.now();
     await page.goto(FRESH_RENDERER_URL);
+    acc.freshRenderer = performance.now() - tFresh;
     warmPages.delete(page);
   } else if ((schemeChanged || sameStoryOtherCapture) && warmPages.has(page)) {
     await page.goto('about:blank');
@@ -219,6 +226,7 @@ export async function captureStory(
   // story's render is never mistaken for the previous one's.
   await resetIdle(page, idle, warm);
 
+  const tNav = performance.now();
   const switched =
     warm && deps.platform.switchStory
       ? await deps.platform.switchStory(page, id, ctx)
@@ -233,6 +241,7 @@ export async function captureStory(
     styleInjected.delete(page);
     warmPages.set(page, deps.baseUrl);
   }
+  acc.navigate = performance.now() - tNav;
   // The hop above asks for a new renderer; Chrome decides. Once the browser
   // holds its renderer-process limit, the next navigation reuses a process
   // that already ran a story, silently (measured, Chrome 151: concurrency 8
@@ -262,7 +271,9 @@ export async function captureStory(
   await freezeAnimations(page, params);
 
   phase('platform settle');
+  const tRender = performance.now();
   await deps.platform.settle(page, ctx);
+  acc.render += performance.now() - tRender;
 
   // Now that the story has rendered, ask the platform whether it declares
   // params the static index didn't carry.
@@ -276,6 +287,7 @@ export async function captureStory(
   // declaration, and the index is a lossy projection of it — but merge under
   // a variant's own fields, so the mobile variant stays mobile.
   phase('live params');
+  const tLive = performance.now();
   const live = await deps.platform.readLiveParams?.(page, id);
   if (live) {
     Object.assign(params, mergeLiveParams(story, live));
@@ -311,6 +323,8 @@ export async function captureStory(
       await deps.platform.settle(page, { ...ctx, params });
     }
   }
+  // Live params are read from the page, so this counts as waiting on the render.
+  acc.render += performance.now() - tLive;
 
   // A story can declare `skip` in params the static index never carried, so
   // this is the first point we can honour it. Signalled rather than returning
@@ -334,19 +348,23 @@ export async function captureStory(
   deps.onSettleBudget?.(
     settle.timeoutMs + (params.delay ?? 0) + (params.waitForSelector ? timeoutMs : 0),
   );
+  const tSettle = performance.now();
   if (params.waitForSelector) {
     await waitForSelector(page, params.waitForSelector, timeoutMs);
   }
 
   phase('idle wait');
   const first = await waitForIdle(page, idle, settle);
+  acc.settle += performance.now() - tSettle;
 
   // Fixed delay is the escape hatch of last resort — it costs the same on
   // every run whether or not it was needed. Prefer waitForSelector.
   phase('delay');
+  const tDelay = performance.now();
   if (params.delay && params.delay > 0) {
     await new Promise<void>((r) => setTimeout(r, params.delay));
   }
+  acc.settle += performance.now() - tDelay;
 
   // Last barrier before the shutter: the DOM being quiet does not mean the
   // pixels are final. Style, layout and paint still have to land, and without
@@ -355,30 +373,40 @@ export async function captureStory(
   // first so their raster reflects this frame, not the page's history
   // (issue #136).
   phase('paint barrier');
+  const tPaint = performance.now();
   await rerasterLayers(page);
   await waitForPaint(page);
+  acc.paint += performance.now() - tPaint;
 
   // Work that landed during the paint barrier (an observer callback, a
   // request the last frame started) gets one more wait, within what is left
   // of the cap. Once: a page that keeps moving is captured, not chased.
   let flagged: IdleResult | undefined = first.status === 'idle' ? undefined : first;
+  const tMoved = performance.now();
   if (
     first.status === 'idle' &&
     (await movedSincePaint(page, idle, first.snap, settle))
   ) {
+    acc.paint += performance.now() - tMoved;
+    const tSecond = performance.now();
     const second = await waitForIdle(
       page,
       idle,
       settle,
       Math.max(100, settle.timeoutMs - first.waitedMs),
     );
+    acc.settle += performance.now() - tSecond;
+    const tRepaint = performance.now();
     // No idle wait after this rebuild: it keeps every containing block and
     // stacking context and leaves no mutation behind (settle.ts), so it gives
     // the page nothing to react to. With the earlier blanket sheet a
     // latching IntersectionObserver did react, and this path captured it.
     await rerasterLayers(page);
     await waitForPaint(page);
+    acc.paint += performance.now() - tRepaint;
     if (second.status !== 'idle') flagged = second;
+  } else {
+    acc.paint += performance.now() - tMoved;
   }
 
   // Structure from the same frame the screenshot is about to take: after the
@@ -386,15 +414,19 @@ export async function captureStory(
   // mutate the page.
   const effective = params.viewport ?? effectiveViewport;
   phase('structure capture');
+  const tStructure = performance.now();
   const structure =
     deps.structure !== false && process.env.JUXTAPOSE_NO_STRUCTURE !== '1'
       ? await captureStructure(page, effective, params.mask ?? [])
       : undefined;
+  const structureMs = performance.now() - tStructure;
 
   // A selector matching nothing is not an error — a story that conditionally
   // renders the element shouldn't fail on the branch where it's absent.
   phase('screenshot');
+  const tShot = performance.now();
   const png = await page.screenshot(params.mask?.length ? { mask: params.mask } : {});
+  const screenshotMs = performance.now() - tShot;
 
   // LOSSLESS, deliberately, and it is not a size-vs-quality preference.
   //
@@ -409,9 +441,21 @@ export async function captureStory(
   // all 800 rows and all 1280 columns. With lossless, zero pixels differ from
   // the source. Costs ~4x the bytes; buys a diff that means something.
   phase('encode');
+  const tEncode = performance.now();
   const image = await sharp(png)
     .webp({ lossless: true, effort: deps.webpEffort ?? 0 })
     .toBuffer();
+  const encodeMs = performance.now() - tEncode;
+  const timings = captureTimings(performance.now() - t0, {
+    navigate: acc.navigate,
+    freshRenderer: acc.freshRenderer,
+    render: acc.render,
+    settle: acc.settle,
+    paint: acc.paint,
+    structure: structureMs,
+    screenshot: screenshotMs,
+    encode: encodeMs,
+  });
 
   return {
     storyId: story.storyId,
@@ -424,6 +468,7 @@ export async function captureStory(
     viewport: effective,
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
+    timings,
     ...(structure ? { structure } : {}),
     ...(rendererReused ? { rendererReused: true } : {}),
     ...(flagged?.status === 'timeout'
@@ -442,6 +487,29 @@ export async function captureStory(
       : flagged?.status === 'fallback'
         ? { settle: { status: 'fallback' as const, pending: flagged.pending ?? [] } }
         : {}),
+  };
+}
+
+/** The phases as 0.1 ms figures, with `other` as whatever the named phases
+ *  leave of `totalMs` (page setup, network policy, the freeze, the isolate
+ *  check, bookkeeping). Measured with performance.now(), which is monotonic;
+ *  durationMs is wall-clock Date.now(). */
+function captureTimings(
+  totalMs: number,
+  named: Omit<CaptureTimings, 'other'>,
+): CaptureTimings {
+  const r = (ms: number) => Math.round(Math.max(0, ms) * 10) / 10;
+  const sum = Object.values(named).reduce((a, b) => a + b, 0);
+  return {
+    navigate: r(named.navigate),
+    freshRenderer: r(named.freshRenderer),
+    render: r(named.render),
+    settle: r(named.settle),
+    paint: r(named.paint),
+    structure: r(named.structure),
+    screenshot: r(named.screenshot),
+    encode: r(named.encode),
+    other: r(totalMs - sum),
   };
 }
 
