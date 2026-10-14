@@ -13,6 +13,7 @@
 export type {
   StoryParams,
   VariantSpec,
+  StoryOverride,
   ColorScheme,
   Viewport,
   StoryManifest,

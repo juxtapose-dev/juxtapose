@@ -17,6 +17,9 @@ versions of the per-story options below, and `warmSwitch` — off by default, an
 does not reproduce cold-load pixels exactly, which under a byte-exact hash
 makes a story's verdict depend on where it lands in the queue.
 
+`stories` sets per-story options by story id glob, for a Storybook you don't
+own: see [Override stories you don't own](#override-stories-you-dont-own).
+
 `.juxtaposerc.json` works as well. JSON only — a `.ts` or `.js` config is not
 loaded.
 
@@ -126,12 +129,13 @@ starts later than that, use `ready`, `network.require` or `waitForSelector`.
 
 ### Layers
 
-Settle options come from four places. Each one overrides the one before it:
+Settle options come from five places. Each one overrides the one before it:
 
 1. Built-in defaults.
 1. The project config: `settle`, `waitForSelector` and `delay`.
 1. The story's parameters (`parameters.juxtapose`, including a variant's own
    settings).
+1. The project config's [`stories` overrides](#override-stories-you-dont-own).
 1. The command: `jux snap` and `jux run` flags, or the `settle` argument of the
    MCP `snap` and `run` tools.
 
@@ -293,6 +297,70 @@ dimensions:
 
 If you can't change the element, mask a fixed-size container around it
 instead.
+
+## Override stories you don't own
+
+Per-story options live in `parameters.juxtapose`, which you can only edit in a
+Storybook you own. For a deployed `origin` or someone else's `buildDir`, put
+the same options in the project config under `stories`, keyed by story id:
+
+```json
+{
+  "platform": "storybook",
+  "buildDir": "chakra/storybook-static",
+  "stories": {
+    "components-card--basic": { "mask": ["img"] },
+    "components-sandbox--re-renders": { "mask": ["[data-testid=clock]"] },
+    "components-aspectratio--*": {
+      "settle": { "network": { "ignore": ["**/tile.openstreetmap.org/**"] } }
+    },
+    "components-codeblock--*": { "waitForSelector": ".shiki span" },
+    "components-map--*": { "skip": true }
+  }
+}
+```
+
+An entry can set `skip`, `mask`, `delay`, `waitForSelector`, `captureTimeout`,
+`settle`, `network`, `threshold` and `minDiffPercent`, with the meaning and
+values they have in `parameters.juxtapose`. Anything else is an error.
+
+**Which stories match.** A key is a story id with `*` (anything), `**` and `?`
+(one character) as wildcards; an id with none is an exact match. A key that
+matches a story's id also covers all of its variants. To target one variant,
+use its capture key, `<story id>__<variant>` (or `*__mobile` for every
+variant of that name).
+
+**Precedence.** A config override wins over the story's own
+`parameters.juxtapose` (variants included, and values only the live preview
+declares), and loses only to the command line. The order is: project defaults,
+then the story, then `stories`, then flags. The override is above the story on
+purpose. It is the project owner's word about a story they can't edit, and its
+job is to correct what the story declares: a `delay` that is too short, or a
+`skip` that has to go. Set `"skip": false` to capture a story whose source
+skips itself.
+
+**Several matching keys.** They combine from least to most specific, and the
+more specific one wins a conflict:
+
+1. Keys with a wildcard come before exact ids.
+1. Among wildcard keys, the one with fewer literal characters comes first, so
+   `components-*` yields to `components-card--*`.
+1. At equal specificity, the key later in the file wins.
+
+`delay`, `waitForSelector`, `captureTimeout`, `threshold`, `minDiffPercent` and
+`skip` take the winning value. `mask` is the union of every match, since a
+mask only hides more. `settle` and `network` merge field by field, and the
+`settle.network` lists combine.
+
+**Skipped by config.** A story the config skips is not dropped silently. It is
+a `skip` result in the run report with `skippedBy` naming the keys, `jux run`
+prints how many were skipped by `stories`, the PR comment says so, and `jux
+handoff <id>` explains that nothing was captured and which entry to change.
+
+A bad entry is a usage error that names the key, such as
+`project config: stories['components-card--*']: unknown option 'dely'`.
+It is checked before any browser starts, by `run`, `init`, `snap`, `jux mcp`
+and the review server alike.
 
 ## Capture a built or deployed Storybook
 

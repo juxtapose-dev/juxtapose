@@ -138,6 +138,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
         baseUrl,
         viewport: ctx.config.viewport ?? DEFAULT_VIEWPORT,
         ...(ctx.config.variants ? { projectVariants: ctx.config.variants } : {}),
+        ...(ctx.config.stories ? { projectStories: ctx.config.stories } : {}),
         onWarning: (m) => process.stderr.write(`${m}\n`),
         // Beside the runs, so it is ignored wherever runs are; an unchanged
         // static build skips the preview load.

@@ -177,6 +177,7 @@ export class RunDirSource implements ReviewSource {
     checkProjectSettle(this.opts.config);
     const enumerated = await this.indexStories();
     const projectVariants = this.opts.config.variants;
+    const projectStories = this.opts.config.stories;
     // Discovery needs a page, so it only runs for a platform that has it; the
     // browser it starts is the one the next capture would start anyway.
     return this.opts.platform.discoverParams
@@ -186,9 +187,10 @@ export class RunDirSource implements ReviewSource {
           baseUrl: this.opts.baseUrl,
           viewport: this.opts.config.viewport ?? DEFAULT_VIEWPORT,
           ...(projectVariants ? { projectVariants } : {}),
+          ...(projectStories ? { projectStories } : {}),
           onWarning: (m) => process.stderr.write(`juxtapose: ${m}\n`),
         })
-      : expandVariants(enumerated, projectVariants);
+      : expandVariants(enumerated, projectVariants, projectStories);
   }
 
   /** Drop the cached story index — the workbench told us it changed. */

@@ -9,9 +9,15 @@
 
 import { checkNetwork } from './network-policy.js';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
-import type { StoryManifest, StoryParams, VariantSpec } from '../types.js';
+import type { StoryManifest, StoryOverride, StoryParams, VariantSpec } from '../types.js';
 import { VariantConfigError } from './config-errors.js';
 import { checkSettle, mergeSettle } from './settle-options.js';
+import {
+  applyOverride,
+  checkStoryOverrides,
+  compileOverrides,
+  withOverride,
+} from './story-overrides.js';
 
 /** Underscores are excluded so the `__` key separator can't occur in a name. */
 export const VARIANT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -34,14 +40,19 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
  * Expand each story into its default capture plus one entry per variant,
  * sorted by capture key in code-unit order.
  *
+ * `projectStories` is the config's per-story overrides: folded over each
+ * capture's params last, so they beat the story's and the variant's own.
+ *
  * Throws VariantConfigError on a bad name, a malformed spec, an unknown or
- * cyclic `extends`, or two captures that would share a key.
+ * cyclic `extends`, a bad override, or two captures that would share a key.
  */
 export function expandVariants(
   stories: readonly StoryManifest[],
   projectVariants?: Record<string, VariantSpec | false>,
+  projectStories?: Record<string, StoryOverride>,
 ): StoryManifest[] {
   const project = checkDeclared(projectVariants, 'project config');
+  const overrides = compileOverrides(checkStoryOverrides(projectStories));
   const out: StoryManifest[] = [];
 
   for (const story of stories) {
@@ -50,10 +61,11 @@ export function expandVariants(
     const { variants: ownRaw, colorScheme: _ignored, ...baseParams } = story.params;
     checkSettle(baseParams.settle, `story '${story.storyId}'`);
     checkNetwork(baseParams.network, `story '${story.storyId}'`);
-    out.push({ ...story, params: baseParams });
+    const base = withOverride(story, baseParams, overrides);
+    out.push(base);
 
     // A skipped story skips every variant: there is nothing to vary.
-    if (baseParams.skip === true) continue;
+    if (base.params.skip === true) continue;
 
     const own = checkDeclared(ownRaw, `story '${story.storyId}'`);
     // Story wins by name; `false` drops the name entirely.
@@ -68,15 +80,21 @@ export function expandVariants(
 
     for (const name of [...merged.keys()].sort(compareCodeUnits)) {
       const layer = resolveChain(story.storyId, name, merged);
-      out.push({
-        ...story,
-        storyId: captureKey(story.storyId, name),
-        baseStoryId: story.storyId,
-        variant: name,
-        variantParams: layer,
-        // Base params, then the extends chain, then the variant itself.
-        params: withSettle({ ...baseParams, ...layer }, baseParams.settle, layer.settle),
-      });
+      out.push(
+        withOverride(
+          {
+            ...story,
+            storyId: captureKey(story.storyId, name),
+            baseStoryId: story.storyId,
+            variant: name,
+            variantParams: layer,
+          },
+          // Base params, then the extends chain, then the variant itself;
+          // the config override goes over all three.
+          withSettle({ ...baseParams, ...layer }, baseParams.settle, layer.settle),
+          overrides,
+        ),
+      );
     }
   }
 
@@ -197,11 +215,12 @@ function withSettle<T extends StoryParams>(
  * Live params override the manifest — the preview is the story's own
  * declaration, the index a lossy projection of it — but they merge UNDER a
  * variant's layer: a story's own live `viewport` must not undo the mobile
- * variant's. `variants` and `colorScheme` in live params are declarations,
+ * variant's. A config override goes over both: live params are the story's
+ * own word, and the override exists to correct it. `variants` and `colorScheme` in live params are declarations,
  * not settings for this capture, so they are dropped.
  */
 export function mergeLiveParams(
-  story: Pick<StoryManifest, 'params' | 'variantParams'>,
+  story: Pick<StoryManifest, 'params' | 'variantParams' | 'override'>,
   live: StoryParams | undefined,
 ): StoryParams {
   const params: StoryParams = { ...story.params };
@@ -209,9 +228,10 @@ export function mergeLiveParams(
   const { variants: _v, colorScheme: _c, ...settings } = live;
   Object.assign(params, settings, story.variantParams ?? {});
   const variantSettle = story.variantParams?.settle;
-  return variantSettle
+  const layered = variantSettle
     ? withSettle(params, settings.settle ?? story.params.settle, variantSettle)
     : params;
+  return applyOverride(layered, story.override);
 }
 
 /**

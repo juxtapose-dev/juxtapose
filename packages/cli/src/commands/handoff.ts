@@ -131,6 +131,7 @@ export async function handoffCommand(
     projectRoot: ctx.projectRoot,
     ...(variant ? { variant } : {}),
     ...(result.settle ? { settle: result.settle } : {}),
+    ...(result.skippedBy ? { skippedBy: result.skippedBy } : {}),
   };
 
   io.out(buildHandoffPrompt(payload) + '\n');

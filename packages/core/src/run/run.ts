@@ -120,6 +120,23 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   // report several times the wall-clock actually spent.
   const captureStarted = Date.now();
 
+  // The pool drops any `skip` capture without a word. One the project config
+  // asked for is reported, with the globs, so a skipped story is never a
+  // mystery in the run or the handoff.
+  for (const story of opts.stories) {
+    if (story.params.skip !== true || !story.skippedBy) continue;
+    results.push({
+      storyId: story.storyId,
+      ...variantOf(story),
+      status: 'skip',
+      skippedBy: story.skippedBy,
+      mismatchPixels: 0,
+      mismatchPercent: 0,
+      changedRegions: [],
+      durationMs: 0,
+    });
+  }
+
   for await (const outcome of pool) {
     if (outcome.skipped) {
       results.push({
