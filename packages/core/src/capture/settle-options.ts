@@ -307,7 +307,7 @@ export function checkProjectSettle(config: {
       st > MAX_STORY_TIMEOUT_MS)
   )
     throw new SettleConfigError(
-      `${where}: storyTimeout must be a whole number of ms, ${MIN_STORY_TIMEOUT_MS} to ${MAX_STORY_TIMEOUT_MS}`,
+      `${where}: storyTimeout must be a whole number of ms, ${MIN_STORY_TIMEOUT_MS} to ${MAX_STORY_TIMEOUT_MS}, got ${JSON.stringify(st)}`,
     );
   checkSettle(config.settle, where);
   checkNetwork(config.network, where);

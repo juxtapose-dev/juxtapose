@@ -287,7 +287,9 @@ export async function captureStory(
   phase('waitForSelector');
   // Settle must never throw on timeout (a slow story is a reviewable diff),
   // so the story budget has to outlast the cap and the fixed delay.
-  deps.onSettleBudget?.(settle.timeoutMs + (params.delay ?? 0));
+  deps.onSettleBudget?.(
+    settle.timeoutMs + (params.delay ?? 0) + (params.waitForSelector ? timeoutMs : 0),
+  );
   if (params.waitForSelector) {
     await waitForSelector(page, params.waitForSelector, timeoutMs);
   }

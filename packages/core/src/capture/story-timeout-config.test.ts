@@ -10,7 +10,7 @@ describe('storyTimeout config', () => {
   it.each([0, -5, 999, 1.5, 3_000_000_000, 'abc', true, null, NaN])(
     'rejects %s, naming storyTimeout',
     (v) => {
-      expect(() => checkProjectSettle({ storyTimeout: v })).toThrow(/storyTimeout/);
+      expect(() => checkProjectSettle({ storyTimeout: v })).toThrow(/storyTimeout.*got /);
     },
   );
 });

@@ -174,7 +174,12 @@ export async function* capturePool(
                 ...baseDeps,
                 onPhase: (p) => (phase = p),
                 onSettleBudget: (ms) => {
-                  effectiveMs = Math.max(budgetMs, ms + SETTLE_ALLOWANCE_MS);
+                  // Measured from now, not from the start: a slow navigation
+                  // must not eat the allowance settle was promised.
+                  effectiveMs = Math.max(
+                    budgetMs,
+                    Date.now() - started + ms + SETTLE_ALLOWANCE_MS,
+                  );
                 },
               },
               opts.viewport,

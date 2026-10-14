@@ -129,3 +129,47 @@ describe.skipIf(!chrome)('budget vs settle', () => {
     expect(out[0]!.durationMs).toBeGreaterThanOrEqual(4900);
   }, 60_000);
 });
+
+describe.skipIf(!chrome)('budget vs slow navigation', () => {
+  // The settle allowance is measured from when settle is resolved, not from
+  // the story's start: a document that takes 16 s to arrive must not eat it.
+  it('a slow document plus a settle cap above the budget still yields a flagged snapshot', async () => {
+    const slow = createServer((req, res) => {
+      if (req.url === '/hang') return;
+      setTimeout(() => {
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.end(
+          `<!doctype html><body style="margin:0">x<script>fetch('/hang')</script></body>`,
+        );
+      }, 16000);
+    });
+    await new Promise<void>((r) => slow.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(slow.address() as { port: number }).port}`;
+    const browser = await Browser.launch({ executablePath: chrome!.path });
+    const out: CaptureOutcome[] = [];
+    try {
+      for await (const o of capturePool([story('slow')], {
+        browser,
+        platform: {
+          ...platform,
+          showStory: async (page, id) => {
+            await page.goto(`${url}/${id}`);
+          },
+        },
+        baseUrl: url,
+        viewport: { width: 100, height: 50 },
+        concurrency: 1,
+        storyTimeoutMs: 17000,
+        settleLayers: { project: { settle: { timeout: 3000 } } },
+      })) {
+        out.push(o);
+      }
+    } finally {
+      await browser.close();
+      slow.closeAllConnections();
+      slow.close();
+    }
+    expect(out[0]!.error).toBeUndefined();
+    expect(out[0]!.snapshot?.settle?.status).toBe('timeout');
+  }, 60_000);
+});
