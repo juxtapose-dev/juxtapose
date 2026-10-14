@@ -412,6 +412,11 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
   const onReply = (m: RawMessage, o: Owner) => {
     const c = o.client;
     const result = record(m.result);
+    // Dispose answered: do not dispose again on drop. Until then the context
+    // stays owned, so a client that gives up waiting on a wedged renderer and
+    // disconnects still has it cleaned up.
+    if (o.method === 'Target.disposeBrowserContext' && !m.error && o.browserContextId)
+      c.contexts.delete(o.browserContextId);
     if (!m.error) {
       if (o.method === 'Target.createBrowserContext') {
         const id = str(result['browserContextId']);
@@ -448,9 +453,7 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
         m = { ...m, result: rest };
       }
     } else if (o.method === 'Target.disposeBrowserContext' && !c.gone) {
-      // The dispose failed, so the context still exists: dispose it on drop after all.
-      const id = o.browserContextId;
-      if (id && contextOwner.get(id) === c) c.contexts.add(id);
+      // The dispose failed, so the context still exists and stays owned.
     }
     deliver(c, { ...m, id: o.clientId });
   };
@@ -653,11 +656,6 @@ export async function startSupervisor(opts: SupervisorOptions): Promise<Supervis
     if (why) {
       fail(why);
       return;
-    }
-    if (method === 'Target.disposeBrowserContext') {
-      // The client is disposing it: do not dispose again on drop.
-      const ctx = str(params['browserContextId']);
-      if (ctx !== undefined) c.contexts.delete(ctx);
     }
     const id = chrome.connection.allocateId();
     owners.set(id, {

@@ -31,10 +31,18 @@ export const DEFAULT_CONCURRENCY = 8;
  * Why it exists: every CDP call carries its own 30 s cap, and a page whose main
  * thread is busy (Primer's ~110k-element treeview story) stalls each in turn:
  * the stacked caps measured 127-160 s for one story (issue #154). The default
- * leaves room for the slowest legitimate story (settle's own cap is 5 s by
- * default) while keeping a wedged one from tripling a run.
+ * leaves room for a slow legitimate story (settle's own cap defaults to
+ * 1.5 s) while keeping a wedged one from tripling a run.
+ *
+ * It is a floor, not a ceiling over settle: a story's effective budget is
+ * max(this, settle cap + delay + SETTLE_ALLOWANCE_MS), because settle must
+ * never throw on timeout (a slow story is a reviewable diff, not an error).
  */
 export const DEFAULT_STORY_TIMEOUT_MS = 60_000;
+
+/** Time beyond settle's cap and delay for navigation, the platform's render
+ *  signal, the paint barrier, structure capture and the screenshot. */
+export const SETTLE_ALLOWANCE_MS = 15_000;
 
 /** The story used up its whole budget; the page it ran on is discarded. */
 export class StoryTimeoutError extends Error {
@@ -156,16 +164,23 @@ export async function* capturePool(
 
         const started = Date.now();
         let phase = 'starting';
+        let effectiveMs = budgetMs;
         try {
           const snapshot = await withBudget(
             captureStory(
               session.page,
               story,
-              { ...baseDeps, onPhase: (p) => (phase = p) },
+              {
+                ...baseDeps,
+                onPhase: (p) => (phase = p),
+                onSettleBudget: (ms) => {
+                  effectiveMs = Math.max(budgetMs, ms + SETTLE_ALLOWANCE_MS);
+                },
+              },
               opts.viewport,
             ),
-            budgetMs,
-            () => new StoryTimeoutError(story.storyId, budgetMs, phase),
+            () => effectiveMs,
+            () => new StoryTimeoutError(story.storyId, effectiveMs, phase),
           );
           // null means the story declared `skip` in params only visible once
           // it had rendered. Report it as skipped, not as a failure.
@@ -198,10 +213,12 @@ export async function* capturePool(
             // this page; closing the context rejects its pending calls, which
             // withBudget has already detached. The close itself is bounded: a
             // wedged renderer may not answer it.
+            let grace: NodeJS.Timeout | undefined;
             await Promise.race([
               session.context.close().catch(() => {}),
-              new Promise<void>((r) => setTimeout(r, CLOSE_GRACE_MS)),
+              new Promise<void>((r) => (grace = setTimeout(r, CLOSE_GRACE_MS))),
             ]);
+            clearTimeout(grace);
             session = await open().catch((e: unknown) => {
               died ??= new BrowserDiedError(e);
               return null;
@@ -247,12 +264,23 @@ export async function* capturePool(
 /** How long a worker waits for a wedged context to close before moving on. */
 const CLOSE_GRACE_MS = 5_000;
 
-/** Reject with `expired()` if `work` outlives `ms`. `work` is detached, not
- *  cancelled: the caller discards the page it runs on. */
-function withBudget<T>(work: Promise<T>, ms: number, expired: () => Error): Promise<T> {
+/** Reject with `expired()` once `work` has run `ms()` (re-read as it grows,
+ *  see onSettleBudget). `work` is detached, not cancelled: the caller discards
+ *  the page it runs on. */
+function withBudget<T>(
+  work: Promise<T>,
+  ms: () => number,
+  expired: () => Error,
+): Promise<T> {
+  const started = Date.now();
   let timer: NodeJS.Timeout | undefined;
   const budget = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(expired()), ms);
+    const arm = () => {
+      const left = started + ms() - Date.now();
+      if (left <= 0) reject(expired());
+      else timer = setTimeout(arm, left);
+    };
+    arm();
   });
   // The loser's rejection must not surface as an unhandled one.
   work.catch(() => {});

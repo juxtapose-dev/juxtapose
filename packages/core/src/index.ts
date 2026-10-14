@@ -69,6 +69,8 @@ export {
   checkPatterns,
   checkProjectSettle,
   isSettleTimeout,
+  MAX_STORY_TIMEOUT_MS,
+  MIN_STORY_TIMEOUT_MS,
   settleFlag,
   SettleConfigError,
   DEFAULT_SETTLE_TIMEOUT_MS,
@@ -144,6 +146,7 @@ export { chromeArgs, PARITY_CHROMIUM_ARGS } from './browser/flags.js';
 export type { Browser, BrowserContext } from './browser/browser.js';
 export { BrowserDiedError } from './browser/browser.js';
 export { TargetClosedError } from './browser/cdp.js';
+export { StoryTimeoutError } from './capture/pool.js';
 export { PageCrashedError, TimeoutError, type Page } from './browser/page.js';
 export { acquireBrowser, type AcquireOptions } from './browser/acquire.js';
 export {

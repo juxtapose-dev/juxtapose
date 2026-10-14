@@ -86,3 +86,46 @@ describe.skipIf(!chrome)('per-story budget', () => {
     expect(wall).toBeLessThan(20_000);
   }, 60_000);
 });
+
+describe.skipIf(!chrome)('budget vs settle', () => {
+  // Settle must never throw on timeout: a story whose settle cap (5 s) is
+  // above storyTimeout (2 s) still returns a snapshot flagged settle-timeout.
+  it('does not pre-empt settle: a legal settle.timeout above storyTimeout yields a flagged snapshot', async () => {
+    const hang = createServer((req, res) => {
+      if (req.url === '/hang') return; // never answers
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(
+        `<!doctype html><body style="margin:0">x<script>fetch('/hang')</script></body>`,
+      );
+    });
+    await new Promise<void>((r) => hang.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(hang.address() as { port: number }).port}`;
+    const browser = await Browser.launch({ executablePath: chrome!.path });
+    const out: CaptureOutcome[] = [];
+    try {
+      for await (const o of capturePool([story('hung')], {
+        browser,
+        platform: {
+          ...platform,
+          showStory: async (page, id) => {
+            await page.goto(`${url}/${id}`);
+          },
+        },
+        baseUrl: url,
+        viewport: { width: 100, height: 50 },
+        concurrency: 1,
+        storyTimeoutMs: 2000,
+        settleLayers: { project: { settle: { timeout: 5000 } } },
+      })) {
+        out.push(o);
+      }
+    } finally {
+      await browser.close();
+      hang.closeAllConnections();
+      hang.close();
+    }
+    expect(out[0]!.error).toBeUndefined();
+    expect(out[0]!.snapshot?.settle?.status).toBe('timeout');
+    expect(out[0]!.durationMs).toBeGreaterThanOrEqual(4900);
+  }, 60_000);
+});

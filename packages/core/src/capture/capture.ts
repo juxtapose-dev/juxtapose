@@ -74,6 +74,9 @@ export interface CaptureDeps {
   /** Reports which step of the capture is about to run, so the pool's story
    *  budget can name where a wedged story was stuck. */
   onPhase?: (phase: string) => void;
+  /** Reports the time settle may legitimately spend (its cap plus `delay`),
+   *  once resolved, so the pool's story budget never pre-empts it. */
+  onSettleBudget?: (ms: number) => void;
   /** Something the user should know that doesn't fail the story. */
   onWarning?: (message: string) => void;
   /** Settle options from outside the story: the project config below the
@@ -222,6 +225,7 @@ export async function captureStory(
   // Live params override manifest params — the live preview is the story's own
   // declaration, and the index is a lossy projection of it — but merge under
   // a variant's own fields, so the mobile variant stays mobile.
+  phase('live params');
   const live = await deps.platform.readLiveParams?.(page, id);
   if (live) {
     Object.assign(params, mergeLiveParams(story, live));
@@ -281,6 +285,9 @@ export async function captureStory(
   );
 
   phase('waitForSelector');
+  // Settle must never throw on timeout (a slow story is a reviewable diff),
+  // so the story budget has to outlast the cap and the fixed delay.
+  deps.onSettleBudget?.(settle.timeoutMs + (params.delay ?? 0));
   if (params.waitForSelector) {
     await waitForSelector(page, params.waitForSelector, timeoutMs);
   }
@@ -290,6 +297,7 @@ export async function captureStory(
 
   // Fixed delay is the escape hatch of last resort — it costs the same on
   // every run whether or not it was needed. Prefer waitForSelector.
+  phase('delay');
   if (params.delay && params.delay > 0) {
     await new Promise<void>((r) => setTimeout(r, params.delay));
   }
