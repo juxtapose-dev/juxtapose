@@ -181,9 +181,9 @@ interface BaselineStore {
 - **`cache` (default)** — images live in a local, git-ignored directory
   (`.juxtapose/cache/baselines/`) named by their own sha256, so any commit's
   manifest finds its image if it was ever captured here, and two caches merge
-  without conflict. The repo carries only the manifest and the structure
-  sidecars (`.juxtapose/structure/<id>.structure.json`, plain JSON, one element
-  per line so an approval's diff shows which elements moved). A passing run
+  without conflict. The repo carries only the manifest, a lockfile holding
+  each story's hash and, inline, its structure (one element per line, sorted by
+  id, so an approval's diff shows which elements moved). A passing run
   keeps its capture in the cache; CI saves and restores the directory (see
   [CI](docs/ci.md)). A failing story whose image is missing is reported by hash
   and structure ("structure diff only"), never as an error. It still reads an

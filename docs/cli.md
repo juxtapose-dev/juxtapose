@@ -35,15 +35,17 @@ It reports:
 - `tracked-images`: baseline images tracked by git in the old layout or the
   cache directory. The fix runs `jux run --all` first, so the cache holds the
   images before the commit deletes them from other clones, then
-  `git rm --cached -- '<dir>/*.webp'`, the `.gitignore` lines, and a commit.
+  `git rm --cached -- ':(glob)<dir>/*.webp'`, the `.gitignore` line, and a
+  commit. The pathspec is literal about the directory's own name.
+- `legacy-sidecars`: per-story `.structure.json.gz` files tracked under
+  `.juxtapose/baselines/`. Structure now lives in the manifest; the fix runs
+  `jux run --all` and `jux approve --all` to fold it in, then untracks the files
+  and commits the manifest.
 - `untracked-images`: images that are neither tracked nor ignored, which the
   next `git add .` would commit.
-- `committed-paths-ignored`: `.gitignore` ignores `juxtapose.manifest.json` or
-  `.juxtapose/structure/`, so `git add` skips them and CI loses the structure
-  diffs. A broad `.juxtapose/` line cannot be undone by a later negation (git
-  does not re-include a file whose parent directory is excluded), so the fix
-  rewrites that line to `.juxtapose/*` and adds `!.juxtapose/structure/`. `jux
-init` warns about the same thing.
+- `committed-paths-ignored`: `.gitignore` (or another ignore file) ignores
+  `juxtapose.manifest.json` or `juxtapose.config.json`, so `git add` skips them.
+  `jux init` warns about the same thing. The pattern is yours to edit.
 - `missing-ignores`: `.gitignore` lines the project needs. Git decides, so a
   broader pattern or a parent `.gitignore` counts.
 

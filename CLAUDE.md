@@ -191,14 +191,16 @@ Releases go through changesets. Add one with `pnpm changeset` when a change
 should ship; merging to main without a changeset publishes nothing.
 
 Projects that use jux commit hashes and metadata, never images:
-`juxtapose.config.json`, `juxtapose.manifest.json` (the per-story hashes, which
-alone decide pass/fail, so an approval is a reviewable diff of hashes) and
-`.juxtapose/structure/` (per-story structure, so CI can name the elements that
-changed). Baseline images live in a git-ignored, hash-keyed cache
-(`.juxtapose/cache/`), `.juxtapose/runs/` is ignored too, and `jux init` writes
-those `.gitignore` lines. Never `git add` an image; `jux doctor` flags tracked
-ones. A failing story whose image is not in the cache is reported by hash and
-structure, not as an error. `storage: { "kind": "git" }` is the opt-in legacy
-layout. The `examples/` directories commit nothing at all: antialiasing differs
-across machines and Chromium versions, so committed baselines there would be
+`juxtapose.config.json` and `juxtapose.manifest.json`. The manifest is a
+lockfile: per story it holds the approved hash (which alone decides pass/fail)
+and the approved structure (so CI can name the elements that changed), sorted
+and machine-independent so an approval is a small reviewable diff. Never
+hand-merge it; take either side and re-run `jux approve`. `.juxtapose/` is
+entirely machine-local (the hash-keyed image cache, runs, tmp) and ignored with
+one line that `jux init` writes. Never `git add` an image; `jux doctor` flags
+tracked ones. A failing story whose image is not in the cache is reported by
+hash and structure, not as an error. `storage: { "kind": "git" }` is the opt-in
+legacy layout. The `examples/` directories commit nothing at all: antialiasing
+differs across machines and Chromium versions, so committed baselines there
+would be red for everyone but the author.
 red for everyone but the author.

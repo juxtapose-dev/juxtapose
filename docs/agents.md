@@ -18,9 +18,9 @@ A story with `unstable` in the run report was captured twice and came out
 differently. `jux approve` refuses it (exit 1, story named) until it is made
 deterministic or `--allow-unstable` is passed; see [cli.md](cli.md).
 
-Approving writes a hash to `juxtapose.manifest.json`, a structure file under
-`.juxtapose/structure/`, and the image to a git-ignored cache. Commit the first
-two; never `git add` an image. `jux doctor` lists any that are tracked and
+Approving writes the hash and structure to `juxtapose.manifest.json` and the
+image to a git-ignored cache under `.juxtapose/`. Commit the manifest; never
+`git add` an image or anything under `.juxtapose/`. `jux doctor` lists any that are tracked and
 prints the `git rm --cached` fix. When a failing story's image is not in the
 cache, its handoff and result say "baseline image not available (not in cache);
 structure diff only": read the structural deltas, since there is no overlay or
