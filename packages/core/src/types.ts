@@ -76,8 +76,13 @@ export interface SettleParams {
 
 /** Something about a capture that doesn't fail it but should be read.
  *  `settle-timeout`: the settle wait hit its cap. `settle-fallback`: the
- *  event-driven wait could not run and a weaker one stood in. */
-export type CaptureFlag = 'settle-timeout' | 'settle-fallback';
+ *  event-driven wait could not run and a weaker one stood in.
+ *  `renderer-reused`: the story ran in a renderer process an earlier story
+ *  used, so its pixels can depend on that story (#153). */
+export type CaptureFlag = SettleFlag | 'renderer-reused';
+
+/** The flags a settle report raises; the verdict carries these too. */
+export type SettleFlag = 'settle-timeout' | 'settle-fallback';
 
 /** Present on a capture whose settle wait hit its cap (`timeout`), or could
  *  not run as designed (`fallback`). */
@@ -164,6 +169,9 @@ export interface Snapshot {
   structure?: StructureSnapshot;
   /** Present only when the settle wait hit its cap. */
   settle?: SettleReport;
+  /** Set when the capture ran in a renderer process an earlier capture in
+   *  the run used: the fresh-renderer hop did not get a new one (#153). */
+  rendererReused?: true;
 }
 
 export interface StructureRect {

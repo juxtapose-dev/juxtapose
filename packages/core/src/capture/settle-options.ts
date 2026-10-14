@@ -13,7 +13,9 @@ import type {
   CaptureFlag,
   NetworkParams,
   SettleParams,
+  SettleFlag,
   SettleReport,
+  Snapshot,
   StoryParams,
 } from '../types.js';
 import { SettleConfigError } from './config-errors.js';
@@ -230,8 +232,16 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** The flag a settle report raises. */
-export const settleFlag = (s: Pick<SettleReport, 'status'>): CaptureFlag =>
+export const settleFlag = (s: Pick<SettleReport, 'status'>): SettleFlag =>
   s.status === 'timeout' ? 'settle-timeout' : 'settle-fallback';
+
+/** Every flag a capture raises; empty when it raised none. */
+export const captureFlags = (
+  s: Pick<Snapshot, 'settle' | 'rendererReused'>,
+): CaptureFlag[] => [
+  ...(s.settle ? [settleFlag(s.settle)] : []),
+  ...(s.rendererReused ? (['renderer-reused'] as const) : []),
+];
 
 /** A settle cap: a whole number of ms, 1 to MAX_SETTLE_TIMEOUT_MS. The CLI
  *  and the MCP server check per-call values with this too. */

@@ -50,6 +50,22 @@ internally stable; they disagree with each other. Since the work queue is
 shuffled, that made a story's verdict depend on where it landed in the queue.
 See issue #32 before re-enabling — it lists what has already been ruled out.
 
+**Renderer-process state carries across navigations** (issue #153). Chrome's
+renderer keeps canvas text measurement, font metrics and raster caches across
+navigations, about:blank included, so the story a page showed before changed
+this one's pixels. Primer's PageLayout heading was 0.11 px wider after a story
+that measured canvas text at 32.0167px; Spectrum's card cover edge changed after
+a button group. A memory-pressure purge cleared neither. That is why
+`freshRenderer` (default on) sends each cold capture through a `data:` URL so
+the story lands in a new renderer process. Chrome only grants that below its
+renderer-process limit: concurrency 8 at `--renderer-process-limit=8` reused
+the old process on 56 of 56 captures, at 9 on none, and the default limit is
+RAM-derived (24 on 4 GB). So `browser/flags.ts` sets the limit to 1000, and
+capture compares the page's renderer (`Runtime.getIsolateId`, random per
+process, about 0.2 ms) to flag a story that still lands in a used one
+`renderer-reused`. The pixel test in `fresh-renderer-capture.test.ts` needs the
+macOS system font; on Linux its renderer-process tests are the guard.
+
 **Captures are lossless WebP.** Lossy at q90 perturbs ~7.7% of pixels
 frame-wide. The hash survives that (encoding is deterministic), but the diff
 fills with compression noise and the changed-region map degenerates to the whole

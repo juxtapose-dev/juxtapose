@@ -47,6 +47,26 @@
  * - `--disable-background-timer-throttling` and friends stop Chromium from
  *   throttling a backgrounded renderer, which otherwise makes settle timing
  *   depend on whether the window happens to be focused.
+ *
+ * - `--renderer-process-limit=1000` keeps the fresh-renderer hop honest
+ *   (issue #153). Each cold capture navigates through a data: URL so the
+ *   story lands in a new renderer process, but once the browser holds its
+ *   renderer limit Chrome reuses a process that already ran a story, and
+ *   that story's font and raster state changes this one's pixels. Chrome's
+ *   default limit is RAM / 2 / 85 MB, clamped to 3 and half the OS process
+ *   limit (render_process_host_impl.cc, Chrome 151): 12 on a 2 GB container,
+ *   24 on 4 GB. Measured with an explicit limit: concurrency 8 at 8 reused
+ *   56 of 56 captures, at 9 none. A hop briefly holds two renderers per page
+ *   (concurrency 16 peaked at 28-32 renderers), so the defaults bite below
+ *   2x: concurrency 16 at 24 (4 GB) reused 14 of 128, concurrency 8 at 12
+ *   (2 GB) 13 of 64. With 1000: 0 of 64 at 8, 0 of 128 at 16. The flag
+ *   only lifts the cap; pages still set
+ *   the process count, a median of one per page, and peak renderer memory at
+ *   concurrency 16 was 1.50 GB without the hop, 1.51 GB with it under the
+ *   default limit and 1.54 GB at 1000. 1000 is beyond any concurrency a
+ *   machine has memory for (about 95 MB a page), so memory, not Chrome,
+ *   bounds it. capture.ts flags any story that still lands in a used
+ *   renderer, for browsers this launch didn't start.
  */
 export const DETERMINISTIC_CHROMIUM_ARGS: readonly string[] = [
   '--disable-gpu',
@@ -61,6 +81,7 @@ export const DETERMINISTIC_CHROMIUM_ARGS: readonly string[] = [
   '--disable-backgrounding-occluded-windows',
   '--disable-renderer-backgrounding',
   '--force-device-scale-factor=1',
+  '--renderer-process-limit=1000',
 ];
 
 export interface LaunchOptions {

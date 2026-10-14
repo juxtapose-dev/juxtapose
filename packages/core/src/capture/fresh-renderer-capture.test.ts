@@ -12,6 +12,7 @@ import type { CdpConnection } from '../browser/cdp.js';
 import { chromeForTests } from '../browser/__tests__/helpers.js';
 import { createUrlPlatform } from '../platforms/urls.js';
 import { captureStory } from './capture.js';
+import { capturePool } from './pool.js';
 import { snapPages } from './snap.js';
 
 const chrome = chromeForTests();
@@ -64,35 +65,53 @@ async function snap(...paths: string[]): Promise<Buffer[]> {
 }
 
 /** The browser's renderer process ids (SystemInfo is browser-target only). */
-async function renderers(): Promise<number[]> {
-  const { connection } = browser as unknown as { connection: CdpConnection };
+async function renderers(on: Browser = browser): Promise<number[]> {
+  const { connection } = on as unknown as { connection: CdpConnection };
   const { processInfo } = await connection.send('SystemInfo.getProcessInfo');
   return processInfo.filter((p) => p.type === 'renderer').map((p) => p.id);
 }
 
-/**
- * Capture three pages on one page and return, for each capture after the
- * first, the renderer pids born during it that no earlier capture had seen.
- */
-async function renderersBornPerCapture(deps: {
-  freshRenderer?: boolean;
-}): Promise<number[][]> {
+interface PerCapture {
+  /** Renderer pids born during the capture that no earlier capture saw. */
+  born: number[];
+  /** The page's own renderer, by its inspector isolate id: random per
+   *  process, so a new id is a new process (it tracked the CPU-identified
+   *  pid on 87 of 87 captures, reused or not). */
+  isolate: string;
+  reused: boolean;
+}
+
+/** Capture three pages on one page and report each capture after the first. */
+async function capturesOnOnePage(
+  deps: { freshRenderer?: boolean },
+  on: Browser = browser,
+): Promise<(PerCapture & { previous: string })[]> {
   const viewport = { width: 480, height: 64 };
-  const context = await browser.newContext({ viewport });
+  const context = await on.newContext({ viewport });
   try {
     const page = await context.newPage();
     const seen = new Set<number>();
-    const born: number[][] = [];
+    const out: PerCapture[] = [];
     for (const [k, path] of ['/plain', '/plain', '/heading'].entries()) {
       const url = `${base}${path}`;
       const platform = createUrlPlatform([{ id: `s${k}`, url }]);
       const [story] = await platform.enumerate({ projectRoot: process.cwd() });
-      await captureStory(page, story!, { platform, baseUrl: url, ...deps }, viewport);
-      const now = await renderers();
-      if (k > 0) born.push(now.filter((id) => !seen.has(id)));
+      const snapshot = await captureStory(
+        page,
+        story!,
+        { platform, baseUrl: url, ...deps },
+        viewport,
+      );
+      const now = await renderers(on);
+      const { id: isolate } = await page.send('Runtime.getIsolateId');
+      out.push({
+        born: now.filter((id) => !seen.has(id)),
+        isolate,
+        reused: snapshot?.rendererReused === true,
+      });
       for (const id of now) seen.add(id);
     }
-    return born;
+    return out.slice(1).map((c, k) => ({ ...c, previous: out[k]!.isolate }));
   } finally {
     await context.close();
   }
@@ -110,18 +129,77 @@ describe.skipIf(!chrome)(
       expect(after!.equals(alone!)).toBe(true);
     });
 
-    // The platform-independent half: the font carry-over above needs the
-    // macOS system font, but every story after the first must start in a
-    // renderer process no earlier story ran in. On main: the same process.
+    // The platform-independent half, and the guard on Linux CI: the pixel
+    // test above only fails with the macOS system font, but every story
+    // after the first must run in a renderer process no earlier story ran
+    // in. Checked on the page's own renderer, not just that some process was
+    // born. Before #153: the same process every time.
     it('starts every story after the first in a new renderer process', async () => {
-      const born = await renderersBornPerCapture({});
-      for (const ids of born) expect(ids.length).toBeGreaterThan(0);
+      const after = await capturesOnOnePage({});
+      const isolates = new Set(after.map((c) => c.isolate));
+      expect(isolates.size).toBe(after.length);
+      for (const c of after) {
+        expect(c.isolate).not.toBe(c.previous);
+        expect(c.born.length).toBeGreaterThan(0);
+        expect(c.reused).toBe(false);
+      }
     });
 
-    // The opt-out restores main's behavior: one renderer for the whole page.
+    // The opt-out restores the old behavior: one renderer for the whole page.
     it('with freshRenderer false, keeps one renderer across captures', async () => {
-      const born = await renderersBornPerCapture({ freshRenderer: false });
-      expect(born).toEqual([[], []]);
+      const after = await capturesOnOnePage({ freshRenderer: false });
+      expect(after.map((c) => c.born)).toEqual([[], []]);
+      for (const c of after) expect(c.isolate).toBe(c.previous);
+    });
+
+    // At Chrome's renderer-process limit the hop stays in the old process
+    // silently (concurrency 8 at a limit of 8: 56 of 56 reused). Our launch
+    // lifts the limit; a browser that holds one must flag the capture.
+    it('flags a capture whose hop could not get a new renderer', async () => {
+      const capped = await Browser.launch({
+        executablePath: chrome!.path,
+        args: ['--renderer-process-limit=1'],
+      });
+      try {
+        const after = await capturesOnOnePage({}, capped);
+        for (const c of after) {
+          expect(c.isolate).toBe(c.previous);
+          expect(c.reused).toBe(true);
+        }
+      } finally {
+        await capped.close();
+      }
+    });
+
+    it('warns once per run when the pool sees a reused renderer', async () => {
+      const capped = await Browser.launch({
+        executablePath: chrome!.path,
+        args: ['--renderer-process-limit=1'],
+      });
+      try {
+        const paths = ['/plain', '/heading', '/plain', '/heading'];
+        const platform = createUrlPlatform(
+          paths.map((p, k) => ({ id: `p${k}`, url: `${base}${p}` })),
+        );
+        const stories = await platform.enumerate({ projectRoot: process.cwd() });
+        const warnings: string[] = [];
+        const reused: boolean[] = [];
+        for await (const out of capturePool(stories, {
+          browser: capped,
+          platform,
+          baseUrl: base,
+          concurrency: 2,
+          viewport: { width: 480, height: 64 },
+          onWarning: (m) => warnings.push(m),
+        })) {
+          expect(out.error).toBeUndefined();
+          reused.push(out.snapshot?.rendererReused === true);
+        }
+        expect(reused.filter(Boolean).length).toBeGreaterThan(0);
+        expect(warnings.filter((w) => w.includes('renderer-reused'))).toHaveLength(1);
+      } finally {
+        await capped.close();
+      }
     });
 
     // The hop's own data: document answers 200; a URL that then fails to

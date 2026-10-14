@@ -21,7 +21,7 @@ import {
   type SettleReport,
   type SnapPageResult,
   checkProjectSettle,
-  settleFlag,
+  captureFlags,
   VariantConfigError,
   type Viewport,
   shellQuote,
@@ -61,8 +61,9 @@ interface Written {
   structureHash: string | null;
   elements: number;
   durationMs: number;
-  /** Present only when the settle wait hit its cap. */
+  /** Present only when the capture raised a flag (settle, renderer-reused). */
   flags?: CaptureFlag[];
+  /** Present only when the settle wait hit its cap. */
   settle?: SettleReport;
 }
 
@@ -290,6 +291,11 @@ export async function snapCommand(
             : `  settle-fallback: ${r.settle.pending.join('; ')}\n`,
         );
       }
+      if (r.flags?.includes('renderer-reused')) {
+        io.out(
+          `  renderer-reused: captured in a renderer process an earlier page used, so its pixels can depend on that page (#153)\n`,
+        );
+      }
     }
     if (urls.length > 1 || failed) {
       io.out(
@@ -415,9 +421,8 @@ export async function writeSnap(
     structureHash: s?.structureHash ?? null,
     elements: s?.elements.length ?? 0,
     durationMs: snapshot.durationMs,
-    ...(snapshot.settle
-      ? { flags: [settleFlag(snapshot.settle)], settle: snapshot.settle }
-      : {}),
+    ...(captureFlags(snapshot).length > 0 ? { flags: captureFlags(snapshot) } : {}),
+    ...(snapshot.settle ? { settle: snapshot.settle } : {}),
   };
 }
 

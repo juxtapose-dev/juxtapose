@@ -45,6 +45,7 @@ export type {
   NetworkParams,
   SettleReport,
   CaptureFlag,
+  SettleFlag,
 } from './types.js';
 
 // Implementing a platform adapter.
@@ -74,6 +75,7 @@ export {
   MAX_STORY_TIMEOUT_MS,
   MIN_STORY_TIMEOUT_MS,
   settleFlag,
+  captureFlags,
   SettleConfigError,
   DEFAULT_SETTLE_TIMEOUT_MS,
   MAX_SETTLE_TIMEOUT_MS,

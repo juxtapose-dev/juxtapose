@@ -141,6 +141,19 @@ export async function* capturePool(
     }
   };
 
+  // Every renderer process that hosted a capture in this run, shared across
+  // the workers: a story that lands in another page's used renderer is as
+  // order-dependent as one that stays in its own (#153).
+  const renderers = new Set<string>();
+  let warnedReuse = false;
+  const noteReuse = (snapshot: Snapshot) => {
+    if (!snapshot.rendererReused || warnedReuse) return;
+    warnedReuse = true;
+    opts.onWarning?.(
+      `jux: ${snapshot.storyId} ran in a renderer process an earlier story used, so its pixels can depend on that story (#153). Chrome reached its renderer-process limit: lower --concurrency, or check the browser's --renderer-process-limit. Affected results are flagged renderer-reused.`,
+    );
+  };
+
   const workers = Array.from({ length: workerCount }, async () => {
     let session: { context: BrowserContext; page: Page } | null = await open();
     const baseDeps: CaptureDeps = {
@@ -150,6 +163,7 @@ export async function* capturePool(
       ...(opts.freshRenderer !== undefined ? { freshRenderer: opts.freshRenderer } : {}),
       ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
       ...(opts.settleLayers ? { settleLayers: opts.settleLayers } : {}),
+      renderers,
     };
 
     try {
@@ -173,6 +187,7 @@ export async function* capturePool(
           // null means the story declared `skip` in params only visible once
           // it had rendered. Report it as skipped, not as a failure.
           const durationMs = Date.now() - started;
+          if (snapshot) noteReuse(snapshot);
           push(
             snapshot
               ? { story, snapshot, durationMs }

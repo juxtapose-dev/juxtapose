@@ -72,6 +72,13 @@ export interface CaptureDeps {
    */
   freshRenderer?: boolean;
   /**
+   * The renderer processes that hosted a capture in this run, by their
+   * inspector isolate id (random 64-bit per process). The pool shares one
+   * across its pages so a story that lands in another page's used renderer
+   * is caught too; without it each page checks only its own history.
+   */
+  renderers?: Set<string>;
+  /**
    * Capture the structure snapshot beside the pixels. Default true. It costs
    * one CDP call per story (budget: < 30 ms) and explains failures; it never
    * decides one. `JUXTAPOSE_NO_STRUCTURE=1` turns it off for A/B timing.
@@ -97,6 +104,8 @@ const pageColorScheme = new WeakMap<Page, ColorScheme>();
 /** The capture last shown on a page: its key and its platform story id. */
 const pageCapture = new WeakMap<Page, { key: string; base: string }>();
 const warmPages = new WeakMap<Page, string>();
+/** Each page's own renderer history, when the caller passes no shared set. */
+const pageRenderers = new WeakMap<Page, Set<string>>();
 
 export async function captureStory(
   page: Page,
@@ -231,6 +240,19 @@ export async function captureStory(
     styleInjected.delete(page);
     warmPages.set(page, deps.baseUrl);
   }
+  // The hop above asks for a new renderer; Chrome decides. Once the browser
+  // holds its renderer-process limit, the next navigation reuses a process
+  // that already ran a story, silently (measured, Chrome 151: concurrency 8
+  // with --renderer-process-limit=8 reused 56 of 56, with 9 none). Our launch
+  // sets the limit far above any concurrency (flags.ts), but an adopted or
+  // daemon-shared browser, or a caller's lower limit, can still reach it. So
+  // the result says so: the isolate id is random per renderer process and
+  // matched the CPU-identified pid on 87 of 87 captures, reused or not, for
+  // about 0.2 ms a capture.
+  const rendererReused =
+    !switched && deps.freshRenderer !== false
+      ? await rendererSeenBefore(page, deps.renderers)
+      : false;
 
   // Freeze BEFORE the story renders, not after.
   //
@@ -416,6 +438,7 @@ export async function captureStory(
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     ...(structure ? { structure } : {}),
+    ...(rendererReused ? { rendererReused: true } : {}),
     ...(flagged?.status === 'timeout'
       ? {
           settle: {
@@ -428,6 +451,24 @@ export async function captureStory(
         ? { settle: { status: 'fallback' as const, pending: flagged.pending ?? [] } }
         : {}),
   };
+}
+
+/**
+ * Whether the page's current renderer process already hosted a capture, then
+ * records it. A browser without Runtime.getIsolateId answers false: unknown
+ * is not evidence of reuse.
+ */
+async function rendererSeenBefore(page: Page, shared?: Set<string>): Promise<boolean> {
+  let seen = shared ?? pageRenderers.get(page);
+  if (!seen) pageRenderers.set(page, (seen = new Set()));
+  const id = await page
+    .send('Runtime.getIsolateId')
+    .then((r) => r.id)
+    .catch(() => undefined);
+  if (id === undefined) return false;
+  if (seen.has(id)) return true;
+  seen.add(id);
+  return false;
 }
 
 /** Whether the live preview declares this variant with settings other than
