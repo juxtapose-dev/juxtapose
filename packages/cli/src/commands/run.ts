@@ -270,7 +270,12 @@ export async function runCommand(
       ...(signal ? { signal } : {}),
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
-      onArtifact: (a) => writeArtifact(runDir, a),
+      onArtifact: async (a) => {
+        await writeArtifact(runDir, a);
+        // A pass matches the manifest hash, so this capture is the approved
+        // image: keep it for the failure that needs it later.
+        if (a.status === 'pass') await ctx.store.keepImage?.(a.current).catch(() => {});
+      },
       onWarning: warn,
       onProgress: (done, total, storyId) => {
         if (!ctx.json) {

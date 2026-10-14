@@ -173,3 +173,11 @@ test('approveCapture into the cache store commits readable JSON, not gzip', asyn
     structure.elements.length,
   );
 });
+
+test('keepImage caches a passing capture without touching the manifest', async () => {
+  await store.keepImage(image);
+  expect(existsSync(path.join(cacheDir(), `${hash}.webp`))).toBe(true);
+  expect(existsSync(path.join(root, 'juxtapose.manifest.json'))).toBe(false);
+  await store.keepImage(image); // idempotent
+  expect(await readdir(cacheDir())).toEqual([`${hash}.webp`]);
+});

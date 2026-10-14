@@ -419,6 +419,9 @@ export type BaselineImageLookup =
  *  bytes vary by implementation. */
 export interface BaselineStore {
   get(storyId: string): Promise<Buffer | null>;
+  /** Optional: cache an image by its hash without touching the manifest. A
+   *  passing run calls it so the cache fills from captures that match. */
+  keepImage?(image: Buffer): Promise<void>;
   /** Optional: `get` with the reason an image is missing. */
   lookup?(storyId: string): Promise<BaselineImageLookup>;
   put(storyId: string, image: Buffer, meta: ApprovalMeta): Promise<void>;

@@ -16,7 +16,6 @@
 // story, or a CI job with a cold cache, reports the failure by hash and
 // structure and says the image is unavailable.
 
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -106,17 +105,26 @@ export class CacheBaselineStore implements BaselineStore {
     return undefined;
   }
 
+  /**
+   * Cache an image without touching the manifest. A passing story's capture is
+   * by definition the approved image, so a run that keeps it is how a CI job
+   * (or a clone that never approved anything) fills the cache that later
+   * failures diff against. Content-addressed, so repeating it is free.
+   */
+  async keepImage(image: Buffer): Promise<void> {
+    const file = this.cachePath(hashImage(image));
+    if (existsSync(file)) return;
+    await mkdir(this.cacheDir, { recursive: true });
+    // Write-then-rename: a reader (or a CI cache save) never sees half an image
+    // under a name that promises its hash.
+    const tmp = `${file}.${process.pid}.tmp`;
+    await writeFile(tmp, image);
+    await rename(tmp, file);
+  }
+
   async put(storyId: string, image: Buffer, meta: ApprovalMeta): Promise<void> {
-    const hash = createHash('sha256').update(image).digest('hex');
-    const file = this.cachePath(hash);
-    if (!existsSync(file)) {
-      await mkdir(this.cacheDir, { recursive: true });
-      // Write-then-rename: a reader (or a CI cache save) never sees half an image
-      // under a name that promises its hash.
-      const tmp = `${file}.${process.pid}.tmp`;
-      await writeFile(tmp, image);
-      await rename(tmp, file);
-    }
+    const hash = hashImage(image);
+    await this.keepImage(image);
     // A previous baseline's sidecar must not outlive its pixels: a capture
     // approved without structure would otherwise inherit the old one.
     await rm(this.structurePath(storyId), { force: true });
