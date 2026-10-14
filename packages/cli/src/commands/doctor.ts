@@ -79,6 +79,8 @@ export async function findIssues(
   const repoBacked = storage?.kind === 'git' || storage?.kind === 'fs';
   const ignores = ignoredPaths(storage);
   const cmd = commandsFor(projectRoot, cwd);
+  // Only what is missing: re-adding a line the file has is noise to review.
+  const missing = await missingIgnores(projectRoot, ignores);
   const ignoreFix = (lines: string[]) =>
     `printf '%s\\n' ${lines.map(shellQuote).join(' ')} >> ${cmd.gitignore}`;
 
@@ -102,8 +104,9 @@ export async function findIssues(
             // survives once the commit below deletes them from other clones.
             ...(dir === LEGACY_IMAGE_DIR ? [cmd.run('run --all')] : []),
             cmd.git(`rm --cached -- ${shellQuote(`${dir}/*.webp`)}`),
-            ignoreFix(ignores),
-            cmd.git(`add -- ${shellQuote('.gitignore')}`),
+            ...(missing.length > 0
+              ? [ignoreFix(missing), cmd.git(`add -- ${shellQuote('.gitignore')}`)]
+              : []),
             cmd.git(`commit -m ${shellQuote('Stop tracking juxtapose baseline images')}`),
           ],
         });
@@ -116,14 +119,17 @@ export async function findIssues(
             `${loose.length} baseline ${plural(loose.length, 'image in', 'images in')} ${dir}/ ` +
             `${plural(loose.length, 'is', 'are')} neither tracked nor ignored, so the next \`git add .\` commits them.`,
           files: loose,
-          fix: [ignoreFix(ignores)],
+          fix: [ignoreFix(missing.length > 0 ? missing : ignores)],
         });
       }
     }
   }
 
-  const missing = await missingIgnores(projectRoot, ignores);
-  if (missing.length > 0) {
+  // An earlier issue's fix already appends them: one place to run it, not two.
+  const ignoreInFix = issues.some((i) =>
+    i.fix.some((l) => l.includes(`>> ${cmd.gitignore}`)),
+  );
+  if (missing.length > 0 && !ignoreInFix) {
     issues.push({
       code: 'missing-ignores',
       message: `.gitignore does not cover ${missing.join(', ')}.`,

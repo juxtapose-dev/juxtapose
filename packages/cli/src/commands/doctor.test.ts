@@ -110,7 +110,7 @@ test('a hostile storage.dir reaches the shell as a literal in every printed fix'
   expect(execFileSync('sh', ['-c', `printf %s ${rm}`], { cwd: root }).toString()).toBe(
     `${hostile}/*.webp`,
   );
-  const ignore = issues.find((i) => i.code === 'missing-ignores')!.fix[0]!;
+  const ignore = issues.flatMap((i) => i.fix).find((l) => l.includes('>> '))!;
   const args = /^printf '%s\\n' (.*) >> \.gitignore$/.exec(ignore)![1]!;
   expect(
     execFileSync('sh', ['-c', `printf '%s\\n' ${args}`], { cwd: root }).toString(),
@@ -169,7 +169,8 @@ test('untracked, un-ignored images are flagged', async () => {
   await writeFile(path.join(root, '.juxtapose/baselines/a.webp'), 'img');
   const codes = (await findIssues(root, undefined, root)).map((i) => i.code);
   expect(codes).toContain('untracked-images');
-  expect(codes).toContain('missing-ignores');
+  // Its fix carries the ignore lines, so they are not listed twice.
+  expect(codes).not.toContain('missing-ignores');
 });
 
 test('a broader pattern or a parent .gitignore counts as covered', async () => {
