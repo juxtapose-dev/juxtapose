@@ -629,7 +629,7 @@ export const StorageConfigSchema = Type.Union(
       {
         additionalProperties: false,
         description:
-          'The default. Images live in a local cache keyed by hash and are never committed; the manifest and `.juxtapose/structure/` are.',
+          'The default. Images live in a local cache keyed by hash and are never committed; the manifest, which also carries the structure per story, is.',
       },
     ),
     Type.Object(

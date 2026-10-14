@@ -464,9 +464,9 @@ describe('baseline image unavailable', () => {
     expect(mixed).toContain('largest 3.20%');
   });
 
-  it('tells reviewers to commit the manifest and structure, never images', () => {
+  it('tells reviewers to commit the manifest, never images', () => {
     const body = buildComment({ report: report([unavailable()]) });
-    expect(body).toContain('.juxtapose/structure/');
+    expect(body).toContain('juxtapose.manifest.json');
     expect(body).not.toContain('.juxtapose/baselines/');
   });
 });

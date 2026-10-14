@@ -1360,7 +1360,7 @@
       "anyOf": [
         {
           "additionalProperties": false,
-          "description": "The default. Images live in a local cache keyed by hash and are never committed; the manifest and `.juxtapose/structure/` are.",
+          "description": "The default. Images live in a local cache keyed by hash and are never committed; the manifest, which also carries the structure per story, is.",
           "type": "object",
           "required": [
             "kind"

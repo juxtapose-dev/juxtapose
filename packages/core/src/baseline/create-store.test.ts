@@ -92,3 +92,45 @@ test.each(['tmp/imgs', '.juxtapose/cache/baselines', "it's a dir"])(
     expect(() => createBaselineStore('/p', { kind: 'cache', dir })).not.toThrow();
   },
 );
+
+// The git/fs check must refuse exactly the characters the schema's first
+// version did (C0, DEL) and the later additions, at both ends of every range,
+// while accepting the neighbours just outside them. Code points, not literals:
+// several of these are invisible or are line terminators.
+const RANGES: Array<[string, number, number]> = [
+  ['C0', 0x0000, 0x001f],
+  ['DEL and C1', 0x007f, 0x009f],
+  ['line separators', 0x2028, 0x2029],
+  ['bidi embeddings', 0x202a, 0x202e],
+  ['bidi isolates', 0x2066, 0x2069],
+];
+
+test.each(RANGES)(
+  'git/fs dirs refuse the %s range at both ends and between',
+  (_n, first, last) => {
+    for (const cp of new Set([first, last, Math.floor((first + last) / 2)])) {
+      const dir = `a${String.fromCodePoint(cp)}b`;
+      for (const kind of ['git', 'fs'] as const) {
+        expect(() => createBaselineStore('/p', { kind, dir })).toThrow(/storage\.dir/);
+        expect(Value.Check(StorageConfigSchema, { kind, dir })).toBe(false);
+      }
+    }
+  },
+);
+
+test.each([0x20, 0xa0, 0x2027, 0x202f, 0x2065, 0x206a, 0xe9, 0x65e5])(
+  'git/fs dirs accept U+%s just outside the refused ranges',
+  (cp) => {
+    const dir = `a${String.fromCodePoint(cp)}b`;
+    for (const kind of ['git', 'fs'] as const) {
+      expect(() => createBaselineStore('/p', { kind, dir })).not.toThrow();
+    }
+  },
+);
+
+test('git/fs refuse a leading dash anywhere it could pass for an option', () => {
+  for (const dir of ['-', '-x', '--force', '-/a']) {
+    expect(() => createBaselineStore('/p', { kind: 'git', dir })).toThrow(/storage\.dir/);
+  }
+  expect(() => createBaselineStore('/p', { kind: 'git', dir: 'a-b' })).not.toThrow();
+});

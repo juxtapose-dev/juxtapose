@@ -354,7 +354,7 @@ export function codeSpan(text: string): string {
 
 function guidance(
   rows: DiffResult[],
-  commitPaths: string[] = ['juxtapose.manifest.json', '.juxtapose/structure/'],
+  commitPaths: string[] = ['juxtapose.manifest.json'],
   imagesCommitted = false,
 ): string[] {
   const has = (s: DiffResult['status']) => rows.some((r) => r.status === s && !r.error);

@@ -7,8 +7,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 
-/** Config-derived paths reach git here; none of them is a pattern. */
-const LITERAL_PATHSPECS = { ...process.env, GIT_LITERAL_PATHSPECS: '1' };
+// `git check-ignore` takes paths, not pathspecs, so nothing here is expanded
+// (and it refuses GIT_LITERAL_PATHSPECS outright).
 import path from 'node:path';
 
 /** `a`, `/a`, `a/` and `/a/` all ignore the same directory. */
@@ -29,7 +29,6 @@ function gitIgnores(projectRoot: string, sample: string): boolean | undefined {
     execFileSync('git', ['check-ignore', '-q', '--no-index', '--', sample], {
       cwd: projectRoot,
       stdio: 'ignore',
-      env: LITERAL_PATHSPECS,
     });
     return true;
   } catch (err) {
@@ -106,7 +105,6 @@ export function ignoredCommittedPaths(projectRoot: string): IgnoredCommitted[] {
           cwd: projectRoot,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'ignore'],
-          env: LITERAL_PATHSPECS,
         },
       ).trim();
       // "<source>:<line>:<pattern>\t<path>"

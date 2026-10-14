@@ -226,7 +226,7 @@ export async function doctorCommand(
     if ((issue.files?.length ?? 0) > SHOWN) {
       io.out(`      …and ${issue.files!.length - SHOWN} more\n`);
     }
-    io.out('    Fix:\n');
+    if (issue.fix.length > 0) io.out('    Fix:\n');
     for (const line of issue.fix) io.out(`      ${line}\n`);
     if (issue.code === 'tracked-images') {
       io.out(
@@ -234,8 +234,7 @@ export async function doctorCommand(
           '    images from every clone that pulls it. The run copies each image that matches\n' +
           '    the manifest into your cache, but teammates and CI start with an empty one and\n' +
           '    get structure-only reports until their own run, or a restored CI cache\n' +
-          '    (docs/ci.md), fills it. Structure sidecars (.structure.json.gz) can stay\n' +
-          '    tracked; new approvals write them to .juxtapose/structure/.\n' +
+          '    (docs/ci.md), fills it. Structure now lives in the manifest.\n' +
           `    From now on commit ${committedPaths(undefined).map(shellQuote).join(' and ')}.\n`,
       );
     }

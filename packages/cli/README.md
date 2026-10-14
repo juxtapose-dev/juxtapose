@@ -12,7 +12,7 @@ npx -p @juxtapose/cli jux browser install   # once, ~100 MB
 npx storybook build          # or: npx ladle build
 npx -p @juxtapose/cli jux run --all         # everything is "new" the first time
 npx -p @juxtapose/cli jux approve --all     # establish baselines
-git add juxtapose.manifest.json .juxtapose/structure .gitignore
+git add juxtapose.manifest.json .gitignore
 ```
 
 From then on, `jux run` captures only the stories your changes could have
