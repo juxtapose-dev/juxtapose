@@ -22,6 +22,20 @@ import { hashImage } from './status.js';
 import { isGzip } from '../capture/structure.js';
 import { MANIFEST_NAME, readManifestFile, writeManifestFile } from './manifest-file.js';
 
+/**
+ * Readable JSON back to the bytes this layout has always committed (compact
+ * JSON, gzipped). Re-approving a story must not rewrite its committed sidecar
+ * with different bytes for the same structure.
+ */
+function compactGzip(readable: Buffer): Buffer {
+  try {
+    return gzipSync(Buffer.from(JSON.stringify(JSON.parse(readable.toString('utf8')))));
+  } catch {
+    // Not JSON: a store holds whatever it is handed; readers reject it later.
+    return gzipSync(readable);
+  }
+}
+
 export interface GitStoreOptions {
   projectRoot: string;
   /** Where baseline images live, relative to projectRoot. */
@@ -53,7 +67,7 @@ export class GitBaselineStore implements BaselineStore {
     await mkdir(this.imageDir, { recursive: true });
     // The `.json.gz` name is this layout's contract; approval hands over
     // readable JSON, so compress it here rather than rename a committed file.
-    await writeFile(this.structurePath(storyId), isGzip(gz) ? gz : gzipSync(gz));
+    await writeFile(this.structurePath(storyId), isGzip(gz) ? gz : compactGzip(gz));
   }
 
   async getStructure(storyId: string): Promise<Buffer | null> {
