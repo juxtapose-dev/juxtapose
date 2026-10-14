@@ -601,7 +601,14 @@ async function connectOrSpawn(
       }
       if (!watch) {
         release = await acquireLock(paths);
-        if (release) {
+        // The holder we were waiting on may have come up and dropped the lock
+        // between the state read above and now: spawning then starts a
+        // redundant supervisor that only loses the bind. Look again under
+        // the lock, and if a daemon is there, let the next pass probe it.
+        if (release && (await daemonListed(paths, key, opts))) {
+          await release();
+          release = null;
+        } else if (release) {
           watch = { failed: null, exitedCleanAt: null };
           const args: SpawnArgs = {
             executablePath: opts.executablePath,
@@ -660,6 +667,16 @@ async function connectOrSpawn(
     )
       await releaseLockHeldBy(paths, handedTo);
   }
+}
+
+/** Whether the state file names a live, usable daemon for this key. */
+async function daemonListed(
+  paths: DaemonPaths,
+  key: string,
+  opts: WarmOptions,
+): Promise<boolean> {
+  const s = await readState(paths);
+  return !!s && s.socket === paths.socket && usable(s, key, opts) && pidAlive(s.pid);
 }
 
 async function privateLaunch(
