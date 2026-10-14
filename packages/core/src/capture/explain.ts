@@ -10,7 +10,8 @@
 import type { Page } from '../browser/page.js';
 import { resolveMinDiffPercent, resolveThreshold } from '../diff/diff.js';
 import type { Platform } from '../platform.js';
-import { DEFAULT_VIEWPORT } from '../run/run.js';
+import type { RecheckMode } from '../config/schema.js';
+import { DEFAULT_VIEWPORT, effectiveRecheck } from '../run/run.js';
 import type { ProjectConfig, StoryManifest, StoryParams } from '../types.js';
 import { externalTypes, liveNetworkDiffers, resolveNetwork } from './network-rules.js';
 import { layerCapture, layerNetwork, type CaptureLayers } from './layers.js';
@@ -65,6 +66,8 @@ export interface ExplainOptions {
   callLayer?: 'cli' | 'mcp';
   /** Params read from the rendered preview, when the platform has them. */
   live?: StoryParams;
+  /** The per-call recheck mode (`--recheck`, the MCP argument). */
+  recheck?: RecheckMode;
 }
 
 const PROJECT: Source = { layer: 'project' };
@@ -79,6 +82,7 @@ const ALWAYS = [
   'network.external.default',
   'threshold',
   'minDiffPercent',
+  'recheck',
 ];
 
 /** Read by captureStory (or the diff) before live params exist, so live
@@ -267,6 +271,17 @@ export function explainCapture(
         break;
       case 'minDiffPercent':
         value = resolveMinDiffPercent(capture.params, config);
+        break;
+      case 'recheck':
+        // A run-wide setting: no story or variant layer, so its source is
+        // the call, the project or the default.
+        value = effectiveRecheck(opts.recheck, config);
+        source =
+          opts.recheck !== undefined
+            ? [callSource]
+            : config.recheck !== undefined
+              ? [PROJECT]
+              : DEFAULT;
         break;
       default:
         value = fromPre.has(setting)

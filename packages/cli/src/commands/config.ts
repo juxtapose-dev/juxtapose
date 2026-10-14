@@ -27,6 +27,7 @@ import { resolveContext, type CommonFlags } from '../context.js';
 import { EXIT } from '../exit-codes.js';
 import { stdio, type Session } from '../io.js';
 import { serveStatic } from '../serve-static.js';
+import { recheckFromFlags } from '../recheck-flags.js';
 import { settleFromFlags } from '../settle-flags.js';
 import { closest } from '../suggest.js';
 
@@ -48,6 +49,11 @@ export async function configCommand(
   const call = settleFromFlags(flags, 'jux config');
   if ('error' in call) {
     io.err(`${call.error}\n`);
+    return EXIT.usage;
+  }
+  const recheck = recheckFromFlags(flags, 'jux config');
+  if ('error' in recheck) {
+    io.err(`${recheck.error}\n`);
     return EXIT.usage;
   }
   const ctx = await resolveContext(flags);
@@ -171,6 +177,7 @@ export async function configCommand(
       {
         config: ctx.config,
         callLayer: flags.callSource ?? 'cli',
+        ...(recheck.recheck ? { recheck: recheck.recheck } : {}),
         ...(call.settle || call.network
           ? {
               call: {

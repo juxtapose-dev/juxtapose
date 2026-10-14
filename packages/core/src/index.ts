@@ -72,6 +72,9 @@ export {
   VariantSchema,
   StoryOverrideSchema,
   MAX_SNAP_SLOTS,
+  RECHECK_MODES,
+  DEFAULT_RECHECK,
+  type RecheckMode,
   StringEnum,
   type JuxtaposeParameters,
   type ExternalNetwork,
@@ -213,10 +216,17 @@ export { shellQuote } from './shell-quote.js';
 // Driving a run.
 export {
   runCapture,
+  effectiveRecheck,
+  poolSettings,
   DEFAULT_VIEWPORT,
   type RunOptions,
   type RunArtifact,
 } from './run/run.js';
+export {
+  confirmCaptures,
+  type Confirmation,
+  type ConfirmOptions,
+} from './run/confirm.js';
 export { computeGroups } from './run/groups.js';
 
 // Per-phase timings, so a slow run can say which phase was slow.

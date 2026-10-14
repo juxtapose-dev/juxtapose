@@ -49,9 +49,17 @@ Common options
   --allow-unstable               approve: also baseline stories whose two run captures differed
   --run <dir>                    run directory to read (approve, check, handoff)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
-  --no-daemon                    snap, run, init: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
+  --no-daemon                    snap, run, init, approve: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
   --no-fresh-renderer            snap, run: reuse each page's renderer between captures (config freshRenderer:
                                  false); faster, but a capture can depend on the one before it
+`;
+
+const RECHECK_HELP = `
+Recheck (run, config)
+  --recheck <mode>               which stories get a second capture, so approve can tell a flake from a
+                                 stable capture: changed (default: new and failing), new (new only), off
+                                 (none; approve confirms instead). Config: recheck
+  --no-recheck                   same as --recheck off
 `;
 
 const SETTLE_HELP = `
@@ -115,6 +123,7 @@ function commandHelp(command: string): string {
   let text = `Usage\n${out.join('\n')}\n`;
   if (command === 'browser') return text + '\n' + BROWSER_HELP;
   text += COMMON;
+  if (command === 'run' || command === 'config') text += RECHECK_HELP;
   if (command === 'run' || command === 'snap' || command === 'config')
     text += SETTLE_HELP;
   if (command === 'diff') text += '\n' + DIFF_HELP;
@@ -173,6 +182,8 @@ async function main(argv: string[]): Promise<number> {
       chrome: { type: 'string' },
       'no-daemon': { type: 'boolean', default: false },
       'no-fresh-renderer': { type: 'boolean', default: false },
+      recheck: { type: 'string' },
+      'no-recheck': { type: 'boolean', default: false },
       explain: { type: 'string' },
     },
   });

@@ -343,9 +343,16 @@ export class RunDirSource implements ReviewSource {
 
   async approve(storyId: string, allowUnstable = false): Promise<void> {
     const task = this.approvalQueue.then(async () => {
-      const result = (await this.loadReport())?.results.find(
-        (r) => r.storyId === storyId,
-      );
+      const report = await this.loadReport();
+      const result = report?.results.find((r) => r.storyId === storyId);
+      // The run captured it once (recheck "off", or "new" for a failing
+      // story). `jux approve` takes the confirming capture; this path has no
+      // browser of its own, so it refuses rather than baseline one capture.
+      if (result?.unrechecked && !allowUnstable)
+        throw new UnstableCaptureError(storyId, {
+          hashes: result.hash ? [result.hash] : [],
+          unconfirmed: `the run captured it once (recheck ${report?.recheck ?? 'off'}); run \`jux approve\` to confirm it`,
+        });
       if (result?.unstable && !allowUnstable)
         throw new UnstableCaptureError(storyId, result.unstable);
       const image = await this.readImage('current', storyId);

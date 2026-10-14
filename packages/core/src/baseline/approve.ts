@@ -38,8 +38,13 @@ export class UnstableCaptureError extends Error {
   }
 }
 
+/** The `unstable.unconfirmed` text of a story the run captured only once. */
+export const NOT_RECHECKED = 'not rechecked';
+
 /** One line for any surface that lists a result: why approval is refused. */
 export function describeUnstable(u: { hashes: string[]; unconfirmed?: string }): string {
+  if (u.unconfirmed?.startsWith(NOT_RECHECKED))
+    return `${u.unconfirmed}: captured once; \`jux approve\` captures it again`;
   return u.unconfirmed !== undefined
     ? `unconfirmed: recheck capture failed (${u.unconfirmed})`
     : 'unstable: two captures differed; approve refuses it';

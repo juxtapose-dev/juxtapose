@@ -11,6 +11,7 @@ import {
   UnstableCaptureError,
   encodeStoryId,
   parseRunReport,
+  type Confirmation,
   type DiffResult,
 } from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
@@ -18,11 +19,13 @@ import { errorMessage } from '../guards.js';
 import { commitList } from '../printed-commands.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
+import { confirmForApprove } from './approve-confirm.js';
 
 export async function approveCommand(
   flags: CommonFlags,
-  { io = stdio }: Session = {},
+  session: Session = {},
 ): Promise<number> {
+  const io = session.io ?? stdio;
   const ctx = await resolveContext(flags);
 
   const runDir = flags.run
@@ -80,16 +83,46 @@ export async function approveCommand(
   const approvedAt = new Date().toISOString();
   // From the run, not from here: approving never launches a browser.
   const env = report.env;
+  // A story the run captured once (recheck "off", or "new" for a failing
+  // story) is not yet known to be stable. Capture it again here, so approving
+  // always rests on two identical captures; --allow-unstable skips that.
+  const confirmations = flags['allow-unstable']
+    ? new Map<string, Confirmation>()
+    : await confirmForApprove(
+        ctx,
+        new Map(
+          candidates.flatMap((r) =>
+            r.unrechecked && r.hash ? [[r.storyId, r.hash] as const] : [],
+          ),
+        ),
+        report.env,
+        flags,
+        session,
+        io,
+      );
   const approved: string[] = [];
   const failed: { storyId: string; reason: string; unstable?: true }[] = [];
 
   for (const result of candidates) {
     // The run captured this one twice and got two images. Refuse just this
     // story; the rest of the batch still goes through.
-    if (result.unstable && !flags['allow-unstable']) {
+    // A story the run captured once carries a placeholder `unstable` for older
+    // approvers; here it is judged by the confirming capture alone, and one
+    // with no confirmation (it had no hash, or nothing ran) fails closed.
+    const confirmation = confirmations.get(result.storyId);
+    const unstable = result.unrechecked
+      ? (confirmation?.unstable ??
+        (confirmation
+          ? undefined
+          : {
+              hashes: result.hash ? [result.hash] : [],
+              unconfirmed: 'no confirming capture was taken',
+            }))
+      : result.unstable;
+    if (unstable && !flags['allow-unstable']) {
       failed.push({
         storyId: result.storyId,
-        reason: new UnstableCaptureError(result.storyId, result.unstable, {
+        reason: new UnstableCaptureError(result.storyId, unstable, {
           freshRenderer: ctx.config.freshRenderer !== false,
         }).message,
         unstable: true,
