@@ -274,16 +274,23 @@ check(
 );
 
 // An unexpected throw is exit 3 with a hint; JUX_DEBUG adds the stack.
-// `handoff` with no workbench throws; the top-level handler reports it.
+// A `urls` entry with no id throws from core (untyped), so the top-level
+// handler reports it. (No workbench is a typed usage error since #130.)
 const dir = path.join(project, '.juxtapose/snaps');
 writeFileSync(path.join(dir, 'x.webp'), 'x');
-const crash = await exec('node', [cli, 'handoff', 'x', '--project', project], {
+const crashProject = mkdtempSync(path.join(tmpdir(), 'jux-crash-'));
+writeFileSync(
+  path.join(crashProject, 'juxtapose.config.json'),
+  JSON.stringify({ urls: ['http://localhost:1/'] }),
+);
+const crashArgs = ['handoff', 'x', '--platform', 'urls', '--project', crashProject];
+const crash = await exec('node', [cli, ...crashArgs], {
   encoding: 'utf8',
 }).then(
   (r) => ({ code: 0, err: r.stderr }),
   (e) => ({ code: e.code, err: e.stderr }),
 );
-const crashDebug = await exec('node', [cli, 'handoff', 'x', '--project', project], {
+const crashDebug = await exec('node', [cli, ...crashArgs], {
   encoding: 'utf8',
   env: { ...process.env, JUX_DEBUG: '1' },
 }).then(
@@ -296,6 +303,20 @@ check(
     !/\n\s+at /.test(crash.err) &&
     /\n\s+at /.test(crashDebug.err),
   'an unexpected throw exits 3 with a hint; JUX_DEBUG=1 adds the stack',
+);
+rmSync(crashProject, { recursive: true, force: true });
+
+const noWorkbench = await exec('node', [cli, 'handoff', 'x', '--project', project], {
+  encoding: 'utf8',
+}).then(
+  (r) => ({ code: 0, err: r.stderr }),
+  (e) => ({ code: e.code, err: e.stderr }),
+);
+check(
+  noWorkbench.code === 2 &&
+    /could not detect a workbench/.test(noWorkbench.err) &&
+    !/unexpected failure/.test(noWorkbench.err),
+  'no workbench exits 2 with its own message, not "unexpected failure"',
 );
 
 const typo = await exec('node', [cli, 'dif']).then(
@@ -461,7 +482,8 @@ try {
   goodRef = { code: e.code, err: e.stderr };
 }
 check(
-  goodRef.code !== 2 && !goodRef.err.includes('is not a commit'),
+  !goodRef.err.includes('is not a commit') &&
+    goodRef.err.includes('could not detect a workbench'),
   'run --since with a real commit passes the check',
 );
 rmSync(repo, { recursive: true, force: true });

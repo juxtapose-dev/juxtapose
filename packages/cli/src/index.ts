@@ -9,9 +9,11 @@ import { createRequire } from 'node:module';
 import { parseArgs } from 'node:util';
 import { EXIT } from './exit-codes.js';
 import { isRecord } from './guards.js';
+import { checkArgs, SPECS } from './cli-args.js';
+import { UserError } from './user-error.js';
 import { BROWSER_HELP } from './commands/browser-help.js';
 
-const USAGE = `
+const HEAD = `
 jux — visual regression testing for component workbenches
 
 Usage
@@ -27,7 +29,9 @@ Usage
                                  MCP server on stdio for coding agents: snap, diff, run, check, handoff, approve
                                  (--concurrency: snaps at once, 1-16, default half the cores up to 4)
   jux --version                  print installed package versions
+`;
 
+const COMMON = `
 Common options
   --json                         machine-readable output on stdout
   --project <dir>                project root (default: cwd)
@@ -38,7 +42,9 @@ Common options
   --run <dir>                    run directory to read (approve, check, handoff)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
+`;
 
+const SETTLE_HELP = `
 Settle options (snap, run; over the story's and the config's settle)
   --settle-timeout <ms>          cap on the wait for the page to finish, 1-60000 (default 1500); a
                                  capture at the cap is flagged settle-timeout with what was pending
@@ -49,9 +55,9 @@ Settle options (snap, run; over the story's and the config's settle)
                                  pattern: [type:<ResourceType>] [<glob>]; a glob starting with /
                                  matches the path, e.g. '/api/feed' or 'type:Fetch **/poll*'
   --delay <ms>                   snap: fixed extra wait after settling; last resort
+`;
 
-${BROWSER_HELP}
-diff
+const DIFF_HELP = `diff
   <a>, <b>                       snap names (from --as), or paths to .webp files
   --prefix                       pair <a>-<slug> with <b>-<slug> and verdict every page
   --json                         the verdict as juxtapose.verdict/v1 JSON (byte-stable)
@@ -73,6 +79,27 @@ The agent loop, no workbench needed:
   jux snap http://localhost:5173/ http://localhost:5173/settings --as-prefix after && jux diff --prefix before after
 `;
 
+const USAGE = `${HEAD}${COMMON}${SETTLE_HELP}\n${BROWSER_HELP}\n${DIFF_HELP}`;
+
+/** One command's usage: its lines from the list, then the options it takes. */
+function commandHelp(command: string): string {
+  const lines = HEAD.split('\n');
+  const out: string[] = [];
+  let on = false;
+  for (const line of lines) {
+    if (line.startsWith('  jux '))
+      on = line.startsWith(`  jux ${command} `) || line === `  jux ${command}`;
+    else if (!line.startsWith(' '.repeat(20))) on = false;
+    if (on) out.push(line);
+  }
+  let text = `Usage\n${out.join('\n')}\n`;
+  if (command === 'browser') return text + '\n' + BROWSER_HELP;
+  text += COMMON;
+  if (command === 'run' || command === 'snap') text += SETTLE_HELP;
+  if (command === 'diff') text += '\n' + DIFF_HELP;
+  return text;
+}
+
 async function main(argv: string[]): Promise<number> {
   const command = argv[0];
 
@@ -91,6 +118,7 @@ async function main(argv: string[]): Promise<number> {
     allowPositionals: true,
     strict: false,
     options: {
+      help: { type: 'boolean', short: 'h' },
       json: { type: 'boolean', default: false },
       project: { type: 'string' },
       'build-dir': { type: 'string' },
@@ -120,6 +148,18 @@ async function main(argv: string[]): Promise<number> {
       'no-daemon': { type: 'boolean', default: false },
     },
   });
+
+  if (command !== 'browser' && SPECS[command]) {
+    if (values.help === true) {
+      process.stdout.write(commandHelp(command));
+      return EXIT.clean;
+    }
+    const problem = checkArgs(command, values, positionals);
+    if (problem) {
+      process.stderr.write(`${problem}\n`);
+      return EXIT.usage;
+    }
+  }
 
   // strict: false (unknown flags pass through) makes parseArgs type every
   // value `string | boolean`, since `--json=yes` is legal there. Each command
@@ -295,6 +335,10 @@ async function exitAfterFlush(code: number): Promise<never> {
 main(process.argv.slice(2))
   .then((code) => exitAfterFlush(code))
   .catch((err: unknown) => {
+    if (err instanceof UserError) {
+      process.stderr.write(`jux: ${err.message}\n`);
+      return exitAfterFlush(err.exit);
+    }
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(
       `jux: ${message}\nunexpected failure; re-run with JUX_DEBUG=1 for the stack trace, or report it at https://github.com/juxtapose-dev/juxtapose/issues\n`,
