@@ -1,9 +1,9 @@
 // packages/core/src/browser/resolve.ts
 //
-// Where the browser comes from, in order: --chrome, JUX_CHROME, our cache,
-// Playwright's cache. The last one is not a courtesy: it is the same bytes
-// (pins.ts), and most early users already have it, so the upgrade costs them
-// no download.
+// Where the browser comes from, in order: --chrome, JUX_CHROME, our cache.
+// Never Playwright's cache: another tool's `playwright install` or a disk
+// cleanup can delete it at any time (#141). adopt.ts copies a matching
+// Playwright build into our cache once, and resolution only ever sees the copy.
 
 import { existsSync, statSync } from 'node:fs';
 import { homedir as osHomedir } from 'node:os';
@@ -38,7 +38,7 @@ const isDirectoryOnDisk = (p: string): boolean => {
   }
 };
 
-export type ChromeSource = 'flag' | 'env' | 'jux-cache' | 'ms-playwright';
+export type ChromeSource = 'flag' | 'env' | 'jux-cache';
 
 export interface ResolvedChrome {
   path: string;
@@ -50,11 +50,18 @@ export const INSTALL_MARKER = '.complete';
 export const NO_BROWSER_MESSAGE =
   'jux: no browser. Run `npx -p @juxtapose/cli jux browser install`, or set JUX_CHROME=<path to a Chromium headless shell>.';
 
-/** The no-browser message, with the platform explanation when there is no build to install. */
+/**
+ * The no-browser message: the path jux looked at, the fix, and the platform
+ * explanation when there is no build to install.
+ */
 export function noBrowserMessage(opts: ResolveOptions = {}): string {
   try {
-    chromePlatform(opts.platform ?? process.platform, opts.arch ?? process.arch);
-    return NO_BROWSER_MESSAGE;
+    const cft = chromePlatform(
+      opts.platform ?? process.platform,
+      opts.arch ?? process.arch,
+    );
+    const expected = chromeBinaryPath(chromeInstallDir(juxCacheDir(opts)), cft);
+    return `jux: no browser at ${expected}. Run \`npx -p @juxtapose/cli jux browser install\`, or set JUX_CHROME=<path to a Chromium headless shell>.`;
   } catch (err) {
     return errorMessage(err);
   }
@@ -165,16 +172,6 @@ export function resolveChrome(opts: ResolveOptions = {}): ResolvedChrome | null 
   const ours = chromeBinaryPath(installDir, cft);
   if (exists(ours) && exists(p.join(installDir, INSTALL_MARKER)))
     return { path: ours, source: 'jux-cache' };
-
-  // PLAYWRIGHT_BROWSERS_PATH=0 is Playwright's "install inside node_modules"
-  // sentinel, not a directory; joining it would probe a relative "0/" path.
-  if (env.PLAYWRIGHT_BROWSERS_PATH === '0') return null;
-
-  const theirs = msPlaywrightBinaryPath(opts);
-  // Playwright writes INSTALLATION_COMPLETE last, like our marker.
-  const theirMarker = p.join(p.dirname(p.dirname(theirs)), 'INSTALLATION_COMPLETE');
-  if (exists(theirs) && exists(theirMarker))
-    return { path: theirs, source: 'ms-playwright' };
 
   return null;
 }

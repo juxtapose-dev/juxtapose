@@ -36,6 +36,7 @@ export {
   type ResolveOptions,
   type ChromeSource,
 } from './resolve.js';
+export { adoptPlaywrightBrowser, resolveOrAdoptChrome } from './adopt.js';
 export {
   installChrome,
   proxyHint,

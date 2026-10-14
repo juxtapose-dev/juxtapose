@@ -122,32 +122,35 @@ describe('installChrome', () => {
         stat(path.join(cacheDir, 'chrome-headless-shell/151.0.7922.34')),
       ).rejects.toThrow();
     }));
-  it('is a no-op when Playwright already has the binary, unless forced', () =>
+  it('copies a matching Playwright build into the jux cache instead of downloading, unless forced', () =>
     withCache(async (cacheDir) => {
       const root = path.join(cacheDir, 'pw');
       const dir = path.join(root, 'chromium_headless_shell-1234');
       await mkdir(path.join(dir, 'chrome-headless-shell-mac-arm64'), { recursive: true });
-      const bin = path.join(dir, 'chrome-headless-shell-mac-arm64/chrome-headless-shell');
-      await writeFile(bin, '');
+      const theirs = path.join(
+        dir,
+        'chrome-headless-shell-mac-arm64/chrome-headless-shell',
+      );
+      await writeFile(theirs, `#!/bin/sh\necho "HeadlessChrome ${CHROME_VERSION}"\n`, {
+        mode: 0o755,
+      });
       await writeFile(path.join(dir, 'INSTALLATION_COMPLETE'), '');
       const env = { PLAYWRIGHT_BROWSERS_PATH: root, JUX_CHROME: '/nonexistent' };
       const noFetch = (async () => {
         throw new Error('network used');
       }) as unknown as typeof fetch;
+      const jux = path.join(cacheDir, 'jux');
       const r = await installChrome({
-        cacheDir: path.join(cacheDir, 'jux'),
+        cacheDir: jux,
         platform: 'mac-arm64',
         fetch: noFetch,
         env,
       });
-      expect(r).toMatchObject({
-        alreadyInstalled: true,
-        source: 'ms-playwright',
-        path: bin,
-      });
+      expect(r).toMatchObject({ alreadyInstalled: true, source: 'jux-cache' });
+      expect(r.path.startsWith(jux)).toBe(true);
       await expect(
         installChrome({
-          cacheDir: path.join(cacheDir, 'jux'),
+          cacheDir: jux,
           platform: 'mac-arm64',
           fetch: noFetch,
           env,
