@@ -24,6 +24,7 @@ import {
   countStories,
   hasVariants,
   prepareCaptures,
+  storyOverrideWarnings,
   platformStoryId,
   selectByStoryId,
   VariantConfigError,
@@ -211,6 +212,10 @@ export async function runCommand(
         return variantError(err, io);
       }
     }
+
+    // After discovery, so a key that only matches a story's own variants is
+    // not reported as dead.
+    for (const m of storyOverrideWarnings(ctx.config.stories, stories)) warn(`jux: ${m}`);
 
     let selection: StoryManifest[];
     let reason: string;

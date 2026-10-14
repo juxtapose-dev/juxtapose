@@ -63,6 +63,7 @@ export {
   VariantConfigError,
   VARIANT_NAME,
 } from './capture/variants.js';
+export { storyOverrideWarnings } from './capture/story-overrides.js';
 // Settle options: validation and layering shared by the CLI, the MCP server
 // and the review server, so a bad value is reported the same way everywhere.
 export {

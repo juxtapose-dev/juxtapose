@@ -6,6 +6,8 @@ import {
   checkStoryOverrides,
   compileOverrides,
   resolveOverride,
+  storyOverrideWarnings,
+  withOverride,
 } from './story-overrides.js';
 import { expandVariants, mergeLiveParams } from './variants.js';
 import { checkProjectSettle } from './settle-options.js';
@@ -183,5 +185,57 @@ describe('expandVariants with overrides', () => {
     expect(merged.delay).toBe(7);
     expect(merged.skip).toBe(false);
     expect(merged.mask).toEqual(['.l', '.c']);
+  });
+});
+
+describe('review fixes', () => {
+  it('a variant-targeting wildcard beats an exact base key on that variant (L4)', () => {
+    const cfg = { 'a--one': { delay: 1 }, '*__mobile': { delay: 2 } };
+    expect(resolve(cfg, 'a--one__mobile', 'a--one')?.override.delay).toBe(2);
+    expect(resolve(cfg, 'a--one')?.override.delay).toBe(1);
+    // An exact variant key still beats the variant wildcard.
+    const exact = { 'a--one__mobile': { delay: 3 }, '*__mobile': { delay: 2 } };
+    expect(resolve(exact, 'a--one__mobile', 'a--one')?.override.delay).toBe(3);
+  });
+
+  it('skippedBy is not set when the story already skips itself (L5)', () => {
+    const compiled = compileOverrides({ 'a--*': { skip: true } });
+    expect(
+      withOverride(story('a--one'), { skip: true }, compiled).skippedBy,
+    ).toBeUndefined();
+    expect(withOverride(story('a--one'), {}, compiled).skippedBy).toEqual(['a--*']);
+  });
+
+  it('refuses Playwright-only selectors where they are declared (L6)', () => {
+    expect(() => checkStoryOverrides({ a: { mask: ['text=x'] } })).toThrow(
+      /stories\['a'\].*mask 'text=x'.*CSS selector/s,
+    );
+    expect(() => checkStoryOverrides({ a: { waitForSelector: 'a >> b' } })).toThrow(
+      /waitForSelector/,
+    );
+    expect(() => checkStoryOverrides({ a: { mask: ['.ok'] } })).not.toThrow();
+  });
+
+  it('warns about keys that match nothing, and skip:false on a variant key (M3, M2)', () => {
+    const caps = [
+      { storyId: 'a--one' },
+      { storyId: 'a--one__mobile', baseStoryId: 'a--one' },
+    ];
+    expect(
+      storyOverrideWarnings(
+        {
+          'a--one': { delay: 1 },
+          'a[': { delay: 1 },
+          'typo--*': { skip: true },
+          'a--one__mobile': { skip: false },
+        },
+        caps,
+      ),
+    ).toEqual([
+      "stories['a['] matched no story",
+      "stories['typo--*'] matched no story",
+      expect.stringMatching(/stories\['a--one__mobile'\].*skip: false.*variant/s),
+    ]);
+    expect(storyOverrideWarnings(undefined, caps)).toEqual([]);
   });
 });

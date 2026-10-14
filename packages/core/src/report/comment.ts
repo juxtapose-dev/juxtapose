@@ -83,6 +83,13 @@ export function buildComment({ report, artifactUrl }: CommentOptions): string {
   lines.push(...table(rows));
   lines.push('');
 
+  // A story the config skipped is not in the table; say so here too, or a
+  // failing run reads as though everything was captured.
+  const byConfig = report.results.filter((r) => r.skippedBy?.length).length;
+  if (byConfig > 0) {
+    lines.push(`${byConfig} skipped by the project config's \`stories\`.`, '');
+  }
+
   // Uncollapsed, and one fence. The comment is edited in place, so GitHub does
   // not re-notify on a push — the repeat reader only sees this when they come
   // back to act on it. The first-time reader is the one who would otherwise pay

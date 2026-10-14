@@ -12,12 +12,15 @@
 // page.
 //
 // Several globs can match one capture. Order, least to most specific, later
-// wins: patterns with wildcards before exact ids; then fewer literal
-// characters before more (`a--*` loses to `a--b-*`); then earlier in the
-// file before later. Scalars: last wins. `mask` unions. `settle` and
+// wins: keys that name no variant before keys that do (`__` in the key: a
+// variant-targeting key is the narrower claim, even as a wildcard); then
+// patterns with wildcards before exact ids; then fewer literal characters
+// before more (`a--*` loses to `a--b-*`); then earlier in the file before
+// later. Scalars: last wins. `mask` unions. `settle` and
 // `network` merge field by field (settle.network lists concatenate).
 
 import type { StoryManifest, StoryOverride, StoryParams } from '../types.js';
+import { assertCssSelector } from '../browser/selectors.js';
 import { VariantConfigError } from './config-errors.js';
 import { checkNetwork } from './network-policy.js';
 import { checkSettle, globToRegExp, mergeSettle } from './settle-options.js';
@@ -38,6 +41,16 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
 const isWild = (glob: string) => /[*?]/.test(glob);
+
+function selectorOk(sel: string, key: string, fail: (m: string) => Error): void {
+  try {
+    assertCssSelector(sel);
+  } catch {
+    throw fail(
+      `${key} '${sel}' is not a CSS selector (Playwright-only syntax is refused)`,
+    );
+  }
+}
 
 /** Validate `stories` where it is declared. `where` names the config (e.g.
  *  `project config`); each message names the glob and the key. */
@@ -68,6 +81,8 @@ export function checkStoryOverrides(
       (!Array.isArray(mask) || !mask.every((m) => typeof m === 'string' && m !== ''))
     )
       throw fail(`mask must be an array of selectors`);
+    // Up front: a `text=` mask would otherwise fail story by story at capture.
+    for (const m of (mask as string[] | undefined) ?? []) selectorOk(m, 'mask', fail);
     const num = (k: string, ok: (n: number) => boolean, what: string) => {
       const v = spec[k];
       if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v) || !ok(v)))
@@ -80,6 +95,7 @@ export function checkStoryOverrides(
     const w = spec['waitForSelector'];
     if (w !== undefined && (typeof w !== 'string' || w === ''))
       throw fail(`waitForSelector must be a CSS selector`);
+    if (typeof w === 'string') selectorOk(w, 'waitForSelector', fail);
     checkSettle(spec['settle'], at);
     checkNetwork(spec['network'], at);
   }
@@ -90,8 +106,8 @@ export interface CompiledOverride {
   glob: string;
   re: RegExp;
   spec: StoryOverride;
-  /** Sort key: exact ids, then literal length, then file position. */
-  rank: [number, number, number];
+  /** Sort key: names a variant, exact id, literal length, file position. */
+  rank: [number, number, number, number];
 }
 
 /** Compile validated overrides. Empty or absent gives an empty list. */
@@ -102,7 +118,12 @@ export function compileOverrides(
     glob,
     re: globToRegExp(glob),
     spec,
-    rank: [isWild(glob) ? 0 : 1, glob.replace(/[*?]/g, '').length, i],
+    rank: [
+      glob.includes('__') ? 1 : 0,
+      isWild(glob) ? 0 : 1,
+      glob.replace(/[*?]/g, '').length,
+      i,
+    ],
   }));
 }
 
@@ -127,7 +148,11 @@ export function resolveOverride(
         (capture.baseStoryId !== undefined && c.re.test(capture.baseStoryId)),
     )
     .sort(
-      (a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1] || a.rank[2] - b.rank[2],
+      (a, b) =>
+        a.rank[0] - b.rank[0] ||
+        a.rank[1] - b.rank[1] ||
+        a.rank[2] - b.rank[2] ||
+        a.rank[3] - b.rank[3],
     );
   if (hits.length === 0) return undefined;
   let override: StoryOverride = {};
@@ -174,6 +199,36 @@ export function withOverride(
     params: applyOverride(params, r.override),
     override: r.override,
   };
-  if (r.skippedBy.length > 0) next.skippedBy = r.skippedBy;
+  // Not when the story already skips itself: the config entry would not
+  // change anything, and the handoff would send the user to remove it.
+  if (r.skippedBy.length > 0 && params.skip !== true) next.skippedBy = r.skippedBy;
   return next;
+}
+
+/** Warnings for a config that validates but probably does not do what its
+ *  author meant, checked against the final captures: a key that matches no
+ *  story (a typo, a glob that cannot match), and `skip: false` on a variant
+ *  key, which cannot un-skip a variant because a skipped story skips every
+ *  variant. */
+export function storyOverrideWarnings(
+  stories: Record<string, StoryOverride> | undefined,
+  captures: readonly { storyId: string; baseStoryId?: string }[],
+): string[] {
+  const out: string[] = [];
+  for (const c of compileOverrides(stories)) {
+    if (
+      !captures.some(
+        (s) =>
+          c.re.test(s.storyId) ||
+          (s.baseStoryId !== undefined && c.re.test(s.baseStoryId)),
+      )
+    )
+      out.push(`stories['${c.glob}'] matched no story`);
+    if (c.glob.includes('__') && c.spec.skip === false)
+      out.push(
+        `stories['${c.glob}'] sets skip: false on a variant key, which cannot un-skip it: ` +
+          `a skipped story skips all its variants. Set skip: false on the story id instead`,
+      );
+  }
+  return out;
 }

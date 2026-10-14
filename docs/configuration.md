@@ -324,8 +324,11 @@ An entry can set `skip`, `mask`, `delay`, `waitForSelector`, `captureTimeout`,
 `settle`, `network`, `threshold` and `minDiffPercent`, with the meaning and
 values they have in `parameters.juxtapose`. Anything else is an error.
 
-**Which stories match.** A key is a story id with `*` (anything), `**` and `?`
-(one character) as wildcards; an id with none is an exact match. A key that
+**Which stories match.** A key is a story id with `*` (anything but `/`), `**`
+(anything, `/` included) and `?` (one character, not `/`) as wildcards; an id
+with none is an exact match. Story ids rarely contain a `/`, so `*` and `**`
+differ mainly for URL-style ids. A key that matches no story is reported as a
+warning by `jux run` (a typo, or a glob that cannot match). A key that
 matches a story's id also covers all of its variants. To target one variant,
 use its capture key, `<story id>__<variant>` (or `*__mobile` for every
 variant of that name).
@@ -339,9 +342,16 @@ job is to correct what the story declares: a `delay` that is too short, or a
 `skip` that has to go. Set `"skip": false` to capture a story whose source
 skips itself.
 
+A skipped story skips all of its variants, and a variant key cannot undo that:
+`"components-card--basic__mobile": { "skip": false }` does nothing while
+`components-card--basic` is skipped, and `jux run` warns about it. Set
+`skip: false` on the story id instead.
+
 **Several matching keys.** They combine from least to most specific, and the
 more specific one wins a conflict:
 
+1. Keys that name a variant (they contain `__`) come after keys that do not, so
+   `*__mobile` beats an exact `components-card--basic` on the mobile capture.
 1. Keys with a wildcard come before exact ids.
 1. Among wildcard keys, the one with fewer literal characters comes first, so
    `components-*` yields to `components-card--*`.

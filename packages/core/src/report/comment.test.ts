@@ -217,6 +217,14 @@ describe('buildComment', () => {
     expect(body).toContain('1 skipped');
   });
 
+  it('says how many were skipped by the config on a failing run too', () => {
+    const skipped = { ...result('c', 'skip'), skippedBy: ['c--*'] };
+    const body = buildComment({
+      report: report([result('a', 'fail', 2), result('b', 'pass'), skipped]),
+    });
+    expect(body).toContain("1 skipped by the project config's `stories`");
+  });
+
   it('surfaces an error instead of a meaningless percentage', () => {
     const body = buildComment({
       report: report([result('a', 'fail', 0, 'viewport size changed since baseline')]),

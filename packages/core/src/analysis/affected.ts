@@ -91,8 +91,8 @@ export function isTsconfigChange(file: string): boolean {
   return !file.includes('/') && /^tsconfig(\..+)?\.json$/.test(file);
 }
 
-/** A juxtapose config file: it can declare project-wide variants (and
- *  viewport, thresholds) that change every story's captures, and no bundler
+/** A juxtapose config file: it can declare project-wide variants and
+ *  per-story `stories` overrides (and viewport, thresholds) that change every story's captures, and no bundler
  *  graph names it. Matched at any depth, unlike a lockfile: changed paths are
  *  repository-relative, and a project in a subdirectory keeps its config
  *  there. A nested match is at worst a full run, which is the safe direction.
