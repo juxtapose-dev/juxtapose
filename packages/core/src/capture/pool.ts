@@ -72,6 +72,8 @@ export interface PoolOptions {
   /** Reuse warm pages and switch stories in place. Faster, but does not
    *  currently reproduce cold-load pixels exactly — see CaptureDeps. */
   warmSwitch?: boolean;
+  /** A new renderer per cold capture; default true. See CaptureDeps. */
+  freshRenderer?: boolean;
   /** Non-fatal notices from capture, e.g. an ignored live variant override. */
   onWarning?: (message: string) => void;
   /** Settle options around each story's own; see CaptureDeps. */
@@ -145,6 +147,7 @@ export async function* capturePool(
       platform: opts.platform,
       baseUrl: opts.baseUrl,
       warmSwitch: opts.warmSwitch,
+      ...(opts.freshRenderer !== undefined ? { freshRenderer: opts.freshRenderer } : {}),
       ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
       ...(opts.settleLayers ? { settleLayers: opts.settleLayers } : {}),
     };

@@ -25,6 +25,37 @@ loaded.
 
 `storyTimeout` (ms, whole number from 1000, default 60000) is the budget for capturing one story, navigation through encode. It is a floor under settle: a story's effective budget is the larger of `storyTimeout` and its settle timeout plus `delay` plus 15 s, so a slow story still yields a flagged capture instead of an error. A story that uses all of it fails once with an error naming the step it was stuck in, its page is discarded and replaced, and the run continues. A page whose main thread is busy (a very large DOM, a runaway script) otherwise stalls each browser call for 30 s in turn. The failed story records its real `durationMs`.
 
+`freshRenderer` (default `true`) starts each cold capture after a page's first
+in a new Chrome renderer process. jux reuses one page per worker, and Chrome's
+renderer keeps state across navigations, including about:blank: canvas text
+measurement at a fractional font size, font metrics and raster caches. One
+story could change the next one's pixels. In Primer React, PageLayout's
+pull-request-page heading was 0.11 px wider after a story that measured canvas
+text, and in Spectrum the edge of a card's cover image changed after a button
+group. The queue is shuffled, so such a story's verdict depended on queue
+order. With `freshRenderer` on, each story hashes as it does when captured
+alone.
+
+It costs time. A cold renderer runs the workbench's JavaScript again without
+the JIT state it had built up. Measured on Chrome 151, macOS, on a shared,
+loaded machine:
+
+|                                                    | renderer reused | fresh renderer |
+| -------------------------------------------------- | --------------- | -------------- |
+| trivial page navigation                            | 3 ms            | 34 ms          |
+| Spectrum story load, median                        | 125–142 ms      | 350–395 ms     |
+| full Spectrum pass (1,086 stories), concurrency 8  | 47 s            | 83 s           |
+| full Spectrum pass (1,086 stories), concurrency 16 | 36 s            | 70 s           |
+
+The V8 code cache does not recover the cost, and raising `concurrency` does not
+hide it: the work is CPU-bound.
+
+Set `"freshRenderer": false`, or pass `--no-fresh-renderer` to `jux run` or
+`jux snap`, for speed-critical runs where you accept that a story's pixels can
+depend on the story captured before it. A pass can then disagree with an
+earlier one for a few stories, with no code change behind it. Warm switching
+(`warmSwitch`) never starts a new renderer.
+
 Concurrency defaults to 8. Higher is not automatically better — past your core
 count, contention slows captures down rather than speeding them up.
 

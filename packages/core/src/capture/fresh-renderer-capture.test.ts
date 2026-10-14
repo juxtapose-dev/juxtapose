@@ -70,6 +70,34 @@ async function renderers(): Promise<number[]> {
   return processInfo.filter((p) => p.type === 'renderer').map((p) => p.id);
 }
 
+/**
+ * Capture three pages on one page and return, for each capture after the
+ * first, the renderer pids born during it that no earlier capture had seen.
+ */
+async function renderersBornPerCapture(deps: {
+  freshRenderer?: boolean;
+}): Promise<number[][]> {
+  const viewport = { width: 480, height: 64 };
+  const context = await browser.newContext({ viewport });
+  try {
+    const page = await context.newPage();
+    const seen = new Set<number>();
+    const born: number[][] = [];
+    for (const [k, path] of ['/plain', '/plain', '/heading'].entries()) {
+      const url = `${base}${path}`;
+      const platform = createUrlPlatform([{ id: `s${k}`, url }]);
+      const [story] = await platform.enumerate({ projectRoot: process.cwd() });
+      await captureStory(page, story!, { platform, baseUrl: url, ...deps }, viewport);
+      const now = await renderers();
+      if (k > 0) born.push(now.filter((id) => !seen.has(id)));
+      for (const id of now) seen.add(id);
+    }
+    return born;
+  } finally {
+    await context.close();
+  }
+}
+
 describe.skipIf(!chrome)(
   'a story on a reused page in Chrome',
   { timeout: 30_000 },
@@ -86,28 +114,14 @@ describe.skipIf(!chrome)(
     // macOS system font, but every story after the first must start in a
     // renderer process no earlier story ran in. On main: the same process.
     it('starts every story after the first in a new renderer process', async () => {
-      const viewport = { width: 480, height: 64 };
-      const context = await browser.newContext({ viewport });
-      try {
-        const page = await context.newPage();
-        const seen = new Set<number>();
-        for (const [k, path] of ['/plain', '/plain', '/heading'].entries()) {
-          const url = `${base}${path}`;
-          const platform = createUrlPlatform([{ id: `s${k}`, url }]);
-          const [story] = await platform.enumerate({ projectRoot: process.cwd() });
-          const before = new Set(await renderers());
-          await captureStory(page, story!, { platform, baseUrl: url }, viewport);
-          const fresh = (await renderers()).filter((id) => !before.has(id));
-          if (k > 0) {
-            // A process born during this capture, never one an earlier one used.
-            expect(fresh.length).toBeGreaterThan(0);
-            for (const id of fresh) expect(seen.has(id)).toBe(false);
-          }
-          for (const id of await renderers()) seen.add(id);
-        }
-      } finally {
-        await context.close();
-      }
+      const born = await renderersBornPerCapture({});
+      for (const ids of born) expect(ids.length).toBeGreaterThan(0);
+    });
+
+    // The opt-out restores main's behavior: one renderer for the whole page.
+    it('with freshRenderer false, keeps one renderer across captures', async () => {
+      const born = await renderersBornPerCapture({ freshRenderer: false });
+      expect(born).toEqual([[], []]);
     });
 
     // The hop's own data: document answers 200; a URL that then fails to

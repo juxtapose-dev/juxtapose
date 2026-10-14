@@ -46,6 +46,7 @@ export interface SnapFlags extends SettleFlags {
   mask?: string[];
   chrome?: string;
   'no-daemon'?: boolean;
+  'no-fresh-renderer'?: boolean;
 }
 
 export const MAX_VIEWPORT_SIDE = 10000;
@@ -200,6 +201,11 @@ export async function snapCommand(
       ...(config.storyTimeout !== undefined
         ? { storyTimeoutMs: config.storyTimeout }
         : {}),
+      ...(flags['no-fresh-renderer'] === true
+        ? { freshRenderer: false }
+        : config.freshRenderer !== undefined
+          ? { freshRenderer: config.freshRenderer }
+          : {}),
       ...(viewport ? { viewport } : {}),
       // A snap has no story: the flags are the story layer, over the config.
       params: {

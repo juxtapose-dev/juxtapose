@@ -485,6 +485,12 @@ export interface ProjectConfig {
    *  identical pixels, which makes results depend on queue order under a
    *  byte-exact hash. Opt in only if you have measured it on your suite. */
   warmSwitch?: boolean;
+  /** Start each cold capture after a page's first in a new renderer process.
+   *  Default true. The renderer keeps state such as canvas text measurement
+   *  and raster caches across stories, so without it a story's hash can
+   *  depend on the story captured before it. Costs about 220 ms per
+   *  Storybook story; false trades that order dependence for speed. */
+  freshRenderer?: boolean;
   /** Budget for capturing one story, ms; default 60000. A story that uses
    *  it all errors once, naming the step it was stuck in, and its page is
    *  replaced so the run goes on. */

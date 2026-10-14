@@ -28,6 +28,8 @@ export interface CommonFlags extends SettleFlags {
   chrome?: string;
   /** `--no-daemon`: same as JUX_NO_DAEMON=1. */
   'no-daemon'?: boolean;
+  /** `--no-fresh-renderer`: the config's `freshRenderer: false`. */
+  'no-fresh-renderer'?: boolean;
 }
 
 export interface Context {

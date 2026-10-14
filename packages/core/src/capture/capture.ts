@@ -66,6 +66,12 @@ export interface CaptureDeps {
    */
   warmSwitch?: boolean;
   /**
+   * Start every cold capture after a page's first in a new renderer process
+   * (issue #153). Default true; false keeps the renderer, faster but the
+   * previous story can change this one's pixels. See below.
+   */
+  freshRenderer?: boolean;
+  /**
    * Capture the structure snapshot beside the pixels. Default true. It costs
    * one CDP call per story (budget: < 30 ms) and explains failures; it never
    * decides one. `JUXTAPOSE_NO_STRUCTURE=1` turns it off for A/B timing.
@@ -187,8 +193,14 @@ export async function captureStory(
   // differing only in its fragment is a same-document navigation, so the
   // cold path below would not reload, and an app that read the scheme at
   // boot would keep the old one, or keep the previous capture's render.
-  if (!warm && previous !== undefined) {
+  //
+  // With freshRenderer off the page keeps its renderer and is only blanked
+  // for those same-URL cases, as before #153.
+  if (!warm && previous !== undefined && deps.freshRenderer !== false) {
     await page.goto(FRESH_RENDERER_URL);
+    warmPages.delete(page);
+  } else if ((schemeChanged || sameStoryOtherCapture) && warmPages.has(page)) {
+    await page.goto('about:blank');
     warmPages.delete(page);
   }
   pageCapture.set(page, { key: story.storyId, base: id });

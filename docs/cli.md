@@ -43,6 +43,10 @@ story for that command: `--settle-timeout <ms>`, `--settle-ready` or
 repeatable, and `--network-external <allow|block>`. `jux snap` also takes `--delay <ms>`. See
 [Settle](configuration.md#settle).
 
+`jux snap` and `jux run` also take `--no-fresh-renderer`, which overrides the
+config's `freshRenderer` for that command: captures reuse each page's renderer,
+which is faster, but a story's pixels can depend on the story captured before it.
+
 ## Capture a built or deployed Storybook
 
 Use `--build-dir <dir>` to capture a static build. Use `--origin <url>` to

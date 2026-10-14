@@ -290,7 +290,7 @@ export function checkPatterns(
   return list;
 }
 
-/** The project config's settle options: `settle`, `waitForSelector`, `delay`. */
+/** The project config's capture options: `settle`, `waitForSelector`, `delay`, `storyTimeout`, `freshRenderer`. */
 export function checkProjectSettle(config: {
   stories?: unknown;
   settle?: unknown;
@@ -298,8 +298,13 @@ export function checkProjectSettle(config: {
   waitForSelector?: unknown;
   delay?: unknown;
   storyTimeout?: unknown;
+  freshRenderer?: unknown;
 }): void {
   const where = 'project config';
+  if (config.freshRenderer !== undefined && typeof config.freshRenderer !== 'boolean')
+    throw new SettleConfigError(
+      `${where}: freshRenderer must be true or false, got ${JSON.stringify(config.freshRenderer)}`,
+    );
   const st = config.storyTimeout;
   if (
     st !== undefined &&
