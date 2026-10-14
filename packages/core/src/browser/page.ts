@@ -356,6 +356,13 @@ function serialize(arg: unknown): string {
   return arg === undefined ? 'undefined' : JSON.stringify(arg);
 }
 
+/**
+ * A navigation to this, then to the story, puts the story in a renderer
+ * process no earlier story ran in (issue #153; see captureStory). Distinct, so
+ * the hop's own Document response can be told from the story's.
+ */
+export const FRESH_RENDERER_URL = 'data:text/html,jux-fresh-renderer';
+
 export class CdpPage implements Page {
   private currentUrl = 'about:blank';
   private viewport: Viewport;
@@ -513,7 +520,13 @@ export class CdpPage implements Page {
       'Network.responseReceived',
       (r) => {
         // The top frame's id is the target id in Chromium (verified 2026-10-13).
-        if (r.type === 'Document' && r.frameId === this.targetId)
+        // The hop to a fresh renderer is jux's, not the page's: a story whose
+        // own load fails must not report the hop's 200.
+        if (
+          r.type === 'Document' &&
+          r.frameId === this.targetId &&
+          r.response.url !== FRESH_RENDERER_URL
+        )
           handler(r.response.status);
       },
       this.sessionId,

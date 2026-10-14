@@ -241,7 +241,10 @@ export async function runCommand(
       baseUrl,
       stories: selection,
       totalCount: stories.length,
-      config: ctx.config,
+      config:
+        flags['no-fresh-renderer'] === true
+          ? { ...ctx.config, freshRenderer: false }
+          : ctx.config,
       ...(call.settle || call.network
         ? {
             settle: {

@@ -3,7 +3,7 @@
 // nondeterminism left in this path becomes a false failure somewhere.
 
 import sharp from 'sharp';
-import { emulatedMedia, type Page } from '../browser/page.js';
+import { emulatedMedia, FRESH_RENDERER_URL, type Page } from '../browser/page.js';
 import { assertCssSelector } from '../browser/selectors.js';
 import type { Platform } from '../platform.js';
 import type {
@@ -65,6 +65,12 @@ export interface CaptureDeps {
    * visual test that cries wolf is worse than a slow one.
    */
   warmSwitch?: boolean;
+  /**
+   * Start every cold capture after a page's first in a new renderer process
+   * (issue #153). Default true; false keeps the renderer, faster but the
+   * previous story can change this one's pixels. See below.
+   */
+  freshRenderer?: boolean;
   /**
    * Capture the structure snapshot beside the pixels. Default true. It costs
    * one CDP call per story (budget: < 30 ms) and explains failures; it never
@@ -159,12 +165,41 @@ export async function captureStory(
   // Before showStory, on every capture, so the story renders in its scheme
   // from the first frame. Memoized, so it costs nothing when unchanged.
   await ensureColorScheme(page, scheme);
-  // A variant shares its story's URL, and a URL differing only in its
-  // fragment is a same-document navigation: the cold path below would not
-  // reload, and an app that read the scheme at boot would keep the old one,
-  // or keep the previous capture's render. Blank the page so the story boots
-  // fresh.
-  if ((schemeChanged || sameStoryOtherCapture) && warmPages.has(page)) {
+  // A cold capture on a page that has shown anything before starts in a new
+  // renderer process (issue #153). The renderer keeps font and raster state
+  // across navigations, about:blank included, so the previous story changed
+  // this one's pixels. Measured with jux 0.9.0 at concurrency 1: Primer's
+  // pagelayout pull-request-page after pageheader webhooks hashed 37d0ff51,
+  // alone 76cf4695, its heading 0.11 px wider because webhooks measured
+  // canvas text at 32.0167px in the macOS system font. Spectrum's
+  // card--default after button-group-sizes--vertical-xl hashed 28d933b6,
+  // alone 2faf799d, with identical layout and different cover-image edge
+  // pixels. A memory-pressure purge cleared neither; a new page or context
+  // per story did, at the same cost as this hop.
+  //
+  // The cost is real: a cold renderer runs the workbench's JS without warm
+  // JIT state. A trivial page pays about 30 ms; a Spectrum story about
+  // 220 ms (script 34 -> 116 ms, main-thread tasks 120 -> 263 ms), and the
+  // full 1,086-story Spectrum pass went from 47 to 83 s at concurrency 8
+  // (36 to 70 s at 16). The V8 code cache does not recover it. Without it, a
+  // story's hash depends on where the shuffled queue put it.
+  //
+  // The navigation after a data: URL lands in a new renderer
+  // (Chrome 151: a new pid every time; about:blank kept the old one), and,
+  // unlike a new page, this keeps the page's init scripts, emulation and
+  // network policy.
+  //
+  // The hop also covers a variant, which shares its story's URL: a URL
+  // differing only in its fragment is a same-document navigation, so the
+  // cold path below would not reload, and an app that read the scheme at
+  // boot would keep the old one, or keep the previous capture's render.
+  //
+  // With freshRenderer off the page keeps its renderer and is only blanked
+  // for those same-URL cases, as before #153.
+  if (!warm && previous !== undefined && deps.freshRenderer !== false) {
+    await page.goto(FRESH_RENDERER_URL);
+    warmPages.delete(page);
+  } else if ((schemeChanged || sameStoryOtherCapture) && warmPages.has(page)) {
     await page.goto('about:blank');
     warmPages.delete(page);
   }

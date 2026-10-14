@@ -44,6 +44,8 @@ export interface SnapPagesOptions {
   projectSettle?: SettleLayer;
   /** Per-URL budget, ms; the config's `storyTimeout`. See DEFAULT_STORY_TIMEOUT_MS. */
   storyTimeoutMs?: number;
+  /** A new renderer per URL after the first; default true. See CaptureDeps. */
+  freshRenderer?: boolean;
   /** Acquired by the caller (acquireBrowser); not closed here. */
   browser: Browser;
 }
@@ -106,6 +108,9 @@ export async function snapPages(
               platform,
               baseUrl: url,
               ...hooks,
+              ...(opts.freshRenderer !== undefined
+                ? { freshRenderer: opts.freshRenderer }
+                : {}),
               ...(opts.projectSettle
                 ? { settleLayers: { project: opts.projectSettle } }
                 : {}),

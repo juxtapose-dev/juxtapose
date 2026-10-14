@@ -287,3 +287,16 @@ describe('pending descriptions', () => {
     ]);
   });
 });
+
+describe('freshRenderer config', () => {
+  it('accepts a boolean and absence', () => {
+    expect(() => checkProjectSettle({})).not.toThrow();
+    expect(() => checkProjectSettle({ freshRenderer: true })).not.toThrow();
+    expect(() => checkProjectSettle({ freshRenderer: false })).not.toThrow();
+  });
+  // A string "false" would otherwise read as truthy and silently keep the hop.
+  it.each(['false', 0, 1, null, {}])('rejects %s, naming freshRenderer', (v) => {
+    expect(() => checkProjectSettle({ freshRenderer: v })).toThrow(SettleConfigError);
+    expect(() => checkProjectSettle({ freshRenderer: v })).toThrow(/freshRenderer.*got /);
+  });
+});

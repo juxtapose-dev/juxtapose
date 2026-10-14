@@ -95,6 +95,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     baseUrl: opts.baseUrl,
     concurrency: opts.config?.concurrency,
     warmSwitch: opts.config?.warmSwitch,
+    ...(opts.config?.freshRenderer !== undefined
+      ? { freshRenderer: opts.config.freshRenderer }
+      : {}),
     ...(opts.config?.storyTimeout !== undefined
       ? { storyTimeoutMs: opts.config.storyTimeout }
       : {}),

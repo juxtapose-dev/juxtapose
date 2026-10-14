@@ -42,6 +42,8 @@ Common options
   --run <dir>                    run directory to read (approve, check, handoff)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
+  --no-fresh-renderer            snap, run: reuse each page's renderer between captures (config freshRenderer:
+                                 false); faster, but a capture can depend on the one before it
 `;
 
 const SETTLE_HELP = `
@@ -155,6 +157,7 @@ async function main(argv: string[]): Promise<number> {
       crops: { type: 'boolean', default: false },
       chrome: { type: 'string' },
       'no-daemon': { type: 'boolean', default: false },
+      'no-fresh-renderer': { type: 'boolean', default: false },
     },
   });
 
