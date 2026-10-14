@@ -711,11 +711,19 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
     () =>
       withCache(async (cache) => {
         // A cold Chrome (first launch after a download, a loaded CI box)
-        // outlasting the 2 s budget, shortened here to a 300 ms budget.
+        // outlasting the client's budget, shortened here to 300 ms. The
+        // supervisor does not start until the test opens the gate, so no
+        // wall-clock race decides whether it is "still starting".
         const slow = path.join(cache, 'slow-supervisor-main.mjs');
+        const gate = path.join(cache, 'start-gate');
         await writeFile(
           slow,
-          `await new Promise((r) => setTimeout(r, 1200));\nawait import(${JSON.stringify(builtMain)});\n`,
+          [
+            `import { existsSync } from 'node:fs';`,
+            `while (!existsSync(${JSON.stringify(gate)})) await new Promise((r) => setTimeout(r, 10));`,
+            `await import(${JSON.stringify(builtMain)});`,
+            '',
+          ].join('\n'),
         );
         let spawned = 0;
         const opts = {
@@ -727,22 +735,34 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
             return spawnSupervisor(a, e, slow);
           },
         };
+        const lock = daemonPaths(cache, keyOf()).lock;
         try {
           const a = await connectWarmBrowser(opts);
           expect(a.warm).toBe(false); // gave up before its daemon was up
           await a.browser.close();
-          // A's 300 ms are over; before the fix its lock was gone here.
-          const b = await connectWarmBrowser(opts);
+          // A's 300 ms are over and the supervisor is held at the gate; before
+          // the fix A's lock was gone here.
+          expect(existsSync(lock)).toBe(true);
+          // B's budget is generous: what it proves is that it waits on the
+          // lock rather than spawning, however slow Chrome is to start once
+          // the gate opens. Without the lock it would spawn at once.
+          const pending = connectWarmBrowser({ ...opts, connectTimeoutMs: 20_000 });
+          await sleep(200); // B is polling; had it spawned, `spawned` is 2
+          await writeFile(gate, '');
+          const b = await pending;
           expect(b.warm).toBe(true);
           expect(spawned).toBe(1);
           await b.browser.close();
-          // Up and listening: the supervisor dropped the lock it was handed.
-          expect(existsSync(daemonPaths(cache, keyOf()).lock)).toBe(false);
+          // Up and listening: the supervisor drops the lock it was handed just
+          // after it writes its state, so a client can see it a beat early.
+          for (let i = 0; i < 200 && existsSync(lock); i++) await sleep(25);
+          expect(existsSync(lock)).toBe(false);
         } finally {
+          await writeFile(gate, '').catch(() => {});
           await stopDaemon(opts);
         }
       }),
-    20_000,
+    30_000,
   );
 
   it('stop never removes the files of a live daemon it judged "not ours"', () =>
