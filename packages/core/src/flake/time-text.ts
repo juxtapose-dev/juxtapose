@@ -128,6 +128,13 @@ const TIME_PATTERNS: readonly RegExp[] = [
   /\b\d{1,2}:[0-5]\d\s?[AP]\.?M\.?(?![\p{L}\d])/iu,
   /\b(?:[01]\d|2[0-3]):[0-5]\d(?![\d:])/,
   /^\s*\d{1,2}:[0-5]\d\s*$/,
+  // 3:42 after a word that says it is a time ("Updated 3:42", "Starts at
+  // 9:30", "下午3:42"); "Score 3:15" has no such word.
+  new RegExp(
+    `(?<![\\p{L}\\d])(?:at|updated|sync(?:ed)?|since|until|till|starts?|ends?|duration|elapsed|um|à|a las|a les|alle|às)\\s+\\d{1,2}:[0-5]\\d(?![\\d:])`,
+    'iu',
+  ),
+  /(?:上午|下午|早上|晚上|中午)\s?\d{1,2}:[0-5]\d(?![\d:])/u,
   // 2026-10-14, 2026/10/14
   /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/,
   /\b(?:19|20)\d{2}\/\d{1,2}\/\d{1,2}\b/,

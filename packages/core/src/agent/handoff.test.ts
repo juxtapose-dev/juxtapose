@@ -50,13 +50,15 @@ describe('buildHandoffPrompt', () => {
         storyIds: ['a', 'b', 'c'],
         fix: {
           network: {
-            rules: [{ match: 'https://picsum.photos/**', action: 'placeholder' }],
+            rules: [
+              { match: 'type:Image https://picsum.photos/**', action: 'placeholder' },
+            ],
           },
         },
       },
     });
     expect(out).toContain(
-      'Shared fix: 3 stories: external images from picsum.photos; fix: network.rules += {"match":"https://picsum.photos/**","action":"placeholder"}',
+      'Shared fix: 3 stories: external images from picsum.photos; fix: network.rules += {"match":"type:Image https://picsum.photos/**","action":"placeholder"}',
     );
   });
 

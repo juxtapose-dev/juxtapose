@@ -230,7 +230,7 @@ When three or more unstable stories in one run share a cause and a third-party
 host (`external-image`, `embed`), or are `order-dependence`, `report.json` also
 has a run-level `flakeGroups: [{ cause, host?, storyIds, fix }]`, where `fix`
 is one project-level patch (for a host, a `network.rules` entry for
-`https://<host>/**`). Each story keeps its own `flake`. `jux run` and
+`type:Image https://<host>/**`, or `type:Document` for frames). Each story keeps its own `flake`. `jux run` and
 `jux diff --runs` print one line for each group in place of the per-story
 lines, and `jux handoff` adds it to a story in the group. Date and time
 recognition covers numeric, English, German, French, Spanish, Italian,

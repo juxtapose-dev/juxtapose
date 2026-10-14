@@ -236,7 +236,9 @@ test('three stories under one host are one group: one project fix, one line', as
       storyIds: ['a--1', 'b--1', 'c--1'],
       fix: {
         network: {
-          rules: [{ match: 'https://picsum.photos/**', action: 'placeholder' }],
+          rules: [
+            { match: 'type:Image https://picsum.photos/**', action: 'placeholder' },
+          ],
         },
       },
     },
@@ -245,7 +247,7 @@ test('three stories under one host are one group: one project fix, one line', as
   expect(Object.keys(json.flake)).toEqual(['a--1', 'b--1', 'c--1']);
   const text = (await diffRuns('r1', 'r2', false)).out;
   expect(text).toContain(
-    '3 stories: external images from picsum.photos; fix: network.rules += {"match":"https://picsum.photos/**","action":"placeholder"}',
+    '3 stories: external images from picsum.photos; fix: network.rules += {"match":"type:Image https://picsum.photos/**","action":"placeholder"}',
   );
   expect(text).toContain('a--1, b--1, c--1');
   // The group stands in for the three per-story lines.

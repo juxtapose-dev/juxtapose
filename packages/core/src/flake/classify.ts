@@ -54,6 +54,10 @@ export interface OneSidedElement {
 export interface NetworkCoverage {
   images: boolean;
   frames: boolean;
+  /** Whether the config already answers this particular resource, through a
+   *  `network.rules` entry (a group rule for its host) as well as the type
+   *  map. Unset when only the flags are known. */
+  covers?: (ref: ExternalRef) => boolean;
 }
 
 export interface FlakeObservations {
@@ -196,7 +200,7 @@ function settleTimeout(o: FlakeObservations): Flake | undefined {
  *  tie-break, so the answer never depends on discovery order). */
 function hitsOf(o: FlakeObservations, kinds: ExternalRef['kind'][]): ExternalHit[] {
   return o.externals
-    .filter((h) => kinds.includes(h.ref.kind))
+    .filter((h) => kinds.includes(h.ref.kind) && !o.covered.covers?.(h.ref))
     .sort(
       (a, b) =>
         b.overlap - a.overlap ||

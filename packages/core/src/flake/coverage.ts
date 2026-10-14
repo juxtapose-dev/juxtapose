@@ -2,8 +2,8 @@
 // classifier never suggests a setting that is on.
 
 import { compileOverrides, resolveOverride } from '../capture/story-overrides.js';
-import { resolveNetwork } from '../capture/network-rules.js';
-import type { NetworkParams, ProjectConfig } from '../types.js';
+import { decide, resolveNetwork } from '../capture/network-rules.js';
+import type { ExternalRef, NetworkParams, ProjectConfig } from '../types.js';
 import type { NetworkCoverage } from './classify.js';
 
 /** Coverage from network layers, lowest first (project, story, call). */
@@ -16,7 +16,19 @@ export function networkCoverage(
     // even when `default` blocks.
     const answered = (action: string | undefined) =>
       action === undefined ? policy.default === 'block' : action !== 'allow';
-    return { images: answered(policy.images), frames: answered(policy.frames) };
+    return {
+      images: answered(policy.images),
+      frames: answered(policy.frames),
+      // Ask the policy about the resource itself, so a rule for its host (the
+      // group fix) counts, not only the type map.
+      covers: (ref: ExternalRef) =>
+        decide(policy, {
+          url: ref.origin + ref.path,
+          resourceType: ref.kind === 'frame' ? 'Document' : 'Image',
+          external: true,
+          subframeDocument: ref.kind === 'frame',
+        }) !== 'allow',
+    };
   } catch {
     return { images: false, frames: false };
   }

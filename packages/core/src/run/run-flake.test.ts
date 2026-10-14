@@ -163,7 +163,9 @@ test('three unstable stories under one host add a run-level group; two do not', 
       storyIds: ['a--1', 'b--1', 'c--1'],
       fix: {
         network: {
-          rules: [{ match: 'https://picsum.photos/**', action: 'placeholder' }],
+          rules: [
+            { match: 'type:Image https://picsum.photos/**', action: 'placeholder' },
+          ],
         },
       },
     },

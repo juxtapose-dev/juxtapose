@@ -10,11 +10,15 @@ export const MIN_GROUP = 3;
 /** The causes whose fix can be stated once per third-party host. */
 const HOSTED: ReadonlySet<FlakeCause> = new Set(['external-image', 'embed']);
 
-/** `https://picsum.photos/**` from the evidence's URL, or undefined when the
+/** `type:Image https://picsum.photos/**` from the evidence's URL, or undefined when the
  *  flake has none (a group is then not possible). */
 function hostRule(flake: Flake): string | undefined {
   try {
-    return `${new URL(flake.evidence.url ?? '').origin}/**`;
+    // Typed: an untyped placeholder rule turns a script or stylesheet from the
+    // host into a block (decide() has no stand-in for them), which would
+    // break every story that loads one.
+    const type = flake.cause === 'embed' ? 'Document' : 'Image';
+    return `type:${type} ${new URL(flake.evidence.url ?? '').origin}/**`;
   } catch {
     return undefined;
   }

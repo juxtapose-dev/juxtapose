@@ -497,6 +497,26 @@ describe('one line per flake', () => {
   });
 });
 
+describe('a covered resource is not re-suggested', () => {
+  it('an external image whose host a rule already placeholders is not external-image', () => {
+    const f = classifyFlake(
+      obs({
+        externals: [image],
+        covered: { images: false, frames: false, covers: () => true },
+      }),
+    );
+    expect(f.cause).not.toBe('external-image');
+    expect(
+      classifyFlake(
+        obs({
+          externals: [image],
+          covered: { images: false, frames: false, covers: () => false },
+        }),
+      ).cause,
+    ).toBe('external-image');
+  });
+});
+
 describe('looksLikeTime', () => {
   it.each([
     '10:42',
@@ -516,6 +536,13 @@ describe('looksLikeTime', () => {
     '1m 30s',
     '1760438400',
     'Updated 3 hours ago by sam',
+    'Updated 3:42',
+    'Last sync 9:05',
+    'Starts at 9:30',
+    'Duration 1:05',
+    '下午3:42',
+    'um 9:30',
+    'Score is 3:15 PM',
     'vor 5 Minuten',
     'il y a 5 minutes',
     'hace 5 minutos',
@@ -572,6 +599,8 @@ describe('looksLikeTime', () => {
     'may 3 things',
     'ratio 3:2',
     'Score 3:15',
+    'Round 2 ended 3:1',
+    'Aspect ratio 16:9',
     'May 3 items',
     'Mar 2 results',
     'ID 1600000000',
