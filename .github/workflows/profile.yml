@@ -6,10 +6,6 @@ name: profile
 # equality. Reuses field-tests.yml's cache keys, so a Storybook built there is
 # not rebuilt here. Output: the job summary and the profile-<name> artifact.
 on:
-  # The push trigger only registers the workflow before it exists on main;
-  # dispatch it with inputs afterwards.
-  push:
-    branches: [perf/capture-experiments]
   workflow_dispatch:
     inputs:
       storybook:
