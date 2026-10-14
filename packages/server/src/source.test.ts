@@ -333,6 +333,15 @@ describe('RunDirSource story loading', () => {
     expect(calls).toBe(2);
   });
 
+  it('a bad project settle is a config error naming the project config', async () => {
+    const platform = { name: 'fake', enumerate: async () => base } as unknown as Platform;
+    for (const settle of [{ timeout: 0 }, { network: { ignore: ['type:Nope'] } }]) {
+      const s = await make(platform, { settle } as ProjectConfig);
+      await expect(s.stories()).rejects.toBeInstanceOf(VariantConfigError);
+      await expect(s.stories()).rejects.toThrow(/^jux: project config: settle\./);
+    }
+  });
+
   it('a config file edit retries a cached config error', async () => {
     const platform = { name: 'fake', enumerate: async () => base } as unknown as Platform;
     const s = await make(platform, { variants: { Dark: {} } } as ProjectConfig);
