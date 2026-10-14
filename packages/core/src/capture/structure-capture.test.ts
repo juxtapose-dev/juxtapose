@@ -43,8 +43,12 @@ test('returns a normalized snapshot', async () => {
   expect(s?.schema).toBe('juxtapose.structure/v1');
   expect(send).toHaveBeenCalledWith(
     'DOMSnapshot.captureSnapshot',
-    expect.objectContaining({ includeDOMRects: true }),
+    expect.objectContaining({ includePaintOrder: true }),
   );
+  // DOM rects are unused and make Chrome lay out content-visibility subtrees:
+  // 2.6-4.9 s of a Primer TreeView capture (see captureStructure).
+  const params = (send.mock.calls[0] as unknown[] | undefined)?.[1];
+  expect(params).not.toHaveProperty('includeDOMRects');
 });
 
 test('a CDP failure yields undefined, never a throw', async () => {

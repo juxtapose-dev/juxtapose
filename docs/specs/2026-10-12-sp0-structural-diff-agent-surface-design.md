@@ -41,8 +41,10 @@ session, not Storybook, so it ships first and works without a workbench.
 
 Captured in `captureStory` immediately after `waitForPaint` and before the
 screenshot — the same frame the pixels come from. One CDP call:
-`DOMSnapshot.captureSnapshot({ computedStyles: STRUCTURE_PROPS, includeDOMRects: true, includePaintOrder: true })`,
-then normalized in Node.
+`DOMSnapshot.captureSnapshot({ computedStyles: STRUCTURE_PROPS, includePaintOrder: true })`,
+then normalized in Node. No `includeDOMRects`: nothing reads those rects
+(positions come from `layout.bounds`), and requesting them forces layout of
+`content-visibility` subtrees, which cost 2–4 s on a 110k-node page.
 
 ```ts
 interface StructureSnapshot {

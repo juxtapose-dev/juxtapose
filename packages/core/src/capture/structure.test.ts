@@ -213,3 +213,40 @@ test('caps at MAX_ELEMENTS and records the truncation', () => {
   expect(s.truncated!.kept).toBe(MAX_ELEMENTS);
   expect(s.truncated!.total).toBeGreaterThan(MAX_ELEMENTS);
 });
+
+test('normalizing reads a bounded number of strings per node, however wide the page', () => {
+  // Counts reads instead of timing them, so a loaded machine cannot flake it.
+  // Primer's TreeView contain-intrinsic-size story has ~100 lists of 1000
+  // siblings in 130k nodes, 284 of them on screen. Filtering the sibling list
+  // per child for nth-of-type, and decoding all 42 styles of every row, made
+  // normalize 470-1070 ms there; both now cost a constant per node.
+  const raw = structuredClone(fixture.raw);
+  const doc = raw.documents[0];
+  const mainNode = doc.nodes.nodeName.findIndex((n) => raw.strings[n] === 'MAIN');
+  const mainRow = doc.layout.nodeIndex.indexOf(mainNode);
+  const divName = raw.strings.indexOf('DIV');
+  for (let k = 0; k < 2000; k++) {
+    const idx = doc.nodes.nodeType.length;
+    doc.nodes.parentIndex.push(mainNode);
+    doc.nodes.nodeType.push(1);
+    doc.nodes.nodeName.push(divName);
+    doc.nodes.nodeValue.push(-1);
+    doc.nodes.attributes.push([]);
+    doc.layout.nodeIndex.push(idx);
+    doc.layout.styles.push([...doc.layout.styles[mainRow]]);
+    doc.layout.bounds.push([10, 5000 + k * 20, 100, 20]); // below the fold
+    doc.layout.paintOrders?.push(1);
+  }
+  let reads = 0;
+  const strings = new Proxy(raw.strings, {
+    get(target, key, receiver) {
+      if (typeof key === 'string' && /^\d+$/.test(key)) reads++;
+      return Reflect.get(target, key, receiver) as unknown;
+    },
+  });
+  const s = normalizeStructure({ ...raw, strings }, fixture.viewport);
+  expect(s.structureHash).toBe(snap().structureHash); // all below the fold
+  // About 4 per node now. The sibling filter alone read 2000 x 2000 names,
+  // and the eager decode 42 per row.
+  expect(reads).toBeLessThan(10 * doc.nodes.nodeType.length);
+});

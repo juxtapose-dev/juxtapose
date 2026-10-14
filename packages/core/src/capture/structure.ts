@@ -237,9 +237,16 @@ export function normalizeStructure(
   const pageOrigin = httpOrigin(documentUrl);
   const backgroundIdx = STRUCTURE_PROPS.indexOf('background-image');
 
-  // children lists and own text, in document order
+  // children lists, own text and each element's nth-of-type, in document order.
+  // nth-of-type is counted here, once, rather than by filtering the sibling
+  // list per child: that was quadratic in sibling count, and Primer's TreeView
+  // contain-intrinsic-size story has ~100 lists of 1000 siblings, so it cost
+  // ~100M name reads and most of a 470-1070 ms normalize.
   const children = new Map<number, number[]>();
   const ownText = new Map<number, string>();
+  const nthOfType = new Map<number, number>();
+  // per parent: lowercased tag -> elements of that tag seen so far
+  const tagCounts = new Map<number, Map<string, number>>();
   for (let i = 0; i < nodes.nodeType.length; i++) {
     const p = nodes.parentIndex[i]!;
     if (p < 0) continue;
@@ -250,6 +257,12 @@ export function normalizeStructure(
       const list = children.get(p) ?? [];
       list.push(i);
       children.set(p, list);
+      const counts = tagCounts.get(p) ?? new Map<string, number>();
+      tagCounts.set(p, counts);
+      const tag = (str(nodes.nodeName[i]) ?? '').toLowerCase();
+      const n = (counts.get(tag) ?? 0) + 1;
+      counts.set(tag, n);
+      nthOfType.set(i, n);
     }
   }
 
@@ -269,16 +282,12 @@ export function normalizeStructure(
     const tag = (str(nodes.nodeName[i]) ?? '').toLowerCase();
     if (tag === 'head' || tag === 'script' || tag === 'style') return;
     const a = attrs(i);
-    const siblings = children.get(nodes.parentIndex[i]!) ?? [];
-    const sameTag = siblings.filter(
-      (s) => (str(nodes.nodeName[s]) ?? '').toLowerCase() === tag,
-    );
     const step =
       a.id !== undefined
         ? `${tag}#${a.id}`
         : a['data-testid'] !== undefined
           ? `${tag}[data-testid="${a['data-testid']}"]`
-          : `${tag}:nth-of-type(${sameTag.indexOf(i) + 1})`;
+          : `${tag}:nth-of-type(${nthOfType.get(i)!})`; // set for every element child
     const path = parentPath ? `${parentPath}>${step}` : step;
 
     const row = layoutOf.get(i);
@@ -311,9 +320,13 @@ export function normalizeStructure(
     }
 
     if (row === undefined) return; // display:none (or no box): drop the subtree
-    const rawValues = layout.styles[row]!.map((s) => str(s) ?? '');
-    const values = rawValues.map(urlsToFileNames);
-    if (values[visibilityIdx] === 'hidden' || values[visibilityIdx] === 'collapse') {
+    // Only `visibility` is read for every row; the other 41 values are decoded
+    // below, for kept elements only. Decoding all of them for all 130k rows of
+    // Primer's TreeView story (284 kept) was ~5.5M string reads and url()
+    // scans for values nothing looked at.
+    const rowStyles = layout.styles[row]!;
+    const visibility = urlsToFileNames(str(rowStyles[visibilityIdx]) ?? '');
+    if (visibility === 'hidden' || visibility === 'collapse') {
       // hidden boxes can still contain visible descendants (visibility: visible)
       for (const c of children.get(i) ?? []) visit(c, path, keptParent);
       return;
@@ -333,6 +346,8 @@ export function normalizeStructure(
     if (keep) {
       total++;
       if (elements.length < MAX_ELEMENTS) {
+        const rawValues = rowStyles.map((s) => str(s) ?? '');
+        const values = rawValues.map(urlsToFileNames);
         const inherited = keptParent === null ? ROOT_INHERITED : effective[keptParent]!;
         const styles: Record<string, string> = {};
         const eff: Record<string, string> = { ...inherited };
@@ -701,9 +716,17 @@ export async function captureStructure(
   }
 
   try {
+    // No includeDOMRects. It adds offset/scroll/client rects, which nothing
+    // reads (rects come from layout.bounds, always sent), and reading an
+    // element's offset rect makes Chrome lay out any content-visibility
+    // subtree it sits in. On Primer's TreeView contain-intrinsic-size story
+    // (130k layout rows, ~320,000 px tall) the call took 2.6-4.9 s with it and
+    // 0.8-1.2 s without; the response shrank from 34 MB to 28 MB. What remains
+    // is Chrome computing 42 styles for every row (0.33 s with `visibility`
+    // alone). It also stops a closed <details>'s never-painted menu being laid
+    // out and recorded as visible (3 of Primer's 1102 stories).
     const raw = await page.send('DOMSnapshot.captureSnapshot', {
       computedStyles: [...STRUCTURE_PROPS, 'visibility'],
-      includeDOMRects: true,
       includePaintOrder: true,
     });
     for (const [k, sel] of mask.entries()) {
