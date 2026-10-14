@@ -213,7 +213,7 @@ export async function resolveAffected(
   // inside any of them, so one unnamed file (beside a story edit, say) must
   // not let the named ones narrow the run.
   const named = new Set(Object.values(manifest).flatMap((e) => (e.src ? [e.src] : [])));
-  if (files.some((f) => !named.has(f.path) && !isNeverBundled(f))) {
+  if (files.some((f) => !named.has(f.path) && !isRenderInert(f))) {
     return { stories, reason: 'no-match-fallback', detail: hint };
   }
 
@@ -362,7 +362,36 @@ function walkModuleGraph(
   // anything here could read them, so a graph of them is not trustworthy and a
   // missed importer ships a regression. Component script edits are the case
   // this analysis exists for.
-  const asset = files.find((f) => !SCRIPT_EXT.test(f.path) && !isNeverBundled(f));
+  const served = files.find((f) => /(^|\/)public\//.test(f.path));
+  if (served) {
+    // Fetched at runtime by URL, never imported: no graph can see it.
+    return {
+      stories,
+      reason: 'unmapped-change',
+      detail: `${served.path} is served from a public dir, which no import graph covers`,
+    };
+  }
+  const read = files.find((f) => graph.external.includes(f.path));
+  if (read) {
+    return {
+      stories,
+      reason: 'unmapped-change',
+      detail: `${read.path} is read by a build plugin, not imported`,
+    };
+  }
+  // Without CSS code splitting every style block lands in one stylesheet that
+  // reaches every story.
+  const styled = graph.cssCodeSplit
+    ? undefined
+    : files.find((f) => /\.(?:vue|svelte)$/i.test(f.path));
+  if (styled) {
+    return {
+      stories,
+      reason: 'asset-changed',
+      detail: `${styled.path} (the build has cssCodeSplit off, so its style blocks reach every story)`,
+    };
+  }
+  const asset = files.find((f) => !SCRIPT_EXT.test(f.path) && !isRenderInert(f, modules));
   if (asset) {
     return {
       stories,
@@ -383,7 +412,9 @@ function walkModuleGraph(
     };
   }
 
-  const unmapped = files.filter((f) => !modules.has(f.path) && !isNeverBundled(f));
+  const unmapped = files.filter(
+    (f) => !modules.has(f.path) && !isRenderInert(f, modules),
+  );
   if (unmapped.length > 0) {
     return {
       stories,
@@ -496,6 +527,28 @@ const NEVER_BUNDLED_NAME =
 
 /** Files no bundler imports: prose docs, licences, git and editor dotfiles,
  *  `.github/`. `.mdx` is not one: it compiles to a module. */
+const ROOT_META =
+  /^(?:README|LICENSE|LICENCE|CHANGELOG|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY)(?:\.[\w.-]+)?$/i;
+
+/** A change that cannot affect a render, so it never narrows or escalates: a
+ *  workflow under `.github/`, or a repo-root meta file (README, LICENSE, …).
+ *  Not a markdown file in the source tree (`import.meta.glob('*.md')` loads
+ *  them), nothing under `public/`, and not a file the graph contains or whose
+ *  extension the graph contains (a glob that loads one `.md` loads them all). */
+export function isRenderInert(f: ChangedPath, modules?: Map<string, string[]>): boolean {
+  const meta =
+    f.repoPath.startsWith('.github/') ||
+    (!f.repoPath.includes('/') && ROOT_META.test(f.repoPath));
+  if (!meta) return false;
+  if (!modules) return true;
+  if (modules.has(f.path)) return false;
+  const ext = path.posix.extname(f.path).toLowerCase();
+  if (ext === '') return true;
+  for (const m of modules.keys())
+    if (path.posix.extname(m).toLowerCase() === ext) return false;
+  return true;
+}
+
 export function isNeverBundled(f: ChangedPath): boolean {
   const name = f.path.slice(f.path.lastIndexOf('/') + 1);
   return (

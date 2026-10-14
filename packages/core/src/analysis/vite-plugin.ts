@@ -42,6 +42,7 @@ interface BuildContext {
     importedIds: readonly string[];
     dynamicallyImportedIds: readonly string[];
   } | null;
+  getWatchFiles?(): string[];
   emitFile(file: { type: 'asset'; fileName: string; source: string }): string;
   warn(message: string): void;
 }
@@ -54,6 +55,7 @@ export interface JuxtaposeVitePlugin {
   name: string;
   apply: 'build';
   enforce: 'pre';
+  configResolved(config: { build?: { cssCodeSplit?: boolean } }): void;
   buildStart(this: unknown): void;
   transform(this: TransformContext, code: string, id: string): Promise<null>;
   generateBundle(this: BuildContext): void;
@@ -76,6 +78,7 @@ export function juxtaposeModuleGraph(
   const hashes = new Map<string, string>();
   let startedAt = Date.now();
   let workers = false;
+  let cssCodeSplit = true;
 
   const addEdge = (from: string, to: string) => {
     let set = extra.get(from);
@@ -88,6 +91,9 @@ export function juxtaposeModuleGraph(
     // The dev server has no bundle to observe.
     apply: 'build',
     enforce: 'pre',
+    configResolved(config) {
+      cssCodeSplit = config.build?.cssCodeSplit !== false;
+    },
     buildStart() {
       startedAt = Date.now();
       extra.clear();
@@ -129,7 +135,17 @@ export function juxtaposeModuleGraph(
         const modules: Record<string, Set<string>> = {};
         for (const id of this.getModuleIds()) {
           const file = sourcePath(id, root);
-          if (file === null) continue;
+          if (file === null) {
+            // A virtual module made by a plugin can read files from disk and
+            // import others by name; none of that is followed.
+            if (isForeignVirtual(id)) {
+              opaque.set(
+                `virtual:${id.replace(/^\0/, '')}`,
+                'virtual module from a build plugin',
+              );
+            }
+            continue;
+          }
           const info = this.getModuleInfo(id);
           if (!info) {
             // Not writing is the safe direction: a missing graph escalates to
@@ -153,6 +169,14 @@ export function juxtaposeModuleGraph(
             modules[to] ??= new Set();
           }
         }
+        // Files the build read that no module accounts for: a plugin's `load`
+        // reading a file to build a virtual module. Changing one changes
+        // output without an import edge.
+        const external: string[] = [];
+        for (const abs of this.getWatchFiles?.() ?? []) {
+          const rel = sourcePath(abs, root);
+          if (rel !== null && !(rel in modules)) external.push(rel);
+        }
         // Anything the transform did not see (a module another plugin
         // loaded) is hashed now.
         for (const file of Object.keys(modules)) {
@@ -174,6 +198,8 @@ export function juxtaposeModuleGraph(
               builtAt: startedAt,
               opaque: Object.fromEntries(opaque),
               workers,
+              external: [...new Set(external)].sort(),
+              cssCodeSplit,
               hashes: Object.fromEntries(
                 [...hashes]
                   .filter(([k]) => k in modules)
@@ -189,6 +215,16 @@ export function juxtaposeModuleGraph(
       }
     },
   };
+}
+
+/** Virtual modules Vite, Storybook, Ladle and this plugin make themselves;
+ *  any other is a user plugin's, whose reads and imports are not visible. */
+const OWN_VIRTUAL =
+  /^\0?\/?(?:vite\/|vite:|commonjs|rolldown|rollup|plugin-vue:|virtual:\/?@storybook|virtual:\/?@juxtapose|virtual:generated-list|virtual:ladle|@storybook|__vite|juxtapose)|\?commonjs|builder-vite|@storybook\/|\/@ladle\//;
+
+export function isForeignVirtual(id: string): boolean {
+  if (!id.startsWith('\0') && !/(^|\/)virtual:/.test(id)) return false;
+  return !OWN_VIRTUAL.test(id);
 }
 
 /** sha256 of a file's bytes, or null when it cannot be read. */

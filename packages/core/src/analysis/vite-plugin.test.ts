@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { juxtaposeModuleGraph, sourcePath } from './vite-plugin.js';
+import { isForeignVirtual, juxtaposeModuleGraph, sourcePath } from './vite-plugin.js';
 import { MODULE_GRAPH_FILE } from './module-graph.js';
 
 const root = path.resolve('/work/app');
@@ -106,6 +106,58 @@ describe('juxtaposeModuleGraph', () => {
       }),
     ).not.toThrow();
     expect(warnings[0]).toMatch(/boom.*capture every story/);
+  });
+
+  it('records files the build read that no module accounts for', () => {
+    const emitted: { source: string }[] = [];
+    const plugin = juxtaposeModuleGraph({ root });
+    plugin.buildStart.call(undefined);
+    plugin.generateBundle.call({
+      getModuleIds: () => [abs('ui/A.tsx'), '\0virtual:tokens'],
+      getModuleInfo: () => ({ importedIds: [], dynamicallyImportedIds: [] }),
+      getWatchFiles: () => [
+        abs('ui/A.tsx'),
+        abs('src/tokens.js'),
+        abs('node_modules/x/i.js'),
+      ],
+      emitFile: (f) => {
+        emitted.push(f);
+        return '';
+      },
+      warn: () => {},
+    });
+    const g = JSON.parse(emitted[0]!.source);
+    expect(g.external).toEqual(['src/tokens.js']);
+    // …and a virtual module a user plugin made is opaque.
+    expect(Object.keys(g.opaque)).toEqual(['virtual:virtual:tokens']);
+  });
+
+  it.each([
+    ['\0vite/preload-helper', false],
+    ['\0commonjs-proxy', false],
+    ['/virtual:/@storybook/builder-vite/vite-app.js', false],
+    ['virtual:generated-list', false],
+    ['\0virtual:svg-icons', true],
+    ['\0my-plugin:tokens', true],
+  ])('virtual module %s from a build plugin is opaque: %s', (id, foreign) => {
+    expect(isForeignVirtual(id)).toBe(foreign);
+  });
+
+  it('records build.cssCodeSplit', () => {
+    const emitted: { source: string }[] = [];
+    const plugin = juxtaposeModuleGraph({ root });
+    plugin.configResolved({ build: { cssCodeSplit: false } });
+    plugin.buildStart.call(undefined);
+    plugin.generateBundle.call({
+      getModuleIds: () => [],
+      getModuleInfo: () => null,
+      emitFile: (f) => {
+        emitted.push(f);
+        return '';
+      },
+      warn: () => {},
+    });
+    expect(JSON.parse(emitted[0]!.source).cssCodeSplit).toBe(false);
   });
 
   it('only runs in a build', () => {

@@ -136,7 +136,7 @@ describe('affected stories with the module graph the Vite plugin writes', () => 
     // A narrowed run here would skip every story the logo can reach.
     for (const files of [['public/logo.svg'], ['ui/Legend.tsx', 'public/logo.svg']]) {
       const r = await run(files);
-      expect(r.reason).toBe('asset-changed');
+      expect(r.reason).toBe('unmapped-change');
       expect(r.detail).toContain('public/logo.svg');
       expect(r.stories).toHaveLength(3);
     }
@@ -432,6 +432,108 @@ describe('what the graph cannot prove', () => {
       );
       expect((await go(d, storiesIn(d, 'A'), ['ui/A.tsx'])).reason).toBe('stale-graph');
     });
+  });
+
+  it('P1: a markdown file in the source tree is not inert, nor one beside a glob-loaded one', async () => {
+    // docs/*.md is loaded with import.meta.glob(…, { query: '?raw' }): a new
+    // docs/b.md beside a script edit must not narrow to the script's stories.
+    await write(
+      {
+        'stories/A.stories.tsx': ['ui/A.tsx'],
+        'stories/M.stories.tsx': ['docs/a.md'],
+        'ui/A.tsx': [],
+        'docs/a.md': [],
+      },
+      { root: dir },
+    );
+    const s = storiesIn(dir, 'A', 'M');
+    for (const files of [['docs/b.md'], ['ui/A.tsx', 'docs/b.md'], ['docs/a.md']]) {
+      const r = await go(dir, s, files);
+      expect(r.reason).toBe('asset-changed');
+      expect(r.stories).toHaveLength(2);
+    }
+    // Even a root README is not inert once the graph loads markdown.
+    expect((await go(dir, s, ['ui/A.tsx', 'README.md'])).reason).toBe('asset-changed');
+  });
+
+  it('P1: nothing under public/ is exempt', async () => {
+    await write(
+      {
+        'stories/A.stories.tsx': ['ui/A.tsx'],
+        'stories/B.stories.tsx': [],
+        'ui/A.tsx': [],
+      },
+      { root: dir },
+    );
+    const s = storiesIn(dir, 'A', 'B');
+    for (const f of ['public/help.md', 'public/robots.txt']) {
+      const r = await go(dir, s, ['ui/A.tsx', f]);
+      expect(r.reason).toBe('unmapped-change');
+      expect(r.detail).toContain(f);
+      expect(r.stories).toHaveLength(2);
+    }
+  });
+
+  it('P1: root meta files and workflows beside a script edit still narrow', async () => {
+    await write(
+      {
+        'stories/A.stories.tsx': ['ui/A.tsx'],
+        'stories/B.stories.tsx': [],
+        'ui/A.tsx': [],
+      },
+      { root: dir },
+    );
+    const s = storiesIn(dir, 'A', 'B');
+    const r = await go(dir, s, [
+      'ui/A.tsx',
+      '.github/workflows/x.yml',
+      'README.md',
+      'LICENSE',
+      'CHANGELOG.md',
+    ]);
+    expect([r.reason, ids(r)]).toEqual(['graph-walk', ['A--a']]);
+  });
+
+  it('P2: a file a build plugin read to make a virtual module escalates', async () => {
+    await write(
+      {
+        'stories/A.stories.tsx': ['ui/A.tsx'],
+        'stories/B.stories.tsx': [],
+        'ui/A.tsx': [],
+      },
+      { root: dir, external: ['src/tokens.js'] },
+    );
+    const r = await go(dir, storiesIn(dir, 'A', 'B'), ['src/tokens.js']);
+    expect(r.reason).toBe('unmapped-change');
+    expect(r.detail).toBe('src/tokens.js is read by a build plugin, not imported');
+    expect(r.stories).toHaveLength(2);
+  });
+
+  it('cssCodeSplit off: a .vue edit reaches every story', async () => {
+    await write(
+      {
+        'stories/A.stories.vue': ['ui/A.vue'],
+        'stories/B.stories.vue': [],
+        'ui/A.vue': [],
+      },
+      { root: dir, cssCodeSplit: false },
+    );
+    const s = [
+      storyAt('A--a', path.join(dir, 'stories/A.stories.vue')),
+      storyAt('B--a', path.join(dir, 'stories/B.stories.vue')),
+    ];
+    const r = await go(dir, s, ['ui/A.vue']);
+    expect(r.reason).toBe('asset-changed');
+    expect(r.detail).toMatch(/cssCodeSplit off/);
+    await write(
+      {
+        'stories/A.stories.vue': ['ui/A.vue'],
+        'stories/B.stories.vue': [],
+        'ui/A.vue': [],
+      },
+      { root: dir },
+    );
+    expect(ids(await go(dir, s, ['ui/A.vue']))).toEqual(['A--a']);
   });
 
   it('L2: a graph built relative to another root says so', async () => {

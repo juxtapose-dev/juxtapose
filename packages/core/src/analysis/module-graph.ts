@@ -35,6 +35,12 @@ export interface ModuleGraphMeta {
    *  A changed stylesheet or asset cannot be narrowed when this is non-empty:
    *  an importer edge to it may be missing. */
   opaque: Record<string, string>;
+  /** Files the build read that are not modules (a plugin's `load` reading a
+   *  file for a virtual module): they influence output without being imported. */
+  external: string[];
+  /** Vite's `build.cssCodeSplit`. Off, every style block lands in one
+   *  stylesheet that reaches every story. */
+  cssCodeSplit: boolean;
   /** A web worker is bundled by a separate build the plugin never sees. */
   workers: boolean;
 }
@@ -64,6 +70,8 @@ export async function loadModuleGraph(buildDir: string): Promise<ModuleGraph | n
       hashes: parsed.hashes,
       opaque: parsed.opaque,
       workers: parsed.workers,
+      external: parsed.external,
+      cssCodeSplit: parsed.cssCodeSplit,
       modules: new Map(Object.entries(parsed.modules)),
     };
   } catch {
@@ -80,6 +88,8 @@ function isModuleGraphFile(v: unknown): v is ModuleGraphFile {
     isRecord(v['hashes']) &&
     Object.values(v['hashes']).every((x) => typeof x === 'string') &&
     typeof v['workers'] === 'boolean' &&
+    typeof v['cssCodeSplit'] === 'boolean' &&
+    isStringArray(v['external']) &&
     isRecord(v['opaque']) &&
     Object.values(v['opaque']).every((x) => typeof x === 'string') &&
     isRecord(v['modules']) &&
@@ -98,6 +108,8 @@ export function serializeModuleGraph(
     hashes: meta.hashes ?? {},
     opaque: meta.opaque ?? {},
     workers: meta.workers ?? false,
+    external: meta.external ?? [],
+    cssCodeSplit: meta.cssCodeSplit ?? true,
     modules,
   };
   return JSON.stringify(file);
