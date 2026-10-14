@@ -25,9 +25,12 @@ export interface ModuleGraphMeta {
   /** The directory every path is relative to, absolute. A graph read by a run
    *  from another root would compare unrelated paths. */
   root: string;
-  /** When the build started (ms since the epoch). A source file modified later
-   *  is not what the graph describes. */
+  /** When the build started (ms since the epoch). For messages only: staleness
+   *  is decided by `hashes`, since a fresh checkout resets every mtime. */
   builtAt: number;
+  /** sha256 of each source file as the build read it. A file whose content
+   *  differs now is not what the graph describes. */
+  hashes: Record<string, string>;
   /** Modules whose references the plugin saw but could not follow, with why.
    *  A changed stylesheet or asset cannot be narrowed when this is non-empty:
    *  an importer edge to it may be missing. */
@@ -42,7 +45,7 @@ export interface ModuleGraph extends ModuleGraphMeta {
 }
 
 interface ModuleGraphFile extends ModuleGraphMeta {
-  version: 2;
+  version: 3;
   modules: Record<string, string[]>;
 }
 
@@ -58,6 +61,7 @@ export async function loadModuleGraph(buildDir: string): Promise<ModuleGraph | n
     return {
       root: parsed.root,
       builtAt: parsed.builtAt,
+      hashes: parsed.hashes,
       opaque: parsed.opaque,
       workers: parsed.workers,
       modules: new Map(Object.entries(parsed.modules)),
@@ -70,9 +74,11 @@ export async function loadModuleGraph(buildDir: string): Promise<ModuleGraph | n
 function isModuleGraphFile(v: unknown): v is ModuleGraphFile {
   return (
     isRecord(v) &&
-    v['version'] === 2 &&
+    v['version'] === 3 &&
     typeof v['root'] === 'string' &&
     typeof v['builtAt'] === 'number' &&
+    isRecord(v['hashes']) &&
+    Object.values(v['hashes']).every((x) => typeof x === 'string') &&
     typeof v['workers'] === 'boolean' &&
     isRecord(v['opaque']) &&
     Object.values(v['opaque']).every((x) => typeof x === 'string') &&
@@ -86,9 +92,10 @@ export function serializeModuleGraph(
   meta: Partial<ModuleGraphMeta> & { root: string },
 ): string {
   const file: ModuleGraphFile = {
-    version: 2,
+    version: 3,
     root: meta.root,
     builtAt: meta.builtAt ?? Date.now(),
+    hashes: meta.hashes ?? {},
     opaque: meta.opaque ?? {},
     workers: meta.workers ?? false,
     modules,

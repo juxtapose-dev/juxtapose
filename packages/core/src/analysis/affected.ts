@@ -11,8 +11,9 @@
 // eager to give up.
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isRecord, isStringArray } from '../browser/guards.js';
 import type { StoryManifest } from '../types.js';
@@ -269,18 +270,18 @@ async function graphProblem(
       detail: `the build's module graph is relative to ${graph.root}, but the jux project root is ${projectRoot}; build from the project root, or set JUXTAPOSE_ROOT for the build`,
     };
   }
-  // The graph describes the sources as the build read them. A file modified
-  // since is not what it describes (a forgotten rebuild, a branch switch).
-  const stale = await newerThan(
-    graph.builtAt,
-    [...graph.modules.keys(), ...files.map((f) => f.path)].map((rel) =>
-      path.resolve(graph.root, rel),
-    ),
-  );
+  // The graph describes the sources as the build read them. A file whose
+  // content differs now is not what it describes (a forgotten rebuild, a branch
+  // switch). Content, not mtime: a fresh checkout after the build (split CI)
+  // resets every mtime without changing a byte.
+  const stale = await changedSinceBuild(graph, [
+    ...graph.modules.keys(),
+    ...files.map((f) => f.path),
+  ]);
   if (stale) {
     return {
       reason: 'stale-graph',
-      detail: `${toPosixRelative(graph.root, stale)} was modified after the workbench was built: rebuild the workbench`,
+      detail: `${stale} differs from the workbench build (built ${new Date(graph.builtAt).toISOString()}): rebuild the workbench`,
     };
   }
   return null;
@@ -297,17 +298,25 @@ function sameDir(a: string, b: string): boolean {
   return norm(a) === norm(b);
 }
 
-/** The first of `files` modified after `time`, or null. Missing files (a
- *  deleted module) are not newer. */
-async function newerThan(time: number, files: string[]): Promise<string | null> {
-  const BATCH = 256;
-  for (let i = 0; i < files.length; i += BATCH) {
+/** The first file whose content no longer matches the hash the build recorded
+ *  (a recorded file that cannot be read counts: it was deleted). Files with no
+ *  recorded hash are not judged here; a changed one is unmapped anyway. */
+async function changedSinceBuild(
+  graph: ModuleGraph,
+  rels: string[],
+): Promise<string | null> {
+  const BATCH = 128;
+  const todo = [...new Set(rels)].filter((r) => r in graph.hashes);
+  for (let i = 0; i < todo.length; i += BATCH) {
     const hits = await Promise.all(
-      files.slice(i, i + BATCH).map(async (f) => {
+      todo.slice(i, i + BATCH).map(async (rel) => {
         try {
-          return (await stat(f)).mtimeMs > time ? f : null;
+          const h = createHash('sha256')
+            .update(await readFile(path.resolve(graph.root, rel)))
+            .digest('hex');
+          return h === graph.hashes[rel] ? null : rel;
         } catch {
-          return null;
+          return rel;
         }
       }),
     );
@@ -317,9 +326,9 @@ async function newerThan(time: number, files: string[]): Promise<string | null> 
   return null;
 }
 
-/** Source the bundler runs as code; everything else is a stylesheet or an
- *  asset, whose importers are found by parsing rather than by the bundler. */
-const CODE_EXT = /\.(?:[cm]?[jt]sx?|vue|svelte|mdx)$/i;
+/** Source the bundler runs as code, whose importers are the bundler's own
+ *  graph. Everything else is a stylesheet or an asset. */
+const SCRIPT_EXT = /\.(?:[cm]?[jt]sx?|vue|svelte|astro|mdx)$/i;
 
 /** A changed file in both forms: git's, and the project-relative one the
  *  graph and manifest hold. */
@@ -348,6 +357,32 @@ function walkModuleGraph(
   configDirs: string[],
 ): AffectedResult {
   const modules = graph.modules;
+  // Stylesheets and assets are not narrowed. Their edges (`@import`, `@use`,
+  // `url()`) are rewritten by other plugins (Tailwind, PostCSS, Sass) before
+  // anything here could read them, so a graph of them is not trustworthy and a
+  // missed importer ships a regression. Component script edits are the case
+  // this analysis exists for.
+  const asset = files.find((f) => !SCRIPT_EXT.test(f.path) && !isNeverBundled(f));
+  if (asset) {
+    return {
+      stories,
+      reason: 'asset-changed',
+      detail: `${asset.path} (stylesheets and assets aren't narrowed)`,
+    };
+  }
+
+  // A worker, worklet or computed asset path was seen: some import edge may be
+  // missing from the graph, so no change is narrowed.
+  const gaps = Object.entries(graph.opaque);
+  if (gaps.length > 0 || graph.workers) {
+    const [file, why] = gaps[0] ?? ['a module', 'web worker or worklet'];
+    return {
+      stories,
+      reason: 'unmapped-change',
+      detail: `the build has references the module graph does not follow (${file}: ${why}), so no change is narrowed`,
+    };
+  }
+
   const unmapped = files.filter((f) => !modules.has(f.path) && !isNeverBundled(f));
   if (unmapped.length > 0) {
     return {
@@ -360,32 +395,6 @@ function walkModuleGraph(
   const storyFiles = new Set(
     stories.map((s) => toPosixRelative(projectRoot, s.componentPath)),
   );
-
-  // A stylesheet or asset is reached through edges parsed from source, and the
-  // plugin records where it could not follow a reference. With any gap, an
-  // importer of this file may be missing, so it cannot be narrowed.
-  const gaps = Object.entries(graph.opaque);
-  if (gaps.length > 0) {
-    const asset = files.find((f) => modules.has(f.path) && !CODE_EXT.test(f.path));
-    if (asset) {
-      return {
-        stories,
-        reason: 'asset-changed',
-        detail: `${asset.path} (non-JS dependency edges are not tracked completely: ${gaps[0]![0]}: ${gaps[0]![1]})`,
-      };
-    }
-  }
-  // A worker's own imports are bundled by a build the plugin never sees.
-  if (graph.workers) {
-    const code = files.find((f) => modules.has(f.path) && !storyFiles.has(f.path));
-    if (code) {
-      return {
-        stories,
-        reason: 'unmapped-change',
-        detail: `${code.path} may be imported by a web worker, whose imports the module graph does not follow`,
-      };
-    }
-  }
 
   const reverse = reverseOf(modules);
   const reached = walkDependents(

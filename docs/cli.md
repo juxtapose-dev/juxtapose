@@ -56,39 +56,43 @@ juxtapose Vite plugin records every source module and what it imports to
 You don't need `build.manifest: true` for this. The Vite manifest is still read
 as a fallback for builds made without the plugin, and by the `cause` trace.
 
-**What is tracked.** The bundler's own import graph (static and dynamic
-`import`, `import.meta.glob`), plus the references it resolves inside plugins,
-which the plugin parses from source: CSS `@import` and `url()`, Sass
-`@use`/`@forward`/`@import`, CSS-modules `composes … from`, and
-`new URL('./x', import.meta.url)`. The graph is stamped with the build's start
-time and root. Modules under `node_modules` are left out (a dependency change
-arrives as a lockfile change).
+**What narrows: script modules only.** Editing a script module (`.js`, `.jsx`,
+`.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`, `.vue`, `.svelte`, `.astro`,
+`.mdx`) captures the stories that import it. The graph is the bundler's own
+import graph (static and dynamic `import`, `import.meta.glob`) plus
+`new URL('./x', import.meta.url)`. **Editing a stylesheet or any other asset
+runs every story** (`asset-changed`): Tailwind, PostCSS and Sass rewrite
+`@import`, `@use` and `url()` before anything could read them, so jux does not
+guess at those edges. Modules under `node_modules` are left out (a dependency
+change arrives as a lockfile change).
 
 **What escalates.** Unknown means everything. Each of these captures every
 story, and the line `jux run` prints says why:
 
-| printed reason                                | why it captured everything                                                                                                                                                                                                                                                   |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dependency-changed`                          | a lockfile changed (also a project's own, one level below the repository root)                                                                                                                                                                                               |
-| `config-changed`                              | `tsconfig*.json`, a juxtapose config or the project's `package.json`, or a workbench config dir (`.storybook`, `.ladle`) changed                                                                                                                                             |
-| `unmapped-change: <file> is not in …`         | a changed file is not in the build's module graph: a public asset, a server file, a deleted module, or a file added since the build. One such file is enough, even beside mapped ones. Also any non-story change in a build with web workers, whose imports are not followed |
-| `shared-entry-changed: <file> is imported …`  | a changed file is in the import closure of something that runs for every story: a module under `.storybook`/`.ladle` (the preview, even when each story imports it, as CSF factories do) or a module no story imports. Docs pages (`.mdx`) are leaves, not entries           |
-| `asset-changed: <file> (non-JS dependency …)` | a changed stylesheet or asset, in a build where the plugin saw a reference it could not follow (an unresolved `@import`, Tailwind, Stylus imports, a computed `new URL` path), so an importer edge to the file may be missing                                                |
-| `origin-run`                                  | `--origin` captures a running server, not the build in the build dir, so that build's graph does not describe it                                                                                                                                                             |
-| `stale-graph`                                 | a source file or changed file was modified after the build started: rebuild the workbench before `--since`                                                                                                                                                                   |
-| `graph-root-mismatch`                         | the build was made from another directory than the jux project root; the message names both. Build from the project root, or set `JUXTAPOSE_ROOT` for the build                                                                                                              |
-| `no-match-fallback`                           | no module graph in the build (the detail says to add the plugin and rebuild), or the changed files reach no story                                                                                                                                                            |
-| `git-unavailable`                             | git could not list the changes (not a repository, or `<ref>` unusable)                                                                                                                                                                                                       |
+| printed reason                                                   | why it captured everything                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dependency-changed`                                             | a lockfile changed (also a project's own, one level below the repository root)                                                                                                                                                                                                                                                                  |
+| `config-changed`                                                 | `tsconfig*.json`, a juxtapose config or the project's `package.json`, or a workbench config dir (`.storybook`, `.ladle`) changed                                                                                                                                                                                                                |
+| `unmapped-change: <file> is not in …`                            | a changed file is not in the build's module graph: a server file, a deleted module, or a file added since the build. One such file is enough, even beside mapped ones. Also every change, script or not, in a build where the plugin saw a web worker, worklet, service worker or computed `new URL` path, since their imports are not followed |
+| `shared-entry-changed: <file> is imported …`                     | a changed file is in the import closure of something that runs for every story: a module under `.storybook`/`.ladle` (the preview, even when each story imports it, as CSF factories do) or a module no story imports. Docs pages (`.mdx`) are leaves, not entries                                                                              |
+| `asset-changed: <file> (stylesheets and assets aren't narrowed)` | a changed file that is not a script module: a stylesheet, image, font, JSON, or any other asset                                                                                                                                                                                                                                                 |
+| `origin-run`                                                     | `--origin` captures a running server, not the build in the build dir, so that build's graph does not describe it                                                                                                                                                                                                                                |
+| `stale-graph`                                                    | the content of a changed file or of any module in the graph differs from what the build recorded (a sha256 per file): rebuild the workbench before `--since`                                                                                                                                                                                    |
+| `graph-root-mismatch`                                            | the build was made from another directory than the jux project root; the message names both. Build from the project root, or set `JUXTAPOSE_ROOT` for the build                                                                                                                                                                                 |
+| `no-match-fallback`                                              | no module graph in the build (the detail says to add the plugin and rebuild), or the changed files reach no story                                                                                                                                                                                                                               |
+| `git-unavailable`                                                | git could not list the changes (not a repository, or `<ref>` unusable)                                                                                                                                                                                                                                                                          |
 
 Prose docs (`.md`, `.rst`, `.adoc`), `LICENSE*`, `CHANGELOG*`, `CODEOWNERS`,
 git and editor dotfiles and `.github/` never reach a story and never escalate.
 A story whose file is missing from the graph is always captured.
 
 **Rebuild before every `--since` run.** The captures come from the build, so a
-build older than your edit would be captured as it was. The graph records when
-the build started and refuses (`stale-graph`) when a file it describes, or a
-changed one, is newer. Under a webpack Storybook builder there is no graph and
-narrowing is not available.
+build older than your edit would be captured as it was. The graph records a
+sha256 of every source file as the build read it and refuses (`stale-graph`) when
+a changed file, or any file in the graph, now differs or is gone. It compares
+content, not modification times, so a fresh checkout after the build (split CI)
+is not stale. Under a webpack Storybook builder there is no graph and narrowing
+is not available.
 
 ## Check the repo: `jux doctor`
 

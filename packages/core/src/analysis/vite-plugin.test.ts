@@ -1,8 +1,9 @@
 import { describe, it, expect, afterAll } from 'vitest';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { juxtaposeModuleGraph, scanReferences, sourcePath } from './vite-plugin.js';
+import { juxtaposeModuleGraph, sourcePath } from './vite-plugin.js';
 import { MODULE_GRAPH_FILE } from './module-graph.js';
 
 const root = path.resolve('/work/app');
@@ -48,7 +49,7 @@ describe('juxtaposeModuleGraph', () => {
     expect(emitted[0]!.fileName).toBe(MODULE_GRAPH_FILE);
     const file = JSON.parse(emitted[0]!.source);
     expect(file).toMatchObject({
-      version: 2,
+      version: 3,
       root,
       workers: false,
       opaque: {},
@@ -142,30 +143,25 @@ describe('references the bundler graph does not show', () => {
       modules: Record<string, string[]>;
       opaque: Record<string, string>;
       workers: boolean;
+      hashes: Record<string, string>;
     };
   }
 
-  it('follows a CSS @import and url()', async () => {
+  it('does not parse stylesheets: their edges are not recorded, a change to one is never narrowed', async () => {
     put('ui/tokens.css', ':root{}');
-    put('ui/logo.svg', '<svg/>');
     const g = await edgesOf(
       'ui/b.css',
-      '@import "./tokens.css";\n.x{background:url(./logo.svg)} .y{background:url(data:image/png;base64,AA)}',
+      '@import "./tokens.css"; .x{background:url(./logo.svg)}',
     );
-    expect(g.modules['ui/b.css']).toEqual(['ui/logo.svg', 'ui/tokens.css']);
+    expect(g.modules['ui/b.css']).toEqual([]);
     expect(g.opaque).toEqual({});
   });
 
-  it('follows Sass @use of a partial and CSS-modules composes', async () => {
-    put('ui/_vars.scss', '$a: 1;');
-    put('ui/base.module.css', '.a{}');
-    const sass = await edgesOf('ui/c.scss', '@use "vars" as v;\n@use "sass:math";');
-    expect(sass.modules['ui/c.scss']).toEqual(['ui/_vars.scss']);
-    const mod = await edgesOf(
-      'ui/d.module.css',
-      '.b { composes: a from "./base.module.css"; }',
+  it('records a sha256 of each source as the build read it', async () => {
+    const g = await edgesOf('ui/j.js', 'export const j = 1;');
+    expect(g.hashes['ui/j.js']).toBe(
+      createHash('sha256').update('export const j = 1;').digest('hex'),
     );
-    expect(mod.modules['ui/d.module.css']).toEqual(['ui/base.module.css']);
   });
 
   it('follows new URL(…, import.meta.url)', async () => {
@@ -178,10 +174,8 @@ describe('references the bundler graph does not show', () => {
   });
 
   it('records what it cannot follow as opaque, never as nothing', async () => {
-    const missing = await edgesOf('ui/f.css', '@import "./gone.css";');
-    expect(Object.keys(missing.opaque)).toEqual(['ui/f.css']);
-    const tailwind = await edgesOf('ui/g.css', '@import "tailwindcss";');
-    expect(tailwind.opaque['ui/g.css']).toMatch(/tailwind/);
+    const missing = await edgesOf('ui/f.js', "new URL('./gone.png', import.meta.url)");
+    expect(missing.opaque['ui/f.js']).toMatch(/unresolved/);
     const computed = await edgesOf(
       'ui/h.js',
       'new URL(`./${name}.png`, import.meta.url)',
@@ -189,10 +183,18 @@ describe('references the bundler graph does not show', () => {
     expect(computed.opaque['ui/h.js']).toMatch(/computed/);
   });
 
-  it('marks web workers, which a separate build bundles', async () => {
-    const g = await edgesOf('ui/i.js', "import W from './w.js?worker'; new W();");
+  it.each([
+    "import W from './w.js?worker'",
+    "import W from './w.js?sharedworker'",
+    'new Worker(url)',
+    'new SharedWorker(url)',
+    "CSS.paintWorklet.addModule('/p.js')",
+    "audioContext.audioWorklet.addModule('/a.js')",
+    "navigator.serviceWorker.register('/sw.js')",
+  ])('marks %s as a worker or worklet, which a separate build bundles', async (code) => {
+    const g = await edgesOf('ui/i.js', code);
     expect(g.workers).toBe(true);
-    expect(scanReferences('x.js', 'new Worker(url)').workers).toBe(true);
+    expect(g.opaque['ui/i.js']).toMatch(/worker or worklet/);
   });
 });
 

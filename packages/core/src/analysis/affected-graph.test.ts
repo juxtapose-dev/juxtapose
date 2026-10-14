@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, mkdir, writeFile, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { resolveAffected, resolveAffectedFromPaths } from './affected.js';
@@ -93,8 +94,22 @@ describe('affected stories with the module graph the Vite plugin writes', () => 
     expect(ids(r)).toEqual(['card--a']);
   });
 
-  it('follows a stylesheet imported by a component', async () => {
-    expect(ids(await run(['ui/legend.css']))).toEqual(['card--a']);
+  it('does not narrow a stylesheet edit, even one a component imports (N1-N3)', async () => {
+    // Other plugins rewrite @import/@use/url() before any edge could be read, so
+    // a stylesheet or asset change runs every story.
+    for (const f of [
+      'ui/legend.css',
+      'ui/_partial.scss',
+      'ui/logo.svg',
+      'ui/data.json',
+    ]) {
+      const r = await run([f]);
+      expect(r.reason).toBe('asset-changed');
+      expect(r.detail).toBe(`${f} (stylesheets and assets aren't narrowed)`);
+      expect(r.stories).toHaveLength(3);
+    }
+    // Beside a script edit too.
+    expect((await run(['ui/Legend.tsx', 'ui/legend.css'])).reason).toBe('asset-changed');
   });
 
   it('reaches every importer of a shared module, and no others', async () => {
@@ -111,7 +126,7 @@ describe('affected stories with the module graph the Vite plugin writes', () => 
   });
 
   it('escalates when a module no story imports, such as the preview, changes', async () => {
-    const r = await run(['src/global.css']);
+    const r = await run(['src/preview.ts']);
     expect(r.reason).toBe('shared-entry-changed');
     expect(r.detail).toContain('src/preview.ts');
     expect(r.stories).toHaveLength(3);
@@ -121,7 +136,7 @@ describe('affected stories with the module graph the Vite plugin writes', () => 
     // A narrowed run here would skip every story the logo can reach.
     for (const files of [['public/logo.svg'], ['ui/Legend.tsx', 'public/logo.svg']]) {
       const r = await run(files);
-      expect(r.reason).toBe('unmapped-change');
+      expect(r.reason).toBe('asset-changed');
       expect(r.detail).toContain('public/logo.svg');
       expect(r.stories).toHaveLength(3);
     }
@@ -282,55 +297,38 @@ describe('what the graph cannot prove', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('H1: a changed stylesheet cannot be narrowed when some reference was not followed', async () => {
-    // tokens.css is imported by A from JS and by B from a CSS @import the
-    // plugin could not resolve: the graph shows only A.
+  it('a script edit still narrows when the build has stylesheets', async () => {
     await write(
       {
         'stories/A.stories.tsx': ['ui/A.tsx'],
-        'stories/B.stories.tsx': ['ui/B.css'],
+        'stories/B.stories.tsx': ['ui/B.tsx'],
         'ui/A.tsx': ['ui/tokens.css'],
-        'ui/B.css': [],
-        'ui/tokens.css': [],
-      },
-      { root: dir, opaque: { 'ui/B.css': 'unresolved reference ./tokens.css' } },
-    );
-    const s = storiesIn(dir, 'A', 'B');
-    const r = await go(dir, s, ['ui/tokens.css']);
-    expect(r.reason).toBe('asset-changed');
-    expect(r.detail).toMatch(/non-JS dependency edges are not tracked completely/);
-    expect(r.stories).toHaveLength(2);
-    // A code file is still narrowed: the bundler saw every JS edge.
-    expect(ids(await go(dir, s, ['ui/A.tsx']))).toEqual(['A--a']);
-  });
-
-  it('H1: with every reference followed, a stylesheet edge narrows', async () => {
-    await write(
-      {
-        'stories/A.stories.tsx': ['ui/A.tsx'],
-        'stories/B.stories.tsx': ['ui/B.css'],
-        'ui/A.tsx': ['ui/tokens.css'],
-        'ui/B.css': ['ui/tokens.css'],
+        'ui/B.tsx': [],
         'ui/tokens.css': [],
       },
       { root: dir },
     );
-    const r = await go(dir, storiesIn(dir, 'A', 'B'), ['ui/tokens.css']);
-    expect([r.reason, ids(r)]).toEqual(['graph-walk', ['A--a', 'B--a']]);
+    const s = storiesIn(dir, 'A', 'B');
+    expect(ids(await go(dir, s, ['ui/A.tsx']))).toEqual(['A--a']);
+    expect((await go(dir, s, ['ui/tokens.css'])).reason).toBe('asset-changed');
   });
 
-  it('H1: a build with web workers does not narrow a non-story change', async () => {
+  it('a worker, worklet or computed asset path in the build stops all narrowing', async () => {
     await write(
       {
         'stories/A.stories.tsx': ['ui/A.tsx'],
         'stories/B.stories.tsx': [],
         'ui/A.tsx': [],
       },
-      { root: dir, workers: true },
+      { root: dir, workers: true, opaque: { 'ui/A.tsx': 'web worker or worklet' } },
     );
     const s = storiesIn(dir, 'A', 'B');
-    expect((await go(dir, s, ['ui/A.tsx'])).reason).toBe('unmapped-change');
-    expect(ids(await go(dir, s, ['stories/B.stories.tsx']))).toEqual(['B--a']);
+    for (const f of ['ui/A.tsx', 'stories/B.stories.tsx']) {
+      const r = await go(dir, s, [f]);
+      expect(r.reason).toBe('unmapped-change');
+      expect(r.detail).toContain('ui/A.tsx: web worker or worklet');
+      expect(r.stories).toHaveLength(2);
+    }
   });
 
   it('H2: a preview that every story imports (CSF factories) reaches every story', async () => {
@@ -338,15 +336,15 @@ describe('what the graph cannot prove', () => {
       {
         'stories/D.stories.tsx': ['.storybook/preview.tsx', 'ui/D.tsx'],
         'stories/E.stories.tsx': ['.storybook/preview.tsx'],
-        '.storybook/preview.tsx': ['theme/global.css', 'ui/Deco.tsx'],
-        'theme/global.css': [],
+        '.storybook/preview.tsx': ['theme/global.ts', 'ui/Deco.tsx'],
+        'theme/global.ts': [],
         'ui/Deco.tsx': [],
         'ui/D.tsx': [],
       },
       { root: dir },
     );
     const s = storiesIn(dir, 'D', 'E');
-    for (const f of ['theme/global.css', 'ui/Deco.tsx']) {
+    for (const f of ['theme/global.ts', 'ui/Deco.tsx']) {
       const r = await go(dir, s, [f]);
       expect(r.reason).toBe('shared-entry-changed');
       expect(r.stories).toHaveLength(2);
@@ -377,21 +375,63 @@ describe('what the graph cannot prove', () => {
     expect(r.reason).toBe('origin-run');
   });
 
-  it('H3: a source modified after the build started means rebuild', async () => {
-    const d = await mkdtemp(path.join(tmpdir(), 'jux-stale-'));
-    try {
+  describe('H3/M1: staleness is content, not mtime', () => {
+    const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+    const graph = { 'stories/A.stories.tsx': ['ui/A.tsx'], 'ui/A.tsx': [] };
+    let d: string;
+    beforeAll(async () => {
+      d = await mkdtemp(path.join(tmpdir(), 'jux-stale-'));
       await mkdir(path.join(d, 'ui'), { recursive: true });
-      await writeFile(path.join(d, 'ui/A.tsx'), 'export {}');
-      const graph = { 'stories/A.stories.tsx': ['ui/A.tsx'], 'ui/A.tsx': [] };
-      await write(graph, { root: d, builtAt: Date.now() - 60_000 }, d);
+      await writeFile(path.join(d, 'ui/A.tsx'), 'export const a = 1;');
+    });
+    afterAll(async () => {
+      await rm(d, { recursive: true, force: true });
+    });
+
+    it('a fresh checkout after the build (new mtime, same content) is not stale', async () => {
+      // Split CI: build in one job, check out again in another. Every mtime is
+      // newer than the build, no byte is different.
+      await write(
+        graph,
+        {
+          root: d,
+          builtAt: Date.now() - 3_600_000,
+          hashes: { 'ui/A.tsx': sha('export const a = 1;') },
+        },
+        d,
+      );
+      const r = await go(d, storiesIn(d, 'A'), ['ui/A.tsx']);
+      expect(r.reason).toBe('graph-walk');
+    });
+
+    it('changed content is stale even when the file looks older than the build', async () => {
+      await write(
+        graph,
+        {
+          root: d,
+          builtAt: Date.now() + 3_600_000,
+          hashes: { 'ui/A.tsx': sha('export const a = 0;') },
+        },
+        d,
+      );
+      const old = new Date(Date.now() - 86_400_000);
+      await utimes(path.join(d, 'ui/A.tsx'), old, old);
       const r = await go(d, storiesIn(d, 'A'), ['ui/A.tsx']);
       expect(r.reason).toBe('stale-graph');
       expect(r.detail).toMatch(/ui\/A\.tsx.*rebuild the workbench/);
-      await write(graph, { root: d, builtAt: Date.now() + 60_000 }, d);
-      expect((await go(d, storiesIn(d, 'A'), ['ui/A.tsx'])).reason).toBe('graph-walk');
-    } finally {
-      await rm(d, { recursive: true, force: true });
-    }
+    });
+
+    it('a recorded module that is gone counts as stale', async () => {
+      await write(
+        { ...graph, 'ui/Gone.tsx': [] },
+        {
+          root: d,
+          hashes: { 'ui/A.tsx': sha('export const a = 1;'), 'ui/Gone.tsx': sha('x') },
+        },
+        d,
+      );
+      expect((await go(d, storiesIn(d, 'A'), ['ui/A.tsx'])).reason).toBe('stale-graph');
+    });
   });
 
   it('L2: a graph built relative to another root says so', async () => {
