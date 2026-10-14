@@ -112,6 +112,14 @@ const IDLE_INIT = `(function () {
   // capture their final state 3/3. A clock that repaints every tick still
   // counts and hits the cap, flagged: it needs a mask either way. Faster
   // re-arms (setTimeout(step, 0) chunked work) are never keyed and always count.
+  // The caller's stack, minus this helper and the wrapper that called it. A
+  // page can replace Error.prepareStackTrace with one that returns call sites
+  // or throws (#214 review: every rAF then threw a TypeError and never ran);
+  // then every site is '', which is the old depth rule, never a broken page.
+  var stackKey = function () {
+    try { var st = new Error().stack; return typeof st === 'string' ? st.split('\\n').slice(3).join('\\n') : ''; }
+    catch (e) { return ''; }
+  };
   var PACED_MS = 16, sites = new Map(), MO = null;
   var flushMut = function () { if (MO) S.mut += MO.takeRecords().length; };
   W.setTimeout = function (fn, delay) {
@@ -119,7 +127,7 @@ const IDLE_INIT = `(function () {
     var args = Array.prototype.slice.call(arguments, 2); var d = Math.max(0, Number(delay) || 0); var id;
     var key = null, counted = true;
     if (d >= PACED_MS) {
-      key = (new Error().stack || '').split('\\n').slice(2).join('\\n');
+      key = stackKey();
       var site = sites.get(key);
       if (site && site.fired) { flushMut(); counted = S.mut !== site.mutAtFire; }
     }
@@ -140,14 +148,29 @@ const IDLE_INIT = `(function () {
     id = oSI.call(W, cb, d); S.timers.set(id, d); return id;
   };
   W.clearInterval = function (id) { S.timers.delete(id); return oCI.call(W, id); };
-  // rAF re-armed from inside a rAF callback is an animation loop; stop counting
-  // after 3 generations or a canvas animation pins the wait at the cap
-  // (measured: a perpetual rAF loop settles in 35-40 ms with this).
-  var rafGen = 0;
+  // rAF re-armed from inside a rAF callback by the same call site is an
+  // animation loop; stop counting once a site has requested 3 times in the
+  // chain of callbacks above it, or a canvas animation pins the wait at the
+  // cap (measured: a perpetual rAF loop settles in 35-40 ms with this).
+  //
+  // By site, not by nesting depth (issue #197). Spectrum's overlay open runs
+  // guaranteedAllTransitionend (three nested rAFs from three closures) and
+  // then calls nextFrame() from inside the third: depth 3, no loop. Counting
+  // depth alone, that frame went uncounted and the wait returned idle 3 ms
+  // before sp-opened, mid-open (traced on overlay--defined-overlay-element,
+  // 1 of 20 captures at load 33-48). Measured with the page CPU throttled 4x,
+  // 15 interleaved runs each (chrome-headless-shell 151, Apple M5 Pro):
+  // overlay--click-content-closed-on-scroll 13 of 30 captures mid-open by
+  // depth, 0 of 30 by site; across all 58 Spectrum overlay and dialog stories
+  // 3 of 580 -> 0 of 580, every majority hash unchanged. The site is the
+  // stack minus this wrapper, as for paced timers; a page that empties its
+  // stacks makes every site the same, which is the old depth rule.
+  var RAF_REPEATS = 3, rafSites = null;
   W.requestAnimationFrame = function (fn) {
-    var gen = rafGen;
-    var id = oRAF.call(W, function (t) { S.rafs.delete(id); rafGen = gen + 1; try { return fn(t); } finally { rafGen = 0; } });
-    if (gen < 3) S.rafs.add(id); return id;
+    var site = stackKey();
+    var sites = new Map(rafSites || []); var n = (sites.get(site) || 0) + 1; sites.set(site, n);
+    var id = oRAF.call(W, function (t) { S.rafs.delete(id); rafSites = sites; try { return fn(t); } finally { rafSites = null; } });
+    if (n <= RAF_REPEATS) S.rafs.add(id); return id;
   };
   W.cancelAnimationFrame = function (id) { S.rafs.delete(id); return oCAF.call(W, id); };
   // Posted messages (React's scheduler uses a MessageChannel): count sends
@@ -666,11 +689,15 @@ export async function movedSincePaint(
     )
     .catch(() => null);
   if (!isSnapshot(after)) return false;
-  // Timers and messages too: a callback inside the barrier can schedule work
-  // without touching the DOM yet.
+  // Timers, messages and frames too: a callback inside the barrier can
+  // schedule work without touching the DOM yet. Frames since issue #197: a
+  // Spectrum overlay story awaits nextFrame() six times after sp-opened and
+  // then clicks again; with that chain pending and the DOM unchanged, the
+  // capture was taken mid-story.
   return (
     after.mut !== before.mut ||
     after.timers > 0 ||
+    after.rafs > 0 ||
     after.msgs > 0 ||
     after.workers > 0 ||
     after.fonts === 'loading' ||
