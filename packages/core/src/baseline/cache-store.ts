@@ -16,7 +16,8 @@
 // story, or a CI job with a cold cache, reports the failure by hash and
 // structure and says the image is unavailable.
 
-import { existsSync, readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type {
@@ -33,6 +34,9 @@ import {
   writeManifestFile,
 } from './manifest-file.js';
 import { hashImage } from './status.js';
+
+/** A manifest is repo content, so its hash is untrusted input to a path join. */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 export const DEFAULT_CACHE_DIR = '.juxtapose/cache/baselines';
 export const STRUCTURE_DIR = '.juxtapose/structure';
@@ -74,13 +78,21 @@ export class CacheBaselineStore implements BaselineStore {
   async lookup(storyId: string): Promise<BaselineImageLookup> {
     const entry = (await this.readManifest()).baselines[storyId];
     if (!entry) return { kind: 'unavailable', reason: 'no-manifest-entry' };
+    if (!SHA256_HEX.test(entry.hash))
+      return { kind: 'unavailable', reason: 'not-in-cache' };
     // A cache file is trusted only if its bytes still hash to its name: a
     // truncated restore or a hand-edit must read as "not there", never as the
     // baseline the manifest approved.
     for (const file of [this.cachePath(entry.hash), this.legacyImagePath(storyId)]) {
       const bytes = await readFile(file).catch(() => null);
-      if (bytes && hashImage(bytes) === entry.hash)
+      if (bytes && hashImage(bytes) === entry.hash) {
+        // An image found in the old committed layout is copied into the cache:
+        // once the migration commit untracks it, git deletes it from every
+        // clone that pulls, and the cache is the copy that survives.
+        if (file !== this.cachePath(entry.hash))
+          await this.keepImage(bytes).catch(() => {});
         return { kind: 'found', image: bytes };
+      }
     }
     return { kind: 'unavailable', reason: 'not-in-cache', hash: entry.hash };
   }
@@ -94,7 +106,7 @@ export class CacheBaselineStore implements BaselineStore {
     // Sync because the handoff asks while building a prompt. Same trust rule
     // as lookup: only a path whose bytes still match the approved hash.
     const hash = readManifestFileSync(this.manifestPath).baselines[storyId]?.hash;
-    if (hash === undefined) return undefined;
+    if (hash === undefined || !SHA256_HEX.test(hash)) return undefined;
     for (const file of [this.cachePath(hash), this.legacyImagePath(storyId)]) {
       try {
         if (hashImage(readFileSync(file)) === hash) return file;
@@ -112,14 +124,29 @@ export class CacheBaselineStore implements BaselineStore {
    * failures diff against. Content-addressed, so repeating it is free.
    */
   async keepImage(image: Buffer): Promise<void> {
-    const file = this.cachePath(hashImage(image));
-    if (existsSync(file)) return;
+    const hash = hashImage(image);
+    const file = this.cachePath(hash);
+    // An existing file counts only if its bytes still hash to its name: a
+    // truncated restore must be replaced, or the entry never heals.
+    const valid = async () => {
+      const bytes = await readFile(file).catch(() => null);
+      return bytes !== null && hashImage(bytes) === hash;
+    };
+    if (await valid()) return;
     await mkdir(this.cacheDir, { recursive: true });
     // Write-then-rename: a reader (or a CI cache save) never sees half an image
-    // under a name that promises its hash.
-    const tmp = `${file}.${process.pid}.tmp`;
-    await writeFile(tmp, image);
-    await rename(tmp, file);
+    // under a name that promises its hash. The suffix is random because the
+    // pid alone collides between concurrent calls in one process.
+    const tmp = `${file}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(tmp, image);
+      await rename(tmp, file);
+    } catch (err) {
+      await rm(tmp, { force: true });
+      // A concurrent writer that got there first is success, not failure.
+      if (await valid()) return;
+      throw err;
+    }
   }
 
   async put(storyId: string, image: Buffer, meta: ApprovalMeta): Promise<void> {

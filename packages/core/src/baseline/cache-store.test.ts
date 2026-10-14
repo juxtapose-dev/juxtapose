@@ -101,7 +101,8 @@ test('legacy layout: reads the old per-story image when it matches the manifest'
   await mkdir(legacy, { recursive: true });
   await writeFile(path.join(legacy, 'a.webp'), image);
   expect(await store.get('a')).toEqual(image);
-  expect(store.locate('a')).toBe(path.join(legacy, 'a.webp'));
+  // The read copied it into the cache, which locate prefers.
+  expect(store.locate('a')).toBe(path.join(cacheDir(), `${hash}.webp`));
 });
 
 test('legacy layout: an old image that is not the approved one is ignored', async () => {
@@ -180,4 +181,41 @@ test('keepImage caches a passing capture without touching the manifest', async (
   expect(existsSync(path.join(root, 'juxtapose.manifest.json'))).toBe(false);
   await store.keepImage(image); // idempotent
   expect(await readdir(cacheDir())).toEqual([`${hash}.webp`]);
+});
+
+test('a truncated cache entry is repaired by keepImage and by put', async () => {
+  await store.put('a', image, meta);
+  const file = path.join(cacheDir(), `${hash}.webp`);
+  await writeFile(file, image.subarray(0, 3));
+  expect((await store.lookup('a')).kind).toBe('unavailable');
+  await store.keepImage(image);
+  expect((await store.lookup('a')).kind).toBe('found');
+  await writeFile(file, 'junk');
+  await store.put('a', image, meta);
+  expect((await store.lookup('a')).kind).toBe('found');
+});
+
+test('concurrent keepImage calls for one image all succeed and leave no temp files', async () => {
+  await Promise.all(Array.from({ length: 12 }, () => store.keepImage(image)));
+  expect(await readdir(cacheDir())).toEqual([`${hash}.webp`]);
+});
+
+test('an image found in the legacy layout is copied into the cache', async () => {
+  await store.put('a', image, meta);
+  await rm(cacheDir(), { recursive: true });
+  const legacy = path.join(root, '.juxtapose', 'baselines');
+  await mkdir(legacy, { recursive: true });
+  await writeFile(path.join(legacy, 'a.webp'), image);
+  await store.lookup('a');
+  await rm(legacy, { recursive: true }); // the migration commit deletes it on pull
+  expect(await store.get('a')).toEqual(image);
+});
+
+test('a manifest hash that is not 64 hex characters never reaches a path', async () => {
+  await store.put('a', image, meta);
+  const manifest = await store.readManifest();
+  manifest.baselines['a']!.hash = '../../etc/passwd';
+  await store.writeManifest(manifest);
+  expect((await store.lookup('a')).kind).toBe('unavailable');
+  expect(store.locate('a')).toBeUndefined();
 });
