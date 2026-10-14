@@ -197,6 +197,9 @@ export async function snapCommand(
     captured = await snapPages({
       urls,
       browser,
+      ...(config.storyTimeout !== undefined
+        ? { storyTimeoutMs: config.storyTimeout }
+        : {}),
       ...(viewport ? { viewport } : {}),
       // A snap has no story: the flags are the story layer, over the config.
       params: {

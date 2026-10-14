@@ -438,6 +438,14 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     server = createServer((req, res) => {
       // Never answers: a call stuck on it is one to cancel or interrupt.
       if (req.url?.startsWith('/slow')) return;
+      // Holds the renderer's main thread from DOMContentLoaded on (#163).
+      if (req.url?.startsWith('/busy')) {
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.end(
+          `<!doctype html><body><script>addEventListener('DOMContentLoaded',()=>{const t=Date.now();while(Date.now()-t<90000);})</script>busy</body>`,
+        );
+        return;
+      }
       // Answers after a delay, and records when: a call blocked on it settles
       // no earlier than that.
       if (req.url?.startsWith('/late')) {
@@ -599,6 +607,48 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     expect(Date.now() - t0).toBeLessThan(5000);
     expect(c.lines.map((l) => (JSON.parse(l) as Rpc).id)).not.toContain(slowId);
   }, 30_000);
+
+  test('a hung URL errors once within storyTimeout; later URLs capture and other calls are not stalled (#163)', async () => {
+    const budgeted = mkdtempSync(path.join(tmpdir(), 'jux-mcp-budget-'));
+    writeFileSync(
+      path.join(budgeted, 'juxtapose.config.json'),
+      JSON.stringify({ storyTimeout: 3000 }),
+    );
+    const c = new Client(budgeted);
+    await handshake(c);
+    try {
+      const viewport = { width: 400, height: 200 };
+      await c.call('snap', { url: base, as: 'warm', viewport });
+      const t0 = Date.now();
+      const hung = c.call('snap', {
+        urls: [`${base}busy`, `${base}p/1`, `${base}p/2`],
+        asPrefix: 'hung',
+        viewport,
+      });
+      // A different name: it needs no lock the hung call holds.
+      await new Promise((r) => setTimeout(r, 500));
+      const other = await c.call('snap', { url: `${base}p/3`, as: 'other', viewport });
+      const otherMs = Date.now() - t0;
+      expect(other.isError).toBe(false);
+      expect(otherMs).toBeLessThan(3000);
+      const r = await hung;
+      expect(Date.now() - t0).toBeLessThan(3000 + 5000 + 8000);
+      expect(r.isError).toBe(true);
+      const json = text(r)
+        .split('\n')
+        .find((l) => l.startsWith('{'));
+      const { snaps } = JSON.parse(json!) as {
+        snaps: Array<{ url: string; error?: string; name?: string }>;
+      };
+      expect(snaps).toHaveLength(3);
+      expect(snaps[0]!.error).toMatch(/exceeded its 3000 ms budget while in '/);
+      expect(snaps.slice(1).map((x) => x.error)).toEqual([undefined, undefined]);
+      expect(snaps.slice(1).map((x) => x.name)).toEqual(['hung-p-1', 'hung-p-2']);
+    } finally {
+      await c.close();
+      rmSync(budgeted, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   test('a crashed private browser is closed (profile removed) and replaced', async () => {
     const c = new Client(project);
