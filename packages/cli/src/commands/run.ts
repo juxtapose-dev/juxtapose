@@ -33,6 +33,7 @@ import {
   checkProjectSettle,
   DEFAULT_VIEWPORT,
   describeUnstable,
+  describeFlake,
   type StoryManifest,
   formatPercent,
   formatPhases,
@@ -553,7 +554,13 @@ function emptyReport(projectRoot: string, totalCount: number): RunReport {
  *  each; the handoff has the rest. An `unknown` cause is left to the
  *  handoff: under every story of a Storybook build it would be noise. */
 function explain(r: DiffResult): string[] {
-  const unstable = r.unstable ? [describeUnstable(r.unstable)] : [];
+  // The flake line says why and what to change, which `unstable` alone does
+  // not; it stands in for the generic line, never beside it.
+  const unstable = r.flake
+    ? [describeFlake(r.flake)]
+    : r.unstable
+      ? [describeUnstable(r.unstable)]
+      : [];
   const v = r.structural;
   if (!v) return unstable;
   const why =

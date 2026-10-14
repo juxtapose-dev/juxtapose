@@ -8,12 +8,17 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import {
+  analyzeFlake,
   compareCodeUnits,
+  decodeStructure,
+  describeFlake,
   encodeStoryId,
   hashImage,
   parseRunReport,
   shellQuote,
   type DiffResult,
+  type Flake,
+  type FlakeCapture,
 } from '@juxtapose/core';
 import { EXIT } from '../exit-codes.js';
 import { errorMessage } from '../guards.js';
@@ -30,6 +35,9 @@ export interface RunSide {
   /** story id -> sha256 of the current capture, or `<status>` when nothing was
    *  captured (skip, capture error) so two skipped stories still compare equal. */
   hashes: Map<string, string>;
+  /** The run directory, where each story's capture and structure sidecar are. */
+  dir: string;
+  results: Map<string, DiffResult>;
 }
 
 export interface RunsComparison {
@@ -69,7 +77,12 @@ async function readRun(runDir: string): Promise<RunSide> {
   );
   const hashes = new Map<string, string>();
   for (const r of report.results) hashes.set(r.storyId, await resultHash(runDir, r));
-  return { runId: path.basename(runDir), hashes };
+  return {
+    runId: path.basename(runDir),
+    hashes,
+    dir: runDir,
+    results: new Map(report.results.map((r) => [r.storyId, r])),
+  };
 }
 
 export function compareRuns(a: RunSide, b: RunSide): RunsComparison {
@@ -83,6 +96,50 @@ export function compareRuns(a: RunSide, b: RunSide): RunsComparison {
     if (ha === undefined) out.missing.push({ storyId, in: 'b' });
     else if (hb === undefined) out.missing.push({ storyId, in: 'a' });
     else (ha === hb ? out.identical : out.different).push(storyId);
+  }
+  return out;
+}
+
+/** One run's capture of a story, as the flake analysis reads it. The
+ *  structure sidecar is optional: without it only pixels and settle flags
+ *  explain the difference. */
+async function readCapture(side: RunSide, storyId: string): Promise<FlakeCapture> {
+  const base = path.join(side.dir, 'images', `${encodeStoryId(storyId)}-current`);
+  const image = await readFile(`${base}.webp`);
+  const structure = await readFile(`${base}.structure.json.gz`)
+    .then(decodeStructure)
+    .catch(() => undefined);
+  const result = side.results.get(storyId);
+  return {
+    image,
+    ...(structure ? { structure } : {}),
+    ...(result?.settle ? { settle: result.settle } : {}),
+    ...(result?.flags?.length ? { flags: result.flags } : {}),
+  };
+}
+
+/** Why each story that differs between the two runs differs. A story whose
+ *  captures can't be read or compared simply has no entry: the hash already
+ *  said it differs, and this only explains. */
+async function explainDifferences(
+  sa: RunSide,
+  sb: RunSide,
+  ids: string[],
+): Promise<Map<string, Flake>> {
+  const out = new Map<string, Flake>();
+  for (const storyId of ids) {
+    try {
+      out.set(
+        storyId,
+        await analyzeFlake({
+          storyId,
+          first: await readCapture(sa, storyId),
+          second: await readCapture(sb, storyId),
+        }),
+      );
+    } catch {
+      // not explainable from what the runs kept
+    }
   }
   return out;
 }
@@ -117,6 +174,7 @@ export async function diffRuns(
   const [sa, sb] = sides as [RunSide, RunSide];
   const c = compareRuns(sa, sb);
   const clean = c.different.length === 0 && c.missing.length === 0;
+  const flakes = await explainDifferences(sa, sb, c.different);
   if (flags.json) {
     io.out(
       JSON.stringify({
@@ -129,6 +187,7 @@ export async function diffRuns(
           missing: c.missing.length,
         },
         different: c.different,
+        ...(flakes.size > 0 ? { flake: Object.fromEntries(flakes) } : {}),
         missing: c.missing,
       }) + '\n',
     );
@@ -137,7 +196,11 @@ export async function diffRuns(
       `${shellQuote(sa.runId)} vs ${shellQuote(sb.runId)}: ${c.identical.length} identical, ${c.different.length} different` +
         (c.missing.length ? `, ${c.missing.length} in only one run` : ''),
     ];
-    for (const id of c.different) lines.push(`  different  ${id}`);
+    for (const id of c.different) {
+      lines.push(`  different  ${id}`);
+      const flake = flakes.get(id);
+      if (flake) lines.push(`    ${describeFlake(flake)}`);
+    }
     for (const m of c.missing)
       lines.push(`  only in ${m.in === 'a' ? sa.runId : sb.runId}  ${m.storyId}`);
     io.out(lines.join('\n') + '\n');

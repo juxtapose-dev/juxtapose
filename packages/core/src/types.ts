@@ -123,6 +123,20 @@ export interface StructureRect {
   h: number;
 }
 
+/** How an element reaches a third-party URL. */
+export const EXTERNAL_KINDS = ['image', 'background', 'frame'] as const;
+export type ExternalKind = (typeof EXTERNAL_KINDS)[number];
+
+/** A resource from an origin other than the page's own. The query and hash are
+ *  dropped: sidecars are committed, and a signed URL's query is a credential. */
+export interface ExternalRef {
+  kind: ExternalKind;
+  /** `https://picsum.photos`. */
+  origin: string;
+  /** The URL's path, without query or hash. */
+  path: string;
+}
+
 export interface StructureElement {
   /** tag + (#id | [data-testid] | :nth-of-type) chain from <html>. */
   path: string;
@@ -136,6 +150,10 @@ export interface StructureElement {
   name?: string;
   text?: string;
   src?: string;
+  /** Third-party resources this element paints or embeds: where `src` keeps
+   *  only a file name (the origin changes per run), this keeps the origin. Not
+   *  part of `structureHash`. Absent when there are none. */
+  external?: ExternalRef[];
   rect: StructureRect;
   paintOrder: number;
   /** Compact: see effectiveStyle() in capture/structure.ts. */
@@ -323,7 +341,65 @@ export interface DiffResult {
   flags?: CaptureFlag[];
   /** Present only with the `settle-timeout` flag. */
   settle?: SettleReport;
+  /** Why an `unstable` story's two captures differed, and the config change
+   *  that would fix it. Present only with `unstable` (and only when the
+   *  second capture produced an image to compare). */
+  flake?: Flake;
   durationMs: number;
+}
+
+/** Why two captures of one story differ. Ordered as the classifier checks
+ *  them: the first confident match wins. */
+export const FLAKE_CAUSES = [
+  'settle-timeout',
+  'external-image',
+  'embed',
+  'async-element',
+  'clock',
+  'random-content',
+  'render-drift',
+  'unknown',
+] as const;
+export type FlakeCause = (typeof FLAKE_CAUSES)[number];
+
+export const FLAKE_CONFIDENCES = ['high', 'medium', 'low'] as const;
+export type FlakeConfidence = (typeof FLAKE_CONFIDENCES)[number];
+
+/** Which capture an element appears in, for `async-element`. */
+export type FlakeSide = 'first' | 'second';
+
+/** The facts behind a cause: enough for a one-line message and for an agent
+ *  to decide. Only the fields that apply are set. */
+export interface FlakeEvidence {
+  /** A CSS selector for the element, valid in `mask` and `waitForSelector`. */
+  selector?: string;
+  /** The third-party resource, without query or hash. */
+  url?: string;
+  host?: string;
+  /** Changed text, first capture then second. */
+  before?: string;
+  after?: string;
+  /** What the settle wait was still waiting on at the cap. */
+  pending?: string[];
+  /** `async-element`: the capture the element is missing from is the other. */
+  presentIn?: FlakeSide;
+  /** `render-drift` and `unknown`: how much of the frame differs. */
+  mismatchPercent?: number;
+  flags?: CaptureFlag[];
+}
+
+/** An exact patch for `juxtapose.config.json`: merge it in. Story-scoped, so
+ *  it changes nothing for other stories. */
+export interface FlakeFix {
+  stories: Record<string, StoryOverride>;
+}
+
+export interface Flake {
+  cause: FlakeCause;
+  confidence: FlakeConfidence;
+  evidence: FlakeEvidence;
+  /** Null when no config change helps: `render-drift`, `unknown`. */
+  fix: FlakeFix | null;
 }
 
 /** One change seen on several stories: the same signature on ≥2 failing

@@ -12,12 +12,14 @@ import type {
   Cause,
   ChangedRegion,
   DiffStatus,
+  Flake,
   SettleReport,
   StructuralVerdict,
   Viewport,
 } from '../types.js';
 import { describeDeltas } from '../diff/structural/summary.js';
 import { describeUnstable } from '../baseline/approve.js';
+import { describeFlake } from '../flake/describe.js';
 import { shellQuote } from '../shell-quote.js';
 import { compareCodeUnits } from '../report/format.js';
 
@@ -27,6 +29,8 @@ export interface HandoffPayload {
   status: DiffStatus;
   /** The run's stability verdict; see DiffResult.unstable. */
   unstable?: { hashes: string[]; unconfirmed?: string };
+  /** Why the two captures differed and what to change; see DiffResult.flake. */
+  flake?: Flake;
   mismatchPercent: number;
   mismatchPixels: number;
   changedRegions: ChangedRegion[];
@@ -117,6 +121,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
       '',
       `**${describeUnstable(p.unstable)}.** Make the story deterministic first (mask the changing region, a \`stories\` override, or \`freshRenderer\`); approving it would baseline a flake.`,
     );
+    if (p.flake) lines.push('', `**${describeFlake(p.flake)}**`);
   }
   if (p.variant) {
     lines.push(

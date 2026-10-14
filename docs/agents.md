@@ -16,7 +16,8 @@ jux diff before after
 
 A story with `unstable` in the run report was captured twice and came out
 differently. `jux approve` refuses it (exit 1, story named) until it is made
-deterministic or `--allow-unstable` is passed; see [cli.md](cli.md).
+deterministic or `--allow-unstable` is passed; see [cli.md](cli.md). Its
+`flake` field names the cause and the config patch to apply.
 
 Exit 0 means identical, 1 means different, 2 is a usage error, 3 means the
 tool or environment failed (no browser, an input that will not read) — never
