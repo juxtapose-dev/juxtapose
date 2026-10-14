@@ -163,11 +163,12 @@ export async function captureStory(
   // Before any request of this story: the policy is read from the layers
   // known now (live params arrive after render, too late to block anything).
   checkNetwork(params.network, `story '${story.storyId}'`);
-  await applyNetworkPolicy(
-    page,
-    resolveExternal(deps.settleLayers?.project, params, deps.settleLayers?.call),
-    deps.baseUrl,
+  const external = resolveExternal(
+    deps.settleLayers?.project,
+    params,
+    deps.settleLayers?.call,
   );
+  await applyNetworkPolicy(page, external, deps.baseUrl);
   // Before the render is triggered, so a request or ready() call from this
   // story's render is never mistaken for the previous one's.
   await resetIdle(page, idle, warm);
@@ -217,6 +218,15 @@ export async function captureStory(
   const live = await deps.platform.readLiveParams?.(page, id);
   if (live) {
     Object.assign(params, mergeLiveParams(story, live));
+    if (
+      live.network?.external !== undefined &&
+      live.network.external !== external &&
+      deps.settleLayers?.call?.network?.external === undefined
+    ) {
+      deps.onWarning?.(
+        `jux: ${story.storyId}: the story's live parameters set network.external '${live.network.external}', which is read before navigation and was ignored. Declare it in the project config or the command.`,
+      );
+    }
     assertSelectors(params);
 
     // A story can opt out of a project variant in params only the live

@@ -169,7 +169,11 @@ a worker for up to 30 s on every run, whatever `captureTimeout` or
 and images still in flight, and a page that is still waiting on a subresource
 at `settle.timeout` is captured anyway and flagged `settle-timeout` with the
 request named in `pending`. Pages that had finished loading capture the same
-pixels as before. A document that never reaches `DOMContentLoaded` (a blocking
+pixels as before, with one difference: a subresource that takes longer than
+`settle.timeout` but under 30 s to arrive used to be waited for by `load` and
+captured loaded. It's now captured without it and flagged `settle-timeout`
+naming the request. Raise `settle.timeout` for such a page, or
+[block](#third-party-requests) the request. A document that never reaches `DOMContentLoaded` (a blocking
 script that hangs) still fails the story after 30 s.
 
 ### Third-party requests
@@ -187,8 +191,16 @@ requested. It doesn't fetch bytes that change between runs (a random photo, a
 CDN), it never holds the page to the settle cap, and it isn't counted as
 pending, so the capture isn't flagged. The page sees an ordinary failed
 request, so an `<img>` shows its fallback. `data:`, `blob:` and `about:` URLs,
-and the top-level document, are never blocked. Requests from out-of-process
-iframes and from workers aren't intercepted.
+and the top-level document (including a redirect to another origin, whose own
+resources then count as same-origin), are never blocked. Dedicated-worker
+fetches are intercepted. WebSockets and anything running outside the page's
+own browser process (an out-of-process iframe) are not.
+
+`block` also blocks CDN web fonts and stylesheets, such as Google Fonts, so
+turning it on changes the pixels of every story that uses one and re-baselines
+the suite. A deployed Storybook that serves its assets from a separate origin
+(a CDN host) fails under `block`; use it with a build on disk or a dev server
+that serves its own assets.
 
 It's layered like `settle`: the project config, then the story's
 `parameters.juxtapose.network`, then the command (`--network-external block`,

@@ -123,15 +123,6 @@ const PROJECT = {
 
 // The config's `settle` shape, so an agent writes the same object it would
 // put in juxtapose.config.json. Over the story's and the project's.
-const NETWORK = {
-  type: 'object',
-  description:
-    "Third-party requests for this call. 'block' fails requests to origins other than the page's own, so an external image neither changes nor stalls the capture",
-  properties: {
-    external: { type: 'string', enum: ['allow', 'block'], description: 'Default allow' },
-  },
-};
-
 const SETTLE = {
   type: 'object',
   description:
@@ -160,6 +151,15 @@ const SETTLE = {
         },
       },
     },
+  },
+};
+
+const NETWORK = {
+  type: 'object',
+  description:
+    "Third-party requests for this call. 'block' fails requests to origins other than the page's own, so an external image neither changes nor stalls the capture",
+  properties: {
+    external: { type: 'string', enum: ['allow', 'block'], description: 'Default allow' },
   },
 };
 

@@ -7,6 +7,7 @@
 // url entry, or a preview extract), so a platform can change how it discovers
 // them without touching this.
 
+import { checkNetwork } from './network-policy.js';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
 import type { StoryManifest, StoryParams, VariantSpec } from '../types.js';
 import { VariantConfigError } from './config-errors.js';
@@ -48,6 +49,7 @@ export function expandVariants(
     // is variant-only: the default capture is always light.
     const { variants: ownRaw, colorScheme: _ignored, ...baseParams } = story.params;
     checkSettle(baseParams.settle, `story '${story.storyId}'`);
+    checkNetwork(baseParams.network, `story '${story.storyId}'`);
     out.push({ ...story, params: baseParams });
 
     // A skipped story skips every variant: there is nothing to vary.
@@ -129,6 +131,7 @@ function checkDeclared(raw: unknown, where: string): Record<string, VariantSpec 
       );
     }
     checkSettle(spec['settle'], `${where}: variant '${name}'`);
+    checkNetwork(spec['network'], `${where}: variant '${name}'`);
     const ext = spec['extends'];
     if (ext !== undefined && typeof ext !== 'string') {
       throw new VariantConfigError(
