@@ -3,6 +3,9 @@ name: field tests
 # Runs jux against three large public Storybooks (built from pinned commits)
 # and fails on capture errors, unexpected cross-pass differences, or a slow
 # run. See docs/field-tests.md and scripts/field-tests.config.json.
+#
+# Nightly and on manual dispatch only: a full sweep takes about 30 minutes per
+# Storybook, too long to gate every pull request that touches capture code.
 on:
   schedule:
     - cron: '23 5 * * *'
@@ -21,13 +24,6 @@ on:
         description: Capture passes
         type: string
         default: '2'
-  pull_request:
-    paths:
-      - 'packages/core/src/capture/**'
-      - 'packages/core/src/browser/**'
-      - 'scripts/field-test.mjs'
-      - 'scripts/field-tests.config.json'
-      - '.github/workflows/field-tests.yml'
 
 # Third-party build scripts run in this workflow: read-only token, no secrets.
 permissions:
