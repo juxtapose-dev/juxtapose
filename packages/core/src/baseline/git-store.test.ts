@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { expect, test } from 'vitest';
 import { GitBaselineStore, encodeStoryId } from './git-store.js';
 
@@ -13,10 +14,12 @@ test('structure sidecar is written beside the image and read back', async () => 
     ...meta,
     structureHash: 'h1',
   });
-  await store.putStructure('Components/Button--primary', Buffer.from('gz'));
-  expect(await store.getStructure('Components/Button--primary')).toEqual(
-    Buffer.from('gz'),
-  );
+  // Approval hands over readable JSON; this layout's `.json.gz` file holds it
+  // compressed.
+  await store.putStructure('Components/Button--primary', Buffer.from('{"a":1}'));
+  expect(
+    gunzipSync((await store.getStructure('Components/Button--primary'))!).toString(),
+  ).toBe('{"a":1}');
   const manifest = JSON.parse(
     await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8'),
   );

@@ -8,7 +8,7 @@
   "platform": "storybook",
   "concurrency": 8,
   "viewport": { "width": 1280, "height": 800 },
-  "storage": { "kind": "git" }
+  "storage": { "kind": "cache" }
 }
 ```
 
@@ -593,7 +593,68 @@ so jux loads its preview again on every run.
 
 ## Baseline storage
 
-`storage.kind` accepts `"s3"`, but the CLI throws on it in this version. Git is
-the only implemented backend, and `"fs"` is the same store pointed at a
-directory you choose. See the
-[issues](https://github.com/juxtapose-dev/juxtapose/issues) for the roadmap.
+Projects commit hashes and metadata, never snapshot images.
+
+| Commit                    | Ignore                                              |
+| ------------------------- | --------------------------------------------------- |
+| `juxtapose.config.json`   | `.juxtapose/` (cache, runs, tmp: all machine-local) |
+| `juxtapose.manifest.json` | baseline images (`.webp`), wherever they are        |
+
+`juxtapose.manifest.json` is one committed file, like a lockfile. Per story it
+holds the approved hash, which alone decides pass/fail, and (for the default
+store) the approved structure, one element per line, so an approval is a
+reviewable diff and CI can name the elements that changed with no image. Stories
+are sorted by id and nothing in it depends on the machine or the clock, so an
+unchanged story never produces a diff line and one approval touches only that
+story's lines. The format is `version` 2 once any story carries structure;
+version 1 (hashes only) is still read.
+
+**Don't hand-merge it; regenerate it**, as you would a lockfile. On a merge
+conflict, take either side (`git checkout --theirs juxtapose.manifest.json`, or
+`--ours`), run `jux run`, then `jux approve --story <id>` for each story the two
+branches changed (or `jux approve --all` after you have reviewed the run). jux
+refuses a manifest with conflict markers (exit 2) and prints these steps rather
+than treating it as empty.
+
+`storage.kind` picks where the images live:
+
+- `"cache"` (default): a local, git-ignored directory of `<sha256>.webp` files,
+  `.juxtapose/cache/baselines/` unless you set `dir`. Approving writes the hash
+  and structure to the manifest and the image to the cache. A passing run also
+  keeps its capture in the cache, and folds structure into any manifest entry
+  that lacks it (the one-time move from the old per-story sidecar files).
+- `"git"`: commit images under `.juxtapose/baselines/` (or `dir`). The layout
+  before 0.15, kept for projects that want pixels in the repo.
+- `"fs"`: the repo-backed store pointed at a `dir` you choose.
+- `"s3"`: declared, but the CLI throws on it in this version.
+
+Pass/fail needs no image: a story passes when its captured hash equals the
+manifest's. The image is only for the pixel diff and the review UI. When a
+story fails and its approved image is not in the cache (a fresh clone, a CI job
+with a cold cache), jux reports the failure by hash and structure and says
+"baseline image not available (not in cache); structure diff only". It does not
+error. To get pixel diffs in CI, save and restore the cache; see [CI](ci.md).
+
+`jux init` adds one line, `.juxtapose/`, to `.gitignore`: everything under it is
+machine-local. A project with no `storage` key and images already committed
+under `.juxtapose/baselines/` keeps working: jux reads those images (when they
+match the manifest hash), copies each into the cache as it does, and writes new
+ones to the cache. Run `jux doctor` for the migration commands. Run
+`jux run --all` before you commit the untracking: the commit deletes the images
+from every clone that pulls it, and those clones then rely on their own run or a
+restored CI cache, and report structure only until then.
+
+A cache `dir` must be a relative path inside the project (`/` and `\` both
+separate): no `..`, absolute or UNC path, glob characters, control characters
+or leading `-`, and not the manifest. A `git` or `fs`
+`dir` keeps accepting any path, including one outside the project; only a
+leading `-` and control, line-separator and bidi characters are refused. A
+refused value is a usage error (exit 2). Half-written images go to
+`.juxtapose/tmp/` (or `<dir>.tmp/` for a custom cache dir), also ignored, and
+stale ones are deleted on the next write. A cache or tmp directory that is a
+symlink, or resolves outside the project, is never written to or swept: jux
+warns once and skips caching. The cache is not pruned yet; see
+[CI](ci.md).
+
+Structure sidecars are plain JSON, one element per line, so an approval's diff
+shows which elements moved. Legacy `.structure.json.gz` sidecars are still read.

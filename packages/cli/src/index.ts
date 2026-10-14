@@ -10,6 +10,7 @@ import { parseArgs } from 'node:util';
 import { EXIT } from './exit-codes.js';
 import { isRecord } from './guards.js';
 import { checkArgs, SPECS } from './cli-args.js';
+import { ManifestConflictError } from '@juxtapose/core';
 import { UserError } from './user-error.js';
 import { distance } from './suggest.js';
 import { BROWSER_HELP } from './commands/browser-help.js';
@@ -22,6 +23,7 @@ Usage
   jux run [options]              capture affected stories and compare to baselines
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
+  jux doctor [--json]            warn if snapshot images are committed, and print the fix
   jux handoff <storyId>          print an agent prompt for one failing story
   jux snap <url>… [options]      capture pages: pixels + structure, no workbench
   jux browser install|path|status|start|stop  manage the pinned and warm browser (install downloads once, ~100 MB)
@@ -208,6 +210,10 @@ async function main(argv: string[]): Promise<number> {
       const { checkCommand } = await import('./commands/check.js');
       return checkCommand(flags);
     }
+    case 'doctor': {
+      const { doctorCommand } = await import('./commands/doctor.js');
+      return doctorCommand(flags);
+    }
     case 'handoff': {
       const { handoffCommand } = await import('./commands/handoff.js');
       return handoffCommand(positionals[0], flags);
@@ -350,6 +356,11 @@ main(process.argv.slice(2))
     if (err instanceof UserError) {
       process.stderr.write(`jux: ${err.message}\n`);
       return exitAfterFlush(err.exit);
+    }
+    // The lockfile guidance is the whole message; it is the user's to act on.
+    if (err instanceof ManifestConflictError) {
+      process.stderr.write(`jux: ${err.message}\n`);
+      return exitAfterFlush(EXIT.usage);
     }
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(

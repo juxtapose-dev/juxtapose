@@ -6,7 +6,12 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import type { BaselineStore, Platform, ProjectConfig } from '@juxtapose/core';
-import { GitBaselineStore, createUrlPlatform } from '@juxtapose/core';
+import {
+  checkStorageConfig,
+  createBaselineStore,
+  createUrlPlatform,
+  StorageConfigError,
+} from '@juxtapose/core';
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 import { LadlePlatform } from '@juxtapose/adapter-ladle';
 import { UserError } from './user-error.js';
@@ -138,18 +143,28 @@ async function resolvePlatform(
   );
 }
 
-function createStore(projectRoot: string, config: ProjectConfig): BaselineStore {
-  const storage = config.storage ?? { kind: 'git' as const };
-  switch (storage.kind) {
-    case 'git':
-      return new GitBaselineStore({ projectRoot, dir: storage.dir });
-    case 'fs':
-      return new GitBaselineStore({ projectRoot, dir: storage.dir });
-    case 's3':
-      throw new UserError(
-        'the s3 baseline store is not implemented yet; use the default git store',
-      );
+/** A refused `storage` setting is the user's to fix: exit 2 with the reason,
+ *  never an "unexpected failure". */
+export function checkStorage(config: ProjectConfig): void {
+  try {
+    checkStorageConfig(config.storage);
+  } catch (err) {
+    if (err instanceof StorageConfigError) throw new UserError(err.message);
+    throw err;
   }
+}
+
+function createStore(projectRoot: string, config: ProjectConfig): BaselineStore {
+  if (config.storage?.kind === 's3') {
+    throw new UserError(
+      'the s3 baseline store is not implemented yet; use the default cache store',
+    );
+  }
+  checkStorage(config);
+  return createBaselineStore(projectRoot, config.storage, {
+    // stderr, so --json stdout stays clean.
+    onWarning: (m) => process.stderr.write(`jux: ${m}\n`),
+  });
 }
 
 /**

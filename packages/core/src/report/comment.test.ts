@@ -433,3 +433,86 @@ describe('buildComment with variants', () => {
     expect(body).toContain('2 stories match their baselines.');
   });
 });
+
+const unavailableRow = (id: string): DiffResult => ({
+  ...result(id, 'fail'),
+  baselineImage: 'unavailable',
+});
+
+describe('baseline image unavailable', () => {
+  const unavailable = (): DiffResult => ({
+    ...result('a--b', 'fail'),
+    baselineImage: 'unavailable',
+  });
+
+  it('says structure diff only instead of a percentage, and still triages', () => {
+    const body = buildComment({ report: report([unavailable()]) });
+    expect(body).toContain(
+      'baseline image not available (not in cache); structure diff only',
+    );
+    expect(body).not.toContain('0%');
+    expect(body).not.toContain('subtle');
+  });
+
+  it('the heading does not call an unmeasured change "under 0.1%"', () => {
+    const body = buildComment({ report: report([unavailable(), unavailable()]) });
+    expect(body).toContain('structure diff only');
+    expect(body).not.toContain('under 0.1%');
+    const mixed = buildComment({
+      report: report([unavailable(), result('b', 'fail', 3.2)]),
+    });
+    expect(mixed).toContain('largest 3.20%');
+  });
+
+  it('tells reviewers to commit the manifest, never images', () => {
+    const body = buildComment({ report: report([unavailable()]) });
+    expect(body).toContain('juxtapose.manifest.json');
+    expect(body).not.toContain('.juxtapose/baselines/');
+  });
+});
+
+describe('guidance by store kind', () => {
+  it('does not forbid images for a project that commits them on purpose', () => {
+    const body = buildComment({
+      report: report([result('a', 'fail', 3)]),
+      commitPaths: ['juxtapose.manifest.json', '.juxtapose/baselines'],
+      imagesCommitted: true,
+    });
+    expect(body).toContain('`.juxtapose/baselines`');
+    expect(body).not.toContain('Never commit images');
+  });
+});
+
+describe('mixed measured and unmeasured changes', () => {
+  it('counts only measured stories toward the magnitude and names the rest apart', () => {
+    const body = buildComment({
+      report: report([
+        unavailableRow('a'),
+        result('b', 'fail', 0.02),
+        result('c', 'fail', 0.04),
+      ]),
+    });
+    expect(body).toContain(
+      '3 visual changes need review — 2 under 0.1%, 1 without a pixel diff',
+    );
+  });
+
+  it('keeps "largest" for a big measured change next to an unmeasured one', () => {
+    const body = buildComment({
+      report: report([unavailableRow('a'), result('b', 'fail', 3.2)]),
+    });
+    expect(body).toContain('largest 3.20%, 1 without a pixel diff');
+  });
+});
+
+describe('Markdown in commit paths', () => {
+  it('a path with backticks cannot break out of its code span', () => {
+    const body = buildComment({
+      report: report([result('a', 'fail', 3)]),
+      commitPaths: ['dir`with`ticks', 'x`'],
+      imagesCommitted: true,
+    });
+    expect(body).toContain('``dir`with`ticks``');
+    expect(body).toContain('`` x` ``');
+  });
+});

@@ -1,27 +1,63 @@
 # Commands
 
-| command                              | what it does                                                                     |
-| ------------------------------------ | -------------------------------------------------------------------------------- |
-| `jux init`                           | set up config and capture the first baselines                                    |
-| `jux run`                            | capture affected stories and compare to baselines                                |
-| `jux run --all`                      | capture everything, skipping change analysis                                     |
-| `jux approve --all`                  | promote the last run's captures to baselines                                     |
-| `jux approve --story <id>`           | approve one story                                                                |
-| `jux approve --all --allow-unstable` | also approve stories whose two run captures differed (see below)                 |
-| `jux check`                          | exit non-zero if anything still needs review — for CI                            |
-| `jux handoff <id>`                   | print an agent-ready prompt for one failing story                                |
-| `jux config --explain <id>`          | the effective settings for one story or variant key, and which layer set each    |
-| `jux snap <url>… --as <name>`        | capture a page (or several with `--as-prefix`): pixels + structure, no workbench |
-| `jux diff <a> <b> --json`            | tier-0 verdict: what changed between two snaps, no browser                       |
-| `jux diff <a> <b> --crops`           | the verdict plus side-by-side PNG strips per changed region, no browser          |
-| `jux diff --runs <runA> <runB>`      | are two runs byte-identical? per-story hash comparison, no browser               |
-| `jux browser install\|status\|path`  | install, inspect or locate the pinned browser                                    |
-| `jux browser start\|stop`            | start or stop the warm browser (see [Warm browser](browser.md#warm-browser))     |
+| command                              | what it does                                                                      |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| `jux init`                           | set up config and `.gitignore`, and capture the first baselines                   |
+| `jux doctor`                         | warn if baseline images are tracked by git, and print the migration commands      |
+| `jux run`                            | capture affected stories and compare to baselines                                 |
+| `jux run --all`                      | capture everything, skipping change analysis                                      |
+| `jux approve --all`                  | promote the last run's captures to baselines (hash and structure; image to cache) |
+| `jux approve --story <id>`           | approve one story                                                                 |
+| `jux approve --all --allow-unstable` | also approve stories whose two run captures differed (see below)                  |
+| `jux check`                          | exit non-zero if anything still needs review — for CI                             |
+| `jux handoff <id>`                   | print an agent-ready prompt for one failing story                                 |
+| `jux config --explain <id>`          | the effective settings for one story or variant key, and which layer set each     |
+| `jux snap <url>… --as <name>`        | capture a page (or several with `--as-prefix`): pixels + structure, no workbench  |
+| `jux diff <a> <b> --json`            | tier-0 verdict: what changed between two snaps, no browser                        |
+| `jux diff <a> <b> --crops`           | the verdict plus side-by-side PNG strips per changed region, no browser           |
+| `jux diff --runs <runA> <runB>`      | are two runs byte-identical? per-story hash comparison, no browser                |
+| `jux browser install\|status\|path`  | install, inspect or locate the pinned browser                                     |
+| `jux browser start\|stop`            | start or stop the warm browser (see [Warm browser](browser.md#warm-browser))      |
 
 `jux <command> --help` (or `-h`) prints that command's usage and exits 0. An
 unknown option, or a positional a command does not take (`jux run some-id`),
 exits 2 with a one-line message; it is never ignored. Use `jux run --story <id>`
 to run one story. A missing workbench exits 2 with its own message.
+
+## Check the repo: `jux doctor`
+
+`jux doctor` checks a project against the rule that it commits hashes and
+structure, never images. It reads the repo and the config only, with no
+workbench or browser, so it also works as a CI step.
+
+It reports:
+
+- `tracked-images`: baseline images tracked by git in the old layout or the
+  cache directory. The fix runs `jux run --all` first, so the cache holds the
+  images before the commit deletes them from other clones, then
+  `git rm --cached -- ':(glob)<dir>/*.webp'`, the `.gitignore` line, and a
+  commit. The pathspec is literal about the directory's own name.
+- `legacy-sidecars`: per-story `.structure.json.gz` files tracked under
+  `.juxtapose/baselines/`. Structure now lives in the manifest; the fix runs
+  `jux run --all` and `jux approve --all` to fold it in, then untracks the files
+  and commits the manifest.
+- `untracked-images`: images that are neither tracked nor ignored, which the
+  next `git add .` would commit.
+- `committed-paths-ignored`: `.gitignore` (or another ignore file) ignores
+  `juxtapose.manifest.json` or `juxtapose.config.json`, so `git add` skips them.
+  `jux init` warns about the same thing. The pattern is yours to edit.
+- `missing-ignores`: `.gitignore` lines the project needs. Git decides, so a
+  broader pattern or a parent `.gitignore` counts.
+
+A project that sets `storage.kind` to `git` or `fs` commits images on purpose,
+so tracked images are not reported for it.
+
+Pass `--project <dir>` to check another directory. The printed commands then use
+`git -C <dir>` and absolute paths, so they work from where you are.
+
+`--json` prints `{ "ok": boolean, "issues": [{ "code", "message", "files?", "fix": [string] }] }`,
+where `fix` is the commands to run, in order, each quoted for a POSIX shell.
+Exit 0 means no issues, 1 means at least one.
 
 ## Which setting won: `jux config --explain`
 

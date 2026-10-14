@@ -80,10 +80,10 @@ two ever disagree on counts again, that is the mechanism to suspect.
 ## Baselines are not committed here
 
 Normally you _would_ commit `juxtapose.manifest.json` and
-`.juxtapose/baselines/` — that is the whole point of the git store.
+— hashes and structure, never images, which stay in a git-ignored cache.
 
 These examples are the exception. Antialiased rendering differs across
-platforms and Chromium versions, so a baseline captured on one machine will not
+platforms and Chromium versions, so a hash captured on one machine will not
 match another's byte-for-byte. Committing them would leave the examples
 permanently red for everyone but the author. Run `jux approve --all` locally
 instead.

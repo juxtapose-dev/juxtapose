@@ -298,6 +298,10 @@ export class RunDirSource implements ReviewSource {
       mismatchPercent: result.mismatchPercent,
       mismatchPixels: result.mismatchPixels,
       changedRegions: result.changedRegions,
+      ...(result.baselineImage ? { baselineImage: result.baselineImage } : {}),
+      ...(['git', 'fs'].includes(this.opts.config.storage?.kind ?? '')
+        ? { imagesCommitted: true }
+        : {}),
       // What the capture was taken at, which changedRegions are relative to;
       // a variant's viewport is not its story's.
       viewport:

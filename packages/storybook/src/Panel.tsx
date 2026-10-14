@@ -12,7 +12,7 @@ import { styled, Badge, Button, EmptyTabContent, Loader } from './storybook.js';
 import { mutedColor } from './theme.js';
 // Deep import on purpose: '@juxtapose/core' reaches sharp and the browser driver
 // through the capture modules, and this file is bundled for the browser.
-import { formatPercent } from '@juxtapose/core/format';
+import { BASELINE_IMAGE_UNAVAILABLE, formatPercent } from '@juxtapose/core/format';
 import type { DiffResult, DiffStatus } from '@juxtapose/core';
 import {
   approveStory,
@@ -168,7 +168,10 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   // Only a failing story has two meaningfully different images. `pass` means
   // they are byte-identical and `new` has no baseline at all, so in both cases
   // the comparison modes would be comparing something against nothing.
-  const hasComparison = result?.status === 'fail';
+  // Without the baseline image (not in the local cache) there is only the
+  // current capture, so the comparison modes have nothing to compare.
+  const imageUnavailable = result?.baselineImage === 'unavailable';
+  const hasComparison = result?.status === 'fail' && !imageUnavailable;
 
   const subThreshold = isSubThreshold(result);
 
@@ -442,7 +445,9 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               <Spacer />
 
               {result.status === 'fail' &&
-                (subThreshold ? (
+                (imageUnavailable ? (
+                  <Muted>{BASELINE_IMAGE_UNAVAILABLE}</Muted>
+                ) : subThreshold ? (
                   <Muted title="The bytes differ from the baseline, but every pixel is within the diff's colour tolerance, so the overlay has nothing to mark.">
                     Too subtle for the diff overlay. Try Flicker (f)
                   </Muted>

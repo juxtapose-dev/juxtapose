@@ -14,6 +14,7 @@ import {
 } from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
 import { errorMessage } from '../guards.js';
+import { commitList } from '../printed-commands.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
 
@@ -135,8 +136,11 @@ export async function approveCommand(
     io.out(`jux: approved ${approved.length} ${plural(approved.length)}\n`);
     for (const f of failed) io.err(`  skipped ${f.storyId}: ${f.reason}\n`);
     if (approved.length > 0) {
+      const cache =
+        ctx.config.storage === undefined || ctx.config.storage.kind === 'cache';
       io.out(
-        '\n  Commit juxtapose.manifest.json and .juxtapose/baselines/ to record this.\n',
+        `\n  Commit ${commitList(ctx.config.storage)} to record this.\n` +
+          (cache ? '  Images stay in the local cache and are never committed.\n' : ''),
       );
     }
   }

@@ -16,6 +16,7 @@
 
 import type { DiffResult, RunReport, Viewport } from '../types.js';
 import {
+  BASELINE_IMAGE_UNAVAILABLE,
   captureLabel,
   countStories,
   formatPercent,
@@ -39,6 +40,12 @@ export interface CommentOptions {
    *  artifact to link to — a link to an empty artifacts list is worse than no
    *  link, so callers pass this only when they actually wrote a report. */
   artifactUrl?: string;
+  /** What the project commits after an approval (`committedPaths`). Omitted:
+   *  the default store's manifest and structure. */
+  commitPaths?: string[];
+  /** The project chose a repo-backed store (`git`/`fs`), so its images are
+   *  committed on purpose and the guidance must not forbid them. */
+  imagesCommitted?: boolean;
 }
 
 /** GitHub comments have a size limit, but attention is the binding constraint
@@ -56,7 +63,12 @@ function blocking(report: RunReport): DiffResult[] {
  *  is not a visual decision — nothing about it can be reviewed or approved. */
 const changed = (r: DiffResult) => r.status === 'fail' && !r.error;
 
-export function buildComment({ report, artifactUrl }: CommentOptions): string {
+export function buildComment({
+  report,
+  artifactUrl,
+  commitPaths,
+  imagesCommitted,
+}: CommentOptions): string {
   const needsReview = blocking(report);
   const lines: string[] = [COMMENT_MARKER, ''];
 
@@ -106,7 +118,7 @@ export function buildComment({ report, artifactUrl }: CommentOptions): string {
   // a click to discover the tool even has a CTA.
   lines.push('```bash', ...commands(rows), '```', '');
 
-  lines.push(...guidance(rows));
+  lines.push(...guidance(rows, commitPaths, imagesCommitted === true));
   lines.push(footer(report, artifactUrl));
 
   return lines.join('\n');
@@ -182,12 +194,29 @@ function heading(rows: DiffResult[]): string {
     return `${count(rows.length, one, many)} need review`;
   }
 
-  const largest = Math.max(...fails.map((r) => r.mismatchPercent));
+  // A row with no pixel diff has no magnitude: counting its 0% would turn
+  // "structure diff only" into "all under 0.1%".
+  const measured = fails.filter((r) => r.baselineImage !== 'unavailable');
+  if (measured.length === 0) {
+    const noun = count(fails.length, 'visual change', 'visual changes');
+    const verb = fails.length === 1 ? 'needs' : 'need';
+    const tail =
+      rows.length > fails.length
+        ? ` — ${rows.length - fails.length} more need review`
+        : '';
+    return `${noun} ${verb} review — structure diff only (baseline images not in cache)${tail}`;
+  }
+  const largest = Math.max(...measured.map((r) => r.mismatchPercent));
   // Below 0.1% the individual numbers are noise and a wall of them reads as
   // alarming; saying so once is more useful than quoting the largest hair.
   // `formatPercent` never renders "0.00%", which would read as a tool bug.
+  // Only measured stories speak for the number; the others are named apart,
+  // since "all under 0.1%" would otherwise vouch for changes nobody measured.
+  const unmeasured = fails.length - measured.length;
+  const small = unmeasured > 0 ? `${measured.length} under 0.1%` : 'all under 0.1%';
   const magnitude =
-    largest < 0.1 ? 'all under 0.1%' : `largest ${formatPercent(largest)}`;
+    (largest < 0.1 ? small : `largest ${formatPercent(largest)}`) +
+    (unmeasured > 0 ? `, ${unmeasured} without a pixel diff` : '');
 
   // Mixed: name the shape, since "5 changes" would overstate what changed.
   if (rows.length > fails.length) {
@@ -308,7 +337,26 @@ const COMMENT_COLUMN = 32;
  * statuses actually present get a paragraph — a fail-only run should not
  * explain what "stale" means.
  */
-function guidance(rows: DiffResult[]): string[] {
+/**
+ * A Markdown code span that survives any text. Backslashes do not escape inside
+ * a span, so a path containing backticks gets a fence one backtick longer than
+ * its longest run, padded with spaces; and a path with a newline or other
+ * line break is flattened, since a span cannot hold a line break that GitHub
+ * will not turn into a paragraph. Paths come from the repo's own config.
+ */
+export function codeSpan(text: string): string {
+  const flat = text.replace(/[\r\n\u2028\u2029]+/g, ' ');
+  const longest = Math.max(0, ...(flat.match(/`+/g) ?? []).map((r) => r.length));
+  const fence = '`'.repeat(longest + 1);
+  const pad = flat.startsWith('`') || flat.endsWith('`') ? ' ' : '';
+  return `${fence}${pad}${flat}${pad}${fence}`;
+}
+
+function guidance(
+  rows: DiffResult[],
+  commitPaths: string[] = ['juxtapose.manifest.json'],
+  imagesCommitted = false,
+): string[] {
   const has = (s: DiffResult['status']) => rows.some((r) => r.status === s && !r.error);
   const paras: string[] = [];
 
@@ -339,8 +387,10 @@ function guidance(rows: DiffResult[]): string[] {
   }
 
   paras.push(
-    'Then commit `juxtapose.manifest.json` and `.juxtapose/baselines/` — that is what ' +
-      'makes approval a reviewable diff.',
+    `Then commit ${commitPaths.map(codeSpan).join(' and ')} — ` +
+      (imagesCommitted
+        ? 'that is what makes approval a reviewable diff.'
+        : 'hashes and structure are what make approval a reviewable diff. Never commit images.'),
   );
   paras.push(
     'Prefer a UI? Start the run from the **Visual** panel in Storybook to approve, ' +
@@ -395,6 +445,12 @@ function detail(r: DiffResult): string {
   // Reachable only after a byte-exact hash match (baseline/status.ts), so this
   // is a guarantee rather than a guess.
   if (r.status === 'stale') return 'pixels identical';
+  // No pixel diff ran, so there is no percentage: say why, and let the
+  // structural summary (hash-level change, element deltas) carry the rest.
+  if (r.baselineImage === 'unavailable')
+    return cell(
+      `${BASELINE_IMAGE_UNAVAILABLE}${r.structural ? ` — ${r.structural.summary}` : ''}`,
+    );
   // A sub-tolerance colour change has no percentage worth printing: "0%" in
   // a table of changes reads as "nothing changed".
   const parts = [

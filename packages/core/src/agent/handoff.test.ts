@@ -404,3 +404,35 @@ describe('handoff for a variant capture', () => {
     expect(handoffVariant({})).toBeUndefined();
   });
 });
+
+describe('baseline image unavailable', () => {
+  const prompt = buildHandoffPrompt({
+    ...base,
+    mismatchPercent: 0,
+    mismatchPixels: 0,
+    changedRegions: [],
+    baselineImage: 'unavailable',
+    images: { current: 'c.webp' },
+  });
+
+  it('states why there is no pixel diff and what restores it', () => {
+    expect(prompt).toContain(
+      'baseline image not available (not in cache); structure diff only',
+    );
+    expect(prompt).toContain('image cache');
+  });
+
+  it('does not print pixel numbers it never measured', () => {
+    expect(prompt).not.toContain('mismatchPercent');
+    expect(prompt).not.toContain('## Assessment');
+  });
+});
+
+describe('guidance by store kind', () => {
+  it('tells cache users never to add an image, and git-store users nothing of the kind', () => {
+    expect(buildHandoffPrompt(base)).toContain('Never `git add` an image');
+    expect(buildHandoffPrompt({ ...base, imagesCommitted: true })).not.toContain(
+      'Never `git add`',
+    );
+  });
+});

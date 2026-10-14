@@ -67,6 +67,10 @@ function current(storyId: string) {
   };
 }
 
+const gone = async () => ({
+  kind: 'unavailable' as const,
+  reason: 'not-in-cache' as const,
+});
 const meta = { commit: 'c', approvedBy: 'a', approvedAt: 't' };
 function store(
   sidecar: 'ok' | 'missing' | 'corrupt' | 'unsupported' | 'malformed',
@@ -196,11 +200,26 @@ test('a store whose getStructure throws never fails the run', async () => {
   expect(r.results[0].structural?.flags).toContain('no-baseline-structure');
 });
 
-test('a baseline missing from the store has no structural', async () => {
-  const s = { ...store('ok'), get: async () => null };
+// The cache store holds hashes and structure in the repo but not the image, so
+// a failing story with a cold cache must still be reported by hash and
+// structure instead of erroring.
+test('a baseline image missing from the store fails by hash with structure only', async () => {
+  const s = { ...store('ok'), get: async () => null, lookup: gone };
   const r = await run(s);
-  expect(r.results[0].error).toBe('baseline missing from store');
-  expect(r.results[0].structural).toBeUndefined();
+  expect(r.results[0].status).toBe('fail');
+  expect(r.results[0].error).toBeUndefined();
+  expect(r.results[0].baselineImage).toBe('unavailable');
+  expect(r.results[0].structural?.classification).toBe('style-only');
+  // No pixel diff ran, so no pixel numbers are claimed.
+  expect(r.results[0].mismatchPixels).toBe(0);
+  expect(r.results[0].changedRegions).toEqual([]);
+});
+
+test('a missing baseline image and a missing sidecar still do not throw', async () => {
+  const s = { ...store('missing'), get: async () => null, lookup: gone };
+  const r = await run(s);
+  expect(r.results[0].status).toBe('fail');
+  expect(r.results[0].baselineImage).toBe('unavailable');
 });
 
 test('a dimension mismatch carries the error and still a verdict', async () => {
@@ -314,4 +333,26 @@ test('every captured result carries the sha256 the baseline compares', async () 
   // A failure records the current capture's hash too, not the baseline's.
   const fail = await run(store('ok'));
   expect(fail.results[0].hash).toBe(hashImage(Buffer.from('current-bytes')));
+});
+
+test('unavailable image never claims a pixel comparison, whatever the verdict', async () => {
+  // Identical structure, a style change, and a missing baseline sidecar: the
+  // three summary branches that used to say "below tolerance".
+  const same = store('ok');
+  same.getStructure!.mockResolvedValue(encodeStructure(CUR));
+  for (const s of [same, store('ok'), store('missing')]) {
+    const r = await run({ ...s, get: async () => null, lookup: gone });
+    const v = r.results[0].structural!;
+    expect(v.summary).not.toMatch(/tolerance|changed region/);
+    expect(v.summary).toMatch(/no pixel diff|no baseline image/i);
+    expect(v.flags).not.toContain('sub-threshold');
+  }
+});
+
+// A repo-backed store's image is supposed to be there, so its absence stays an
+// error with the wording it always had.
+test('a store that cannot say why keeps the original error', async () => {
+  const r = await run({ ...store('ok'), get: async () => null });
+  expect(r.results[0].error).toBe('baseline missing from store');
+  expect(r.results[0].baselineImage).toBeUndefined();
 });

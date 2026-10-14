@@ -39,6 +39,10 @@ import {
   listStoryIds,
   type StoryManifest,
   formatPercent,
+  BASELINE_IMAGE_UNAVAILABLE,
+  type ProjectConfig,
+  type StructureSnapshot,
+  committedPaths,
   formatPhases,
   phases,
   type Phases,
@@ -245,6 +249,9 @@ export async function runCommand(
 
     // Inside the try, so a failed mkdir still closes the browser below.
     await mkdir(path.join(runDir, 'images'), { recursive: true });
+    // Passing captures' structure, to fold into manifest entries that lack it
+    // (a project upgrading from per-story sidecar files).
+    const passed = new Map<string, StructureSnapshot>();
     const report = await runCapture({
       browser,
       platform: ctx.platform,
@@ -273,7 +280,15 @@ export async function runCommand(
       ...(signal ? { signal } : {}),
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
-      onArtifact: (a) => writeArtifact(runDir, a),
+      onArtifact: async (a) => {
+        await writeArtifact(runDir, a);
+        // A pass matches the manifest hash, so this capture is the approved
+        // image: keep it for the failure that needs it later.
+        if (a.status === 'pass') {
+          await ctx.store.keepImage?.(a.current).catch(() => {});
+          if (a.structure) passed.set(a.storyId, a.structure);
+        }
+      },
       readFirstCapture: (id) => readRunCapture(runDir, id),
       onWarning: warn,
       onProgress: (done, total, storyId) => {
@@ -289,6 +304,9 @@ export async function runCommand(
     });
 
     if (!ctx.json) io.err('\r' + ' '.repeat(70) + '\r');
+    if (passed.size > 0 && !signal?.aborted) {
+      await ctx.store.adoptStructures?.(passed).catch(() => {});
+    }
 
     // A cancelled run (jux mcp) captured only part of the selection. Writing
     // its report would make it the "last run" that check, handoff and approve
@@ -308,7 +326,8 @@ export async function runCommand(
 
     if (flags.html) await writeHtmlReport(report, runDir, ctx.store, ctx.json, io);
     // The comment links the artifact only when there is one to link.
-    if (flags.comment) await comment(report, ctx.json, Boolean(flags.html), io);
+    if (flags.comment)
+      await comment(report, ctx.json, Boolean(flags.html), io, ctx.config.storage);
 
     // Anything needing human or agent judgement blocks. `pass` and `skip` do not.
     const blocking = report.summary.fail + report.summary.new + report.summary.stale;
@@ -377,6 +396,7 @@ async function comment(
   json: boolean,
   hasHtmlReport: boolean,
   io: Io,
+  storage: ProjectConfig['storage'],
 ): Promise<void> {
   const ctx = await resolveGitHubContext();
   if (!ctx) {
@@ -401,7 +421,15 @@ async function comment(
     );
   }
 
-  const url = await postComment(ctx, buildComment({ report, artifactUrl }));
+  const url = await postComment(
+    ctx,
+    buildComment({
+      report,
+      artifactUrl,
+      commitPaths: committedPaths(storage),
+      imagesCommitted: ['git', 'fs'].includes(storage?.kind ?? ''),
+    }),
+  );
   if (!json) {
     io.err(url ? `jux: posted ${url}\n` : 'jux: could not post the PR comment\n');
   }
@@ -476,11 +504,13 @@ async function emit(
     io.out('\n');
     for (const r of needsReview.slice(0, 20)) {
       const detail =
-        r.status === 'fail' && r.mismatchPercent > 0
-          ? ` ${formatPercent(r.mismatchPercent)}`
-          : r.error
-            ? ` ${r.error}`
-            : '';
+        r.baselineImage === 'unavailable'
+          ? ` ${BASELINE_IMAGE_UNAVAILABLE}`
+          : r.status === 'fail' && r.mismatchPercent > 0
+            ? ` ${formatPercent(r.mismatchPercent)}`
+            : r.error
+              ? ` ${r.error}`
+              : '';
       io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}${detail}\n`);
       for (const line of explain(r, grouped)) io.out(`         ${line}\n`);
     }

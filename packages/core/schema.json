@@ -1356,10 +1356,30 @@
       }
     },
     "storage": {
-      "description": "Where baseline images live. The manifest is always in git. Default `{ \"kind\": \"git\" }`.",
+      "description": "Where baseline images live. The manifest and structure sidecars are always committed. Default `{ \"kind\": \"cache\" }`.",
       "anyOf": [
         {
           "additionalProperties": false,
+          "description": "The default. Images live in a local cache keyed by hash and are never committed; the manifest, which also carries the structure per story, is.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "cache",
+              "type": "string"
+            },
+            "dir": {
+              "pattern": "^(?!-)(?![/\\\\])(?![A-Za-z]:)(?!(?:\\.[/\\\\])*\\.{0,2}[/\\\\]?$)(?!(?:\\.[/\\\\])*juxtapose\\.manifest\\.json(?:[/\\\\]|$))(?!(?:.*[/\\\\])?\\.\\.(?:[/\\\\]|$))[^*?\\[\\]\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]+$",
+              "description": "Local image cache directory, git-ignored. Default `.juxtapose/cache/baselines`.",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "description": "Commit baseline images to the repo (the layout before 0.15).",
           "type": "object",
           "required": [
             "kind"
@@ -1370,6 +1390,7 @@
               "type": "string"
             },
             "dir": {
+              "pattern": "^(?!-)[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]+$",
               "description": "Baseline image directory.",
               "type": "string"
             }
@@ -1388,6 +1409,7 @@
               "type": "string"
             },
             "dir": {
+              "pattern": "^(?!-)[^\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]+$",
               "description": "Baseline image directory.",
               "type": "string"
             }

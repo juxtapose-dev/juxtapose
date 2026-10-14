@@ -114,7 +114,9 @@ exactly this reason.
 packages/core/              no platform knowledge — never import an adapter here
   capture/    settle pipeline, worker pool
   browser/    CDP driver, launch flags, installer, warm daemon; imports nothing else from core (lint-enforced), exported as `@juxtapose/core/browser` — a port of what Playwright did for us; see the 2026-10-13 spec before touching init or screenshot
-  baseline/   hash comparison (the pass/fail authority) + git store
+  baseline/   hash comparison (the pass/fail authority) + stores: cache (default,
+              hash-keyed images, nothing committed but the manifest and structure) and
+              the opt-in repo-backed one (`git`/`fs`)
   diff/       pixelmatch wrapper + region extraction — COLD PATH
   analysis/   which stories a change could affect
   agent/      handoff prompt construction
@@ -188,8 +190,17 @@ change to `capture/` rather than trusting a single green run.
 Releases go through changesets. Add one with `pnpm changeset` when a change
 should ship; merging to main without a changeset publishes nothing.
 
-Committing baselines (`juxtapose.manifest.json` + `.juxtapose/baselines/`) is
-normal and intended — it is what makes approval a reviewable diff. The
-`examples/` directories are the exception: antialiasing differs across machines
-and Chromium versions, so committed baselines there would be red for everyone
-but the author.
+Projects that use jux commit hashes and metadata, never images:
+`juxtapose.config.json` and `juxtapose.manifest.json`. The manifest is a
+lockfile: per story it holds the approved hash (which alone decides pass/fail)
+and the approved structure (so CI can name the elements that changed), sorted
+and machine-independent so an approval is a small reviewable diff. Never
+hand-merge it; take either side and re-run `jux approve`. `.juxtapose/` is
+entirely machine-local (the hash-keyed image cache, runs, tmp) and ignored with
+one line that `jux init` writes. Never `git add` an image; `jux doctor` flags
+tracked ones. A failing story whose image is not in the cache is reported by
+hash and structure, not as an error. `storage: { "kind": "git" }` is the opt-in
+legacy layout. The `examples/` directories commit nothing at all: antialiasing
+differs across machines and Chromium versions, so committed baselines there
+would be red for everyone but the author.
+red for everyone but the author.

@@ -1,8 +1,9 @@
-// Git-backed baseline store — the default.
+// Repo-backed baseline store — images committed beside the manifest.
 //
-// Baselines are WebP files committed under .juxtapose/baselines/. No bucket to
-// provision, no credentials, and the tool does something useful the moment it
-// is installed.
+// Baselines are WebP files committed under .juxtapose/baselines/. This was the
+// default until the cache store (cache-store.ts) replaced it: every approval
+// added binary history to the repo for good. It stays for projects that set
+// `storage.kind: "git"` (or "fs") and want pixels in the repo regardless.
 //
 // Three properties fall out of this that a bucket does not give you:
 //   - Approving a baseline is a reviewable diff in the PR that changed it.
@@ -11,28 +12,29 @@
 //   - Reverting a bad approval is `git revert`.
 //
 // The cost is repo size. WebP at quality 90 keeps a 1280x800 story around
-// 30-60KB; a 700-story suite is tens of megabytes. Real, but tolerable, and
-// the S3 store exists for suites where it isn't.
+// 30-60KB; a 700-story suite is tens of megabytes.
 
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 import type { ApprovalMeta, BaselineManifest, BaselineStore } from '../types.js';
 import { hashImage } from './status.js';
-import { isRecord } from '../browser/guards.js';
+import { isGzip } from '../capture/structure.js';
+import { MANIFEST_NAME, readManifestFile, writeManifestFile } from './manifest-file.js';
 
 /**
- * The envelope only: version 1 and a `baselines` object. A null or array
- * `baselines` (which `typeof` used to let through, to fail on first use) reads
- * as corrupt, like any other damaged manifest. Entries are not checked one by
- * one.
+ * Readable JSON back to the bytes this layout has always committed (compact
+ * JSON, gzipped). Re-approving a story must not rewrite its committed sidecar
+ * with different bytes for the same structure.
  */
-function isBaselineManifest(v: unknown): v is BaselineManifest {
-  return isRecord(v) && v['version'] === 1 && isRecord(v['baselines']);
+function compactGzip(readable: Buffer): Buffer {
+  try {
+    return gzipSync(Buffer.from(JSON.stringify(JSON.parse(readable.toString('utf8')))));
+  } catch {
+    // Not JSON: a store holds whatever it is handed; readers reject it later.
+    return gzipSync(readable);
+  }
 }
-
-const MANIFEST_NAME = 'juxtapose.manifest.json';
-const EMPTY: BaselineManifest = { version: 1, baselines: {} };
 
 export interface GitStoreOptions {
   projectRoot: string;
@@ -63,7 +65,9 @@ export class GitBaselineStore implements BaselineStore {
 
   async putStructure(storyId: string, gz: Buffer): Promise<void> {
     await mkdir(this.imageDir, { recursive: true });
-    await writeFile(this.structurePath(storyId), gz);
+    // The `.json.gz` name is this layout's contract; approval hands over
+    // readable JSON, so compress it here rather than rename a committed file.
+    await writeFile(this.structurePath(storyId), isGzip(gz) ? gz : compactGzip(gz));
   }
 
   async getStructure(storyId: string): Promise<Buffer | null> {
@@ -102,26 +106,12 @@ export class GitBaselineStore implements BaselineStore {
     await this.writeManifest(manifest);
   }
 
-  async readManifest(): Promise<BaselineManifest> {
-    if (!existsSync(this.manifestPath)) return structuredClone(EMPTY);
-    try {
-      const parsed: unknown = JSON.parse(await readFile(this.manifestPath, 'utf8'));
-      return isBaselineManifest(parsed) ? parsed : structuredClone(EMPTY);
-    } catch {
-      // A corrupt manifest means every story reads as `new`, which is loud and
-      // recoverable. Throwing here would block the run entirely.
-      return structuredClone(EMPTY);
-    }
+  readManifest(): Promise<BaselineManifest> {
+    return readManifestFile(this.manifestPath);
   }
 
-  async writeManifest(manifest: BaselineManifest): Promise<void> {
-    // Sort keys so the committed file produces a minimal, readable git diff —
-    // the whole point of storing baselines in the repo.
-    const sorted: BaselineManifest = { version: 1, baselines: {} };
-    for (const id of Object.keys(manifest.baselines).sort()) {
-      sorted.baselines[id] = manifest.baselines[id]!; // id is one of its own keys
-    }
-    await writeFile(this.manifestPath, JSON.stringify(sorted, null, 2) + '\n');
+  writeManifest(manifest: BaselineManifest): Promise<void> {
+    return writeManifestFile(this.manifestPath, manifest);
   }
 }
 

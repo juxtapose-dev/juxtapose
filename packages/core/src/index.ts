@@ -50,6 +50,7 @@ export type {
   UrlEntry,
   StorageConfig,
   BaselineStore,
+  BaselineImageLookup,
   SettleParams,
   NetworkParams,
   SettleReport,
@@ -158,14 +159,31 @@ export {
 // Implementing a baseline store. `encodeStoryId` matters for anyone building
 // keys from a story id — they are platform-supplied and not path-safe.
 export { GitBaselineStore, encodeStoryId } from './baseline/git-store.js';
+export {
+  CacheBaselineStore,
+  DEFAULT_CACHE_DIR,
+  LEGACY_IMAGE_DIR,
+} from './baseline/cache-store.js';
+export {
+  createBaselineStore,
+  checkStorageConfig,
+  StorageConfigError,
+  committedPaths,
+  ignoredPaths,
+} from './baseline/create-store.js';
 // hashImage is exported because anything comparing against a manifest entry
 // must use the same function the manifest was written with, not its own copy.
 export { hashImage } from './baseline/status.js';
+export { ManifestConflictError } from './baseline/manifest-file.js';
 export type { BaselineStatus, AncestryCheck } from './baseline/status.js';
 export { createAncestryCheck, alwaysAncestor } from './git/ancestry.js';
 
 // Structure sidecars: read and write the gzipped snapshot beside an image.
-export { encodeStructure, decodeStructure } from './capture/structure.js';
+export {
+  encodeStructure,
+  decodeStructure,
+  formatStructure,
+} from './capture/structure.js';
 // Approving a run capture with its sidecar: every approval path (CLI approve,
 // init, the review server) goes through this so they cannot disagree.
 export {
@@ -286,6 +304,7 @@ export { buildComment, type CommentOptions } from './report/comment.js';
 export { isRunReport, parseRunReport } from './report/run-report.js';
 export { buildHtmlReport, type HtmlReportOptions } from './report/html.js';
 export {
+  BASELINE_IMAGE_UNAVAILABLE,
   formatPercent,
   captureLabel,
   countStories,

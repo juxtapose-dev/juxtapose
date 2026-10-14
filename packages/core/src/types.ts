@@ -350,6 +350,10 @@ export interface DiffResult {
   viewport?: Viewport;
   /** Set when the capture or diff threw. status is 'fail' in that case. */
   error?: string;
+  /** Set on a 'fail' whose approved image is not on this machine (not in the
+   *  baseline cache): the hash mismatch stands, the pixel diff could not run,
+   *  and `structural` is all there is to explain it. */
+  baselineImage?: 'unavailable';
   /** Tier-0 explanation of a failure. Present only when status is 'fail' and
    *  the current capture produced a structure; never consulted on pass. */
   structural?: StructuralVerdict;
@@ -501,24 +505,53 @@ export interface BaselineEntry extends ApprovalMeta {
   /** sha256 of the baseline image bytes. Detects drift between manifest
    *  and store without downloading the image. */
   hash: string;
+  /** The approved structure, inline, so CI can name the elements that changed
+   *  with no image and no second file to keep in step. `structureHash` is
+   *  stored once, in `ApprovalMeta`, and put back on read. */
+  structure?: Omit<StructureSnapshot, 'structureHash'>;
 }
 
 /** Committed to the repo. The source of truth for what "approved" means,
  *  regardless of which store holds the actual bytes. */
 export interface BaselineManifest {
-  version: 1;
+  /** 1: hashes only. 2: some entry carries an inline `structure`. */
+  version: 1 | 2;
   baselines: Record<string, BaselineEntry>;
 }
+
+/**
+ * What a store can say about a story's baseline image. A manifest hash does
+ * not imply the bytes are on this machine (the default store keeps images in
+ * a local cache that CI restores), so "no image" is a normal answer with a
+ * reason, not an error.
+ */
+export type BaselineImageLookup =
+  | { kind: 'found'; image: Buffer }
+  | {
+      kind: 'unavailable';
+      reason: 'no-manifest-entry' | 'not-in-cache';
+      /** The approved hash the missing image would have had. */
+      hash?: string;
+    };
 
 /** Baseline persistence. The manifest always lives in git; only the image
  *  bytes vary by implementation. */
 export interface BaselineStore {
   get(storyId: string): Promise<Buffer | null>;
+  /** Optional: fold structure into manifest entries that lack it (a passing
+   *  run's snapshots). Returns how many entries gained structure. */
+  adoptStructures?(found: Map<string, StructureSnapshot>): Promise<number>;
+  /** Optional: cache an image by its hash without touching the manifest. A
+   *  passing run calls it so the cache fills from captures that match. */
+  keepImage?(image: Buffer): Promise<void>;
+  /** Optional: `get` with the reason an image is missing. */
+  lookup?(storyId: string): Promise<BaselineImageLookup>;
   put(storyId: string, image: Buffer, meta: ApprovalMeta): Promise<void>;
   remove(storyId: string): Promise<void>;
   readManifest(): Promise<BaselineManifest>;
   writeManifest(manifest: BaselineManifest): Promise<void>;
-  /** Optional: stores that can hold the gzipped structure sidecar. */
+  /** Optional: stores that can hold the structure sidecar (readable JSON from
+   *  `formatStructure`; legacy sidecars are gzip, `decodeStructure` takes both). */
   putStructure?(storyId: string, gz: Buffer): Promise<void>;
   getStructure?(storyId: string): Promise<Buffer | null>;
   /** Optional: where the baseline image lives on disk, for stores that keep

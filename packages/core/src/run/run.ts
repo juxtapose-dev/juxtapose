@@ -351,8 +351,9 @@ async function judge(
   }
 
   const baseline = await opts.store.get(story.storyId);
-  if (!baseline) {
-    // The manifest claimed a baseline the store can't produce.
+  if (!baseline && !opts.store.lookup) {
+    // A store that cannot say why keeps the original wording: its image is
+    // supposed to be there, so its absence is an error.
     await opts.onArtifact?.({
       storyId: story.storyId,
       status,
@@ -360,6 +361,31 @@ async function judge(
       structure: snapshot.structure,
     });
     return { ...base, error: 'baseline missing from store' };
+  }
+  if (!baseline) {
+    // The manifest's hash decided this failure; the image behind it is not on
+    // this machine (cold CI cache, fresh clone). That is the normal state of a
+    // project that never commits images, so explain with structure alone
+    // rather than erroring: no pixel diff exists, and none is claimed.
+    await opts.onArtifact?.({
+      storyId: story.storyId,
+      status,
+      current: snapshot.image,
+      structure: snapshot.structure,
+    });
+    const structural = await tryStructural(
+      opts,
+      story,
+      snapshot,
+      { changedRegions: [], dimensionMismatch: false },
+      p,
+      true,
+    );
+    return {
+      ...base,
+      baselineImage: 'unavailable',
+      ...(structural ? { structural } : {}),
+    };
   }
 
   // Counted as well as timed: under a byte-exact hash the number of diffs is
@@ -464,6 +490,7 @@ async function tryStructural(
   snapshot: Snapshot,
   pixels: Pick<DiffOutput, 'changedRegions' | 'dimensionMismatch'>,
   p: Phases,
+  pixelsUnavailable = false,
 ): Promise<StructuralVerdict | undefined> {
   if (!snapshot.structure) return undefined;
   let cause: Awaited<ReturnType<CauseIndex['causeFor']>> | undefined;
@@ -479,6 +506,7 @@ async function tryStructural(
       baseline: await readBaselineStructure(opts.store, story.storyId),
       current: snapshot.structure,
       imagesIdentical: false,
+      ...(pixelsUnavailable ? { pixelsUnavailable } : {}),
       pixels,
       escalate: { command: `jux handoff ${shellQuote(story.storyId)}` },
       ...(cause ? { cause } : {}),

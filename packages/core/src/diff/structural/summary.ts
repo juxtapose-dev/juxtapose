@@ -218,6 +218,9 @@ export interface SummaryArgs {
   unexplainedRegions: ChangedRegion[];
   flags: Flag[];
   imagesIdentical: boolean;
+  /** No pixel diff ran (the baseline image is unavailable): say nothing about
+   *  regions or tolerance, only that the hash differs. */
+  noPixelDiff?: boolean;
   baseline?: StructureSnapshot;
   current?: StructureSnapshot;
 }
@@ -234,6 +237,8 @@ const headOf = (a: SummaryArgs) =>
 export function buildChange(a: SummaryArgs): string {
   return clip(lead(headOf(a), a, [], MAX_CHANGE, CHANGE_ITEMS), MAX_CHANGE);
 }
+
+const NO_PIXEL_DIFF = 'No pixel diff: the baseline image is unavailable';
 
 export function buildSummary(a: SummaryArgs): string {
   const head = headOf(a);
@@ -266,10 +271,15 @@ export function buildSummary(a: SummaryArgs): string {
   } else if (missing) {
     body = `${head}: no ${missing} structure, so nothing explains the pixels; re-snap (or re-approve) with structure capture enabled`;
     tail.unshift(
-      subThreshold
-        ? 'Pixel diff below tolerance'
-        : `${a.regionCount} changed region${a.regionCount === 1 ? '' : 's'}`,
+      a.noPixelDiff
+        ? NO_PIXEL_DIFF
+        : subThreshold
+          ? 'Pixel diff below tolerance'
+          : `${a.regionCount} changed region${a.regionCount === 1 ? '' : 's'}`,
     );
+  } else if (a.deltas.length === 0 && a.noPixelDiff) {
+    body = `${head}: structure and styles identical; the hash differs, so pixels changed, but there is no baseline image to show where`;
+    tail.unshift(NO_PIXEL_DIFF);
   } else if (a.deltas.length === 0) {
     const painter = a.current && selfPaintingAt(a.current, a.unexplainedRegions);
     body = painter
@@ -280,11 +290,13 @@ export function buildSummary(a: SummaryArgs): string {
     if (!subThreshold) tail.unshift(regions(a));
   } else {
     tail.unshift(
-      subThreshold
-        ? 'Pixel diff below tolerance; structure explains it'
-        : a.imagesIdentical
-          ? 'Images byte-identical: the change paints nothing at this viewport'
-          : regions(a),
+      a.noPixelDiff
+        ? NO_PIXEL_DIFF
+        : subThreshold
+          ? 'Pixel diff below tolerance; structure explains it'
+          : a.imagesIdentical
+            ? 'Images byte-identical: the change paints nothing at this viewport'
+            : regions(a),
     );
     body = lead(head, a, tail);
   }

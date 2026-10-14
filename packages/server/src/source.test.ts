@@ -7,6 +7,7 @@ import { RunDirSource, mergeReports, watchTargets } from './source.js';
 import {
   encodeStoryId,
   encodeStructure,
+  createBaselineStore,
   GitBaselineStore,
   VariantConfigError,
   type DiffResult,
@@ -74,7 +75,7 @@ describe('RunDirSource.approve', () => {
     });
     await writeFile(path.join(runDir, 'images', `${safe}-current.webp`), 'img');
     await writeFile(path.join(runDir, 'images', `${safe}-current.structure.json.gz`), gz);
-    const store = new GitBaselineStore({ projectRoot: root });
+    const store = createBaselineStore(root, undefined);
     const source = new RunDirSource({
       projectRoot: root,
       platform: {} as Platform,
@@ -86,7 +87,10 @@ describe('RunDirSource.approve', () => {
       commitSha: 'abc',
     });
     await source.approve('a--b');
-    expect(await store.getStructure('a--b')).toEqual(gz);
+    // The default store commits the sidecar as readable JSON, not gzip.
+    expect(JSON.parse((await store.getStructure('a--b'))!.toString()).structureHash).toBe(
+      'e'.repeat(64),
+    );
     expect((await store.readManifest()).baselines['a--b'].structureHash).toBe(
       'e'.repeat(64),
     );

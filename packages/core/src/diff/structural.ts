@@ -34,6 +34,10 @@ export interface StructuralDiffInput {
    *  evidence wins and the verdict is not `identical`. */
   imagesIdentical: boolean;
   pixels: Pick<DiffOutput, 'changedRegions' | 'dimensionMismatch'>;
+  /** The baseline image is unavailable, so no pixel diff ran: `pixels` is
+   *  empty by absence, not by measurement, and the summary must not say
+   *  "below tolerance" or count regions. */
+  pixelsUnavailable?: boolean;
   /** The exact tier-3 command; core does not know how the CLI is spelled. */
   escalate: { command: string };
   /** From `jux run --since`; `jux diff` has no changed-file set. */
@@ -102,7 +106,10 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
       dimensionMismatch: pixels.dimensionMismatch,
       hasRegions: cov.regionCount > 0,
       subThreshold:
-        !imagesIdentical && !pixels.dimensionMismatch && cov.regionCount === 0,
+        !input.pixelsUnavailable &&
+        !imagesIdentical &&
+        !pixels.dimensionMismatch &&
+        cov.regionCount === 0,
     },
   };
   const { classification, styleTags } = classify(ctx);
@@ -119,6 +126,7 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
     unexplainedRegions: cov.unexplainedRegions,
     flags,
     imagesIdentical,
+    ...(input.pixelsUnavailable ? { noPixelDiff: true } : {}),
     baseline,
     current,
   });

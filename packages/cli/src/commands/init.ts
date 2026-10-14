@@ -13,10 +13,12 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import {
   approveCapture,
+  ignoredPaths,
   acquireBrowser,
   installChrome,
   resolveChrome,
   encodeStoryId,
+  encodeStructure,
   runCapture,
   alwaysAncestor,
   createAncestryCheck,
@@ -43,6 +45,8 @@ import {
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
 import { installWithProxy } from './browser.js';
+import { ensureIgnored, ignoredCommittedPaths } from '../gitignore.js';
+import { gitAddCommand } from '../printed-commands.js';
 
 const CONFIG_NAME = 'juxtapose.config.json';
 
@@ -94,6 +98,19 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
   } else {
     await writeFile(configPath, JSON.stringify(defaultConfig(ctx), null, 2) + '\n');
     say(`Wrote ${CONFIG_NAME}.`);
+  }
+
+  // Before capturing, for the same reason as the config: nothing may reach a
+  // commit that should not, even if the capture below dies halfway.
+  const added = await ensureIgnored(ctx.projectRoot, ignoredPaths(ctx.config.storage));
+  if (added.length > 0) say(`Added ${added.join(', ')} to .gitignore.`);
+  // A broad `.juxtapose/` ignore hides the files this very command asks you to
+  // commit. A warning, not a failure: the capture below is still worth having.
+  const hidden = ignoredCommittedPaths(ctx.projectRoot);
+  if (hidden.length > 0) {
+    process.stderr.write(
+      `jux: your .gitignore ignores ${hidden.map((h) => h.path).join(' and ')}, which must be committed, so \`git add\` will skip them and CI will lose the structure diffs. Run \`jux doctor\` for the fix.\n`,
+    );
   }
 
   const server = ctx.origin ? null : await serveStatic(ctx.buildDir!);
@@ -291,9 +308,14 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     }
 
     say('');
-    say('Commit the baselines so everyone compares against the same thing:');
+    const repoBacked = ['git', 'fs'].includes(ctx.config.storage?.kind ?? '');
+    say(
+      repoBacked
+        ? 'Commit the baselines so everyone compares against the same thing:'
+        : 'Commit the hashes so everyone compares against the same thing. Images stay in\nthe local cache and are never committed:',
+    );
     say('');
-    say(`  git add ${CONFIG_NAME} juxtapose.manifest.json .juxtapose/baselines`);
+    say(`  ${gitAddCommand(CONFIG_NAME, ctx.config.storage)}`);
     say(`  git commit -m "Add juxtapose visual baselines"`);
     say('');
     say('From now on `jux run` captures only what your changes could affect.');
@@ -334,6 +356,15 @@ export function defaultConfig(ctx: {
 async function writeArtifact(runDir: string, a: RunArtifact): Promise<void> {
   const safe = encodeStoryId(a.storyId);
   await writeFile(path.join(runDir, 'images', `${safe}-current.webp`), a.current);
+  // approveCapture reads the sidecar from here. Without it init baselined
+  // every story with a hash and no structure, which matters more now that
+  // the sidecar is the only thing CI has to explain a change with.
+  if (a.structure) {
+    await writeFile(
+      path.join(runDir, 'images', `${safe}-current.structure.json.gz`),
+      encodeStructure(a.structure),
+    );
+  }
 }
 
 const capturePath = (runDir: string, storyId: string) =>

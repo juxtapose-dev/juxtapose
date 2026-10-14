@@ -25,12 +25,30 @@ export function isSubThreshold(r: {
   mismatchPixels: number;
   mismatchPercent: number;
   error?: string;
+  baselineImage?: 'unavailable';
 }): boolean {
-  return !r.error && r.mismatchPixels === 0 && r.mismatchPercent === 0;
+  // No pixel diff ran when the image is unavailable, so "0 pixels marked"
+  // says nothing about subtlety.
+  return (
+    !r.error &&
+    r.baselineImage !== 'unavailable' &&
+    r.mismatchPixels === 0 &&
+    r.mismatchPercent === 0
+  );
 }
+
+/**
+ * The one sentence every surface (run output, PR comment, handoff, HTML
+ * report, addon) uses when a story failed its hash but the approved image is
+ * not on this machine. Images are never committed, so this is the normal state
+ * of a fresh clone or a CI job with a cold cache, not a fault.
+ */
+export const BASELINE_IMAGE_UNAVAILABLE =
+  'baseline image not available (not in cache); structure diff only';
 
 /** A failing story's magnitude, in words that stay true for sub-threshold changes. */
 export function describeMagnitude(r: Parameters<typeof isSubThreshold>[0]): string {
+  if (r.baselineImage === 'unavailable') return BASELINE_IMAGE_UNAVAILABLE;
   return isSubThreshold(r)
     ? 'subtle change, diff marks no pixels'
     : `${formatPercent(r.mismatchPercent)} changed`;
