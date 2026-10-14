@@ -24,6 +24,33 @@ unknown option, or a positional a command does not take (`jux run some-id`),
 exits 2 with a one-line message; it is never ignored. Use `jux run --story <id>`
 to run one story. A missing workbench exits 2 with its own message.
 
+## Check the repo: `jux doctor`
+
+`jux doctor` checks a project against the rule that it commits hashes and
+structure, never images. It reads the repo and the config only, with no
+workbench or browser, so it also works as a CI step.
+
+It reports:
+
+- `tracked-images`: baseline images tracked by git in the old layout or the
+  cache directory. The fix runs `jux run --all` first, so the cache holds the
+  images before the commit deletes them from other clones, then
+  `git rm --cached -- '<dir>/*.webp'`, the `.gitignore` lines, and a commit.
+- `untracked-images`: images that are neither tracked nor ignored, which the
+  next `git add .` would commit.
+- `missing-ignores`: `.gitignore` lines the project needs. Git decides, so a
+  broader pattern or a parent `.gitignore` counts.
+
+A project that sets `storage.kind` to `git` or `fs` commits images on purpose,
+so tracked images are not reported for it.
+
+Pass `--project <dir>` to check another directory. The printed commands then use
+`git -C <dir>` and absolute paths, so they work from where you are.
+
+`--json` prints `{ "ok": boolean, "issues": [{ "code", "message", "files?", "fix": [string] }] }`,
+where `fix` is the commands to run, in order, each quoted for a POSIX shell.
+Exit 0 means no issues, 1 means at least one.
+
 ## Which setting won: `jux config --explain`
 
 Capture settings layer across the project config, a story's

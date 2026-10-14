@@ -619,11 +619,18 @@ with a cold cache), jux reports the failure by hash and structure and says
 "baseline image not available (not in cache); structure diff only". It does not
 error. To get pixel diffs in CI, save and restore the cache; see [CI](ci.md).
 
-`jux init` adds `.juxtapose/cache/` and `.juxtapose/runs/` to `.gitignore`. A
-project with no `storage` key and images already committed under
-`.juxtapose/baselines/` keeps working: jux reads those images (when they match
-the manifest hash) and writes new ones to the cache. Run `jux doctor` for the
-migration commands.
+`jux init` adds `.juxtapose/cache/`, `.juxtapose/baselines/*.webp` and
+`.juxtapose/runs/` to `.gitignore`. A project with no `storage` key and images
+already committed under `.juxtapose/baselines/` keeps working: jux reads those
+images (when they match the manifest hash), copies each into the cache as it
+does, and writes new ones to the cache. Run `jux doctor` for the migration
+commands. Run `jux run --all` before you commit the untracking: the commit
+deletes the images from every clone that pulls it, and those clones then rely on
+their own run or a restored CI cache, and report structure only until then.
+
+`storage.dir` must be a relative path inside the project: no `..`, glob
+characters, control characters or leading `-`, and not `.juxtapose` or
+`.juxtapose/structure`. The cache is not pruned yet; see [CI](ci.md).
 
 Structure sidecars are plain JSON, one element per line, so an approval's diff
 shows which elements moved. Legacy `.structure.json.gz` sidecars are still read.

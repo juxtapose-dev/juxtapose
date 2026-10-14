@@ -27,6 +27,13 @@ anything under `.juxtapose/` or `juxtapose.manifest.json` to make a diff go
 away. Accepting a visual change is the human's call. Your job ends at
 reporting the verdict (and the crops, if you needed them).
 
+If a `jux run` result has `baselineImage: "unavailable"` (the text says
+"baseline image not available (not in cache); structure diff only"), the story
+failed by hash but the approved image is not on this machine. Read the
+structural deltas; there is no pixel diff, overlay or crops to look at. Do not
+try to fetch an image, regenerate one, or `git add` one: projects commit hashes
+and structure, never images.
+
 ## 1. Before you edit: snap the page
 
 ```bash
