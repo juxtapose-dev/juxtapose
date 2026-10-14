@@ -13,7 +13,12 @@ import type {
   StoryParams,
   Viewport,
 } from '../types.js';
-import { FREEZE_ANIMATIONS_CSS, waitForPaint, waitForSelector } from './settle.js';
+import {
+  FREEZE_ANIMATIONS_CSS,
+  rerasterLayers,
+  waitForPaint,
+  waitForSelector,
+} from './settle.js';
 import {
   installIdleDetector,
   movedSincePaint,
@@ -264,7 +269,10 @@ export async function captureStory(
   // Last barrier before the shutter: the DOM being quiet does not mean the
   // pixels are final. Style, layout and paint still have to land, and without
   // this the capture intermittently catches an intermediate frame — which a
-  // byte-exact hash reports as a failure.
+  // byte-exact hash reports as a failure. Composited layers are rebuilt
+  // first so their raster reflects this frame, not the page's history
+  // (issue #136).
+  await rerasterLayers(page);
   await waitForPaint(page);
 
   // Work that landed during the paint barrier (an observer callback, a
@@ -281,6 +289,7 @@ export async function captureStory(
       settle,
       Math.max(100, settle.timeoutMs - first.waitedMs),
     );
+    await rerasterLayers(page);
     await waitForPaint(page);
     if (second.status !== 'idle') flagged = second;
   }

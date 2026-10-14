@@ -44,6 +44,60 @@ export async function waitForSelector(
 }
 
 /**
+ * Drop and rebuild every `will-change` compositor layer, so each is rastered
+ * once, from the page as it stands now.
+ *
+ * Chrome picks a layer's raster translation (the subpixel offset its content
+ * is rasterized at) when it first rasterizes the layer, and keeps it on a
+ * `will-change: transform` layer so a moving transform never re-rasters. When
+ * the transform changes after that first raster (an animation that ran a
+ * frame before the freeze, or a `translateX(-100%)` whose width grew when a
+ * font loaded) the layer keeps the old offset, and its glyph antialiasing
+ * records the page's history instead of its final state. That history is
+ * timing: one Chakra marquee captured 3 different hashes depending on run
+ * context (issue #136), with the same frozen transform in all of them.
+ *
+ * A frame with `will-change: auto` composites the element into its parent;
+ * removing the override makes a new layer, rastered at its current
+ * transform. Measured on a translateX marquee fixture through snapPages, 40
+ * captures per arm: animated 39/40 and load-delayed 40/40 differed from the
+ * same page with a static transform; with this, 0/80. On the Chakra story
+ * the three contexts now capture one hash, the same one a page frozen from
+ * its first frame and then rebuilt this way gives. A device-scale round trip
+ * and `--disable-threaded-animation` leave the stale raster; freezing
+ * animations from the first frame (an init script) fixes the fixture but not
+ * Chakra, whose marquee widens when its font loads. Costs ~19 ms a capture.
+ *
+ * A constructed stylesheet rather than a style tag: the idle detector and
+ * the structure snapshot never see it. Shadow roots are not reached, as with
+ * the freeze stylesheet.
+ */
+export async function rerasterLayers(page: Page, timeoutMs = 1000): Promise<void> {
+  await page
+    .evaluate(
+      (cap) =>
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, cap);
+          const sheet = new CSSStyleSheet();
+          sheet.replaceSync('*, *::before, *::after { will-change: auto !important; }');
+          document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+          // Two frames: the second is committed without the layers.
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
+                (s) => s !== sheet,
+              );
+              clearTimeout(timer);
+              resolve();
+            }),
+          );
+        }),
+      timeoutMs,
+    )
+    .catch(() => {});
+}
+
+/**
  * Block until the compositor has actually presented a frame.
  *
  * The DOM going quiet is not the same as the pixels being final: style
