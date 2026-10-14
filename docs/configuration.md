@@ -298,9 +298,10 @@ script that hangs) still fails the story after 30 s.
 { "network": { "external": "block" } }
 ```
 
-| option             | default | purpose                                                                                      |
-| ------------------ | ------- | -------------------------------------------------------------------------------------------- |
-| `network.external` | `allow` | `block` fails requests to origins other than the page's own (the story URL's origin) at once |
+| option             | default | purpose                                                                                                                                              |
+| ------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `network.external` | `allow` | `allow` or `block`, or an object `{ default, images, frames, media }`: what to do with requests to origins other than the page's own                 |
+| `network.rules`    | none    | `[{ match, action }]`: URL rules checked before `external`, in order, the first match wins. They match any URL, including the Storybook's own origin |
 
 With `block`, an external image, font, script or frame fails the moment it's
 requested. It doesn't fetch bytes that change between runs (a random photo, a
@@ -318,12 +319,78 @@ the suite. A deployed Storybook that serves its assets from a separate origin
 (a CDN host) fails under `block`; use it with a build on disk or a dev server
 that serves its own assets.
 
+#### By resource type
+
+`"external": "block"` means `{ "default": "block" }`. The object form lets a
+resource type differ from the default. `images`, `frames` (sub-frame
+documents, such as an `<iframe>`) and `media` (audio and video) each take
+`allow`, `block` or `placeholder`, apply to third-party requests only, and
+override `default` for that type. The type is the one Chrome reports for the
+request. `placeholder` is not valid for `default`; it is a config error.
+
+```json
+{
+  "network": {
+    "external": { "default": "allow", "images": "placeholder", "frames": "placeholder" }
+  }
+}
+```
+
+A `placeholder` answers the request at once with a fixed stand-in instead of
+fetching it, so the page renders the same pixels every run:
+
+| type     | `placeholder` answers with                                                      |
+| -------- | ------------------------------------------------------------------------------- |
+| `images` | a 64x64 solid gray PNG, the same bytes every time                               |
+| `frames` | an empty HTML document (`<body>` with nothing in it), the same bytes every time |
+| `media`  | nothing: media has no stand-in, so `placeholder` blocks it, the same as `block` |
+
+A placeholder request finishes immediately and never counts as in flight for
+the settle wait.
+
+#### URL rules
+
+```json
+{
+  "network": {
+    "external": { "images": "placeholder" },
+    "rules": [
+      { "match": "https://www.google-analytics.com/**", "action": "block" },
+      { "match": "https://picsum.photos/**", "action": "placeholder" },
+      { "match": "type:Media", "action": "block" },
+      { "match": "/api/clock", "action": "block" }
+    ]
+  }
+}
+```
+
+A rule's `match` is the same pattern as `settle.network.ignore`: a URL glob, a
+`type:<ResourceType>`, or both (`type:Image https://cdn.example.com/**`). Rules
+are checked first, in array order, and the first match decides the request.
+Only a request no rule matches falls through to `external`. Unlike
+`external`, a rule matches any URL, the Storybook's own origin included, so it
+can block one of your own requests, or allow a request that `external` would
+block (an `allow` rule before a `block` default). The top-level document is
+never decided.
+
+`placeholder` in a rule follows the type of the request it matches: an image
+gets the image, a sub-frame document gets the empty frame, and any other
+request, media included, is blocked instead. A rule that can only match types
+with no stand-in, such as `type:Script`, is an error when the config loads;
+a rule by URL alone is accepted, and a script it matches is blocked.
+
+#### Layering
+
 It's layered like `settle`: the project config, then the story's
-`parameters.juxtapose.network`, then the command (`--network-external block`,
-or `network: { "external": "block" }` in the MCP `snap` and `run` tools). Only
-values known before navigation apply, so a value that only the live Storybook
-preview declares is ignored. Recording and replaying external responses is
-tracked in #147 and isn't implemented.
+`parameters.juxtapose.network`, then a `stories` override, then the command
+(`--network-external block`, `--network '<json>'` with the same object as the
+config, or `network: { ... }` in the MCP `snap` and `run` tools). The type map
+merges field by field, so a story's `images: "block"` keeps the project's
+`frames`. Rules from a higher layer are checked before the lower layer's, so a
+story can allow a URL the project blocks. Only values known before navigation
+apply, so a value that only the live Storybook preview declares is ignored.
+Recording and replaying external responses is tracked in #147 and isn't
+implemented.
 
 ### Ready signal
 

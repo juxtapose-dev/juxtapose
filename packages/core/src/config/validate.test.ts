@@ -252,21 +252,21 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
     { network: { externals: 'block' } },
     undefined,
     'SettleConfigError',
-    "jux: project config: unknown network option 'externals' (expected external)",
+    "jux: project config: unknown network option 'externals' (expected external, rules)",
   ],
   [
     'project',
     { network: { external: 'deny' } },
     undefined,
     'SettleConfigError',
-    "jux: project config: network.external must be 'allow' or 'block', got \"deny\"",
+    "jux: project config: network.external must be 'allow' or 'block', or an object of per-type actions, got \"deny\"",
   ],
   [
     'project',
     { network: { external: true } },
     undefined,
     'SettleConfigError',
-    "jux: project config: network.external must be 'allow' or 'block', got true",
+    "jux: project config: network.external must be 'allow' or 'block', or an object of per-type actions, got true",
   ],
   [
     'project',
@@ -434,14 +434,14 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
     { stories: { a: { network: { external: 'x' } } } },
     undefined,
     'SettleConfigError',
-    "jux: project config: stories['a']: network.external must be 'allow' or 'block', got \"x\"",
+    "jux: project config: stories['a']: network.external must be 'allow' or 'block', or an object of per-type actions, got \"x\"",
   ],
   [
     'project',
     { stories: { a: { network: { nope: 1 } } } },
     undefined,
     'SettleConfigError',
-    "jux: project config: stories['a']: unknown network option 'nope' (expected external)",
+    "jux: project config: stories['a']: unknown network option 'nope' (expected external, rules)",
   ],
   [
     'project',
@@ -567,7 +567,7 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
     { m: { network: { external: 'x' } } },
     undefined,
     'SettleConfigError',
-    "jux: project config: variant 'm': network.external must be 'allow' or 'block', got \"x\"",
+    "jux: project config: variant 'm': network.external must be 'allow' or 'block', or an object of per-type actions, got \"x\"",
   ],
   [
     'variants',
@@ -595,7 +595,7 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
     { network: { external: 'x' } },
     undefined,
     'SettleConfigError',
-    "jux: story 'a--b': network.external must be 'allow' or 'block', got \"x\"",
+    "jux: story 'a--b': network.external must be 'allow' or 'block', or an object of per-type actions, got \"x\"",
   ],
   [
     'story',
@@ -637,7 +637,7 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
     { external: 'x' },
     "'network'",
     'SettleConfigError',
-    "jux: 'network': network.external must be 'allow' or 'block', got \"x\"",
+    "jux: 'network': network.external must be 'allow' or 'block', or an object of per-type actions, got \"x\"",
   ],
   [
     'patterns',

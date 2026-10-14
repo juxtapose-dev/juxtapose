@@ -185,17 +185,114 @@ export const SettleSchema = withText(
   },
 );
 
-export const ExternalNetworkSchema = withText(
-  StringEnum(['allow', 'block'] as const, {
+/** What a request can be told to do. `placeholder` answers an image or a
+ *  frame with a fixed stand-in; anything else becomes `block`. */
+export const NETWORK_ACTIONS = ['allow', 'block', 'placeholder'] as const;
+export type NetworkAction = (typeof NETWORK_ACTIONS)[number];
+
+const typeAction = (description: string) =>
+  withText(StringEnum(NETWORK_ACTIONS, { description }), {
+    type: "network.external.{key} must be 'allow', 'block' or 'placeholder', got {got}",
+  });
+
+const ExternalTypesSchema = Type.Object(
+  {
+    default: Type.Optional(
+      withText(
+        StringEnum(['allow', 'block'] as const, {
+          description:
+            'For third-party requests no type entry covers. `placeholder` is not valid here; it needs a resource type. Default `allow`.',
+        }),
+        {
+          type: "network.external.default must be 'allow' or 'block' ('placeholder' is for images, frames and media), got {got}",
+        },
+      ),
+    ),
+    images: Type.Optional(
+      typeAction(
+        'Third-party images (CDP resource type Image). `placeholder` answers with a fixed 64x64 gray PNG, the same bytes every time.',
+      ),
+    ),
+    frames: Type.Optional(
+      typeAction(
+        'Third-party sub-frame documents (iframes). `placeholder` answers with a fixed empty HTML document.',
+      ),
+    ),
+    media: Type.Optional(
+      typeAction(
+        'Third-party audio and video (CDP resource type Media). `placeholder` blocks: there is no stand-in for media.',
+      ),
+    ),
+  },
+  {
+    additionalProperties: false,
     description:
-      "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-  }),
-  { type: "network.external must be 'allow' or 'block', got {got}" },
+      'Per resource type actions for third-party requests, each overriding `default` for that type.',
+  },
+);
+
+export const ExternalNetworkSchema = withText(
+  Type.Union([
+    StringEnum(['allow', 'block'] as const, {
+      description:
+        "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Same as `{ default }`.",
+    }),
+    ExternalTypesSchema,
+  ]),
+  {
+    type: "network.external must be 'allow' or 'block', or an object of per-type actions, got {got}",
+    unknown: "unknown network.external option '{extra}' (expected {keys})",
+  },
+);
+
+export const NetworkRuleSchema = withText(
+  Type.Object(
+    {
+      match: withText(
+        Type.String({
+          format: URL_PATTERN_FORMAT,
+          description:
+            'A URL glob, a `type:<ResourceType>`, or both: the same pattern syntax as `settle.network.ignore`. A glob starting with `/` matches the URL path.',
+        }),
+        {
+          type: 'match must be a URL pattern string, got {got}',
+          format: 'match: {reason}',
+        },
+      ),
+      action: withText(
+        StringEnum(NETWORK_ACTIONS, {
+          description:
+            "`allow`, `block`, or `placeholder` (a fixed image or empty frame; any other request is blocked instead, and `placeholder` on a `type:` that can't have one is an error).",
+        }),
+        { type: "action must be 'allow', 'block' or 'placeholder', got {got}" },
+      ),
+    },
+    {
+      additionalProperties: false,
+      description: 'One URL rule: the first rule that matches a request decides it.',
+    },
+  ),
+  {
+    prefix: 'network.rules[{key}]: ',
+    type: 'must be an object of { match, action }, got {got}',
+    unknown: "unknown option '{extra}' (expected {keys})",
+  },
 );
 
 export const NetworkSchema = withText(
   Type.Object(
-    { external: Type.Optional(ExternalNetworkSchema) },
+    {
+      external: Type.Optional(ExternalNetworkSchema),
+      rules: Type.Optional(
+        withText(
+          Type.Array(NetworkRuleSchema, {
+            description:
+              "URL rules checked before `external`, in order; the first match wins. They match any URL, including the Storybook's own origin. Story rules are checked before project rules.",
+          }),
+          { type: 'network.rules must be an array of { match, action }, got {got}' },
+        ),
+      ),
+    },
     {
       additionalProperties: false,
       description:
@@ -616,6 +713,7 @@ export const ProjectRuntimeSchema = Type.Object(optional(projectChecked));
 export type SettleParams = Static<typeof SettleSchema>;
 export type NetworkParams = Static<typeof NetworkSchema>;
 export type ExternalNetwork = Static<typeof ExternalNetworkSchema>;
+export type NetworkRule = Static<typeof NetworkRuleSchema>;
 export type VariantSpec = Static<typeof VariantSchema>;
 export type JuxtaposeParameters = Static<typeof JuxtaposeParametersSchema>;
 export type StoryOverride = Static<typeof StoryOverrideSchema>;

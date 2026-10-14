@@ -1,0 +1,6 @@
+---
+'@juxtapose/core': minor
+'@juxtapose/cli': minor
+---
+
+`network.external` now also takes an object, `{ default, images, frames, media }`, and a new `network.rules` list matches URLs (#177, part of #147). Each type key is `allow`, `block` or `placeholder`, applies to third-party requests only and overrides `default` for that type; the string form still means `{ default }` and behaves as before. A rule is `{ match, action }`, with `match` in the `settle.network.ignore` pattern syntax (URL glob, `type:`), checked before the type defaults in array order, first match wins, on any URL including the Storybook's own origin. `placeholder` answers an image with a fixed 64x64 gray PNG and a sub-frame document with a fixed empty HTML page through `Fetch.fulfillRequest`, so a random photo or an embed renders the same pixels every run; media has no stand-in and is blocked; any other request a `placeholder` rule matches is blocked. `placeholder` as `default`, or on a rule that matches only types with no stand-in (`type:Script`), is a config error. Story, `stories` override and variant rules are checked before the project's, and the type map merges field by field. Blocked and placeholder requests never count as in flight for settle. Adds `--network <json>` to `jux snap` and `jux run`; the MCP `network` argument takes the whole object.

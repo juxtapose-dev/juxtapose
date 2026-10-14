@@ -27,6 +27,7 @@ import {
 import { configError, fits, validate } from '../config/validate.js';
 import { Type } from '@sinclair/typebox/type';
 import { SettleConfigError } from './config-errors.js';
+import { checkRulePlaceholders } from './network-rules.js';
 import { parsePattern, type UrlPattern } from './url-pattern.js';
 
 /** Default cap on the settle wait. Measured on the examples (29 stories, 5
@@ -184,7 +185,13 @@ export function checkProjectSettle(config: unknown): void {
   // A config that isn't an object has never been refused here (each option
   // read as absent); keep it that way.
   if (typeof config !== 'object' || config === null || Array.isArray(config)) return;
-  validate(ProjectRuntimeSchema, config, 'project config');
+  const c = validate<{
+    network?: NetworkParams;
+    stories?: Record<string, { network?: NetworkParams }>;
+  }>(ProjectRuntimeSchema, config, 'project config');
+  checkRulePlaceholders(c.network?.rules, 'project config');
+  for (const [glob, o] of Object.entries(c.stories ?? {}))
+    checkRulePlaceholders(o.network?.rules, `project config: stories '${glob}'`);
 }
 
 export { SettleConfigError };

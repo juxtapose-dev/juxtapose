@@ -171,10 +171,18 @@ describe('jux mcp protocol', () => {
     const snap = tools[0]!.inputSchema as {
       properties: Record<string, { properties: Record<string, unknown> }>;
     };
-    expect(snap.properties['network']!.properties['external']).toEqual({
-      type: 'string',
-      enum: ['allow', 'block'],
-      description: 'Default allow',
+    expect(snap.properties['network']!.properties['external']).toMatchObject({
+      anyOf: [
+        { type: 'string', enum: ['allow', 'block'] },
+        {
+          type: 'object',
+          properties: { images: { enum: ['allow', 'block', 'placeholder'] } },
+        },
+      ],
+    });
+    expect(snap.properties['network']!.properties['rules']).toMatchObject({
+      type: 'array',
+      items: { properties: { action: { enum: ['allow', 'block', 'placeholder'] } } },
     });
     expect((await c.request('nope/nope')).error?.code).toBe(-32601);
     expect((await c.request('tools/call', { name: 'nope' })).error?.code).toBe(-32602);

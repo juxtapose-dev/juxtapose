@@ -159,7 +159,9 @@ function describe(root: TSchema, value: unknown, e: ValueError) {
     key: s.key,
     name: s.name,
     extra,
-    keys: Object.keys((s.schema.properties as object | undefined) ?? {}).join(', '),
+    keys: Object.keys(
+      ((objectBranch(s.schema) ?? s.schema).properties as object | undefined) ?? {},
+    ).join(', '),
     reason:
       typeof e.schema.format === 'string' && typeof e.value === 'string'
         ? formatReasons[e.schema.format]?.(e.value)

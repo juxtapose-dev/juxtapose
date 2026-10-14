@@ -160,8 +160,11 @@ const SETTLE = toolArg(SettleSchema, {
 });
 
 const NETWORK = toolArg(NetworkSchema, {
-  '': "Third-party requests for this call. 'block' fails requests to origins other than the page's own, so an external image neither changes nor stalls the capture",
-  external: 'Default allow',
+  '': 'Request policy for this call. Blocking or replacing third-party requests keeps a random image or an embed from changing or stalling the capture',
+  external:
+    "'allow' (default) or 'block' third-party requests, or { default, images, frames, media } with 'placeholder' for images and frames",
+  rules:
+    'Checked first, in order, first match wins: [{ match: URL glob or type:<ResourceType>, action: allow|block|placeholder }]',
 });
 
 export const TOOLS: Tool[] = [
@@ -312,9 +315,15 @@ function settleArg(args: Args): SettleFlags {
   } catch (e) {
     throw new ArgError((e as Error).message.replace(/^jux: /, ''));
   }
-  const net: SettleFlags = network?.external
-    ? { 'network-external': network.external }
-    : {};
+  // The string form keeps its own flag; anything richer travels as JSON.
+  const net: SettleFlags =
+    network === undefined
+      ? {}
+      : network.rules === undefined && typeof network.external === 'string'
+        ? { 'network-external': network.external }
+        : Object.keys(network).length > 0
+          ? { network: JSON.stringify(network) }
+          : {};
   if (!settle) return net;
   return {
     ...net,

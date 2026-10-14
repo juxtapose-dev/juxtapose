@@ -65,6 +65,8 @@ export {
   StringEnum,
   type JuxtaposeParameters,
   type ExternalNetwork,
+  type NetworkAction,
+  type NetworkRule,
 } from './config/schema.js';
 export {
   configJsonSchema,
@@ -109,6 +111,7 @@ export {
   type SettleLayer,
 } from './capture/settle-options.js';
 export { checkNetwork } from './capture/network-policy.js';
+export { mergeNetwork } from './capture/network-rules.js';
 export {
   discoverParams,
   prepareCaptures,

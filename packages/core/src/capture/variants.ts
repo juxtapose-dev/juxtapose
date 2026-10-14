@@ -8,6 +8,7 @@
 // them without touching this.
 
 import { checkNetwork } from './network-policy.js';
+import { checkRulePlaceholders, mergeNetwork } from './network-rules.js';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
 import type { StoryManifest, StoryOverride, StoryParams, VariantSpec } from '../types.js';
 import { VariantsRuntimeSchema } from '../config/schema.js';
@@ -89,7 +90,11 @@ export function expandVariants(
           },
           // Base params, then the extends chain, then the variant itself;
           // the config override goes over all three.
-          withSettle({ ...baseParams, ...layer }, baseParams.settle, layer.settle),
+          withNetwork(
+            withSettle({ ...baseParams, ...layer }, baseParams.settle, layer.settle),
+            baseParams.network,
+            layer.network,
+          ),
           overrides,
         ),
       );
@@ -118,7 +123,14 @@ const describe = (s: StoryManifest): string =>
  *  the error names the place the user has to edit. */
 function checkDeclared(raw: unknown, where: string): Record<string, VariantSpec | false> {
   if (raw === undefined) return {};
-  return validate<Record<string, VariantSpec | false>>(VariantsRuntimeSchema, raw, where);
+  const variants = validate<Record<string, VariantSpec | false>>(
+    VariantsRuntimeSchema,
+    raw,
+    where,
+  );
+  for (const [name, v] of Object.entries(variants))
+    if (v) checkRulePlaceholders(v.network?.rules, `${where}: variant '${name}'`);
+  return variants;
 }
 
 /** The variant's own layer: its extends chain (farthest ancestor first),
@@ -151,8 +163,10 @@ function resolveChain(
   const layer: VariantSpec = {};
   for (const spec of chain) {
     const settle = mergeSettle(layer.settle, spec.settle);
+    const network = mergeNetwork(layer.network, spec.network);
     Object.assign(layer, spec);
     if (settle) layer.settle = settle;
+    if (network) layer.network = network;
   }
   delete layer.extends;
   return layer;
@@ -168,6 +182,17 @@ function withSettle<T extends StoryParams>(
 ): T {
   const settle = mergeSettle(under, over);
   return settle ? { ...params, settle } : params;
+}
+
+/** `params` with `network` merged (type map field by field, the over layer's
+ *  rules first) rather than replaced. Untouched when neither side sets one. */
+function withNetwork<T extends StoryParams>(
+  params: T,
+  under: StoryParams['network'],
+  over: StoryParams['network'],
+): T {
+  const network = mergeNetwork(under, over);
+  return network ? { ...params, network } : params;
 }
 
 /**
@@ -189,9 +214,13 @@ export function mergeLiveParams(
   const { variants: _v, colorScheme: _c, ...settings } = live;
   Object.assign(params, settings, story.variantParams ?? {});
   const variantSettle = story.variantParams?.settle;
-  const layered = variantSettle
+  const variantNetwork = story.variantParams?.network;
+  const settled = variantSettle
     ? withSettle(params, settings.settle ?? story.params.settle, variantSettle)
     : params;
+  const layered = variantNetwork
+    ? withNetwork(settled, settings.network ?? story.params.network, variantNetwork)
+    : settled;
   return applyOverride(layered, story.override);
 }
 
