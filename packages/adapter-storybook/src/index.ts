@@ -119,9 +119,26 @@ export class StorybookPlatform implements Platform {
     return `${stripSlash(baseUrl)}/iframe.html?id=${encodeURIComponent(storyId)}&viewMode=story`;
   }
 
-  /** URL-addressable, so showing a story is just a navigation. */
+  /**
+   * URL-addressable, so showing a story is just a navigation.
+   *
+   * With `a11y.manual` set: Storybook 9+'s addon-a11y otherwise runs axe-core
+   * in every story's afterEach, after the `played` phase capture starts at,
+   * and axe holds the main thread for as long as the document is large.
+   * Primer's treeview-features--contain-intrinsic-size (110k elements) was
+   * blocked for over 100 s, so every capture step after the render signal
+   * waited out the 60 s story budget; with this it captures in 6-11 s,
+   * 1.8 s without the structure snapshot, byte-identical 5 of 5.
+   * Its report goes nowhere in a capture. Storybook without the addon
+   * ignores the global (8.6 example: same hashes). Not in `storyUrl`, which
+   * links a reviewer to the story.
+   */
   async showStory(page: Page, storyId: string, baseUrl: string): Promise<void> {
-    await navigateToStory((b, s) => this.storyUrl(b, s))(page, storyId, baseUrl);
+    await navigateToStory((b, s) => `${this.storyUrl(b, s)}&globals=a11y.manual:!true`)(
+      page,
+      storyId,
+      baseUrl,
+    );
   }
 
   /** Blank preview URL, for warming a page before any story is selected. */
