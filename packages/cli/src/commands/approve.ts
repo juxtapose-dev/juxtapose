@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   approveCapture,
+  ManifestConflictError,
   UnstableCaptureError,
   encodeStoryId,
   parseRunReport,
@@ -123,6 +124,9 @@ export async function approveCommand(
         );
       }
     } catch (err) {
+      // The same for every story, and not theirs to fix: exit 2 once, with the
+      // lockfile guidance, instead of one failure per story.
+      if (err instanceof ManifestConflictError) throw err;
       failed.push({
         storyId: result.storyId,
         reason: `could not write baseline: ${errorMessage(err)}`,

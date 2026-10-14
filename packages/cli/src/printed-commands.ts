@@ -13,10 +13,17 @@ type Storage = ProjectConfig['storage'];
  */
 export const literalPathspec = (p: string): string => shellQuote(`:(literal)${p}`);
 
+/**
+ * `:(literal)` and `:(glob)` are pathspec magic, which a shell that exports
+ * GIT_LITERAL_PATHSPECS=1 makes git read as part of a file name. Printed git
+ * commands that use magic turn it off for that one command.
+ */
+export const NO_LITERAL_ENV = 'GIT_LITERAL_PATHSPECS=0 ';
+
 /** `git add` for the files an approval produces, after `jux init`. */
 export function gitAddCommand(configName: string, storage: Storage): string {
   const paths = [configName, ...committedPaths(storage), '.gitignore'];
-  return `git add -- ${paths.map(literalPathspec).join(' ')}`;
+  return `${NO_LITERAL_ENV}git add -- ${paths.map(literalPathspec).join(' ')}`;
 }
 
 /** The paths to commit after `jux approve`, quoted, for a sentence. */

@@ -42,7 +42,7 @@ export const SPECS: Record<string, Spec> = {
     max: 0,
   },
   check: { flags: ['json', ...CONTEXT, 'run'], max: 0 },
-  doctor: { flags: ['json', 'project'], max: 0 },
+  doctor: { flags: ['json', 'project', 'fix'], max: 0 },
   handoff: { flags: ['json', ...CONTEXT, 'run'], max: 1 },
   snap: {
     flags: [

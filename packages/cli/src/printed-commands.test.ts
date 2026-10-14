@@ -18,8 +18,8 @@ const words = (line: string): string[] =>
 
 test('init prints git add with -- and every path as one literal word', () => {
   const line = gitAddCommand('juxtapose.config.json', storage);
-  expect(line.startsWith('git add -- ')).toBe(true);
-  expect(words(line.replace(/^git add -- /, ''))).toEqual([
+  expect(line.startsWith('GIT_LITERAL_PATHSPECS=0 git add -- ')).toBe(true);
+  expect(words(line.replace(/^GIT_LITERAL_PATHSPECS=0 git add -- /, ''))).toEqual([
     ':(literal)juxtapose.config.json',
     ':(literal)juxtapose.manifest.json',
     `:(literal)${hostile}`,
@@ -66,6 +66,8 @@ test.each([
       {
         cwd: root,
         stdio: 'ignore',
+        // Exported by a user's shell: the printed command must still work.
+        env: { ...process.env, GIT_LITERAL_PATHSPECS: '1' },
       },
     );
     const staged = execFileSync('git', ['diff', '--cached', '--name-only'], {

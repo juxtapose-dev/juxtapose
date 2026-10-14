@@ -606,8 +606,9 @@ store) the approved structure, one element per line, so an approval is a
 reviewable diff and CI can name the elements that changed with no image. Stories
 are sorted by id and nothing in it depends on the machine or the clock, so an
 unchanged story never produces a diff line and one approval touches only that
-story's lines. The format is `version` 2 once any story carries structure;
-version 1 (hashes only) is still read.
+story's lines. The file stays `"version": 1`: the per-story `structure` is an
+extra field that an older jux ignores (it reads the same hashes), so a teammate
+or CI job on a previous release is not told every story is `new`.
 
 **Don't hand-merge it; regenerate it**, as you would a lockfile. On a merge
 conflict, take either side (`git checkout --theirs juxtapose.manifest.json`, or
@@ -621,8 +622,8 @@ than treating it as empty.
 - `"cache"` (default): a local, git-ignored directory of `<sha256>.webp` files,
   `.juxtapose/cache/baselines/` unless you set `dir`. Approving writes the hash
   and structure to the manifest and the image to the cache. A passing run also
-  keeps its capture in the cache, and folds structure into any manifest entry
-  that lacks it (the one-time move from the old per-story sidecar files).
+  keeps its capture in the cache. `jux run` never writes the manifest; only
+  `jux approve` does (and `jux doctor --fix`, below).
 - `"git"`: commit images under `.juxtapose/baselines/` (or `dir`). The layout
   before 0.15, kept for projects that want pixels in the repo.
 - `"fs"`: the repo-backed store pointed at a `dir` you choose.
@@ -639,7 +640,9 @@ error. To get pixel diffs in CI, save and restore the cache; see [CI](ci.md).
 machine-local. A project with no `storage` key and images already committed
 under `.juxtapose/baselines/` keeps working: jux reads those images (when they
 match the manifest hash), copies each into the cache as it does, and writes new
-ones to the cache. Run `jux doctor` for the migration commands. Run
+ones to the cache. Run `jux doctor` for the migration commands. Old per-story
+`.structure.json.gz` sidecars move into the manifest with `jux doctor --fix`,
+which approves nothing. Run
 `jux run --all` before you commit the untracking: the commit deletes the images
 from every clone that pulls it, and those clones then rely on their own run or a
 restored CI cache, and report structure only until then.

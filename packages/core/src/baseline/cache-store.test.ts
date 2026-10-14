@@ -181,7 +181,8 @@ test('approveCapture puts the structure in the manifest, one element per line', 
   expect(
     text.split('\n').filter((l) => l.trimStart().startsWith('{"path"')),
   ).toHaveLength(structure.elements.length);
-  expect(JSON.parse(text).version).toBe(2);
+  // Additive field, so the version stays 1: an older jux accepts only 1.
+  expect(JSON.parse(text).version).toBe(1);
 });
 
 test('keepImage caches a passing capture without touching the manifest', async () => {
@@ -287,28 +288,117 @@ test('rewriting unchanged stories reproduces their bytes; one approve touches on
   expect(block(after, 'c')).toBe(block(before, 'c'));
 });
 
-test('a version 1 manifest (hashes only) still reads and gains structure on adoption', async () => {
-  await writeFile(
-    path.join(root, 'juxtapose.manifest.json'),
-    JSON.stringify({
-      version: 1,
-      baselines: { a: { ...meta, hash, structureHash: structure.structureHash } },
-    }),
-  );
-  expect((await store.readManifest()).baselines['a']!.hash).toBe(hash);
-  expect(await store.adoptStructures(new Map([['a', structure]]))).toBe(1);
-  expect((await store.readManifest()).baselines['a']!.structure).toBeDefined();
-  expect(
-    JSON.parse(await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8'))
-      .version,
-  ).toBe(2);
-  // Already has it: nothing to do, and a different hash is never adopted.
-  expect(await store.adoptStructures(new Map([['a', structure]]))).toBe(0);
+/** The previous release's manifest reader (git-store.ts at 1d50ed3), verbatim. */
+function previousReleaseReads(text: string): Record<string, string> {
+  const isRecord = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!(isRecord(parsed) && parsed['version'] === 1 && isRecord(parsed['baselines'])))
+      return {};
+    return Object.fromEntries(
+      Object.entries(parsed['baselines']).map(([id, e]) => [
+        id,
+        (e as { hash: string }).hash,
+      ]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+test('a manifest carrying structure is read by the previous release as the same hashes', async () => {
+  const runDir = await mkdtemp(path.join(tmpdir(), 'jux-run-'));
+  for (const id of ['a', 'b']) {
+    const img = path.join(runDir, `${id}-current.webp`);
+    await writeFile(img, `img-${id}`);
+    await writeFile(
+      path.join(runDir, `${id}-current.structure.json.gz`),
+      encodeStructure(structure),
+    );
+    await approveCapture(store, id, Buffer.from(`img-${id}`), meta, img);
+  }
+  const text = await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8');
+  expect(text).toContain('"structure"');
+  expect(previousReleaseReads(text)).toEqual({
+    a: hashImage(Buffer.from('img-a')),
+    b: hashImage(Buffer.from('img-b')),
+  });
 });
 
-test('adoption refuses a structure whose hash differs from the approved one', async () => {
-  await store.put('a', image, { ...meta, structureHash: 'x'.repeat(64) });
-  expect(await store.adoptStructures(new Map([['a', structure]]))).toBe(0);
+/** An old-layout project: image and gzip sidecar in .juxtapose/baselines. */
+async function legacyProject(
+  id: string,
+  img: Buffer,
+  entry: Record<string, unknown>,
+  sidecar: StructureSnapshot = structure,
+) {
+  const dir = path.join(root, '.juxtapose', 'baselines');
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, `${id}.webp`), img);
+  await writeFile(path.join(dir, `${id}.structure.json.gz`), encodeStructure(sidecar));
+  const file = path.join(root, 'juxtapose.manifest.json');
+  const manifest = existsSync(file)
+    ? JSON.parse(await readFile(file, 'utf8'))
+    : {
+        version: 1,
+        baselines: {},
+      };
+  manifest.baselines[id] = { ...meta, hash: hashImage(img), ...entry };
+  await writeFile(file, JSON.stringify(manifest));
+}
+
+test('migrating legacy sidecars folds structure into the manifest, stays version 1, changes no hash', async () => {
+  await legacyProject('a', image, { structureHash: structure.structureHash });
+  const before = (await store.readManifest()).baselines['a']!;
+  expect(await store.migrateLegacyStructures()).toEqual({ migrated: 1, skipped: [] });
+  const text = await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8');
+  expect(JSON.parse(text).version).toBe(1);
+  const after = (await store.readManifest()).baselines['a']!;
+  expect(after.structure).toBeDefined();
+  expect(after.hash).toBe(before.hash);
+  expect(previousReleaseReads(text)).toEqual({ a: hash });
+  // Idempotent.
+  expect(await store.migrateLegacyStructures()).toEqual({ migrated: 0, skipped: [] });
+});
+
+test('migration matches an entry with no structureHash by the legacy image hash', async () => {
+  await legacyProject('a', image, {});
+  await legacyProject('b', Buffer.from('other'), { hash: 'c'.repeat(64) });
+  expect(await store.migrateLegacyStructures()).toEqual({
+    migrated: 1,
+    skipped: ['b'],
+  });
+  const m = await store.readManifest();
+  expect(m.baselines['a']!.structure).toBeDefined();
+  expect(m.baselines['b']!.structure).toBeUndefined();
+});
+
+test('migration skips a sidecar whose hash differs from the approved one', async () => {
+  await legacyProject('a', image, { structureHash: 'x'.repeat(64) });
+  expect(await store.migrateLegacyStructures()).toEqual({ migrated: 0, skipped: ['a'] });
+});
+
+test('a symlinked .juxtapose is refused before anything is created at its target', async () => {
+  const outside = await mkdtemp(path.join(tmpdir(), 'jux-outside-'));
+  await symlink(outside, path.join(root, '.juxtapose'));
+  const warnings: string[] = [];
+  const guarded = new CacheBaselineStore({
+    projectRoot: root,
+    onWarning: (m) => warnings.push(m),
+  });
+  await guarded.keepImage(image);
+  expect(await readdir(outside)).toEqual([]);
+  expect(warnings.length).toBeGreaterThan(0);
+});
+
+test('a symlinked .juxtapose/cache leaves no empty directories at its target', async () => {
+  const outside = await mkdtemp(path.join(tmpdir(), 'jux-outside-'));
+  await mkdir(path.join(root, '.juxtapose'), { recursive: true });
+  await symlink(outside, path.join(root, '.juxtapose', 'cache'));
+  const guarded = new CacheBaselineStore({ projectRoot: root, onWarning: () => {} });
+  await guarded.keepImage(image);
+  expect(await readdir(outside)).toEqual([]);
 });
 
 test('conflict markers in the manifest are a lockfile error, not an empty manifest', async () => {

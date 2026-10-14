@@ -164,12 +164,26 @@ export class CacheBaselineStore implements BaselineStore {
       }
       return false;
     };
-    const before = await lstat(dir).catch(() => null);
-    if (before && (before.isSymbolicLink() || !before.isDirectory()))
-      return refuse('it is a link or not a directory');
+    // Check every part of the path that already exists BEFORE creating
+    // anything: `mkdir -p` through a symlinked `.juxtapose` would leave empty
+    // directories at the link's target.
+    const rootReal = await realpath(this.root);
+    const rel = path.relative(this.root, dir);
+    let walked = this.root;
+    for (const part of rel.split(path.sep).filter(Boolean)) {
+      walked = path.join(walked, part);
+      const info = await lstat(walked).catch(() => null);
+      if (info === null) break;
+      if (info.isSymbolicLink() || !info.isDirectory())
+        return refuse('it is a link or not a directory');
+      if (
+        (await realpath(walked)) !== path.join(rootReal, path.relative(this.root, walked))
+      )
+        return refuse('it resolves outside the project');
+    }
     await mkdir(dir, { recursive: true });
-    const [real, rootReal] = await Promise.all([realpath(dir), realpath(this.root)]);
-    return real === path.join(rootReal, path.relative(this.root, dir))
+    // Swapped for a link between the check and the mkdir? Look again.
+    return (await realpath(dir)) === path.join(rootReal, rel)
       ? true
       : refuse('it resolves outside the project');
   }
@@ -283,29 +297,48 @@ export class CacheBaselineStore implements BaselineStore {
   }
 
   /**
-   * Fold structure into entries that lack it. A project upgrading from the old
-   * layout has its structure in per-story files; a passing run proves the
-   * capture is the approved one, so its structure is the approved structure
-   * (same hash, same render) and can move into the manifest. One write.
-   * Returns how many entries gained structure.
+   * Fold legacy `.structure.json.gz` sidecars into the manifest, for stories
+   * whose entry has no structure yet. Nothing is captured and nothing is
+   * approved: an entry's hash is never touched, so a story that is failing
+   * stays failing. A sidecar is taken only when it belongs to the approved
+   * baseline: its structureHash equals the entry's, or, for an entry that
+   * recorded none, the legacy image beside it hashes to the entry's hash.
+   * One write. `skipped` lists stories whose sidecar could not be matched.
    */
-  async adoptStructures(found: Map<string, StructureSnapshot>): Promise<number> {
+  async migrateLegacyStructures(): Promise<{ migrated: number; skipped: string[] }> {
     const manifest = await this.readManifest();
-    let changed = 0;
-    for (const [id, snapshot] of found) {
-      const entry = manifest.baselines[id];
-      if (!entry || entry.structure) continue;
-      if (
-        entry.structureHash !== undefined &&
-        entry.structureHash !== snapshot.structureHash
-      )
+    let migrated = 0;
+    const skipped: string[] = [];
+    for (const [id, entry] of Object.entries(manifest.baselines)) {
+      if (entry.structure) continue;
+      const gz = await readFile(
+        path.join(this.legacyDir, `${encodeStoryId(id)}.structure.json.gz`),
+      ).catch(() => null);
+      if (!gz) continue;
+      let snapshot: StructureSnapshot;
+      try {
+        snapshot = decodeStructure(gz);
+      } catch {
+        skipped.push(id);
         continue;
+      }
+      let belongs: boolean;
+      if (entry.structureHash !== undefined) {
+        belongs = entry.structureHash === snapshot.structureHash;
+      } else {
+        const image = await readFile(this.legacyImagePath(id)).catch(() => null);
+        belongs = image !== null && hashImage(image) === entry.hash;
+      }
+      if (!belongs) {
+        skipped.push(id);
+        continue;
+      }
       const { structureHash, ...rest } = snapshot;
       manifest.baselines[id] = { ...entry, structureHash, structure: rest };
-      changed++;
+      migrated++;
     }
-    if (changed > 0) await this.writeManifest(manifest);
-    return changed;
+    if (migrated > 0) await this.writeManifest(manifest);
+    return { migrated, skipped };
   }
 
   readManifest(): Promise<BaselineManifest> {
