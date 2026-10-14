@@ -28,6 +28,11 @@ export { SettleConfigError };
 export const DEFAULT_SETTLE_TIMEOUT_MS = 1500;
 /** A cap above this is a typo, not a slow page: it would be paid per story. */
 export const MAX_SETTLE_TIMEOUT_MS = 60_000;
+
+/** `storyTimeout` bounds, ms. The top is the largest setTimeout delay (above
+ *  it Node fires at once, so every story would fail after 1 ms). */
+export const MIN_STORY_TIMEOUT_MS = 1000;
+export const MAX_STORY_TIMEOUT_MS = 2 ** 31 - 1;
 /** Timers longer than this are never waited for, at any cap. The spike
  *  measured horizon 1000 / cap 1500; the horizon must stay below the cap or a
  *  long timer is tracked and then abandoned at the cap, so it shrinks with a
@@ -290,8 +295,20 @@ export function checkProjectSettle(config: {
   network?: unknown;
   waitForSelector?: unknown;
   delay?: unknown;
+  storyTimeout?: unknown;
 }): void {
   const where = 'project config';
+  const st = config.storyTimeout;
+  if (
+    st !== undefined &&
+    (typeof st !== 'number' ||
+      !Number.isInteger(st) ||
+      st < MIN_STORY_TIMEOUT_MS ||
+      st > MAX_STORY_TIMEOUT_MS)
+  )
+    throw new SettleConfigError(
+      `${where}: storyTimeout must be a whole number of ms, ${MIN_STORY_TIMEOUT_MS} to ${MAX_STORY_TIMEOUT_MS}, got ${JSON.stringify(st)}`,
+    );
   checkSettle(config.settle, where);
   checkNetwork(config.network, where);
   if (config.waitForSelector !== undefined && typeof config.waitForSelector !== 'string')

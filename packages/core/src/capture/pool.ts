@@ -24,7 +24,42 @@ import type { SettleLayer } from './settle-options.js';
  */
 export const DEFAULT_CONCURRENCY = 8;
 
+/**
+ * Per-story budget, ms. Bounds the whole capture of one story (navigation,
+ * settle, structure, screenshot, encode).
+ *
+ * Why it exists: every CDP call carries its own 30 s cap, and a page whose main
+ * thread is busy (Primer's ~110k-element treeview story) stalls each in turn:
+ * the stacked caps measured 127-160 s for one story (issue #154). The default
+ * leaves room for a slow legitimate story (settle's own cap defaults to
+ * 1.5 s) while keeping a wedged one from tripling a run.
+ *
+ * It is a floor, not a ceiling over settle: a story's effective budget is
+ * max(this, settle cap + delay + SETTLE_ALLOWANCE_MS), because settle must
+ * never throw on timeout (a slow story is a reviewable diff, not an error).
+ */
+export const DEFAULT_STORY_TIMEOUT_MS = 60_000;
+
+/** Time beyond settle's cap and delay for navigation, the platform's render
+ *  signal, the paint barrier, structure capture and the screenshot. */
+export const SETTLE_ALLOWANCE_MS = 15_000;
+
+/** The story used up its whole budget; the page it ran on is discarded. */
+export class StoryTimeoutError extends Error {
+  constructor(storyId: string, budgetMs: number, phase: string) {
+    super(
+      `jux: story '${storyId}' exceeded its ${budgetMs} ms budget while in '${phase}'; ` +
+        `its page was discarded. A page whose main thread is busy (a very large DOM, a ` +
+        `runaway script) stalls every browser call; raise storyTimeout if the story is ` +
+        `genuinely slow.`,
+    );
+    this.name = 'StoryTimeoutError';
+  }
+}
+
 export interface PoolOptions {
+  /** Per-story budget, ms; see DEFAULT_STORY_TIMEOUT_MS. */
+  storyTimeoutMs?: number;
   browser: Browser;
   platform: Platform;
   baseUrl: string;
@@ -47,6 +82,8 @@ export interface CaptureOutcome {
   story: StoryManifest;
   snapshot?: Snapshot;
   error?: Error;
+  /** Wall time spent on the story, errored or not. */
+  durationMs: number;
   /** The story asked to be skipped via params the index didn't carry. */
   skipped?: boolean;
 }
@@ -67,6 +104,7 @@ export async function* capturePool(
   if (queue.length === 0) return;
 
   const concurrency = Math.max(1, opts.concurrency ?? DEFAULT_CONCURRENCY);
+  const budgetMs = opts.storyTimeoutMs ?? DEFAULT_STORY_TIMEOUT_MS;
   const workerCount = Math.min(concurrency, queue.length);
 
   // Shuffle so stories from one slow component don't cluster at the tail and
@@ -103,7 +141,7 @@ export async function* capturePool(
 
   const workers = Array.from({ length: workerCount }, async () => {
     let session: { context: BrowserContext; page: Page } | null = await open();
-    const deps: CaptureDeps = {
+    const baseDeps: CaptureDeps = {
       platform: opts.platform,
       baseUrl: opts.baseUrl,
       warmSwitch: opts.warmSwitch,
@@ -119,20 +157,52 @@ export async function* capturePool(
         const story = work[i]!; // i < work.length, checked above
 
         if (died || !session) {
-          push({ story, error: died ?? new BrowserDiedError() });
+          push({ story, error: died ?? new BrowserDiedError(), durationMs: 0 });
           opts.onProgress?.(++done, work.length, story.storyId);
           continue;
         }
 
+        const started = Date.now();
+        let phase = 'starting';
+        let effectiveMs = budgetMs;
         try {
-          const snapshot = await captureStory(session.page, story, deps, opts.viewport);
+          const snapshot = await withBudget(
+            captureStory(
+              session.page,
+              story,
+              {
+                ...baseDeps,
+                onPhase: (p) => (phase = p),
+                onSettleBudget: (ms) => {
+                  // Measured from now, not from the start: a slow navigation
+                  // must not eat the allowance settle was promised.
+                  effectiveMs = Math.max(
+                    budgetMs,
+                    Date.now() - started + ms + SETTLE_ALLOWANCE_MS,
+                  );
+                },
+              },
+              opts.viewport,
+            ),
+            () => effectiveMs,
+            () => new StoryTimeoutError(story.storyId, effectiveMs, phase),
+          );
           // null means the story declared `skip` in params only visible once
           // it had rendered. Report it as skipped, not as a failure.
-          push(snapshot ? { story, snapshot } : { story, skipped: true });
+          const durationMs = Date.now() - started;
+          push(
+            snapshot
+              ? { story, snapshot, durationMs }
+              : { story, skipped: true, durationMs },
+          );
         } catch (err) {
           // One bad story must never kill a run of 700. Report it as a failure
           // for this story and keep the worker going.
-          push({ story, error: err instanceof Error ? err : new Error(String(err)) });
+          push({
+            story,
+            error: err instanceof Error ? err : new Error(String(err)),
+            durationMs: Date.now() - started,
+          });
           // A crashed renderer or a closed target is permanent for that page:
           // left alone, every later story on this worker failed instantly
           // (concurrency 2, one crash: 6 of 8 stories failed). Replace the
@@ -141,9 +211,19 @@ export async function* capturePool(
             died ??= new BrowserDiedError(err);
           } else if (
             err instanceof PageCrashedError ||
-            err instanceof TargetClosedError
+            err instanceof TargetClosedError ||
+            err instanceof StoryTimeoutError
           ) {
-            await session.context.close().catch(() => {});
+            // For a timeout the abandoned capture is still running against
+            // this page; closing the context rejects its pending calls, which
+            // withBudget has already detached. The close itself is bounded: a
+            // wedged renderer may not answer it.
+            let grace: NodeJS.Timeout | undefined;
+            await Promise.race([
+              session.context.close().catch(() => {}),
+              new Promise<void>((r) => (grace = setTimeout(r, CLOSE_GRACE_MS))),
+            ]);
+            clearTimeout(grace);
             session = await open().catch((e: unknown) => {
               died ??= new BrowserDiedError(e);
               return null;
@@ -184,6 +264,32 @@ export async function* capturePool(
   }
 
   await all;
+}
+
+/** How long a worker waits for a wedged context to close before moving on. */
+const CLOSE_GRACE_MS = 5_000;
+
+/** Reject with `expired()` once `work` has run `ms()` (re-read as it grows,
+ *  see onSettleBudget). `work` is detached, not cancelled: the caller discards
+ *  the page it runs on. */
+function withBudget<T>(
+  work: Promise<T>,
+  ms: () => number,
+  expired: () => Error,
+): Promise<T> {
+  const started = Date.now();
+  let timer: NodeJS.Timeout | undefined;
+  const budget = new Promise<never>((_, reject) => {
+    const arm = () => {
+      const left = started + ms() - Date.now();
+      if (left <= 0) reject(expired());
+      else timer = setTimeout(arm, left);
+    };
+    arm();
+  });
+  // The loser's rejection must not surface as an unhandled one.
+  work.catch(() => {});
+  return Promise.race([work, budget]).finally(() => clearTimeout(timer));
 }
 
 function shuffle<T>(items: T[]): T[] {

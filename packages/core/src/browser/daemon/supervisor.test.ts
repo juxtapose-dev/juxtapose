@@ -170,6 +170,23 @@ describe.skipIf(!chrome)('supervisor', () => {
       b.close();
     }));
 
+  it('a dispose still pending when the client drops leaves the context disposed', () =>
+    withSupervisor(async ({ paths, sup }) => {
+      const a = (await connect(paths.socket)).c;
+      const { browserContextId } = await a.send('Target.createBrowserContext');
+      // Not awaited: the client goes away before the reply. The context stays
+      // owned until the dispose is answered, so the drop cleans it up too.
+      void a.send('Target.disposeBrowserContext', { browserContextId }).catch(() => {});
+      a.close();
+      const b = (await connect(paths.socket)).c;
+      for (let i = 0; i < 50; i++) {
+        if (!(await sup.browserContextIds()).includes(browserContextId)) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(await sup.browserContextIds()).not.toContain(browserContextId);
+      b.close();
+    }));
+
   it('rejects a client with another pinned version', () =>
     withSupervisor(async ({ paths }) => {
       const { outcome, c } = await connect(paths.socket, '0.0.0.0');

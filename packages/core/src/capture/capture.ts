@@ -71,6 +71,12 @@ export interface CaptureDeps {
    * decides one. `JUXTAPOSE_NO_STRUCTURE=1` turns it off for A/B timing.
    */
   structure?: boolean;
+  /** Reports which step of the capture is about to run, so the pool's story
+   *  budget can name where a wedged story was stuck. */
+  onPhase?: (phase: string) => void;
+  /** Reports the time settle may legitimately spend (its cap plus `delay`),
+   *  once resolved, so the pool's story budget never pre-empts it. */
+  onSettleBudget?: (ms: number) => void;
   /** Something the user should know that doesn't fail the story. */
   onWarning?: (message: string) => void;
   /** Settle options from outside the story: the project config below the
@@ -94,6 +100,8 @@ export async function captureStory(
   // Returns null when the story declares `skip` in its live params — see below.
 ): Promise<Snapshot | null> {
   const started = Date.now();
+  const phase = (name: string) => deps.onPhase?.(name);
+  phase('page setup');
   // Copied, not aliased: live params get merged in below, and mutating the
   // manifest entry would leak one story's config into the next run.
   const params: StoryParams = { ...story.params };
@@ -147,6 +155,7 @@ export async function captureStory(
     !sameStoryOtherCapture &&
     !(params.animations === 'play' && styleInjected.has(page));
 
+  phase('navigation');
   // Before showStory, on every capture, so the story renders in its scheme
   // from the first frame. Memoized, so it costs nothing when unchanged.
   await ensureColorScheme(page, scheme);
@@ -202,6 +211,7 @@ export async function captureStory(
   // 16-story suite: 2-4 stories failing per run before, 16/16 stable after.
   await freezeAnimations(page, params);
 
+  phase('platform settle');
   await deps.platform.settle(page, ctx);
 
   // Now that the story has rendered, ask the platform whether it declares
@@ -215,6 +225,7 @@ export async function captureStory(
   // Live params override manifest params — the live preview is the story's own
   // declaration, and the index is a lossy projection of it — but merge under
   // a variant's own fields, so the mobile variant stays mobile.
+  phase('live params');
   const live = await deps.platform.readLiveParams?.(page, id);
   if (live) {
     Object.assign(params, mergeLiveParams(story, live));
@@ -273,14 +284,22 @@ export async function captureStory(
     deps.settleLayers?.call?.settle,
   );
 
+  phase('waitForSelector');
+  // Settle must never throw on timeout (a slow story is a reviewable diff),
+  // so the story budget has to outlast the cap and the fixed delay.
+  deps.onSettleBudget?.(
+    settle.timeoutMs + (params.delay ?? 0) + (params.waitForSelector ? timeoutMs : 0),
+  );
   if (params.waitForSelector) {
     await waitForSelector(page, params.waitForSelector, timeoutMs);
   }
 
+  phase('idle wait');
   const first = await waitForIdle(page, idle, settle);
 
   // Fixed delay is the escape hatch of last resort — it costs the same on
   // every run whether or not it was needed. Prefer waitForSelector.
+  phase('delay');
   if (params.delay && params.delay > 0) {
     await new Promise<void>((r) => setTimeout(r, params.delay));
   }
@@ -291,6 +310,7 @@ export async function captureStory(
   // byte-exact hash reports as a failure. Composited layers are rebuilt
   // first so their raster reflects this frame, not the page's history
   // (issue #136).
+  phase('paint barrier');
   await rerasterLayers(page);
   await waitForPaint(page);
 
@@ -321,6 +341,7 @@ export async function captureStory(
   // paint barrier, before the shutter, with nothing in between that could
   // mutate the page.
   const effective = params.viewport ?? effectiveViewport;
+  phase('structure capture');
   const structure =
     deps.structure !== false && process.env.JUXTAPOSE_NO_STRUCTURE !== '1'
       ? await captureStructure(page, effective, params.mask ?? [])
@@ -328,6 +349,7 @@ export async function captureStory(
 
   // A selector matching nothing is not an error — a story that conditionally
   // renders the element shouldn't fail on the branch where it's absent.
+  phase('screenshot');
   const png = await page.screenshot(params.mask?.length ? { mask: params.mask } : {});
 
   // LOSSLESS, deliberately, and it is not a size-vs-quality preference.
@@ -342,6 +364,7 @@ export async function captureStory(
   // Measured: 3537 changed pixels from a single recoloured button spread over
   // all 800 rows and all 1280 columns. With lossless, zero pixels differ from
   // the source. Costs ~4x the bytes; buys a diff that means something.
+  phase('encode');
   const image = await sharp(png)
     .webp({ lossless: true, effort: deps.webpEffort ?? 0 })
     .toBuffer();
