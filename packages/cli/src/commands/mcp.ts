@@ -22,9 +22,12 @@ import {
   acquireBrowser,
   checkNetwork,
   checkSettle,
+  configWarnings,
   MAX_CROPS,
-  MAX_SETTLE_TIMEOUT_MS,
+  MAX_SNAP_SLOTS,
+  NetworkSchema,
   parseRunReport,
+  SettleSchema,
   type Browser,
 } from '@juxtapose/core';
 import type { SettleFlags } from '../settle-flags.js';
@@ -55,7 +58,7 @@ export interface McpFlags {
 
 /** Past 16 the capture pool timed out from CPU contention on a 10-core
  *  machine (capture/pool.ts), so a larger value is a mistake, not a tuning. */
-export const MAX_SNAP_SLOTS = 16;
+export { MAX_SNAP_SLOTS };
 
 /** The default snap pool: half the cores, at least 1 and at most SNAP_SLOTS.
  *  Half, because Chrome rasterizes on the CPU and the dev server being
@@ -121,47 +124,45 @@ const PROJECT = {
   description: 'Project dir (default: the server --project)',
 };
 
-// The config's `settle` shape, so an agent writes the same object it would
-// put in juxtapose.config.json. Over the story's and the project's.
-const SETTLE = {
-  type: 'object',
-  description:
-    'Settle options for this call. A capture at the cap is flagged settle-timeout, one whose wait could not run settle-fallback; `settle.pending` says what or why',
-  properties: {
-    timeout: {
-      type: 'integer',
-      minimum: 1,
-      maximum: MAX_SETTLE_TIMEOUT_MS,
-      description: 'Cap on the wait, ms (default 1500)',
-    },
-    ready: { type: 'boolean', description: 'Wait for window.__juxtapose.ready()' },
-    network: {
-      type: 'object',
-      properties: {
-        ignore: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
-            'URL patterns never waited for, e.g. "/api/poll" or "type:Fetch **/ws*"',
-        },
-        require: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'URL patterns that must complete before capture',
-        },
-      },
-    },
-  },
-};
+/**
+ * A config schema from @juxtapose/core as a tool argument: the shape is the
+ * config's, so an agent writes the same object it would put in
+ * juxtapose.config.json and the shapes cannot drift. The wording is the
+ * tool's own, shorter than the config's: descriptions are sent on every agent
+ * turn. `descriptions` is keyed by property path ('' for the argument itself).
+ */
+function toolArg(
+  schema: object,
+  descriptions: Record<string, string>,
+): Record<string, unknown> {
+  // `format` names jux's own checks (URL patterns), which a client's
+  // validator doesn't know and may refuse; the server checks them anyway.
+  const out = JSON.parse(JSON.stringify(schema), (k: string, v: unknown) =>
+    k === 'description' || k === 'format' ? undefined : v,
+  ) as Record<string, unknown>;
+  for (const [at, text] of Object.entries(descriptions)) {
+    let node = out;
+    for (const seg of at ? at.split('.') : [])
+      node = (node['properties'] as Record<string, Record<string, unknown>>)[seg]!;
+    node['description'] = text;
+  }
+  return out;
+}
 
-const NETWORK = {
-  type: 'object',
-  description:
-    "Third-party requests for this call. 'block' fails requests to origins other than the page's own, so an external image neither changes nor stalls the capture",
-  properties: {
-    external: { type: 'string', enum: ['allow', 'block'], description: 'Default allow' },
-  },
-};
+// Over the story's and the project's.
+const SETTLE = toolArg(SettleSchema, {
+  '': 'Settle options for this call. A capture at the cap is flagged settle-timeout, one whose wait could not run settle-fallback; `settle.pending` says what or why',
+  timeout: 'Cap on the wait, ms (default 1500)',
+  ready: 'Wait for window.__juxtapose.ready()',
+  'network.ignore':
+    'URL patterns never waited for, e.g. "/api/poll" or "type:Fetch **/ws*"',
+  'network.require': 'URL patterns that must complete before capture',
+});
+
+const NETWORK = toolArg(NetworkSchema, {
+  '': "Third-party requests for this call. 'block' fails requests to origins other than the page's own, so an external image neither changes nor stalls the capture",
+  external: 'Default allow',
+});
 
 export const TOOLS: Tool[] = [
   {
@@ -933,6 +934,9 @@ const SIGNALS = { SIGINT: 2, SIGTERM: 15 } as const;
 
 export async function mcpCommand(flags: McpFlags, version: string): Promise<number> {
   const config = await loadConfig(path.resolve(flags.project ?? process.cwd()));
+  // Once at startup, on stderr (stdout is the protocol); each snap and run
+  // call also reports them in its own result.
+  for (const m of configWarnings(config)) process.stderr.write(`jux mcp: ${m}\n`);
   const pool = resolveSnapSlots(flags.concurrency, config.mcp?.concurrency);
   if ('error' in pool) {
     process.stderr.write(`jux mcp: ${pool.error}.\n`);

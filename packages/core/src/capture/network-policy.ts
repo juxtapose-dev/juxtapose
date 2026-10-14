@@ -15,29 +15,24 @@
 // document, so a story URL that redirects elsewhere still loads.
 
 import type { Page } from '../browser/page.js';
-import { SettleConfigError } from './config-errors.js';
+import {
+  NetworkSchema,
+  type ExternalNetwork,
+  type NetworkParams,
+} from '../config/schema.js';
+import { validate } from '../config/validate.js';
 
-export type ExternalNetwork = 'allow' | 'block';
+export type { ExternalNetwork };
 
 export interface NetworkLayer {
-  network?: { external?: ExternalNetwork };
+  network?: NetworkParams;
 }
 
 /** Validate a `network` value where it is declared; `where` names the place to edit. */
-export function checkNetwork(
-  raw: unknown,
-  where: string,
-): { external?: ExternalNetwork } | undefined {
+export function checkNetwork(raw: unknown, where: string): NetworkParams | undefined {
   if (raw === undefined) return undefined;
-  const fail = (m: string) => new SettleConfigError(`${where}: ${m}`);
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
-    throw fail(`'network' must be an object`);
-  for (const k of Object.keys(raw))
-    if (k !== 'external') throw fail(`unknown network option '${k}' (expected external)`);
-  const ext = (raw as { external?: unknown }).external;
-  if (ext !== undefined && ext !== 'allow' && ext !== 'block')
-    throw fail(`network.external must be 'allow' or 'block', got ${JSON.stringify(ext)}`);
-  return ext === undefined ? {} : { external: ext };
+  const { external } = validate<NetworkParams>(NetworkSchema, raw, where);
+  return external === undefined ? {} : { external };
 }
 
 /** call > story > project, default 'allow'. */

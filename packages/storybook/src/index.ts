@@ -36,3 +36,6 @@ export {
   type ProviderStore,
   type TestProviderStateValue,
 } from './test-provider-state.js';
+
+// Typed `parameters.juxtapose` for story files (issue #180).
+export type { JuxtaposeParameters } from './parameters.js';

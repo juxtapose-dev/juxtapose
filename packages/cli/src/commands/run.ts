@@ -25,6 +25,8 @@ import {
   hasVariants,
   prepareCaptures,
   storyOverrideWarnings,
+  configWarnings,
+  storyParamWarnings,
   platformStoryId,
   selectByStoryId,
   VariantConfigError,
@@ -80,6 +82,9 @@ export async function runCommand(
   } catch (err) {
     return variantError(err, io);
   }
+  // Unknown keys warn, never fail: stderr only, so --json stdout and the exit
+  // code are untouched.
+  for (const m of configWarnings(ctx.config)) io.err(`jux: ${m}\n`);
   const log = (msg: string) => {
     if (!ctx.json) io.err(msg + '\n');
   };
@@ -217,6 +222,7 @@ export async function runCommand(
     // After discovery, so a key that only matches a story's own variants is
     // not reported as dead.
     for (const m of storyOverrideWarnings(ctx.config.stories, stories)) warn(`jux: ${m}`);
+    for (const m of storyParamWarnings(stories)) warn(`jux: ${m}`);
 
     let selection: StoryManifest[];
     let reason: string;

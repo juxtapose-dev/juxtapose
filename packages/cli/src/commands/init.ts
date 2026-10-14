@@ -25,6 +25,9 @@ import {
   prepareCaptures,
   VariantConfigError,
   checkProjectSettle,
+  configSchemaUrl,
+  configWarnings,
+  storyParamWarnings,
   DEFAULT_VIEWPORT,
   UnstableCaptureError,
   type DiffResult,
@@ -54,6 +57,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     process.stderr.write(`${err.message}\n`);
     return EXIT.usage;
   }
+  for (const m of configWarnings(ctx.config)) process.stderr.write(`jux: ${m}\n`);
 
   if (ctx.platform.name === 'urls') {
     process.stderr.write(
@@ -158,6 +162,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       process.stderr.write(`${err.message}\n`);
       return EXIT.usage;
     }
+    for (const m of storyParamWarnings(captures)) process.stderr.write(`jux: ${m}\n`);
 
     say('Capturing…');
 
@@ -305,7 +310,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
  * understand later when it stops matching their project. Defaults that live in
  * code can change with the tool; defaults frozen into a config file cannot.
  */
-function defaultConfig(ctx: {
+export function defaultConfig(ctx: {
   platform: { name: string };
   buildDir?: string;
   projectRoot: string;
@@ -314,7 +319,10 @@ function defaultConfig(ctx: {
   // Platform.name is any string; the config accepts the three jux ships.
   if (name !== 'storybook' && name !== 'ladle' && name !== 'urls')
     throw new Error(`jux init: platform '${name}' cannot be written to the config`);
-  const config: ProjectConfig = { platform: name };
+  const config: ProjectConfig = {
+    $schema: configSchemaUrl(),
+    platform: name,
+  };
   if (ctx.buildDir) {
     config.buildDir = path.relative(ctx.projectRoot, ctx.buildDir) || '.';
   }

@@ -48,6 +48,32 @@ export type {
   SettleFlag,
 } from './types.js';
 
+// The config schema (issue #178): one source for the types above, the
+// published JSON Schema (`@juxtapose/core/schema.json`) and the runtime
+// checks. The sub-schemas are exported so a tool schema (the MCP server's) or
+// a later config loader describes the same shapes instead of restating them.
+export {
+  ProjectConfigSchema,
+  JuxtaposeParametersSchema,
+  SettleSchema,
+  NetworkSchema,
+  ExternalNetworkSchema,
+  ViewportSchema,
+  VariantSchema,
+  StoryOverrideSchema,
+  MAX_SNAP_SLOTS,
+  StringEnum,
+  type JuxtaposeParameters,
+  type ExternalNetwork,
+} from './config/schema.js';
+export {
+  configJsonSchema,
+  configJsonSchemaText,
+  configSchemaUrl,
+} from './config/json-schema.js';
+export { registerFormats } from './config/formats.js';
+export { configWarnings, storyParamWarnings } from './config/warnings.js';
+
 // Implementing a platform adapter.
 export type { Platform, EnumerateTarget, SettleContext } from './platform.js';
 export { navigateToStory } from './url-platform.js';
