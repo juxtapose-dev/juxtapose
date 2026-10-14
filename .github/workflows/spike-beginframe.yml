@@ -42,7 +42,7 @@ jobs:
       - name: Measure
         env:
           # Which phases to run: probe fixtures snap examples.
-          PHASES: examples
+          PHASES: diag
         run: |
           mkdir -p out
           S=scripts/spike-beginframe.mjs
@@ -76,8 +76,17 @@ jobs:
             env SPIKE_ARM=bf0 $BF JUX_BEGIN_FRAME_INTERVAL_MS=0 node $S run examples/$ex 5 out/ex-$ex-4-bf0.json || true
           done
           fi
+          if has diag; then
+          # Example runs crashed the browser under frame control: is it
+          # concurrency, and what does Chrome say?
+          for c in 1 2 8; do
+            env SPIKE_ARM=bf-c$c SPIKE_RUN_ARGS="--concurrency $c" JUX_SPIKE_CHROME_STDERR=$PWD/out/chrome-c$c.log $BF node $S run examples/storybook 3 out/diag-storybook-bfc$c.json || true
+            env SPIKE_ARM=main-c$c SPIKE_RUN_ARGS="--concurrency $c" node $S run examples/storybook 3 out/diag-storybook-mainc$c.json || true
+          done
+          grep -hE "FATAL|Check failed|DCHECK|Received signal|crash" out/chrome-*.log | sort | uniq -c | sort -rn | head -30 > out/crash-lines.txt || true
+          fi
           node $S summary out/summary.md out/*-*-*.json
-          cat out/summary.md >> "$GITHUB_STEP_SUMMARY"
+          cat out/summary.md out/crash-lines.txt >> "$GITHUB_STEP_SUMMARY" || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

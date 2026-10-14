@@ -8,7 +8,7 @@
 // tests can assert nothing is launched without patching node:child_process.
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { appendFileSync, rmSync } from 'node:fs';
 import { lstat, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -185,8 +185,11 @@ export async function launchChrome(opts: {
   installExitHandlers();
 
   let stderr = '';
+  // SPIKE (#145): keep Chrome's stderr for crash diagnosis.
+  const stderrLog = process.env.JUX_SPIKE_CHROME_STDERR;
   proc.stderr?.on('data', (d: Buffer) => {
     if (stderr.length < 8192) stderr += d.toString();
+    if (stderrLog) appendFileSync(stderrLog, d);
   });
 
   // One promise for "the process is gone", resolved never rejected, so an

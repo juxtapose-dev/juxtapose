@@ -105,7 +105,15 @@ async function runs(dir, n, out) {
     const t0 = Date.now();
     const res = await run(
       'node',
-      [CLI, 'run', '--all', '--json', '--project', projectDir],
+      [
+        CLI,
+        'run',
+        '--all',
+        '--json',
+        '--project',
+        projectDir,
+        ...(process.env.SPIKE_RUN_ARGS?.split(' ').filter(Boolean) ?? []),
+      ],
       {
         cwd: projectDir,
         env,
