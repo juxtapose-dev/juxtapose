@@ -458,6 +458,10 @@ export interface ProjectConfig {
    *  identical pixels, which makes results depend on queue order under a
    *  byte-exact hash. Opt in only if you have measured it on your suite. */
   warmSwitch?: boolean;
+  /** Budget for capturing one story, ms; default 60000. A story that uses
+   *  it all errors once, naming the step it was stuck in, and its page is
+   *  replaced so the run goes on. */
+  storyTimeout?: number;
   viewport?: Viewport;
   threshold?: number;
   minDiffPercent?: number;

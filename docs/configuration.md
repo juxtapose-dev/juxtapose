@@ -20,6 +20,8 @@ makes a story's verdict depend on where it lands in the queue.
 `.juxtaposerc.json` works as well. JSON only — a `.ts` or `.js` config is not
 loaded.
 
+`storyTimeout` (ms, default 60000) is the budget for capturing one story, navigation through encode. A story that uses all of it fails once with an error naming the step it was stuck in, its page is discarded and replaced, and the run continues. A page whose main thread is busy (a very large DOM, a runaway script) otherwise stalls each browser call for 30 s in turn. The failed story records its real `durationMs`.
+
 Concurrency defaults to 8. Higher is not automatically better — past your core
 count, contention slows captures down rather than speeding them up.
 

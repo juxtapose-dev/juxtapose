@@ -95,6 +95,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     baseUrl: opts.baseUrl,
     concurrency: opts.config?.concurrency,
     warmSwitch: opts.config?.warmSwitch,
+    ...(opts.config?.storyTimeout !== undefined
+      ? { storyTimeoutMs: opts.config.storyTimeout }
+      : {}),
     viewport,
     onProgress: opts.onProgress,
     ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
@@ -140,7 +143,8 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
         mismatchPercent: 0,
         changedRegions: [],
         error: outcome.error?.message ?? 'capture produced no snapshot',
-        durationMs: 0,
+        // The time the story really took: a hung one is the slowest story.
+        durationMs: outcome.durationMs,
       });
       continue;
     }
