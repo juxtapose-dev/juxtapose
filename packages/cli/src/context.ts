@@ -9,6 +9,7 @@ import type { BaselineStore, Platform, ProjectConfig } from '@juxtapose/core';
 import { GitBaselineStore, createUrlPlatform } from '@juxtapose/core';
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 import { LadlePlatform } from '@juxtapose/adapter-ladle';
+import { UserError } from './user-error.js';
 import type { SettleFlags } from './settle-flags.js';
 
 export interface CommonFlags extends SettleFlags {
@@ -105,7 +106,7 @@ async function resolvePlatform(
 ): Promise<Platform> {
   if (name === 'urls') {
     if (!config.urls?.length) {
-      throw new Error(
+      throw new UserError(
         "platform 'urls' needs a non-empty `urls` list in juxtapose config",
       );
     }
@@ -116,7 +117,7 @@ async function resolvePlatform(
   if (name) {
     const found = platforms.find((p) => p.name === name);
     if (!found) {
-      throw new Error(
+      throw new UserError(
         `unknown platform '${name}' (expected: ${[...platforms.map((p) => p.name), 'urls'].join(', ')})`,
       );
     }
@@ -127,7 +128,7 @@ async function resolvePlatform(
     if (await platform.detect(target)) return platform;
   }
 
-  throw new Error(
+  throw new UserError(
     `could not detect a workbench at ${target.origin ?? target.buildDir ?? target.projectRoot}.\n` +
       `Build Storybook or Ladle first, pass --build-dir, or point --origin at a dev server.`,
   );
@@ -141,7 +142,7 @@ function createStore(projectRoot: string, config: ProjectConfig): BaselineStore 
     case 'fs':
       return new GitBaselineStore({ projectRoot, dir: storage.dir });
     case 's3':
-      throw new Error(
+      throw new UserError(
         'the s3 baseline store is not implemented yet; use the default git store',
       );
   }

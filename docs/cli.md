@@ -15,6 +15,11 @@
 | `jux browser install\|status\|path` | install, inspect or locate the pinned browser                                    |
 | `jux browser start\|stop`           | start or stop the warm browser (see [Warm browser](browser.md#warm-browser))     |
 
+`jux <command> --help` (or `-h`) prints that command's usage and exits 0. An
+unknown option, or a positional a command does not take (`jux run some-id`),
+exits 2 with a one-line message; it is never ignored. Use `jux run --story <id>`
+to run one story. A missing workbench exits 2 with its own message.
+
 All commands accept `--json` for machine-readable output. `jux run` exits
 non-zero when any story fails, is new, or has a stale baseline.
 
