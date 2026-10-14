@@ -83,6 +83,17 @@ for (const dir of process.argv.slice(2)) {
     });
     console.log(`| ${v} | ${c} | ${cells.join(', ')} |`);
   }
+  // Stability of each variant against itself: stories whose hash is not the
+  // same in every repeat (queue order is shuffled per run).
+  console.log('\nStories whose hash changed between repeats of the same variant\n');
+  for (const [k, rs] of groups) {
+    if (rs.length < 2) continue;
+    const ids = Object.keys(rs[0].hashes);
+    const unstable = ids.filter((id) => new Set(rs.map((r) => r.hashes[id])).size > 1);
+    console.log(
+      `- ${k.replace('|', ' c')}: ${unstable.length}/${ids.length} ${unstable.slice(0, 6).join(', ')}`,
+    );
+  }
   // Cost buckets of the jux process (median of the first group's repeats).
   const r0 = runs.find((r) => r.variant === 'base') ?? runs[0];
   if (r0) {

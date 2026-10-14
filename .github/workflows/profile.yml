@@ -25,6 +25,10 @@ on:
         description: Repeats of each variant (interleaved)
         type: string
         default: '3'
+      basics:
+        description: Run the bench, trace, CPU profile and hash-vs-main steps too (false = matrix and cache checks only)
+        type: string
+        default: 'true'
       variants:
         description: Comma-separated run-profile.mjs variants
         type: string
@@ -197,25 +201,39 @@ jobs:
         run: pnpm install --frozen-lockfile && pnpm build
 
       - name: Screenshot bench (PNG vs Chrome WebP, 100 stories)
+        if: ${{ inputs.basics != 'false' }}
         run: |
           mkdir -p "$OUT_DIR"
           BENCH_REPEATS=20 node scripts/profile/shot-bench.mjs "$SB_CACHE" 100 --out "$OUT_DIR/shot-bench.json" | tee "$OUT_DIR/shot-bench.txt"
           { echo '### Screenshot bench'; echo '```text'; cat "$OUT_DIR/shot-bench.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Chrome trace (20 stories)
+        if: ${{ inputs.basics != 'false' }}
         run: |
           node scripts/profile/trace-chrome.mjs "$SB_CACHE" 20 --out "$OUT_DIR/trace.json" | tee "$OUT_DIR/trace.txt"
           { echo '### Chrome trace'; echo '```text'; cat "$OUT_DIR/trace.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: jux CPU profile (base, concurrency 3)
+        if: ${{ inputs.basics != 'false' }}
         run: |
           node scripts/profile/run-profile.mjs "$SB_CACHE" --out "$OUT_DIR/cpuprof" --stories "$STORIES" --concurrency 3 --cpu-prof --variants base
           node scripts/profile/analyze.mjs "$OUT_DIR/cpuprof" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Hash equality against main
+        if: ${{ inputs.basics != 'false' }}
         run: |
           node scripts/profile/hash-compare.mjs "$SB_CACHE" "$GITHUB_WORKSPACE/main-ref/packages/cli/dist/index.js" "$STORIES" | tee "$OUT_DIR/hash-vs-main.txt"
           { echo '### Hashes vs main'; echo '```text'; cat "$OUT_DIR/hash-vs-main.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: HTTP cache and V8 code cache checks
+        run: |
+          mkdir -p "$OUT_DIR"
+          {
+            node scripts/profile/cache-check.mjs "$SB_CACHE" 10
+            echo
+            node scripts/profile/codecache-check.mjs "$SB_CACHE" 30 2
+          } | tee "$OUT_DIR/cache-checks.txt"
+          { echo '### Cache checks'; echo '```text'; cat "$OUT_DIR/cache-checks.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Variant matrix
         run: |

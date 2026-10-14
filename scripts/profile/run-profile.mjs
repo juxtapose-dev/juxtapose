@@ -53,9 +53,15 @@ const VARIANTS = {
   'sharp-conc1': { env: { JUX_PRELOAD_SHARP_CONC: '1' } },
   'sharp-conc2': { env: { JUX_PRELOAD_SHARP_CONC: '2' } },
   'uv-threads-8': { env: { UV_THREADPOOL_SIZE: '8' } },
+  'js-no-opt-maglev': { chromeFlags: ['--js-flags=--no-opt --no-maglev'] },
+  'js-interp': { chromeFlags: ['--js-flags=--no-opt --no-maglev --no-sparkplug'] },
+  'js-jitless': { chromeFlags: ['--js-flags=--jitless'] },
+  c1: { conc: 1 },
   c2: { conc: 2 },
   c4: { conc: 4 },
   c6: { conc: 6 },
+  c8: { conc: 8 },
+  c12: { conc: 12 },
 };
 const variantNames = opt('--variants', 'base').split(',');
 for (const v of variantNames)
@@ -69,9 +75,13 @@ const realChrome = spawnSync('node', [cli, 'browser', 'path'], {
 /** A shell wrapper that appends flags: --chrome takes a path, not arguments. */
 function chromeWrapper(flags) {
   const f = path.join(outDir, `chrome-${flags.join('_').replace(/[^\w.-]/g, '')}.sh`);
-  writeFileSync(f, `#!/bin/sh\nexec "${realChrome}" "$@" ${flags.join(' ')}\n`, {
-    mode: 0o755,
-  });
+  writeFileSync(
+    f,
+    `#!/bin/sh\nexec "${realChrome}" "$@" ${flags.map((f) => `'${f}'`).join(' ')}\n`,
+    {
+      mode: 0o755,
+    },
+  );
   return f;
 }
 if (!existsSync(path.join(buildDir, 'index.json'))) {
@@ -156,7 +166,7 @@ for (let rep = 1; rep <= repeats; rep++)
     const state = mkdtempSync(path.join(os.tmpdir(), 'jux-prof-state-'));
     writeFileSync(
       path.join(project, 'juxtapose.config.json'),
-      JSON.stringify({ platform: 'storybook', buildDir }),
+      JSON.stringify({ platform: 'storybook', buildDir, ...(variant.config ?? {}) }),
     );
     const nodeArgs = [
       '--import',
