@@ -143,6 +143,11 @@ jobs:
       - name: Determinism (jux snap, warm browser)
         run: env -u CI -u GITHUB_ACTIONS node scripts/check-determinism.mjs --daemon --snap 3
 
+      # #199: init must save structure for every baseline it approves, and the
+      # first change after setup must get a structural verdict.
+      - name: jux init saves structure
+        run: node scripts/check-init.mjs
+
       - name: Stop the warm browser
         if: always()
         run: node packages/cli/dist/index.js browser stop

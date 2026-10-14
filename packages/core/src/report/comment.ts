@@ -207,15 +207,14 @@ function heading(rows: DiffResult[]): string {
     return `${noun} ${verb} review — structure diff only (baseline images not in cache)${tail}`;
   }
   const largest = Math.max(...measured.map((r) => r.mismatchPercent));
-  // Below 0.1% the individual numbers are noise and a wall of them reads as
-  // alarming; saying so once is more useful than quoting the largest hair.
-  // `formatPercent` never renders "0.00%", which would read as a tool bug.
-  // Only measured stories speak for the number; the others are named apart,
-  // since "all under 0.1%" would otherwise vouch for changes nobody measured.
+  // Never "under 0.1%" or "small": pass/fail is a byte hash, so a small
+  // mismatch is a small element that changed, not a harmless change. The
+  // number is stated; the reader decides. `formatPercent` never renders
+  // "0.00%", which would read as a tool bug. Only measured stories speak for
+  // the number; the others are named apart.
   const unmeasured = fails.length - measured.length;
-  const small = unmeasured > 0 ? `${measured.length} under 0.1%` : 'all under 0.1%';
   const magnitude =
-    (largest < 0.1 ? small : `largest ${formatPercent(largest)}`) +
+    `largest ${formatPercent(largest)}` +
     (unmeasured > 0 ? `, ${unmeasured} without a pixel diff` : '');
 
   // Mixed: name the shape, since "5 changes" would overstate what changed.
@@ -226,7 +225,7 @@ function heading(rows: DiffResult[]): string {
   const noun = count(fails.length, 'visual change', 'visual changes');
   const verb = fails.length === 1 ? 'needs' : 'need';
   const detail =
-    fails.length === 1 && largest >= 0.1 ? formatPercent(largest) : magnitude;
+    fails.length === 1 && unmeasured === 0 ? formatPercent(largest) : magnitude;
   return `${noun} ${verb} review — ${detail}`;
 }
 
@@ -289,10 +288,10 @@ function table(rows: DiffResult[]): string[] {
 function commands(rows: DiffResult[]): string[] {
   const out = [annotate('jux run', 'approval reads a local run, so capture first')];
 
-  // Only worth investigating a change big enough to be something. Below 0.1%
-  // is antialiasing territory (see magnitudeHint in agent/handoff.ts), and
-  // pointing the "investigate this" tool at noise wastes the reader's time.
-  const worthInvestigating = rows.find((r) => changed(r) && r.mismatchPercent >= 0.1);
+  // Rows are sorted largest first. No magnitude floor: a small mismatch is
+  // not a safe one (see magnitudeHint in agent/handoff.ts), and the handoff
+  // is exactly what explains it.
+  const worthInvestigating = rows.find((r) => changed(r));
   if (worthInvestigating) {
     out.push(
       annotate(

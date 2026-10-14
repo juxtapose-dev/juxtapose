@@ -158,8 +158,11 @@ describe('buildHandoffPrompt', () => {
   });
 
   it('scales its suspicion to the magnitude of the change', () => {
+    // Size alone never earns reassurance (#201): no structure, so unexplained.
     const tiny = buildHandoffPrompt({ ...base, mismatchPercent: 0.02 });
-    expect(tiny).toContain('sub-pixel antialiasing');
+    expect(tiny).toContain('Unexplained: 0.02% of pixels changed');
+    expect(tiny).toContain('do not approve without looking');
+    expect(tiny).not.toMatch(/antialias|noise|safe to approve/i);
 
     const huge = buildHandoffPrompt({ ...base, mismatchPercent: 42 });
     expect(huge).toContain('do not approve without understanding');
@@ -308,7 +311,8 @@ describe('describeRegion', () => {
     });
     expect(structural.flags).toContain('no-baseline-structure');
     const out = buildHandoffPrompt({ ...base, structural });
-    expect(out).toContain('No structure snapshot for the baseline (approved before');
+    expect(out).toContain('No structure snapshot for the baseline, so nothing explains');
+    expect(out).not.toContain('approved before');
     expect(out).not.toContain('## What changed (structure)');
     expect(out).not.toContain('Part of the pixel change');
     expect(out).toContain('## What changed');
@@ -330,13 +334,66 @@ describe('describeRegion', () => {
     );
     expect(out).not.toContain('antialiasing');
     expect(out).not.toContain('Usually safe to approve');
-    // No deltas: the noise hint stands.
-    const drift = buildHandoffPrompt({
+  });
+
+  // #201: text-sm -> text-base, 0.05% mismatch in one 115x16 region, baseline
+  // approved without structure. The handoff said "consistent with sub-pixel
+  // antialiasing noise. Usually safe to approve".
+  it('#201: a small text change with no baseline structure is unexplained, never noise', () => {
+    const structural = structuralDiff({
+      baseline: undefined,
+      current: fixture.cases.text.structure,
+      imagesIdentical: false,
+      pixels: fixture.cases.text.pixels,
+      escalate: { command: 'jux handoff x' },
+    });
+    expect(structural.flags).toContain('no-baseline-structure');
+    const out = buildHandoffPrompt({
+      ...base,
+      mismatchPercent: 0.05,
+      mismatchPixels: 512,
+      changedRegions: [{ x: 412, y: 88, width: 115, height: 16 }],
+      structural,
+    });
+    const assessment = out.slice(
+      out.indexOf('## Assessment'),
+      out.indexOf('## What to do'),
+    );
+    expect(assessment).toContain('Unexplained: 0.05% of pixels changed in 1 region');
+    expect(assessment).toContain('(412, 88) 115×16px');
+    expect(assessment).toContain('no baseline structure');
+    expect(assessment).toContain('Inspect the crops and do not approve without looking');
+    expect(out).not.toMatch(/antialias|noise|safe to approve/i);
+  });
+
+  it('thin hairline regions with identical structure present are likely rendering noise', () => {
+    const noop = fixture.cases.noop.structure;
+    const hairline = [{ x: 100, y: 50, width: 40, height: 2 }];
+    const structural = structuralDiff({
+      baseline: noop,
+      current: noop,
+      imagesIdentical: false,
+      pixels: { mismatchPixels: 12, changedRegions: hairline, dimensionMismatch: false },
+      escalate: { command: 'jux handoff x' },
+    });
+    expect(structural.classification).toBe('render-drift');
+    expect(structural.deltaCount).toBe(0);
+    const out = buildHandoffPrompt({
       ...base,
       mismatchPercent: 0.02,
-      structural: { ...structural, deltas: [], deltaCount: 0 },
+      changedRegions: hairline,
+      structural,
     });
-    expect(drift).toContain('sub-pixel antialiasing');
+    expect(out).toContain('Likely rendering noise');
+    // Identical structure but a fat region is not the antialiasing shape.
+    const fat = buildHandoffPrompt({
+      ...base,
+      mismatchPercent: 0.02,
+      changedRegions: [{ x: 100, y: 50, width: 115, height: 16 }],
+      structural,
+    });
+    expect(fat).not.toContain('Likely rendering noise');
+    expect(fat).toContain('Unexplained');
   });
 
   it('a partial in-closure cause says other imports could not be traced, and does not blame the file', () => {

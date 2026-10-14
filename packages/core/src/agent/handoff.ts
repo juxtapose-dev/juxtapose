@@ -22,7 +22,13 @@ import { describeDeltas } from '../diff/structural/summary.js';
 import { describeUnstable } from '../baseline/approve.js';
 import { describeFlake, describeFlakeGroup } from '../flake/describe.js';
 import { shellQuote } from '../shell-quote.js';
-import { BASELINE_IMAGE_UNAVAILABLE, compareCodeUnits } from '../report/format.js';
+import {
+  BASELINE_IMAGE_UNAVAILABLE,
+  SMALL_MISMATCH_PERCENT,
+  compareCodeUnits,
+  formatPercent,
+  isLikelyRenderingNoise,
+} from '../report/format.js';
 
 export interface HandoffPayload {
   storyId: string;
@@ -203,7 +209,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   if (v && missing) {
     lines.push(
       missing === 'baseline'
-        ? 'No structure snapshot for the baseline (approved before juxtapose recorded structure). Re-approve after this change to get structural diffs next time.'
+        ? 'No structure snapshot for the baseline, so nothing explains these pixels. Re-approve after this change to get structural diffs next time.'
         : 'No structure snapshot for the current capture (structure capture failed or was unavailable). Re-run the capture to get structural diffs.',
       '',
     );
@@ -275,7 +281,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
 
     lines.push('## Assessment');
     lines.push('');
-    lines.push(magnitudeHint(p.mismatchPercent, p.structural?.deltaCount ?? 0));
+    lines.push(magnitudeHint(p));
     lines.push('');
   }
 
@@ -388,18 +394,36 @@ export function describeCause(c: Cause): string {
 }
 
 /**
- * Calibrate the agent's suspicion to the size of the change.
+ * Calibrate the agent's suspicion to the evidence, never to the size alone.
  *
- * Without this, agents treat a 0.02% antialiasing shift and a 40% layout
- * collapse as equally alarming.
+ * Pass/fail is a byte-exact hash, so a small mismatch percentage means a small
+ * element changed. Font-size, colour, icon and border changes routinely land
+ * under 0.1% of a 1280x800 frame, so "small" is never reassurance. Only a
+ * structural diff that positively shows nothing changed, plus hairline
+ * regions, earns the noise wording.
  */
-function magnitudeHint(pct: number, deltaCount: number): string {
-  if (pct < 0.1) {
+function magnitudeHint(p: HandoffPayload): string {
+  const pct = p.mismatchPercent;
+  const deltaCount = p.structural?.deltaCount ?? 0;
+  if (pct < SMALL_MISMATCH_PERCENT) {
     // A sub-threshold colour change marks no pixels at all; calling it
     // antialiasing noise beside a real delta argued with the section above.
     if (deltaCount > 0)
       return `Pixels are below tolerance, but structure records ${deltaCount} delta(s); judge those, not the pixel count.`;
-    return 'Under 0.1% — consistent with sub-pixel antialiasing noise. Usually safe to approve, but confirm the changed regions are not on meaningful content.';
+    if (isLikelyRenderingNoise(p))
+      return 'Likely rendering noise: the structure is identical (no element moved, resized or changed text or style) and the changed regions are thin edge hairlines. Still glance at the crops before approving.';
+    const where = p.changedRegions.length
+      ? ` in ${p.changedRegions.length} region${p.changedRegions.length === 1 ? '' : 's'} (${p.changedRegions
+          .slice(0, 3)
+          .map((r) => describeRegion(r, p.viewport))
+          .join('; ')}${p.changedRegions.length > 3 ? '; …' : ''})`
+      : ' (the diff marked no region)';
+    const why = p.structural?.flags.includes('no-baseline-structure')
+      ? 'There is no baseline structure to compare, so nothing explains it.'
+      : p.structural
+        ? 'The structural diff does not show this to be rendering noise.'
+        : 'There is no structural diff, so nothing explains it.';
+    return `Unexplained: ${formatPercent(pct)} of pixels changed${where}. A small mismatch is not a safe one; a font-size, colour, icon or border change routinely lands here. ${why} Inspect the crops and do not approve without looking.`;
   }
   if (pct < 1) {
     return 'Under 1% — a small, localized change. Check whether the component or its tokens were recently touched.';

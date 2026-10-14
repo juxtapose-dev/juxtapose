@@ -67,15 +67,16 @@ describe('buildComment', () => {
     expect(headingLine).toContain('largest 1.01%');
   });
 
-  it('calls out a run that is entirely antialiasing noise', () => {
-    // A wall of sub-0.1% diffs is almost always safe to approve; saying so in
-    // the heading turns a scary red comment into a five-second decision.
+  it('never reassures about a run of small mismatches (#201)', () => {
+    // A small mismatch is a small element that changed: byte-exact hashing
+    // means there is no noise to wave through, so the heading states the
+    // number and nothing else.
     const body = buildComment({
       report: report([result('a', 'fail', 0.02), result('b', 'fail', 0.05)]),
     });
-    expect(body.split('\n').find((l) => l.startsWith('### '))).toContain(
-      'all under 0.1%',
-    );
+    const heading = body.split('\n').find((l) => l.startsWith('### '));
+    expect(heading).toContain('largest 0.05%');
+    expect(body).not.toMatch(/under 0\.1%|noise|antialias|safe to approve/i);
   });
 
   it('does not call a first run a failure', () => {
@@ -288,11 +289,11 @@ describe('buildComment', () => {
     expect(body).toContain('jux handoff card--wide');
   });
 
-  it('does not send the reader investigating antialiasing noise', () => {
-    // Under 0.1% is sub-pixel territory. Pointing the "what moved here?" tool
-    // at it wastes the one action the comment is asking for.
+  it('offers the handoff for a tiny mismatch too (#201)', () => {
+    // A 0.02% change is a real change; it is exactly the one an agent needs
+    // explained before approving.
     const body = buildComment({ report: report([result('a', 'fail', 0.02)]) });
-    expect(body).not.toContain('jux handoff');
+    expect(body).toContain('jux handoff a');
   });
 
   it('never suggests approving a story that failed to capture', () => {
@@ -493,7 +494,7 @@ describe('mixed measured and unmeasured changes', () => {
       ]),
     });
     expect(body).toContain(
-      '3 visual changes need review — 2 under 0.1%, 1 without a pixel diff',
+      '3 visual changes need review — largest 0.04%, 1 without a pixel diff',
     );
   });
 
