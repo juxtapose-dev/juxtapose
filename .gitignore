@@ -24,3 +24,4 @@ scripts/loop-anecdote/page.html
 
 # Copied from @juxtapose/core at build (packages/cli/scripts/copy-schema.mjs)
 packages/cli/schema.json
+scripts/bench/*/.browsers/

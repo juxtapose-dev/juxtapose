@@ -1,0 +1,8 @@
+{
+  "name": "jux-bench-playwright",
+  "private": true,
+  "description": "Benchmark harness for issue #205. Not part of the juxtapose workspace.",
+  "dependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
