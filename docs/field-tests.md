@@ -228,6 +228,9 @@ count stays the second argument.
 fresh browser and a temporary state dir. It then compares every later pass
 with the first through `jux diff --runs --json`, and prints the identical
 count, the wall time, and the p50 and p95 of `durationMs` from `report.json`.
+A second line per pass gives the p50 and p95 of each phase in the results'
+`timings` (navigate, freshRenderer, render, settle, paint, structure,
+screenshot, encode, other); `--json` also records them with total seconds.
 
 ```bash
 pnpm build
