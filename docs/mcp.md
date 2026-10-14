@@ -130,6 +130,11 @@ Captures pages, pixels and structure, under a name. Same result as
 
 Pass either `url` with `as` or `urls` with `asPrefix`.
 
+A page that hangs costs at most the shorter of the 30 s navigation cap and
+`storyTimeout`, then it errors and the next URL gets a fresh page. A call with N
+hung URLs therefore holds its name lock and snap slot for about N × 30 s; other
+tools and snaps under other names are not blocked.
+
 Result: for one `url`, the snap object (`name`, `image`, `structure`,
 `viewport`, `env`, `structureHash`, `elements`, `durationMs`). For `urls`,
 `{ prefix, snaps }`, where a page that failed is `{ url, error }`. A snap

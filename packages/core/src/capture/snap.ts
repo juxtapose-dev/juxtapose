@@ -81,7 +81,14 @@ export async function snapPages(
     let status: number | null = null;
     let off = page.onMainResponse((s) => (status = s));
     const pages: SnapPageResult[] = [];
+    // Set when a replacement page could not be opened (the browser is gone):
+    // the remaining URLs fail with it, and the captured results are kept.
+    let lost: string | null = null;
     for (const [k, url] of opts.urls.entries()) {
+      if (lost !== null) {
+        pages.push({ url, status: null, error: lost });
+        continue;
+      }
       status = null;
       const id = `snap-${k}`;
       const platform = createUrlPlatform([
@@ -129,12 +136,18 @@ export async function snapPages(
         ) {
           off();
           await closeBounded(context);
-          context = await opts.browser.newContext({
-            viewport,
-            blockServiceWorkers: true,
-          });
-          page = await context.newPage();
-          off = page.onMainResponse((s) => (status = s));
+          try {
+            context = await opts.browser.newContext({
+              viewport,
+              blockServiceWorkers: true,
+            });
+            page = await context.newPage();
+            off = page.onMainResponse((s) => (status = s));
+          } catch (e) {
+            lost = `jux: could not open a fresh page after the previous one hung: ${
+              e instanceof Error ? e.message : String(e)
+            }`;
+          }
           continue; // the new context starts clean: nothing to reset
         }
       }

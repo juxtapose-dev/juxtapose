@@ -7,8 +7,8 @@ import {
   type Browser,
   type BrowserContext,
 } from '../browser/browser.js';
-import { TargetClosedError } from '../browser/cdp.js';
-import { PageCrashedError, type Page } from '../browser/page.js';
+import { SendTimeoutError, TargetClosedError } from '../browser/cdp.js';
+import { PageCrashedError, TimeoutError, type Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
 import type { Snapshot, StoryManifest, Viewport } from '../types.js';
 import { captureStory, type CaptureDeps } from './capture.js';
@@ -192,6 +192,10 @@ export async function* capturePool(
           } else if (
             err instanceof PageCrashedError ||
             err instanceof TargetClosedError ||
+            // A busy main thread usually trips the 30 s navigation or call
+            // cap, below the story budget; the page stays busy.
+            err instanceof TimeoutError ||
+            err instanceof SendTimeoutError ||
             err instanceof StoryTimeoutError
           ) {
             // For a timeout the abandoned capture is still running against
