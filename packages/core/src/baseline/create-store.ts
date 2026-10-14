@@ -54,6 +54,7 @@ export function checkStorageConfig(storage: StorageConfig | undefined): void {
 export function createBaselineStore(
   projectRoot: string,
   storage: StorageConfig | undefined,
+  opts: { onWarning?: (message: string) => void } = {},
 ): BaselineStore {
   // No `storage` key is the cache store, not the repo-backed one: projects
   // commit hashes and metadata, never images. The cache store still reads an
@@ -64,6 +65,7 @@ export function createBaselineStore(
       return new CacheBaselineStore({
         projectRoot,
         dir: safeStorageDir(chosen.dir, 'cache'),
+        ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
       });
     case 'git':
     case 'fs':

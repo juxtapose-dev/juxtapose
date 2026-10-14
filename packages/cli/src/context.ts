@@ -161,7 +161,10 @@ function createStore(projectRoot: string, config: ProjectConfig): BaselineStore 
     );
   }
   checkStorage(config);
-  return createBaselineStore(projectRoot, config.storage);
+  return createBaselineStore(projectRoot, config.storage, {
+    // stderr, so --json stdout stays clean.
+    onWarning: (m) => process.stderr.write(`jux: ${m}\n`),
+  });
 }
 
 /**
