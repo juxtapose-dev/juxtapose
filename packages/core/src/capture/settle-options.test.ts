@@ -199,13 +199,17 @@ describe('pending descriptions', () => {
   it('names each request in flight by path and type, and each missing required request', () => {
     const { page, emit } = eventPage();
     const net = new NetworkTracker(page, 'main');
-    const send = (requestId: string, url: string, type: string) =>
+    const send = (requestId: string, url: string, type: string, loaderId = 'L1') =>
       emit('Network.requestWillBeSent', {
         requestId,
         request: { url },
         type,
         frameId: 'main',
+        loaderId,
       });
+    const commit = (loaderId: string) =>
+      emit('Page.frameNavigated', { frame: { id: 'main', loaderId } });
+    commit('L1');
     send('1', 'http://localhost:1/api/feed?page=1', 'Fetch');
     send('2', 'http://localhost:1/api/feed?page=1', 'Fetch');
     send('3', 'http://localhost:1/events', 'EventSource');
@@ -216,9 +220,21 @@ describe('pending descriptions', () => {
       '2 requests to /api/feed?page=1 in flight (Fetch)',
       "no request matching required pattern '/api/user' has completed",
     ]);
-    // A new main document forgets the old one's requests.
-    send('5', 'http://localhost:1/', 'Document');
-    expect(net.counted(s).map((r) => r.url)).toEqual(['http://localhost:1/']);
+    // A navigation that has not committed changes nothing: its document
+    // request is not counted, the live document's requests still are, and
+    // its own early requests wait for the commit.
+    send('5', 'http://localhost:1/', 'Document', 'L2');
+    send('6', 'http://localhost:1/api/next', 'Fetch', 'L2');
+    expect(net.counted(s).map((r) => r.url)).toEqual([
+      'http://localhost:1/api/feed?page=1',
+      'http://localhost:1/api/feed?page=1',
+    ]);
+    // The commit forgets the old document's requests and completions.
+    commit('L2');
+    expect(net.counted(s).map((r) => r.url)).toEqual([
+      'http://localhost:1/',
+      'http://localhost:1/api/next',
+    ]);
     expect(net.missing(s)).toEqual(['/done', '/api/user']);
   });
 

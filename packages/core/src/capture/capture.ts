@@ -326,15 +326,17 @@ export async function captureStory(
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     ...(structure ? { structure } : {}),
-    ...(flagged && flagged.status !== 'idle'
+    ...(flagged?.status === 'timeout'
       ? {
           settle: {
-            status: flagged.status,
+            status: 'timeout' as const,
             timeoutMs: settle.timeoutMs,
             pending: flagged.pending ?? [],
           },
         }
-      : {}),
+      : flagged?.status === 'fallback'
+        ? { settle: { status: 'fallback' as const, pending: flagged.pending ?? [] } }
+        : {}),
   };
 }
 

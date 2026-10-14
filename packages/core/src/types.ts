@@ -70,15 +70,20 @@ export type CaptureFlag = 'settle-timeout' | 'settle-fallback';
 
 /** Present on a capture whose settle wait hit its cap (`timeout`), or could
  *  not run as designed (`fallback`). */
-export interface SettleReport {
-  status: 'timeout' | 'fallback';
-  /** The cap that was hit, ms. */
-  timeoutMs: number;
-  /** What was still pending at the cap, one description per item, such as
-   *  `1 request to /api/feed in flight (Fetch)`; for `fallback`, why. Never
-   *  empty. */
-  pending: string[];
-}
+export type SettleReport =
+  | {
+      status: 'timeout';
+      /** The cap that was hit, ms. */
+      timeoutMs: number;
+      /** What was still pending at the cap, one description per item, such
+       *  as `1 request to /api/feed in flight (Fetch)`. Never empty. */
+      pending: string[];
+    }
+  | {
+      status: 'fallback';
+      /** Why the event-driven wait could not run. Never empty. */
+      pending: string[];
+    };
 
 export type ColorScheme = 'light' | 'dark';
 

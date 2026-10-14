@@ -30,6 +30,7 @@
 // Never throws: a wait that hits its cap is reported, and the page is captured
 // as it is. A slow story must produce a reviewable result, not abort a run.
 
+import { SendTimeoutError } from '../browser/cdp.js';
 import type { Page } from '../browser/page.js';
 import { matchPattern, type ResolvedSettle } from './settle-options.js';
 
@@ -87,25 +88,40 @@ const IDLE_INIT = `(function () {
     ch.port1.onmessage = function () { var f = q.shift(); if (f) f(); };
     return function (f) { q.push(f); oPPM.call(ch.port2, 0); }; })();
 
-  // A timer that re-arms itself from its own callback is a poll or a clock
-  // (setTimeout(poll, 200) forever, a 1 s tick): counted for its first arm
-  // only once it is paced (delay >= 16 ms, a frame), or every capture of the
-  // page waits for it until the cap. Measured on the review's probes: a 200 ms
-  // poll pinned every capture at the 1500 ms cap; with 1 generation it settles
-  // in one period. 2 generations already pins a 1000 ms clock at the cap (2 x
-  // 1000 > 1500). Faster re-arms are yields inside chunked work (5 x
-  // setTimeout(step, 0)) and stay counted, or the chunked work is captured
-  // after its first chunk.
-  var TIMER_GENERATIONS = 1, PACED_MS = 16;
-  var curFn = null, curGen = 0;
+  // Polls and clocks: a paced timer (delay >= 16 ms, a frame) re-armed from
+  // the same call site after an earlier one there fired counts only if the
+  // DOM changed since that fire. A poll that changes nothing (same function,
+  // fresh closure or arrow) stops counting after its first period; a chain
+  // that reveals something each step (retry with backoff, a typewriter, a
+  // staged reveal) is waited out. The site is the whole stack minus this
+  // wrapper, not the top frame, so a shared sleep() helper is a different site
+  // per caller. Mutations are flushed with takeRecords() so a re-arm sees the
+  // changes its own callback just made.
+  //
+  // Measured in the review's prototype (round 2): closure, arrow and
+  // same-function 200 ms polls settle in 440-453 ms unflagged (they pinned the
+  // 1500 ms cap before); a 3-step 100 ms self-chain, sleep() chains,
+  // timer-1200-chain, timeout-chain and the timeout-50/120/300/800 pages all
+  // capture their final state 3/3. A clock that repaints every tick still
+  // counts and hits the cap, flagged: it needs a mask either way. Faster
+  // re-arms (setTimeout(step, 0) chunked work) are never keyed and always count.
+  var PACED_MS = 16, sites = new Map(), MO = null;
+  var flushMut = function () { if (MO) S.mut += MO.takeRecords().length; };
   W.setTimeout = function (fn, delay) {
     if (typeof fn !== 'function') return oST.apply(W, arguments);
     var args = Array.prototype.slice.call(arguments, 2); var d = Math.max(0, Number(delay) || 0); var id;
-    var gen = fn === curFn ? curGen + 1 : 0;
-    var cb = function () { S.timers.delete(id); var pf = curFn, pg = curGen; curFn = fn; curGen = gen;
-      try { return fn.apply(W, args); } finally { curFn = pf; curGen = pg; } };
+    var key = null, counted = true;
+    if (d >= PACED_MS) {
+      key = (new Error().stack || '').split('\\n').slice(2).join('\\n');
+      var site = sites.get(key);
+      if (site && site.fired) { flushMut(); counted = S.mut !== site.mutAtFire; }
+    }
+    var cb = function () { S.timers.delete(id);
+      if (key !== null) { flushMut(); sites.set(key, { fired: true, mutAtFire: S.mut }); }
+      return fn.apply(W, args); };
     id = oST.call(W, cb, d);
-    if (gen < TIMER_GENERATIONS || d < PACED_MS) S.timers.set(id, d);
+    if (key !== null && !sites.has(key)) sites.set(key, { fired: false });
+    if (counted) S.timers.set(id, d);
     return id;
   };
   W.clearTimeout = function (id) { S.timers.delete(id); return oCT.call(W, id); };
@@ -150,27 +166,36 @@ const IDLE_INIT = `(function () {
     get: function () { return onmsg.get.call(this); }, set: function (fn) { return onmsg.set.call(this, wrap(fn)); } });
 
   // A dedicated Worker runs where this script can't see; its script request
-  // never completes on the page's session either. Count it as pending until
-  // its first message, error or terminate, within the timer horizon: a worker
-  // that answers late is waited for like a timer, a silent one costs at most
-  // the horizon.
-  var OW = W.Worker, wid = 0;
+  // never completes on the page's session either. What is countable is the
+  // conversation: a message posted to the worker is pending until a message
+  // comes back, within the timer horizon of the post; and a new worker gets a
+  // 300 ms startup grace for unsolicited work, ended by its first message,
+  // error or terminate(). A silent worker (comlink-style, answering only when
+  // asked) cost ~1040 ms per capture when the whole horizon applied
+  // (review round 2); with the grace it costs at most 300 ms, and the 80 ms and
+  // 120 ms startup probes (worker-80, worker-delay) still capture their
+  // answer. Reflect.construct keeps "class X extends Worker" working.
+  var OW = W.Worker, wid = 0, STARTUP_MS = 300;
   if (typeof OW === 'function') {
-    var JW = function (url, opts) {
-      var w = new OW(url, opts); var id = ++wid; var src = String(url);
-      S.workers.set(id, { t: performance.now(), src: src });
-      var done = function () { S.workers.delete(id); };
-      w.addEventListener('message', done, { once: true });
-      w.addEventListener('error', done, { once: true });
-      var term = w.terminate; w.terminate = function () { done(); return term.apply(w, arguments); };
+    var JW = function Worker(url, opts) {
+      var w = Reflect.construct(OW, Array.prototype.slice.call(arguments), new.target || OW);
+      var id = ++wid; var rec = { t: performance.now(), src: String(url), started: true, posted: 0, replies: 0, lastPost: 0 };
+      rec.id = id; S.workers.set(id, rec); recs.set(w, rec);
+      w.addEventListener('message', function () { rec.started = false; if (rec.replies < rec.posted) rec.replies++; });
+      w.addEventListener('error', function () { rec.started = false; rec.replies = rec.posted; });
       return w;
     };
-    JW.prototype = OW.prototype;
+    // On the prototype, not the instance, so a subclass's own overrides win.
+    var recs = new WeakMap(), WP = OW.prototype, oWPM = WP.postMessage, oWT = WP.terminate;
+    WP.postMessage = function () { var r = recs.get(this); if (r) { r.posted++; r.lastPost = performance.now(); } return oWPM.apply(this, arguments); };
+    WP.terminate = function () { var r = recs.get(this); if (r) S.workers.delete(r.id); return oWT.apply(this, arguments); };
+    JW.prototype = WP;
+    Object.setPrototypeOf(JW, OW);
     W.Worker = JW;
   }
 
-  new MutationObserver(function (list) { S.mut += list.length; })
-    .observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
+  MO = new MutationObserver(function (list) { S.mut += list.length; });
+  MO.observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
 
   // The page's half of settle.ready. Always defined under jux, so a page can
   // call it unconditionally (window.__juxtapose?.ready() outside jux).
@@ -191,7 +216,8 @@ const IDLE_INIT = `(function () {
   var snapshot = function (horizon) {
     var timers = 0; S.timers.forEach(function (d) { if (d <= horizon) timers++; });
     var now = performance.now(), workers = [];
-    S.workers.forEach(function (w) { if (now - w.t <= horizon) workers.push(w.src); });
+    S.workers.forEach(function (w) {
+      if ((w.started && now - w.t <= STARTUP_MS) || (w.replies < w.posted && now - w.lastPost <= horizon)) workers.push(w.src); });
     var imgs = pendingImages();
     return { timers: timers, rafs: S.rafs.size, msgs: S.sent - S.delivered, delivered: S.delivered, mut: S.mut,
       fonts: document.fonts.status, images: imgs.length, imageSrcs: imgs.slice(0, 3),
@@ -237,6 +263,8 @@ const MAX_DONE = 5000;
 interface Request {
   url: string;
   type?: string;
+  /** Set on main-frame requests: the document loader that started it. */
+  mainLoader?: string;
 }
 
 /** In-flight and completed requests on one page, from CDP Network events. */
@@ -247,40 +275,43 @@ export class NetworkTracker {
   /** In flight when the current story started on a warm switch: the last
    *  story's, never this one's. */
   private excluded = new Set<string>();
-  /** The current main document's loader. */
+  /** The committed main document's loader. */
   private mainLoader: string | undefined;
 
   constructor(page: Page & Required<Pick<Page, 'on'>>, mainFrameId: string | undefined) {
     page.on('Network.requestWillBeSent', (p) => {
-      // A new main document: requests the navigation cancelled do not always
-      // get loadingFailed (spike: a long-poll fetch lingered and pinned the
-      // next page at the cap), and the previous document's completions must
-      // not satisfy this one's `require`.
-      if (p.type === 'Document' && p.frameId === mainFrameId) {
-        this.inflight.clear();
-        this.done = [];
-        this.excluded.clear();
-        this.mainLoader = p.loaderId;
-      }
       // A dedicated Worker's script request has no loader and never gets
       // loadingFinished on this session (review: every capture of a page
       // with `new Worker('/w.js')` pinned at the cap). The init script counts
-      // the worker itself until it answers.
+      // the worker's conversation instead.
       if (p.loaderId === '') return;
-      // Started by the previous document between the navigation's start and
-      // its commit: it never gets loadingFailed either (review: a 2 ms poller
-      // followed by a static page flagged the static page at the cap 4 of 6
-      // times).
-      if (
-        p.frameId === mainFrameId &&
-        this.mainLoader !== undefined &&
-        p.loaderId !== this.mainLoader
-      )
-        return;
       this.inflight.set(p.requestId, {
         url: p.request.url,
         ...(p.type !== undefined ? { type: p.type } : {}),
+        ...(p.frameId === mainFrameId ? { mainLoader: p.loaderId } : {}),
       });
+    });
+    // The new main document commits. Its predecessor's requests, including
+    // ones it started between the navigation's start and this commit, never
+    // get loadingFailed (spike: a long poll pinned the next page at the cap;
+    // review: a 2 ms poller flagged the following static page 4 of 6
+    // times), and its completions must not satisfy this one's `require`.
+    // On the commit, not on the Document request: a navigation that never
+    // commits (a 204, a download) must leave the live document's requests
+    // counted (review round 2). A request is kept by its loader, not dropped
+    // on arrival, because Network events and the commit come from different
+    // processes and a new document's first fetch can be reported before it.
+    page.on('Page.frameNavigated', ({ frame }) => {
+      if (frame.parentId !== undefined || frame.id !== mainFrameId) return;
+      this.mainLoader = frame.loaderId;
+      for (const [id, r] of this.inflight)
+        if (r.mainLoader !== undefined && r.mainLoader !== frame.loaderId) {
+          this.inflight.delete(id);
+          this.excluded.delete(id);
+        }
+      this.done = [];
+      this.excluded.clear();
+      for (const l of [...this.listeners]) l();
     });
     const finish = (p: { requestId: string }) => {
       const r = this.inflight.get(p.requestId);
@@ -306,7 +337,15 @@ export class NetworkTracker {
   /** In-flight requests the wait counts: required, or not ignored. */
   counted(s: ResolvedSettle): Request[] {
     return [...this.inflight.entries()]
-      .filter(([id]) => !this.excluded.has(id))
+      .filter(
+        ([id, r]) =>
+          !this.excluded.has(id) &&
+          // Another main-frame loader: the previous document's, or a
+          // navigation that has not committed (or never will).
+          (r.mainLoader === undefined ||
+            this.mainLoader === undefined ||
+            r.mainLoader === this.mainLoader),
+      )
       .map(([, r]) => r)
       .filter(
         (r) =>
@@ -422,13 +461,19 @@ export async function waitForIdle(
         // The in-page cap fires first; this only matters if the page is wedged.
         { timeout: Math.ceil(remaining) + 2000 },
       );
-    } catch {
-      return fallback(
-        page,
-        t0,
-        capMs,
-        'the page navigated or stopped answering during the wait',
-      );
+    } catch (err) {
+      // A wedged page (a synchronous loop) would only wedge a second evaluate
+      // too: worst case cap + 2 s + 2 s (review round 2). Skip straight to the
+      // capture; a navigation mid-wait gets the fallback wait.
+      if (err instanceof SendTimeoutError)
+        return {
+          status: 'fallback',
+          waitedMs: now() - t0,
+          pending: [
+            'the page stopped answering during the wait; captured without waiting',
+          ],
+        };
+      return fallback(page, t0, capMs, 'the page navigated during the wait');
     }
     const status =
       typeof r === 'object' && r !== null
