@@ -1,5 +1,0 @@
----
-'@juxtapose/core': patch
----
-
-Rebuild `will-change` compositor layers before the paint barrier, so a capture no longer depends on the page's history (#136). Chrome keeps the subpixel offset a `will-change: transform` layer was first rasterized at, so a marquee whose animation ran for a frame before the freeze, or whose width changed after its first raster when a font loaded, kept glyph antialiasing from an earlier frame. That earlier frame depended on timing, so one Chakra marquee story captured three different hashes depending on whether it ran alone, in a full run, or through the warm browser. It now captures one. Only a story whose `will-change` layer changed after its first raster can capture differently from before, and it may need a one-time re-approval, because its new baseline is the page's final state. Other stories, including frozen CSS transform animations without `will-change`, capture as before: on Chakra UI's 1227 stories the only differences from the previous release are stories whose content depends on the network or the clock. The examples capture byte-identical to before.

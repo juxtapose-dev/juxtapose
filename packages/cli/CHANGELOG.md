@@ -1,5 +1,25 @@
 # @juxtapose/cli
 
+## 0.11.0
+
+### Minor Changes
+
+- 16d7ed3: Navigation no longer waits for the `load` event, and a new `network.external` option can block third-party requests (#125, part of #147). `page.goto` now resolves on `DOMContentLoaded` by default (`waitUntil: 'load'` restores the old behavior), so one subresource that never answers, such as Chakra's avatar fallback `<img src="https://bit.ly/broken-link">` that 522s after ~20 s, no longer holds a worker for 20-30 s on every run or errors the story. The settle wait, which already tracks requests and images in flight, waits for it up to `settle.timeout` and flags the capture `settle-timeout` naming the request. `network.external: 'block'` (config, story parameters, `--network-external`, and the MCP `network` argument) fails requests to origins other than the page's own through CDP `Fetch`, so a random photo or a broken external link neither changes the pixels nor stalls the capture. Default is `'allow'`. Record/replay (#147) is not implemented.
+- c7f9ffb: `report.json` results now carry `hash`, the sha256 of the story's current capture (the hash `baselines/` compares), and `jux diff --runs <runA> <runB>` compares two runs by it (#129). It takes run ids or run directories, prints identical and different counts and the differing story ids (`--json`: `juxtapose.run-diff/v1`), and exits 0 when identical, 1 otherwise. `hash` is optional, so older reports still parse and are compared by hashing their images.
+
+### Patch Changes
+
+- 8d24388: `jux diff --crops` no longer lets same-named images share a crops dir (#131). A `.webp` path input is named `<basename>.<8 hex of sha256(absolute path)>`, so `runA/images/X-current.webp` vs `runB/images/X-current.webp` and `runA/...` vs `runC/...` write to different dirs under `.juxtapose/crops/` instead of overwriting `X-current~vs~X-current`. Snap-name pairs keep their readable `<a>~vs~<b>` dirs.
+- 44bf5ae: Reject unknown arguments and add per-command `--help` (#130). `jux run some-story-id` used to ignore the positional and run every story; it now exits 2 with `unexpected argument 'some-story-id'. Did you mean --story some-story-id?`. Unknown flags and extra positionals on every command (`init`, `run`, `approve`, `check`, `handoff`, `snap`, `diff`, `mcp`) exit 2 with a one-line message, and a value flag with no value (`--story`) is an error. `jux <command> --help` and `-h` print that command's usage and exit 0. "could not detect a workbench" and other expected configuration errors print their own message and exit 2 instead of "unexpected failure" and exit 3. Breaking for scripts that passed stray positionals or flags a command does not take: they now fail instead of being ignored.
+- Updated dependencies [16d7ed3]
+- Updated dependencies [8f38247]
+- Updated dependencies [dc60343]
+- Updated dependencies [c7f9ffb]
+- Updated dependencies [255fc28]
+  - @juxtapose/core@0.11.0
+  - @juxtapose/adapter-ladle@0.3.6
+  - @juxtapose/adapter-storybook@0.4.2
+
 ## 0.10.0
 
 ### Minor Changes
