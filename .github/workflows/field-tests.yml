@@ -140,6 +140,7 @@ jobs:
               yarn storybook:build
               ;;
           esac
+          cd "$SB_SRC"
           test -f "${{ matrix.output }}/index.html"
           mkdir -p "$SB_CACHE"
           cp -R "${{ matrix.output }}/." "$SB_CACHE/"
