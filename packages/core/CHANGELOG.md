@@ -1,5 +1,20 @@
 # @juxtapose/core
 
+## 0.12.0
+
+### Minor Changes
+
+- c602676: Per-story overrides in the project config (#128). `stories: { "<id glob>": { skip, mask, delay, waitForSelector, captureTimeout, settle, network, threshold, minDiffPercent } }` stabilizes or skips volatile stories in a Storybook you don't own (a deployed `origin`, a third-party `buildDir`), where `parameters.juxtapose` can't be edited. An override beats the story's own parameters (including live ones) and loses only to the command line; when several keys match, the more specific wins, masks union and settle merges. A key matching a story also covers its variants, and `<id>__<variant>` targets one. Bad entries fail up front naming the glob and option, in run, init, snap, MCP and the review server. Stories skipped by config are reported (`skippedBy` in the report, the run summary, the PR comment and `jux handoff`).
+- a646af0: One per-story capture budget, and real `durationMs` on errored stories (#154). A page whose main thread stays busy after `DOMContentLoaded` (Primer's ~110k-element treeview story) stalled every browser call for its own 30 s cap, so one story cost 127-160 s and triple a run's wall time. The new `storyTimeout` config option (ms, default 60000) bounds the whole capture of a story: when it runs out the story fails once, with an error naming the step it was stuck in, the worker's page is discarded and replaced, and the run continues. Errored stories now record the time they really took instead of `durationMs: 0`, so they show up in slow-story stats.
+
+  The budget never pre-empts settle: a story's effective budget is the larger of `storyTimeout` and its settle timeout plus `delay` plus 15 s. `storyTimeout` must be a whole number of ms from 1000 to 2147483647.
+
+### Patch Changes
+
+- 981f6b9: jux runs its pinned browser only from its own cache or an explicit `JUX_CHROME` / `--chrome` (#141). It used to run chrome-headless-shell straight out of Playwright's cache, so `playwright install` or a disk cleanup deleting that directory broke every launch, mid-run included. A matching Playwright build is now copied into jux's cache once (a clone where the filesystem supports it), version-checked, and used from there; Playwright's directory is only read. When there is no browser, the error names the expected path and `jux browser install`.
+- f251aa8: Freeze, settle and the image wait now reach into open shadow roots (#152). The animation freeze is adopted into every open shadow root, including ones attached after the story starts rendering; DOM changes and loading images inside open shadow roots are waited for like the document's. Closed shadow roots stay out of reach. Stories with animations or transitions inside shadow DOM (spinners, progress bars, web component dialogs and tooltips) capture their frozen frame from now on, so they change once and need re-approval.
+- 0807b4f: `jux snap` and the MCP `snap` tool give each URL its own budget and replace the shared page after a timeout (#163). One wedged URL used to poison the page every later URL shared: three URLs gave 90 s and all three failed. Now the hung URL errors once, within `storyTimeout` or the 30 s navigation cap, whichever fires first, with an error naming the stuck step; the following URLs get a fresh page and capture normally. `jux snap` still exits 3 when any URL failed. Snaps that do not time out keep sharing one page, so they are byte-identical to before.
+
 ## 0.11.0
 
 ### Minor Changes
