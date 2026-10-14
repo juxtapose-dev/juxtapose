@@ -186,8 +186,9 @@ CLI, `node packages/cli/dist/index.js` from the jux checkout.
 ### Run it in CI
 
 `.github/workflows/field-tests.yml` runs the script against all three
-Storybooks every night, on manual dispatch, and on pull requests that touch
-the capture code, the browser code or the script. Each job builds the Storybook
+Storybooks every night and on manual dispatch. It doesn't run on pull
+requests, because a full sweep takes about half an hour per Storybook. To check
+a capture change before you merge it, dispatch the workflow on your branch. Each job builds the Storybook
 from the pinned commit above (cached by commit), runs two passes, and fails on
 a capture error, on a story that differs across passes, or on a slow run.
 
