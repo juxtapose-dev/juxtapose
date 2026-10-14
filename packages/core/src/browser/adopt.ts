@@ -104,7 +104,8 @@ export async function adoptPlaywrightBrowser(
       }
     }
   } catch {
-    return null;
+    // Fall through: when two adopters race past a partial dir, the loser's
+    // rename fails after the winner's succeeded, and the winner's copy is fine.
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
