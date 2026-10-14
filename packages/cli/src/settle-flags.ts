@@ -12,6 +12,8 @@ import {
 export interface SettleFlags {
   'settle-timeout'?: string;
   'settle-ready'?: boolean;
+  /** Turns off a `settle.ready` the story or config sets. */
+  'no-settle-ready'?: boolean;
   'settle-ignore'?: string[];
   'settle-require'?: string[];
 }
@@ -32,7 +34,10 @@ export function settleFromFlags(
       };
     settle.timeout = n;
   }
+  if (flags['settle-ready'] === true && flags['no-settle-ready'] === true)
+    return { error: `${command}: use --settle-ready or --no-settle-ready, not both.` };
   if (flags['settle-ready'] === true) settle.ready = true;
+  if (flags['no-settle-ready'] === true) settle.ready = false;
   const network: NonNullable<SettleParams['network']> = {};
   for (const key of ['ignore', 'require'] as const) {
     const list = flags[`settle-${key}`];
@@ -53,6 +58,7 @@ export function settleFlagArgs(flags: SettleFlags): string[] {
   if (flags['settle-timeout'] !== undefined)
     out.push('--settle-timeout', shellQuote(flags['settle-timeout']));
   if (flags['settle-ready'] === true) out.push('--settle-ready');
+  if (flags['no-settle-ready'] === true) out.push('--no-settle-ready');
   for (const p of flags['settle-ignore'] ?? [])
     out.push('--settle-ignore', shellQuote(p));
   for (const p of flags['settle-require'] ?? [])

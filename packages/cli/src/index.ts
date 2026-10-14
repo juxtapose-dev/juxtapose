@@ -43,6 +43,7 @@ Settle options (snap, run; over the story's and the config's settle)
   --settle-timeout <ms>          cap on the wait for the page to finish, 1-60000 (default 1500); a
                                  capture at the cap is flagged settle-timeout with what was pending
   --settle-ready                 also wait for the page to call window.__juxtapose.ready()
+  --no-settle-ready              don't, even if the story or config says to
   --settle-ignore <pattern>      never wait for matching requests (repeatable)
   --settle-require <pattern>     wait until a matching request completes (repeatable)
                                  pattern: [type:<ResourceType>] [<glob>]; a glob starting with /
@@ -110,6 +111,7 @@ async function main(argv: string[]): Promise<number> {
       delay: { type: 'string' },
       'settle-timeout': { type: 'string' },
       'settle-ready': { type: 'boolean', default: false },
+      'no-settle-ready': { type: 'boolean', default: false },
       'settle-ignore': { type: 'string', multiple: true },
       'settle-require': { type: 'string', multiple: true },
       mask: { type: 'string', multiple: true },

@@ -296,6 +296,7 @@ function settleArg(args: Args): SettleFlags {
   return {
     ...(settle.timeout !== undefined ? { 'settle-timeout': String(settle.timeout) } : {}),
     ...(settle.ready === true ? { 'settle-ready': true } : {}),
+    ...(settle.ready === false ? { 'no-settle-ready': true } : {}),
     ...(settle.network?.ignore?.length ? { 'settle-ignore': settle.network.ignore } : {}),
     ...(settle.network?.require?.length
       ? { 'settle-require': settle.network.require }

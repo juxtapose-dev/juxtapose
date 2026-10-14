@@ -31,6 +31,16 @@ describe('settle flags', () => {
     ]);
   });
 
+  it('--no-settle-ready turns ready off over a story or config; not both', () => {
+    expect(settleFromFlags({ 'no-settle-ready': true }, 'jux run')).toEqual({
+      settle: { ready: false },
+    });
+    expect(settleFlagArgs({ 'no-settle-ready': true })).toEqual(['--no-settle-ready']);
+    expect(
+      settleFromFlags({ 'settle-ready': true, 'no-settle-ready': true }, 'jux run'),
+    ).toEqual({ error: 'jux run: use --settle-ready or --no-settle-ready, not both.' });
+  });
+
   it('a bad value is a usage error naming the flag', () => {
     for (const t of ['0', '1.5', '60001', 'soon', '-1'])
       expect(settleFromFlags({ 'settle-timeout': t }, 'jux run')).toEqual({

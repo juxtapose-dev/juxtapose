@@ -466,10 +466,10 @@ function emitSettleTimeouts(report: RunReport, io: Io): void {
   const capped = report.results.filter((r) => r.settle);
   if (capped.length === 0) return;
   io.out(
-    `\n  settle-timeout on ${capped.length} capture${capped.length === 1 ? '' : 's'} (captured at the cap; may show a frame mid-update):\n`,
+    `\n  settle flagged on ${capped.length} capture${capped.length === 1 ? '' : 's'} (may show a frame mid-update):\n`,
   );
   for (const r of capped.slice(0, MAX_SETTLE_SHOWN)) {
-    io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}\n`);
+    io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}  ${r.flags?.join(', ') ?? ''}\n`);
     for (const p of r.settle!.pending) io.out(`         ${p}\n`);
   }
   if (capped.length > MAX_SETTLE_SHOWN)

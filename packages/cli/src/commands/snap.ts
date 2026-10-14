@@ -21,6 +21,7 @@ import {
   type SettleReport,
   type SnapPageResult,
   checkProjectSettle,
+  settleFlag,
   VariantConfigError,
   type Viewport,
   shellQuote,
@@ -273,7 +274,9 @@ export async function snapCommand(
       );
       if (r.settle) {
         io.out(
-          `  settle-timeout: captured at the ${r.settle.timeoutMs} ms cap; pending: ${r.settle.pending.join('; ')}\n`,
+          r.settle.status === 'timeout'
+            ? `  settle-timeout: captured at the ${r.settle.timeoutMs} ms cap; pending: ${r.settle.pending.join('; ')}\n`
+            : `  settle-fallback: ${r.settle.pending.join('; ')}\n`,
         );
       }
     }
@@ -402,7 +405,7 @@ export async function writeSnap(
     elements: s?.elements.length ?? 0,
     durationMs: snapshot.durationMs,
     ...(snapshot.settle
-      ? { flags: ['settle-timeout' as const], settle: snapshot.settle }
+      ? { flags: [settleFlag(snapshot.settle)], settle: snapshot.settle }
       : {}),
   };
 }
