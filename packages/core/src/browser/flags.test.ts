@@ -24,6 +24,13 @@ describe('deterministicLaunchOptions', () => {
     expect(args).toContain('--disable-font-subpixel-positioning');
   });
 
+  it('disables partial raster', () => {
+    // A partial re-raster clips to the invalidated rect, and an antialiased
+    // edge on that clip rasters differently: pixels that depend on repaint
+    // timing (issue #120). page.test.ts reproduces it without this flag.
+    expect(deterministicLaunchOptions().args).toContain('--disable-partial-raster');
+  });
+
   it('pins the device scale factor', () => {
     // A baseline captured at 2x will never match one captured at 1x.
     expect(deterministicLaunchOptions().args).toContain('--force-device-scale-factor=1');
@@ -74,15 +81,23 @@ describe('chromeArgs', () => {
       '--remote-debugging-pipe',
       '--no-startup-window',
     ]);
-    expect(args).toHaveLength(56 + 1);
+    expect(args).toHaveLength(57 + 1);
   });
 });
 
 describe('chromeArgs byte parity', () => {
-  it('equals the spike-proven 56-arg list exactly, in content and order', () => {
+  it('equals the spike-proven 56-arg list exactly, in content and order, plus --disable-partial-raster', () => {
     // Fixture generated from the spike's args.mjs (launchArgs('/U', 'pipe')).
     // Any drift in flags or order fails here before it can fail a baseline.
-    expect(chromeArgs({ userDataDir: '/U' })).toEqual(SPIKE_ARGS);
+    // The one deliberate addition is --disable-partial-raster (issue #120):
+    // it changes no bytes of a single full raster, only stops a repaint's
+    // clipped re-raster from showing, and the examples captured
+    // byte-identical with it.
+    const args = chromeArgs({ userDataDir: '/U' });
+    expect(args.filter((a) => a !== '--disable-partial-raster')).toEqual(SPIKE_ARGS);
+    expect(args.indexOf('--disable-partial-raster')).toBe(
+      args.indexOf('--force-color-profile=srgb', PARITY_CHROMIUM_ARGS.length) + 1,
+    );
     expect(SPIKE_ARGS).toHaveLength(56);
   });
 });

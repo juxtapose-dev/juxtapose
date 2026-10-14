@@ -27,6 +27,20 @@
  *   exactly the kind of environment coupling that makes a baseline captured on
  *   one machine fail on another.
  *
+ * - `--disable-partial-raster` makes every re-raster redraw a whole tile.
+ *   With partial raster, a repaint re-rasters only the invalidated rect,
+ *   clipped to it, and an antialiased edge lying on that clip (a rounded
+ *   border on its own element's rect) gets different coverage than in an
+ *   unclipped raster. The bytes then depend on whether something repainted
+ *   after the first raster, which is timing (issue #120). Measured on Linux
+ *   CI, snapping the structural-corpus pages four per launch through
+ *   `snapPages`: 20 of 18,800 captures (about 1 in 940) differed from the
+ *   rest, each by the same 2 pixels, off by up to 8, on the button's top-left
+ *   corner, and a whole-page repaint before the shutter restored the majority
+ *   bytes in 8 of 8. Repainting just the button produces those exact pixels
+ *   on every run, on Linux and macOS; page.test.ts guards it. With this flag:
+ *   0 of 7,200, and the examples and corpus capture byte-identical to before.
+ *
  * - `--hide-scrollbars` keeps a scrollbar's presence from shifting layout by a
  *   few pixels depending on content height.
  *
@@ -41,6 +55,7 @@ export const DETERMINISTIC_CHROMIUM_ARGS: readonly string[] = [
   '--disable-lcd-text',
   '--disable-font-subpixel-positioning',
   '--force-color-profile=srgb',
+  '--disable-partial-raster',
   '--hide-scrollbars',
   '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows',

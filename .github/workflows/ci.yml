@@ -134,6 +134,15 @@ jobs:
       - name: Determinism (Storybook, warm browser)
         run: env -u CI -u GITHUB_ACTIONS node scripts/check-determinism.mjs --daemon examples/storybook 3
 
+      # Multi-URL `jux snap --as-prefix`: one browser, one page navigated
+      # through every corpus page, with the order reversed on alternate runs.
+      # Issue #120 failed here about 1 capture in 940, so it takes many calls.
+      - name: Determinism (jux snap, several pages per call)
+        run: node scripts/check-determinism.mjs --snap 10
+
+      - name: Determinism (jux snap, warm browser)
+        run: env -u CI -u GITHUB_ACTIONS node scripts/check-determinism.mjs --daemon --snap 3
+
       - name: Stop the warm browser
         if: always()
         run: node packages/cli/dist/index.js browser stop
