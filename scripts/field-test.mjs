@@ -72,7 +72,11 @@ if (!existsSync(cli)) {
 const project = mkdtempSync(path.join(tmpdir(), 'jux-field-test-'));
 writeFileSync(
   path.join(project, 'juxtapose.config.json'),
-  JSON.stringify({ platform: 'storybook', buildDir }),
+  JSON.stringify({
+    platform: 'storybook',
+    buildDir,
+    ...(gate?.concurrency ? { concurrency: gate.concurrency } : {}),
+  }),
 );
 const jux = (args, state) =>
   run('node', [cli, ...args, '--project', project], {

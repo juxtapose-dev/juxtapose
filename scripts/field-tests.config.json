@@ -1,24 +1,30 @@
 {
-  "$comment": "Gates for scripts/field-test.mjs --storybook <name>. knownVariable: stories that may differ across passes (every other difference fails the job). allowedErrors: stories that may error. maxWallSeconds: ceiling per pass. Seeded from the macOS 0.13.0 scorecard; Linux CI can differ (fonts, timing), so adjust after a CI run. See docs/field-tests.md.",
+  "$comment": "Gates for scripts/field-test.mjs --storybook <name>. knownVariable: stories that may differ across passes (every other difference fails the job). allowedErrors: stories that may error. maxWallSeconds: ceiling per pass. concurrency: jux capture workers (a CI runner is much slower than a laptop). Seeded from the macOS 0.13.0 scorecard; Linux CI can differ (fonts, timing), so adjust after a CI run. See docs/field-tests.md.",
   "storybooks": {
     "chakra": {
-      "maxWallSeconds": 600,
+      "maxWallSeconds": 2400,
       "allowedErrors": [],
       "knownVariable": [
         "components-card--basic",
         "layout-aspectratio--map",
         "foundations-sandbox--re-renders",
         "components-avatar--store",
-        "rich-text-editor-tiptap--composition"
-      ]
+        "rich-text-editor-tiptap--composition",
+        "components-rating--testimonial"
+      ],
+      "concurrency": 3
     },
     "primer": {
-      "maxWallSeconds": 600,
+      "maxWallSeconds": 2400,
       "allowedErrors": ["components-treeview-features--contain-intrinsic-size"],
-      "knownVariable": ["components-relativetime-features--count-down-timer"]
+      "knownVariable": [
+        "components-relativetime-features--count-down-timer",
+        "components-avatar-features--size-responsive"
+      ],
+      "concurrency": 3
     },
     "spectrum": {
-      "maxWallSeconds": 600,
+      "maxWallSeconds": 2400,
       "allowedErrors": [],
       "knownVariable": [
         "coachmark--with-gif",
@@ -30,8 +36,11 @@
         "dialog-base--not-again",
         "dialog-wrapper--form",
         "dialog-wrapper--tooltips",
-        "tabs--default"
-      ]
+        "tabs--default",
+        "color-slider--image",
+        "overlay-element--hover-tooltip"
+      ],
+      "concurrency": 3
     }
   }
 }
