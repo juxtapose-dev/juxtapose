@@ -194,8 +194,79 @@ const IDLE_INIT = `(function () {
     W.Worker = JW;
   }
 
+  var MO_OPTS = { childList: true, subtree: true, attributes: true, characterData: true };
   MO = new MutationObserver(function (list) { S.mut += list.length; });
-  MO.observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
+  MO.observe(document, MO_OPTS);
+
+  // Open shadow roots (issue #152). An observer on the document, a
+  // stylesheet in it and document.images all stop at a shadow boundary, so
+  // every open root is tracked here: observed like the document, its images
+  // in the image wait, and the animation freeze adopted into it. Web
+  // component libraries render everything inside one: in the Spectrum Web
+  // Components field test (1,086 stories, jux 0.9.0) 31 of the 33 stories
+  // whose hash varied across three passes were spinners, progress bars,
+  // pulses and dialog or tooltip transitions in shadow DOM.
+  //
+  // Roots come from wrapping attachShadow, which sees every root a script
+  // creates, before its content, and from a walk of the tree (openRoots)
+  // for declarative ones (<template shadowrootmode>), which never call it.
+  // Held weakly: on a warm page, a removed component's root must be freed.
+  //
+  // Closed roots are left alone. The wrapper is handed them too, but
+  // nothing else in capture can reach them (the reraster walk, mask
+  // selectors), and a component that closes its root has asked not to be
+  // reached into. Their animations run and their mutations and images are
+  // not waited for (docs/configuration.md).
+  var roots = [], rootSeen = new WeakSet(), freezeSheet = null;
+  var SRP = ShadowRoot.prototype, ASS = Object.getOwnPropertyDescriptor(SRP, 'adoptedStyleSheets');
+  // Appended after the page's sheets on every assignment. Not a guarantee
+  // of order (adoptedStyleSheets.push and splice bypass the setter), and
+  // not needed for one: its rules are !important on a universal selector,
+  // so only another !important rule on the same properties competes.
+  var withFreeze = function (list) { var out = [];
+    for (var i = 0; i < list.length; i++) if (list[i] !== freezeSheet) out.push(list[i]);
+    out.push(freezeSheet); return out; };
+  // Only roots of this document: a sheet constructed here can't be adopted
+  // into another one (an iframe, createHTMLDocument, DOMParser or template
+  // content), and the native setter throws NotAllowedError. Those roots
+  // stay unfrozen. A root whose host moves to another document later loses
+  // the sheet there (the setter below drops it).
+  var freezeRoot = function (r) {
+    if (freezeSheet && ASS && r.ownerDocument === document) ASS.set.call(r, withFreeze(ASS.get.call(r))); };
+  var track = function (r) { if (rootSeen.has(r)) return; rootSeen.add(r);
+    roots.push(typeof WeakRef === 'function' ? new WeakRef(r) : { deref: function () { return r; } });
+    MO.observe(r, MO_OPTS);
+    // Called from attachShadow after the root exists: nothing here may make
+    // the page's own call throw.
+    try { freezeRoot(r); } catch (e) {} };
+  var oAS = Element.prototype.attachShadow;
+  // Named, with one parameter: the same name and length as the native.
+  var jAS = function attachShadow(init) { var r = oAS.apply(this, arguments);
+    if (this.shadowRoot === r) track(r); return r; };
+  Element.prototype.attachShadow = jAS;
+  // Lit and others assign adoptedStyleSheets after attaching, which would
+  // drop the freeze sheet: keep it in the list on a root it was adopted into.
+  // The setter takes any iterable (a Set too), so it is read into an array.
+  if (ASS && ASS.set) Object.defineProperty(SRP, 'adoptedStyleSheets', { configurable: true, enumerable: ASS.enumerable,
+    get: ASS.get, set: Object.defineProperty(function (v) {
+      if (freezeSheet && rootSeen.has(this) && v && typeof v === 'object') {
+        var list = typeof v.length === 'number' ? v : typeof v[Symbol.iterator] === 'function' ? Array.from(v) : null;
+        if (list) {
+          if (this.ownerDocument === document) v = withFreeze(list);
+          else { v = []; for (var i = 0; i < list.length; i++) if (list[i] !== freezeSheet) v.push(list[i]); }
+        }
+      }
+      return ASS.set.call(this, v); }, 'name', { value: ASS.set.name }) });
+  var walk = function (root) { var els = root.querySelectorAll('*');
+    for (var i = 0; i < els.length; i++) { var r = els[i].shadowRoot; if (r) { track(r); walk(r); } } };
+  // Every tracked root still alive and in the document. The walk is not
+  // repeated here: this runs on every check of the wait, every 4 ms while a
+  // timer is pending, and the walk is a querySelectorAll('*') per root. It
+  // runs where a wait starts, at the freeze and before the recheck instead.
+  var openRoots = function () { var live = [], out = [];
+    for (var i = 0; i < roots.length; i++) { var r = roots[i].deref(); if (!r) continue; live.push(roots[i]);
+      if (r.host.isConnected) out.push(r); }
+    roots = live; return out; };
 
   // The page's half of settle.ready. Always defined under jux, so a page can
   // call it unconditionally (window.__juxtapose?.ready() outside jux).
@@ -203,14 +274,19 @@ const IDLE_INIT = `(function () {
 
   var pendingImages = function () {
     var vh = W.innerHeight, vw = W.innerWidth, out = [];
-    Array.prototype.forEach.call(document.images, function (img) {
+    var check = function (img) {
       if (img.complete) return;
       // A lazy image outside the viewport, or not rendered at all
       // (display: none), never loads; waiting for it is what hung the old drain.
       if (img.loading === 'lazy') { if (img.getClientRects().length === 0) return;
         var r = img.getBoundingClientRect(); if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) return; }
       out.push(img.currentSrc || img.src || '(no src)');
-    });
+    };
+    Array.prototype.forEach.call(document.images, check);
+    // Fonts need no such step: document.fonts reads 'loading' while a face
+    // used only by shadow-tree text loads (checked on Chrome 151), and
+    // 'loaded' when nothing uses it.
+    openRoots().forEach(function (r) { Array.prototype.forEach.call(r.querySelectorAll('img'), check); });
     return out;
   };
   var snapshot = function (horizon) {
@@ -227,13 +303,21 @@ const IDLE_INIT = `(function () {
   // this, so the mutation counter never sees them and a capture does not take
   // the recheck path for jux's own writes. Page mutations queued before fn are
   // counted first; fn's own records are dropped.
-  W.__juxIdle = { snapshot: snapshot, reset: function () { S.ready = false; },
+  W.__juxIdle = { snapshot: function (horizon) { walk(document); return snapshot(horizon); },
+    reset: function () { S.ready = false; },
+    // The animation freeze for open shadow roots, existing and future
+    // (capture.ts adds the document's own sheet). A constructed sheet: no
+    // element, so no mutation for this counter and nothing in the
+    // structure snapshot.
+    freeze: function (css) { if (!freezeSheet) { freezeSheet = new CSSStyleSheet(); freezeSheet.replaceSync(css); }
+      walk(document); roots.forEach(function (w) { var r = w.deref(); if (r) freezeRoot(r); }); },
     untracked: function (fn) { flushMut(); var m = S.mut; try { return fn(); } finally { if (MO) MO.takeRecords(); S.mut = m; } } };
 
   // Resolves 'idle' when two consecutive task hops each see no pending work
   // and no mutation since the previous hop, or 'cap' at capMs.
   W.__juxIdleWait = function (capMs, horizon, needReady) {
     return new Promise(function (resolve) {
+      walk(document);
       var t0 = performance.now(); var lastMut = -1; var lastDelivered = -1; var quiet = 0; var stale = 0; var done = false; var changing = false;
       var finish = function (status, s) { if (done) return; done = true; oCT.call(W, capTimer);
         s = s || snapshot(horizon); s.changing = changing;
@@ -535,13 +619,17 @@ async function fallback(
     .evaluate(
       `new Promise(function (resolve) {
         var cap = setTimeout(resolve, ${remaining});
+        // The document and its open shadow roots (issue #152).
+        var trees = [document]; (function walk(root) { var els = root.querySelectorAll('*');
+          for (var k = 0; k < els.length; k++) { var sr = els[k].shadowRoot; if (sr) { trees.push(sr); walk(sr); } } })(document);
+        var imgs = []; trees.forEach(function (t) { Array.prototype.push.apply(imgs, t.querySelectorAll('img')); });
         Promise.resolve(document.fonts && document.fonts.ready).then(function () {
-          return Promise.all(Array.prototype.filter.call(document.images, function (i) { return !i.complete && i.loading !== 'lazy'; })
+          return Promise.all(imgs.filter(function (i) { return !i.complete && i.loading !== 'lazy'; })
             .map(function (i) { return new Promise(function (r) { i.addEventListener('load', r, { once: true }); i.addEventListener('error', r, { once: true }); }); }));
         }).then(function () {
           var t; var fin = function () { o.disconnect(); clearTimeout(cap); resolve(); };
           var o = new MutationObserver(function () { clearTimeout(t); t = setTimeout(fin, 100); });
-          o.observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
+          trees.forEach(function (r) { o.observe(r, { childList: true, subtree: true, attributes: true, characterData: true }); });
           t = setTimeout(fin, 100);
         });
       })`,

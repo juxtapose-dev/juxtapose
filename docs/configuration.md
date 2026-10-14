@@ -48,6 +48,18 @@ Captures are reproducible: juxtapose freezes animations, waits for the page to
 finish its work (see [Settle](#settle)), and pins rendering to settings that
 don't vary by machine.
 
+### Shadow DOM
+
+The animation freeze, the settle wait and the image wait reach into open
+shadow roots, including roots attached after the story starts rendering, so
+web components (Lit, for example) are frozen and waited for like the rest of
+the page. Web fonts are waited for wherever they're used.
+
+Closed shadow roots (`attachShadow({ mode: 'closed' })`) stay out of reach:
+animations inside them keep running, and their DOM changes and images aren't
+waited for. If a component uses one, `mask` its host element, and use
+`settle.ready` to wait for it to finish rendering.
+
 ## Settle
 
 After a story renders, juxtapose waits until the page has no pending work, then
@@ -65,10 +77,12 @@ captures it. Pending work is any of the following:
 - A dedicated `Worker` that hasn't answered a message posted to it, for up to
   1000 ms after the post, or a new worker that hasn't sent anything yet, for up
   to 300 ms after it's created.
-- A DOM change since the previous check.
+- A DOM change since the previous check, in the document or an open shadow
+  root.
 - A web font that is still loading.
-- An image that is still loading, unless it's lazy and either outside the
-  viewport or not rendered (`display: none`).
+- An image that is still loading, in the document or an open shadow root,
+  unless it's lazy and either outside the viewport or not rendered
+  (`display: none`).
 - A network request in flight, unless it's ignored (see
   [Network requests](#network-requests)).
 

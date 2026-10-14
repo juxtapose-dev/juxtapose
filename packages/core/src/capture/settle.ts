@@ -19,6 +19,10 @@ import type { Page } from '../browser/page.js';
  * shimmer, fade-ins, the text caret — makes the story diff against itself on
  * every run. Stories that exist specifically to test animation opt out with
  * `animations: 'play'`.
+ *
+ * Injected as a <style> in the document, which does not reach into shadow
+ * roots; the idle init script (idle.ts) adopts the same rules into every
+ * open one as a constructed sheet (issue #152). Closed roots stay unfrozen.
  */
 export const FREEZE_ANIMATIONS_CSS = `
 *, *::before, *::after {
