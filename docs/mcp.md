@@ -226,9 +226,15 @@ JSON form.
 Promotes the last run's captures of the named stories to baselines. Same result
 as `jux approve --story <id> --json`: `{ approved, failed }`.
 
-| Argument  | Type     | Description                                  |
-| --------- | -------- | -------------------------------------------- |
-| `stories` | string[] | Exact story ids from the last run. Required. |
+| Argument        | Type     | Description                                                                   |
+| --------------- | -------- | ----------------------------------------------------------------------------- |
+| `stories`       | string[] | Exact story ids from the last run. Required.                                  |
+| `allowUnstable` | boolean  | Approve stories the run captured twice with different results. Default false. |
+
+A story whose two run captures differed is `unstable` in the run result. It is
+refused with a reason in `failed` (the rest are still approved) unless
+`allowUnstable` is true. Fix it with a mask, a `stories` override or
+`freshRenderer` rather than passing the flag, unless the user insists.
 
 There is no "all". The server rejects an empty list, and any id that is not in
 the last run, without approving anything. Otherwise every requested id appears

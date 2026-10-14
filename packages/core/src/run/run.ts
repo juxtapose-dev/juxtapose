@@ -88,8 +88,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const p = opts.phases ?? phases();
   const manifest = await p.time('baselines', () => opts.store.readManifest());
   const results: DiffResult[] = [];
+  const toConfirm = new Map<string, DiffResult>();
 
-  const pool = capturePool(opts.stories, {
+  const poolOptions = (onProgress: RunOptions['onProgress']) => ({
     browser: opts.browser,
     platform: opts.platform,
     baseUrl: opts.baseUrl,
@@ -102,7 +103,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       ? { storyTimeoutMs: opts.config.storyTimeout }
       : {}),
     viewport,
-    onProgress: opts.onProgress,
+    onProgress,
     ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
     settleLayers: {
       project: {
@@ -117,6 +118,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     },
     signal: opts.signal,
   });
+  const pool = capturePool(opts.stories, poolOptions(opts.onProgress));
 
   // Capture is measured as the whole streamed loop rather than per story: the
   // pool runs `concurrency` pages at once, so summing per-story durations would
@@ -169,7 +171,25 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       continue;
     }
 
-    results.push(await judge(outcome.snapshot, outcome.story, manifest, opts, p));
+    const result = await judge(outcome.snapshot, outcome.story, manifest, opts, p);
+    results.push(result);
+    if ((result.status === 'new' || result.status === 'fail') && result.hash) {
+      toConfirm.set(result.storyId, result);
+    }
+  }
+
+  // Approval turns a capture into a baseline, so a flaky one is only caught
+  // for free here, while the browser is open. Only stories that could be
+  // approved are captured again (new and changed ones); a passing story
+  // already matched a recorded hash and costs nothing extra.
+  if (toConfirm.size > 0 && !opts.signal?.aborted) {
+    const again = opts.stories.filter((s) => toConfirm.has(s.storyId));
+    for await (const outcome of capturePool(again, poolOptions(undefined))) {
+      const first = toConfirm.get(outcome.story.storyId);
+      if (!first || !outcome.snapshot) continue;
+      const second = hashImage(outcome.snapshot.image);
+      if (second !== first.hash) first.unstable = { hashes: [first.hash!, second] };
+    }
   }
 
   // Diffing and cause tracing happen inside the loop; subtract both to

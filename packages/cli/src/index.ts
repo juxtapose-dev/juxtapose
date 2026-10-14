@@ -39,6 +39,7 @@ Common options
   --origin <url>                 capture against a running dev server instead
   --platform <name>              storybook | ladle | urls (default: autodetect)
   --concurrency <n>              parallel pages (default: 8)
+  --allow-unstable               approve: also baseline stories whose two run captures differed
   --run <dir>                    run directory to read (approve, check, handoff)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
@@ -136,6 +137,7 @@ async function main(argv: string[]): Promise<number> {
       concurrency: { type: 'string' },
       since: { type: 'string' },
       all: { type: 'boolean', default: false },
+      'allow-unstable': { type: 'boolean', default: false },
       comment: { type: 'boolean', default: false },
       html: { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },

@@ -36,7 +36,10 @@ export const SPECS: Record<string, Spec> = {
     ],
     max: 0,
   },
-  approve: { flags: ['json', ...CONTEXT, 'all', 'story', 'run'], max: 0 },
+  approve: {
+    flags: ['json', ...CONTEXT, 'all', 'story', 'run', 'allow-unstable'],
+    max: 0,
+  },
   check: { flags: ['json', ...CONTEXT, 'run'], max: 0 },
   handoff: { flags: ['json', ...CONTEXT, 'run'], max: 1 },
   snap: {

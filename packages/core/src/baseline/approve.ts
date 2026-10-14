@@ -10,6 +10,21 @@ import { errorMessage } from '../browser/guards.js';
 import { decodeStructure } from '../capture/structure.js';
 import type { ApprovalMeta, BaselineStore } from '../types.js';
 
+/**
+ * Refusal to approve a capture the run saw come out two different ways.
+ * Baselining it would turn a flake into a permanently red story.
+ */
+export class UnstableCaptureError extends Error {
+  constructor(readonly storyId: string) {
+    super(
+      `story '${storyId}' is unstable: two captures of it differed, so approving it would ` +
+        `baseline a flake. Fix the cause (mask the changing region, add a \`stories\` override ` +
+        `in config, or set \`freshRenderer\`), or pass --allow-unstable to approve it anyway.`,
+    );
+    this.name = 'UnstableCaptureError';
+  }
+}
+
 export interface RunStructure {
   gz: Buffer;
   structureHash: string;

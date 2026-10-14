@@ -104,6 +104,7 @@ export { encodeStructure, decodeStructure } from './capture/structure.js';
 // init, the review server) goes through this so they cannot disagree.
 export {
   approveCapture,
+  UnstableCaptureError,
   readRunStructure,
   type RunStructure,
 } from './baseline/approve.js';

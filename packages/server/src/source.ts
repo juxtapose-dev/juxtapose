@@ -5,6 +5,7 @@ import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import {
   approveCapture,
+  UnstableCaptureError,
   compareCodeUnits,
   expandVariants,
   computeGroups,
@@ -329,8 +330,12 @@ export class RunDirSource implements ReviewSource {
     return file !== undefined && existsSync(file) ? file : undefined;
   }
 
-  async approve(storyId: string): Promise<void> {
+  async approve(storyId: string, allowUnstable = false): Promise<void> {
     const task = this.approvalQueue.then(async () => {
+      const result = (await this.loadReport())?.results.find(
+        (r) => r.storyId === storyId,
+      );
+      if (result?.unstable && !allowUnstable) throw new UnstableCaptureError(storyId);
       const image = await this.readImage('current', storyId);
       if (!image) throw new Error(`no capture for ${storyId} in the last run`);
       const { structureError } = await approveCapture(

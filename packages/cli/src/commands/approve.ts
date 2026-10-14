@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   approveCapture,
+  UnstableCaptureError,
   encodeStoryId,
   parseRunReport,
   type DiffResult,
@@ -78,9 +79,19 @@ export async function approveCommand(
   // From the run, not from here: approving never launches a browser.
   const env = report.env;
   const approved: string[] = [];
-  const failed: { storyId: string; reason: string }[] = [];
+  const failed: { storyId: string; reason: string; unstable?: true }[] = [];
 
   for (const result of candidates) {
+    // The run captured this one twice and got two images. Refuse just this
+    // story; the rest of the batch still goes through.
+    if (result.unstable && !flags['allow-unstable']) {
+      failed.push({
+        storyId: result.storyId,
+        reason: new UnstableCaptureError(result.storyId).message,
+        unstable: true,
+      });
+      continue;
+    }
     const imagePath = path.join(
       runDir,
       'images',

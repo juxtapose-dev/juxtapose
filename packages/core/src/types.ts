@@ -354,6 +354,11 @@ export interface DiffResult {
    *  on skipped and errored stories (nothing was captured) and on reports
    *  written before it was recorded. */
   hash?: string;
+  /** Set when a new or failing story was captured a second time and the two
+   *  hashes differed: the capture is nondeterministic, so approving it would
+   *  baseline a flake. `jux approve` refuses it unless told otherwise. Absent
+   *  when the two captures matched, and for every pass, skip and stale. */
+  unstable?: { hashes: [string, string] };
   mismatchPixels: number;
   mismatchPercent: number;
   /** Bounding boxes of changed clusters. Empty unless status is 'fail'. */

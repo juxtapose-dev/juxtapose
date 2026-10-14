@@ -1,20 +1,21 @@
 # Commands
 
-| command                             | what it does                                                                     |
-| ----------------------------------- | -------------------------------------------------------------------------------- |
-| `jux init`                          | set up config and capture the first baselines                                    |
-| `jux run`                           | capture affected stories and compare to baselines                                |
-| `jux run --all`                     | capture everything, skipping change analysis                                     |
-| `jux approve --all`                 | promote the last run's captures to baselines                                     |
-| `jux approve --story <id>`          | approve one story                                                                |
-| `jux check`                         | exit non-zero if anything still needs review — for CI                            |
-| `jux handoff <id>`                  | print an agent-ready prompt for one failing story                                |
-| `jux snap <url>… --as <name>`       | capture a page (or several with `--as-prefix`): pixels + structure, no workbench |
-| `jux diff <a> <b> --json`           | tier-0 verdict: what changed between two snaps, no browser                       |
-| `jux diff <a> <b> --crops`          | the verdict plus side-by-side PNG strips per changed region, no browser          |
-| `jux diff --runs <runA> <runB>`     | are two runs byte-identical? per-story hash comparison, no browser               |
-| `jux browser install\|status\|path` | install, inspect or locate the pinned browser                                    |
-| `jux browser start\|stop`           | start or stop the warm browser (see [Warm browser](browser.md#warm-browser))     |
+| command                              | what it does                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------- |
+| `jux init`                           | set up config and capture the first baselines                                    |
+| `jux run`                            | capture affected stories and compare to baselines                                |
+| `jux run --all`                      | capture everything, skipping change analysis                                     |
+| `jux approve --all`                  | promote the last run's captures to baselines                                     |
+| `jux approve --story <id>`           | approve one story                                                                |
+| `jux approve --all --allow-unstable` | also approve stories whose two run captures differed (see below)                 |
+| `jux check`                          | exit non-zero if anything still needs review — for CI                            |
+| `jux handoff <id>`                   | print an agent-ready prompt for one failing story                                |
+| `jux snap <url>… --as <name>`        | capture a page (or several with `--as-prefix`): pixels + structure, no workbench |
+| `jux diff <a> <b> --json`            | tier-0 verdict: what changed between two snaps, no browser                       |
+| `jux diff <a> <b> --crops`           | the verdict plus side-by-side PNG strips per changed region, no browser          |
+| `jux diff --runs <runA> <runB>`      | are two runs byte-identical? per-story hash comparison, no browser               |
+| `jux browser install\|status\|path`  | install, inspect or locate the pinned browser                                    |
+| `jux browser start\|stop`            | start or stop the warm browser (see [Warm browser](browser.md#warm-browser))     |
 
 `jux <command> --help` (or `-h`) prints that command's usage and exits 0. An
 unknown option, or a positional a command does not take (`jux run some-id`),
@@ -62,3 +63,18 @@ When you use `--origin`, jux doesn't serve a build. Keep `--build-dir` or
 `buildDir` set as well if you want `jux run` to use the build's manifest for
 change analysis. See [Capture a built or deployed Storybook](configuration.md#capture-a-built-or-deployed-storybook)
 for the precedence rules and caching behavior.
+
+## Approval requires two identical captures
+
+A flaky capture that gets approved becomes a permanently red baseline. So when
+`jux run` sees a story come out `new` or `fail`, it captures it a second time
+and compares the hashes. A green run captures nothing extra; the cost lands
+only on stories that could be approved. If the two hashes differ, the story's
+`report.json` result carries `unstable: { hashes: [a, b] }`.
+
+`jux approve` refuses an unstable story, names it, and exits 1. The other
+stories in the same call are still approved. Fix the cause instead: `mask` the
+changing region, add a `stories` override in config, or leave `freshRenderer`
+on. For a story that is nondeterministic by design and that you want baselined
+anyway, pass `--allow-unstable`. The Storybook panel's approve answers 409 for
+an unstable story with the same message.
