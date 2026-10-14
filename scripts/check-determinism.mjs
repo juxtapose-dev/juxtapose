@@ -11,6 +11,14 @@
 // unstable stories named and their distinct hashes printed.
 //
 // Usage: node scripts/check-determinism.mjs [--daemon] <exampleDir> [runs]
+//        node scripts/check-determinism.mjs [--daemon] --snap [runs]
+//
+// --snap checks `jux snap <url>… --as-prefix` instead of `jux run`: each run
+// snaps every structural-corpus page in one call (one browser, one page,
+// navigated from page to page), alternating the order so a page's bytes
+// cannot depend on the page before it either. Issue #120 was this path: on
+// Linux CI about 1 capture in 940 differed from the rest, so a single call
+// proves little and the check takes several.
 //
 // Without --daemon every run is a fresh launch (JUX_NO_DAEMON=1): that is the
 // cold path CI takes, and a local check leaves no warm browser idling. With
@@ -25,7 +33,8 @@
 
 import { execFile } from 'node:child_process';
 import { readFile, readdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -36,9 +45,13 @@ const run = promisify(execFile);
 
 const argv = process.argv.slice(2);
 const daemon = argv.includes('--daemon');
-const positional = argv.filter((a) => a !== '--daemon' && a !== '--');
+const snap = argv.includes('--snap');
+const positional = argv.filter((a) => !['--daemon', '--snap', '--'].includes(a));
+if (snap) positional.unshift(mkdtempSync(path.join(tmpdir(), 'jux-snap-det-')));
 const exampleDir = path.resolve(positional[0] ?? 'examples/storybook');
 const runs = Number(positional[1] ?? 3);
+const corpus = snap ? await startCorpus() : null;
+const noun = snap ? 'pages' : 'stories';
 const freshEnv = { ...process.env, JUX_NO_DAEMON: '1' };
 const warmEnv = { ...process.env, JUX_DEBUG: '1' };
 const env = daemon ? warmEnv : freshEnv;
@@ -55,7 +68,7 @@ let fresh = null;
 
 if (daemon) {
   fresh = await captureRun(freshEnv);
-  process.stderr.write(`  fresh reference captured ${fresh.size} stories\n`);
+  process.stderr.write(`  fresh reference captured ${fresh.size} ${noun}\n`);
   const started = await run('node', [cli, 'browser', 'start', '--json'], {
     cwd: exampleDir,
     env: warmEnv,
@@ -87,7 +100,7 @@ for (let i = 1; i <= runs; i++) {
     seen.get(storyId).add(hash);
   }
 
-  process.stderr.write(`  run ${i}/${runs} captured ${seen.size} stories\n`);
+  process.stderr.write(`  run ${i}/${runs} captured ${seen.size} ${noun}\n`);
 }
 
 const unstable = [...seen.entries()].filter(([, hashes]) => hashes.size > 1);
@@ -102,7 +115,7 @@ const missing = fresh ? [...fresh.keys()].filter((id) => !seen.has(id)) : [];
 
 if (unstable.length === 0 && drifted.length === 0 && missing.length === 0) {
   process.stdout.write(
-    `\ndeterminism: OK — ${seen.size} stories byte-identical across ${runs} runs${
+    `\ndeterminism: OK — ${seen.size} ${noun} byte-identical across ${runs} runs${
       fresh ? ', warm browser identical to a fresh launch' : ''
     }\n`,
   );
@@ -111,14 +124,14 @@ if (unstable.length === 0 && drifted.length === 0 && missing.length === 0) {
 
 if (missing.length > 0)
   process.stdout.write(
-    `\ndeterminism: FAILED — ${missing.length} stories captured fresh but not warm: ${missing.join(', ')}\n`,
+    `\ndeterminism: FAILED — ${missing.length} ${noun} captured fresh but not warm: ${missing.join(', ')}\n`,
   );
 const bad = fresh ? drifted : unstable;
 if (bad.length > 0)
   process.stdout.write(
     fresh
-      ? `\ndeterminism: FAILED — ${bad.length}/${seen.size} stories differ warm vs fresh (or across ${runs} warm runs)\n\n`
-      : `\ndeterminism: FAILED — ${unstable.length}/${seen.size} stories varied across ${runs} runs\n\n`,
+      ? `\ndeterminism: FAILED — ${bad.length}/${seen.size} ${noun} differ warm vs fresh (or across ${runs} warm runs)\n\n`
+      : `\ndeterminism: FAILED — ${unstable.length}/${seen.size} ${noun} varied across ${runs} runs\n\n`,
   );
 for (const [storyId, hashes] of bad) {
   process.stdout.write(`  ${storyId}\n`);
@@ -134,6 +147,7 @@ process.exit(1);
 
 /** One `jux run --all` with `runEnv`; returns storyId -> hash of the new run. */
 async function captureRun(runEnv, checkStderr = () => {}) {
+  if (corpus) return snapRun(runEnv, checkStderr);
   const before = await latestRun(exampleDir);
   const res = await run('node', [cli, 'run', '--all'], {
     cwd: exampleDir,
@@ -149,6 +163,42 @@ async function captureRun(runEnv, checkStderr = () => {}) {
   const runDir = await latestRun(exampleDir);
   if (!runDir || runDir === before) fail('no run directory produced');
   return hashRun(runDir);
+}
+
+/** The structural corpus served locally, and the url of every page in it. */
+async function startCorpus() {
+  const { startCorpusServer } = await import('./structural-corpus/server.mjs');
+  const { OPERATORS } = await import('./structural-corpus/page.mjs');
+  const server = await startCorpusServer();
+  process.on('exit', () => {
+    server.close();
+    rmSync(exampleDir, { recursive: true, force: true });
+  });
+  return { urls: OPERATORS.map((o) => `${server.url}/op/${o.name}`), calls: 0 };
+}
+
+/** One `jux snap <every corpus url> --as-prefix` call; returns page -> hash. */
+async function snapRun(runEnv, checkStderr) {
+  const order = corpus.calls++ % 2 ? [...corpus.urls].reverse() : corpus.urls;
+  const prefix = `run${corpus.calls}`;
+  const res = await run(
+    'node',
+    [cli, 'snap', ...order, '--as-prefix', prefix, '--json', '--project', exampleDir],
+    { cwd: exampleDir, env: runEnv, maxBuffer: 64 * 1024 * 1024 },
+  ).catch((err) => err);
+  checkStderr(String(res.stderr ?? ''));
+  const out = parseJson(res.stdout);
+  if (res.code || !out) fail(`jux snap failed: ${res.stderr ?? res.message}`);
+  const hashes = new Map();
+  for (const s of out.snaps) {
+    if (s.error) fail(`jux snap could not capture ${s.url}: ${s.error}`);
+    const bytes = await readFile(s.image);
+    hashes.set(
+      s.name.slice(prefix.length + 1),
+      createHash('sha256').update(bytes).digest('hex').slice(0, 16),
+    );
+  }
+  return hashes;
 }
 
 function parseJson(s) {

@@ -29,6 +29,10 @@ const PAGES: Record<string, string> = {
     '<!doctype html><body><script>alert("hi")</script><div id="after">after</div></body>',
   '/worker':
     '<!doctype html><body><script>const w=new Worker(URL.createObjectURL(new Blob(["postMessage(6*7)"],{type:"text/javascript"})));window.__fromWorker=new Promise((r)=>{w.onmessage=(e)=>r(e.data)})</script></body>',
+  // The structural corpus's button: an antialiased rounded border whose edge
+  // sits exactly on its own paint-invalidation rect.
+  '/rounded':
+    '<!doctype html><style>body{margin:16px;font:16px/1.5 sans-serif}h1{font-size:24px;margin:0 0 12px}#b{display:inline-block;padding:8px 12px;background:rgb(37,99,235);color:#fff;border:2px solid rgb(29,78,216);border-radius:6px;font-weight:600;line-height:24px;font-size:16px}</style><h1>Settings</h1><button id="b">Save</button>',
   '/hang': '', // never answered
   // Commits at once; its load waits forever on an image nobody answers.
   '/stuck-load': '<!doctype html><body><img src="/hang"></body>',
@@ -223,6 +227,38 @@ describe.skipIf(!chrome)('CdpPage', () => {
       expect(await page.evaluate(() => window.innerWidth)).toBe(480);
       const meta = await sharp(await page.screenshot()).metadata();
       expect([meta.format, meta.width, meta.height]).toEqual(['png', 480, 400]);
+    }));
+  // Issue #120. With partial raster, a repaint re-rasters only the invalidated
+  // rect of a tile, clipped to it, and Skia's coverage on an antialiased edge
+  // lying on that clip differs from an unclipped raster. The pixels then
+  // depend on whether anything repainted after the first raster: a timing
+  // race. Measured on Linux CI: 2 pixels off by up to 8 on the button's
+  // rounded corner, in ~1 capture in 940. `--disable-partial-raster` makes
+  // every re-raster a whole tile, so the history no longer shows.
+  it('repainting an element leaves the bytes of a single full raster', () =>
+    withPage(async (page) => {
+      const frame = () =>
+        page.evaluate(
+          () =>
+            new Promise<void>((r) =>
+              requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 50))),
+            ),
+        );
+      const setBackground = (color: string) =>
+        page.evaluate((c) => {
+          document.getElementById('b')!.style.backgroundColor = c;
+        }, color);
+      await page.goto(`${base}/rounded`);
+      await frame();
+      const full = await page.screenshot();
+      await setBackground('red');
+      await frame();
+      await setBackground('');
+      await frame();
+      // Without the flag: (16,69) 2a58da -> 325edb and (18,69) 2462ea -> 2461e9,
+      // the exact pixels CI's odd captures carried.
+      const after = await page.screenshot();
+      expect(after.equals(full)).toBe(true);
     }));
   it('a mask paints #F0F over the element, pierces open shadow roots, and leaves no trace', () =>
     withPage(async (page) => {
