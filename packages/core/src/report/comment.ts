@@ -183,7 +183,19 @@ function heading(rows: DiffResult[]): string {
     return `${count(rows.length, one, many)} need review`;
   }
 
-  const largest = Math.max(...fails.map((r) => r.mismatchPercent));
+  // A row with no pixel diff has no magnitude: counting its 0% would turn
+  // "structure diff only" into "all under 0.1%".
+  const measured = fails.filter((r) => r.baselineImage !== 'unavailable');
+  if (measured.length === 0) {
+    const noun = count(fails.length, 'visual change', 'visual changes');
+    const verb = fails.length === 1 ? 'needs' : 'need';
+    const tail =
+      rows.length > fails.length
+        ? ` — ${rows.length - fails.length} more need review`
+        : '';
+    return `${noun} ${verb} review — structure diff only (baseline images not in cache)${tail}`;
+  }
+  const largest = Math.max(...measured.map((r) => r.mismatchPercent));
   // Below 0.1% the individual numbers are noise and a wall of them reads as
   // alarming; saying so once is more useful than quoting the largest hair.
   // `formatPercent` never renders "0.00%", which would read as a tool bug.

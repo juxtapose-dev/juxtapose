@@ -34,6 +34,10 @@ export interface StructuralDiffInput {
    *  evidence wins and the verdict is not `identical`. */
   imagesIdentical: boolean;
   pixels: Pick<DiffOutput, 'changedRegions' | 'dimensionMismatch'>;
+  /** The baseline image is unavailable, so no pixel diff ran: `pixels` is
+   *  empty by absence, not by measurement, and the summary must not say
+   *  "below tolerance" or count regions. */
+  pixelsUnavailable?: boolean;
   /** The exact tier-3 command; core does not know how the CLI is spelled. */
   escalate: { command: string };
   /** From `jux run --since`; `jux diff` has no changed-file set. */
@@ -102,7 +106,10 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
       dimensionMismatch: pixels.dimensionMismatch,
       hasRegions: cov.regionCount > 0,
       subThreshold:
-        !imagesIdentical && !pixels.dimensionMismatch && cov.regionCount === 0,
+        !input.pixelsUnavailable &&
+        !imagesIdentical &&
+        !pixels.dimensionMismatch &&
+        cov.regionCount === 0,
     },
   };
   const { classification, styleTags } = classify(ctx);
@@ -119,6 +126,7 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
     unexplainedRegions: cov.unexplainedRegions,
     flags,
     imagesIdentical,
+    ...(input.pixelsUnavailable ? { noPixelDiff: true } : {}),
     baseline,
     current,
   });
@@ -228,24 +236,6 @@ function elementRegions(facts: Fact[]): ChangedRegion[] {
 /** The verdict alone; what every caller but `--crops` wants. */
 export function structuralDiff(input: StructuralDiffInput): StructuralVerdict {
   return structuralDiffWithCoverage(input).verdict;
-}
-
-/**
- * A verdict computed with no pixel diff (the baseline image is unavailable)
- * must not claim one. With no deltas, the summary would say the pixels "differ
- * below the diff's tolerance" and flag `sub-threshold`, both statements about a
- * comparison that never ran. The hash mismatch is the only pixel evidence.
- */
-export function withoutPixelClaims(v: StructuralVerdict): StructuralVerdict {
-  const flags = v.flags.filter((f) => f !== 'sub-threshold');
-  return v.classification === 'render-drift'
-    ? {
-        ...v,
-        flags,
-        summary:
-          'render-drift: structure and styles identical; the hash differs, so pixels changed, but without the baseline image there is nothing to show where',
-      }
-    : { ...v, flags };
 }
 
 /** sha256 of the classification, then the facts with each element reduced

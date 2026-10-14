@@ -449,6 +449,16 @@ describe('baseline image unavailable', () => {
     expect(body).not.toContain('subtle');
   });
 
+  it('the heading does not call an unmeasured change "under 0.1%"', () => {
+    const body = buildComment({ report: report([unavailable(), unavailable()]) });
+    expect(body).toContain('structure diff only');
+    expect(body).not.toContain('under 0.1%');
+    const mixed = buildComment({
+      report: report([unavailable(), result('b', 'fail', 3.2)]),
+    });
+    expect(mixed).toContain('largest 3.20%');
+  });
+
   it('tells reviewers to commit the manifest and structure, never images', () => {
     const body = buildComment({ report: report([unavailable()]) });
     expect(body).toContain('.juxtapose/structure/');

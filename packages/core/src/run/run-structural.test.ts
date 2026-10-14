@@ -331,11 +331,16 @@ test('every captured result carries the sha256 the baseline compares', async () 
   expect(fail.results[0].hash).toBe(hashImage(Buffer.from('current-bytes')));
 });
 
-test('unavailable image with identical structure claims no pixel comparison', async () => {
-  const s = store('ok');
-  s.getStructure!.mockResolvedValue(encodeStructure(CUR));
-  const r = await run({ ...s, get: async () => null });
-  expect(r.results[0].structural?.classification).toBe('render-drift');
-  expect(r.results[0].structural?.summary).not.toMatch(/tolerance/);
-  expect(r.results[0].structural?.flags).not.toContain('sub-threshold');
+test('unavailable image never claims a pixel comparison, whatever the verdict', async () => {
+  // Identical structure, a style change, and a missing baseline sidecar: the
+  // three summary branches that used to say "below tolerance".
+  const same = store('ok');
+  same.getStructure!.mockResolvedValue(encodeStructure(CUR));
+  for (const s of [same, store('ok'), store('missing')]) {
+    const r = await run({ ...s, get: async () => null });
+    const v = r.results[0].structural!;
+    expect(v.summary).not.toMatch(/tolerance|changed region/);
+    expect(v.summary).toMatch(/no pixel diff|no baseline image/i);
+    expect(v.flags).not.toContain('sub-threshold');
+  }
 });
