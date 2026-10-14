@@ -474,9 +474,14 @@ function emitSettleTimeouts(report: RunReport, io: Io): void {
   }
   if (capped.length > MAX_SETTLE_SHOWN)
     io.out(`  …and ${capped.length - MAX_SETTLE_SHOWN} more (see report.json)\n`);
-  io.out(
-    `  ignore what never finishes (settle.network.ignore), raise settle.timeout for slow work, or require what must load (settle.network.require)\n`,
-  );
+  if (capped.some((r) => r.settle?.status === 'timeout'))
+    io.out(
+      `  settle-timeout: ignore what never finishes (settle.network.ignore), raise settle.timeout for slow work, or require what must load (settle.network.require)\n`,
+    );
+  if (capped.some((r) => r.settle?.status === 'fallback'))
+    io.out(
+      `  settle-fallback: the event-driven wait could not run (the page navigated or stopped answering); re-run before judging those captures\n`,
+    );
 }
 
 /**

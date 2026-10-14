@@ -125,7 +125,7 @@ const PROJECT = {
 const SETTLE = {
   type: 'object',
   description:
-    'Settle options for this call. A capture at the cap is flagged settle-timeout with `settle.pending`',
+    'Settle options for this call. A capture at the cap is flagged settle-timeout, one whose wait could not run settle-fallback; `settle.pending` says what or why',
   properties: {
     timeout: {
       type: 'integer',
