@@ -210,8 +210,13 @@ function heading(rows: DiffResult[]): string {
   // Below 0.1% the individual numbers are noise and a wall of them reads as
   // alarming; saying so once is more useful than quoting the largest hair.
   // `formatPercent` never renders "0.00%", which would read as a tool bug.
+  // Only measured stories speak for the number; the others are named apart,
+  // since "all under 0.1%" would otherwise vouch for changes nobody measured.
+  const unmeasured = fails.length - measured.length;
+  const small = unmeasured > 0 ? `${measured.length} under 0.1%` : 'all under 0.1%';
   const magnitude =
-    largest < 0.1 ? 'all under 0.1%' : `largest ${formatPercent(largest)}`;
+    (largest < 0.1 ? small : `largest ${formatPercent(largest)}`) +
+    (unmeasured > 0 ? `, ${unmeasured} without a pixel diff` : '');
 
   // Mixed: name the shape, since "5 changes" would overstate what changed.
   if (rows.length > fails.length) {
@@ -332,6 +337,21 @@ const COMMENT_COLUMN = 32;
  * statuses actually present get a paragraph — a fail-only run should not
  * explain what "stale" means.
  */
+/**
+ * A Markdown code span that survives any text. Backslashes do not escape inside
+ * a span, so a path containing backticks gets a fence one backtick longer than
+ * its longest run, padded with spaces; and a path with a newline or other
+ * line break is flattened, since a span cannot hold a line break that GitHub
+ * will not turn into a paragraph. Paths come from the repo's own config.
+ */
+export function codeSpan(text: string): string {
+  const flat = text.replace(/[\r\n\u2028\u2029]+/g, ' ');
+  const longest = Math.max(0, ...(flat.match(/`+/g) ?? []).map((r) => r.length));
+  const fence = '`'.repeat(longest + 1);
+  const pad = flat.startsWith('`') || flat.endsWith('`') ? ' ' : '';
+  return `${fence}${pad}${flat}${pad}${fence}`;
+}
+
 function guidance(
   rows: DiffResult[],
   commitPaths: string[] = ['juxtapose.manifest.json', '.juxtapose/structure/'],
@@ -367,7 +387,7 @@ function guidance(
   }
 
   paras.push(
-    `Then commit ${commitPaths.map((p) => `\`${p}\``).join(' and ')} — ` +
+    `Then commit ${commitPaths.map(codeSpan).join(' and ')} — ` +
       (imagesCommitted
         ? 'that is what makes approval a reviewable diff.'
         : 'hashes and structure are what make approval a reviewable diff. Never commit images.'),
