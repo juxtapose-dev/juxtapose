@@ -8,6 +8,7 @@ import type {
   JuxtaposeParameters,
   NetworkParams,
   ProjectConfig,
+  RecheckMode,
   SettleParams,
   StorageConfig,
   StoryOverride,
@@ -18,6 +19,7 @@ export type {
   JuxtaposeParameters,
   NetworkParams,
   ProjectConfig,
+  RecheckMode,
   SettleParams,
   StorageConfig,
   StoryOverride,
@@ -337,6 +339,12 @@ export interface DiffResult {
    *  stability is unknown and approval is refused the same way. Absent
    *  when the two captures matched, and for every pass, skip and stale. */
   unstable?: { hashes: string[]; unconfirmed?: string };
+  /** A new or failing story the run did not capture a second time, because
+   *  `recheck` is "off", or is "new" and this one failed (#195). Nothing is
+   *  known about its stability yet, so `jux approve` takes the confirming
+   *  capture itself before writing a baseline. Absent on every pass, skip and
+   *  stale, and on stories the recheck covered. */
+  unrechecked?: true;
   mismatchPixels: number;
   mismatchPercent: number;
   /** Bounding boxes of changed clusters. Empty unless status is 'fail'. */
@@ -465,6 +473,11 @@ export interface RunReport {
   capturedCount: number;
   totalCount: number;
   results: DiffResult[];
+  /** The recheck mode the run used, after the config and the call were
+   *  layered. "off" explains why no story has `unstable` or `flake`. Absent on
+   *  reports written before the option existed (which always rechecked
+   *  "changed"). */
+  recheck?: RecheckMode;
   summary: Record<DiffStatus, number>;
   /** Present when at least one signature is shared by ≥2 failing stories. */
   groups?: RunGroup[];

@@ -5,6 +5,8 @@
 // nothing about a passing story, so they run only for stories that already
 // failed. On a green run this function never decodes a single image.
 
+import type { RecheckMode } from '../config/schema.js';
+import { DEFAULT_RECHECK } from '../config/schema.js';
 import type { Browser } from '../browser/browser.js';
 import { captureEnv } from '../capture/env.js';
 import type { Platform } from '../platform.js';
@@ -83,6 +85,17 @@ export interface RunOptions {
   /** Per-call settle options (CLI flags, MCP arguments), layered over every
    *  story's own. The project's come from `config`. */
   settle?: SettleLayer;
+  /** Per-call recheck mode (`--recheck`, the MCP argument), over the config's
+   *  `recheck`; "changed" when neither is set. */
+  recheck?: RecheckMode;
+}
+
+/** The mode a run uses: the call over the project config over the default. */
+export function effectiveRecheck(
+  call: RecheckMode | undefined,
+  config: Pick<ProjectConfig, 'recheck'> | undefined,
+): RecheckMode {
+  return call ?? config?.recheck ?? DEFAULT_RECHECK;
 }
 
 export interface RunArtifact {
@@ -99,6 +112,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const viewport = opts.config?.viewport ?? DEFAULT_VIEWPORT;
   const p = opts.phases ?? phases();
   const manifest = await p.time('baselines', () => opts.store.readManifest());
+  const recheck = effectiveRecheck(opts.recheck, opts.config);
   const results: DiffResult[] = [];
   const firstPassWarnings = new Set<string>();
   const toConfirm = new Map<string, DiffResult>();
@@ -107,18 +121,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const firstNotes = new Map<string, Pick<FlakeCapture, 'settle' | 'flags'>>();
 
   const poolOptions = (onProgress: RunOptions['onProgress']) => ({
-    browser: opts.browser,
-    platform: opts.platform,
-    baseUrl: opts.baseUrl,
-    concurrency: opts.config?.concurrency,
-    warmSwitch: opts.config?.warmSwitch,
-    ...(opts.config?.freshRenderer !== undefined
-      ? { freshRenderer: opts.config.freshRenderer }
-      : {}),
-    ...(opts.config?.storyTimeout !== undefined
-      ? { storyTimeoutMs: opts.config.storyTimeout }
-      : {}),
-    viewport,
+    ...poolSettings(opts, viewport),
     onProgress,
     ...(opts.onWarning
       ? {
@@ -128,18 +131,6 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
           },
         }
       : {}),
-    settleLayers: {
-      project: {
-        ...(opts.config?.settle ? { settle: opts.config.settle } : {}),
-        ...(opts.config?.network ? { network: opts.config.network } : {}),
-        ...(opts.config?.waitForSelector !== undefined
-          ? { waitForSelector: opts.config.waitForSelector }
-          : {}),
-        ...(opts.config?.delay !== undefined ? { delay: opts.config.delay } : {}),
-      },
-      ...(opts.settle ? { call: opts.settle } : {}),
-    },
-    signal: opts.signal,
   });
   const pool = capturePool(opts.stories, poolOptions(opts.onProgress));
 
@@ -196,7 +187,16 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
 
     const result = await judge(outcome.snapshot, outcome.story, manifest, opts, p);
     results.push(result);
+    const covered =
+      recheck !== 'off' &&
+      (result.status === 'new' || (result.status === 'fail' && recheck === 'changed'));
     if ((result.status === 'new' || result.status === 'fail') && result.hash) {
+      if (!covered) {
+        // Not captured again: say so, so approve knows to confirm it and a
+        // missing `unstable` or `flake` is never read as "stable".
+        result.unrechecked = true;
+        continue;
+      }
       toConfirm.set(result.storyId, result);
       const { settle, flags } = flakeCapture(outcome.snapshot);
       firstNotes.set(result.storyId, {
@@ -295,11 +295,49 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     capturedCount: opts.stories.length,
     totalCount: opts.totalCount,
     results,
+    recheck,
     summary,
     ...(groups.length > 0 ? { groups } : {}),
     ...(flakeGroups.length > 0 ? { flakeGroups } : {}),
     durationMs: Date.now() - started,
     startedAt: startedAt.toISOString(),
+  };
+}
+
+/** How a run's pool captures, from the config and the call. Shared with the
+ *  confirming capture `jux approve` takes, so the two cannot disagree. */
+export function poolSettings(
+  opts: Pick<
+    RunOptions,
+    'browser' | 'platform' | 'baseUrl' | 'config' | 'settle' | 'signal'
+  >,
+  viewport: Viewport = opts.config?.viewport ?? DEFAULT_VIEWPORT,
+) {
+  return {
+    browser: opts.browser,
+    platform: opts.platform,
+    baseUrl: opts.baseUrl,
+    concurrency: opts.config?.concurrency,
+    warmSwitch: opts.config?.warmSwitch,
+    ...(opts.config?.freshRenderer !== undefined
+      ? { freshRenderer: opts.config.freshRenderer }
+      : {}),
+    ...(opts.config?.storyTimeout !== undefined
+      ? { storyTimeoutMs: opts.config.storyTimeout }
+      : {}),
+    viewport,
+    settleLayers: {
+      project: {
+        ...(opts.config?.settle ? { settle: opts.config.settle } : {}),
+        ...(opts.config?.network ? { network: opts.config.network } : {}),
+        ...(opts.config?.waitForSelector !== undefined
+          ? { waitForSelector: opts.config.waitForSelector }
+          : {}),
+        ...(opts.config?.delay !== undefined ? { delay: opts.config.delay } : {}),
+      },
+      ...(opts.settle ? { call: opts.settle } : {}),
+    },
+    signal: opts.signal,
   };
 }
 

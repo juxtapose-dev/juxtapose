@@ -89,6 +89,23 @@ test('a CLI flag overrides the config', async () => {
   expect(r.out).toMatch(/^settle.timeout +8000 +CLI flag$/m);
 });
 
+test('shows the recheck mode and where it came from', async () => {
+  const dflt = await run(base, { explain: 'about' });
+  expect(dflt.out).toMatch(/^recheck +changed +default$/m);
+  const proj = await run({ ...base, recheck: 'new' }, { explain: 'about' });
+  expect(proj.out).toMatch(/^recheck +new +project config$/m);
+  const flag = await run(
+    { ...base, recheck: 'new' },
+    { explain: 'about', recheck: 'off' },
+  );
+  expect(flag.out).toMatch(/^recheck +off +CLI flag$/m);
+  const no = await run(base, { explain: 'about', 'no-recheck': true });
+  expect(no.out).toMatch(/^recheck +off +CLI flag$/m);
+  const bad = await run(base, { explain: 'about', recheck: 'sometimes' });
+  expect(bad.code).toBe(2);
+  expect(bad.err).toContain('--recheck must be changed, new, off');
+});
+
 test('an invalid flag value is a usage error', async () => {
   const r = await run(base, { explain: 'about', 'settle-timeout': 'soon' });
   expect(r.code).toBe(2);

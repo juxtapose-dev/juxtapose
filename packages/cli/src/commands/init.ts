@@ -192,6 +192,9 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       stories: captures,
       totalCount: captures.length,
       config: ctx.config,
+      // Whatever the config says: a first baseline is where a flake is most
+      // likely to be locked in, and init has no later `approve` to confirm it.
+      recheck: 'changed',
       ancestry: isGitRepo(ctx.projectRoot)
         ? createAncestryCheck(ctx.projectRoot)
         : alwaysAncestor,

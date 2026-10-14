@@ -15,9 +15,10 @@ import {
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 import { LadlePlatform } from '@juxtapose/adapter-ladle';
 import { UserError } from './user-error.js';
+import type { RecheckFlags } from './recheck-flags.js';
 import type { SettleFlags } from './settle-flags.js';
 
-export interface CommonFlags extends SettleFlags {
+export interface CommonFlags extends SettleFlags, RecheckFlags {
   json?: boolean;
   project?: string;
   'build-dir'?: string;

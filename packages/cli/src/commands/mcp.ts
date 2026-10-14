@@ -27,9 +27,11 @@ import {
   MAX_SNAP_SLOTS,
   NetworkSchema,
   parseRunReport,
+  RECHECK_MODES,
   SettleSchema,
   type Browser,
 } from '@juxtapose/core';
+import type { RecheckFlags } from '../recheck-flags.js';
 import type { SettleFlags } from '../settle-flags.js';
 import { EXIT } from '../exit-codes.js';
 import { isRecord } from '../guards.js';
@@ -167,6 +169,13 @@ const NETWORK = toolArg(NetworkSchema, {
     'Checked first, in order, first match wins: [{ match: URL glob or type:<ResourceType>, action: allow|block|placeholder }]',
 });
 
+const RECHECK = {
+  type: 'string',
+  enum: [...RECHECK_MODES],
+  description:
+    'Which stories get a second capture so approve can tell a flake from a stable capture, over the config\'s `recheck`. "changed" (default): new and failing. "new": new only. "off": none (fastest; approve takes the confirming capture; no `flake` analysis).',
+};
+
 export const TOOLS: Tool[] = [
   {
     name: 'snap',
@@ -240,6 +249,7 @@ export const TOOLS: Tool[] = [
         },
         settle: SETTLE,
         network: NETWORK,
+        recheck: RECHECK,
       },
     },
   },
@@ -272,6 +282,7 @@ export const TOOLS: Tool[] = [
         },
         settle: SETTLE,
         network: NETWORK,
+        recheck: { ...RECHECK, description: 'Report the effective mode for this call' },
       },
       required: ['story'],
     },
@@ -293,7 +304,7 @@ export const TOOLS: Tool[] = [
         allowUnstable: {
           type: 'boolean',
           description:
-            'Approve stories the run captured twice with different results. Off by default: an unstable story is refused and listed in `failed`; fix it (mask, `stories` override, freshRenderer) instead unless the user insists.',
+            'Approve stories the run captured twice with different results, and skip the confirming capture for stories the run did not recheck. Off by default: an unstable story is refused and listed in `failed`; fix it (mask, `stories` override, freshRenderer) instead unless the user insists.',
         },
       },
       required: ['stories'],
@@ -320,6 +331,17 @@ const str = (args: Args, key: string, required = false): string | undefined => {
     throw new ArgError(`'${key}' must be a non-empty string`);
   return v;
 };
+
+/** The `recheck` argument as the CLI flag that carries it. */
+function recheckArg(args: Args): RecheckFlags {
+  const v = args['recheck'];
+  if (v === undefined || v === null) return {};
+  if (typeof v !== 'string' || !(RECHECK_MODES as readonly string[]).includes(v))
+    throw new ArgError(
+      `'recheck' must be ${RECHECK_MODES.join(', ')}; got ${JSON.stringify(v)}`,
+    );
+  return { recheck: v };
+}
 
 /** The `settle` argument as the CLI flags that carry it, checked like the
  *  config's own (the error names the argument). */
@@ -544,6 +566,7 @@ export class McpServer {
       case 'explain': {
         const story = str(args, 'story', true)!;
         const settle = settleArg(args);
+        const recheck = recheckArg(args);
         return {
           // Discovery shares run's cache directory, so it waits for a run.
           locks: this.readsRun(),
@@ -551,7 +574,13 @@ export class McpServer {
             this.invoke(
               async (s) =>
                 (await import('./config.js')).configCommand(
-                  { ...this.common(), explain: story, callSource: 'mcp', ...settle },
+                  {
+                    ...this.common(),
+                    explain: story,
+                    callSource: 'mcp',
+                    ...settle,
+                    ...recheck,
+                  },
                   { ...s, browser: this.lend },
                 ),
               signal,
@@ -720,6 +749,7 @@ export class McpServer {
     const since = str(args, 'since');
     const stories = strings(args, 'stories');
     const settle = settleArg(args);
+    const recheck = recheckArg(args);
     return {
       locks: EXCLUSIVE,
       exec: async (signal) => {
@@ -733,6 +763,7 @@ export class McpServer {
                 ...(since ? { since } : {}),
                 ...(stories?.length ? { story: stories } : {}),
                 ...settle,
+                ...recheck,
               },
               { ...s, browser: this.lend },
             ),
@@ -785,7 +816,8 @@ export class McpServer {
                   ? { 'allow-unstable': true }
                   : {}),
               },
-              s,
+              // The confirming capture of a story the run did not recheck.
+              { ...s, browser: this.lend },
             ),
           signal,
         );

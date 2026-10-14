@@ -97,6 +97,46 @@ describe('RunDirSource.approve', () => {
   });
 });
 
+describe('RunDirSource.approve of a story the run captured once', () => {
+  async function setup() {
+    const root = await mkdtemp(path.join(tmpdir(), 'jux-src-'));
+    const runDir = path.join(root, 'run');
+    await mkdir(path.join(runDir, 'images'), { recursive: true });
+    await writeFile(path.join(runDir, 'images', 'a--b-current.webp'), 'img');
+    const result: DiffResult = {
+      storyId: 'a--b',
+      status: 'new',
+      hash: 'h',
+      unrechecked: true,
+      mismatchPixels: 0,
+      mismatchPercent: 0,
+      changedRegions: [],
+      durationMs: 1,
+    };
+    await writeFile(
+      path.join(runDir, 'report.json'),
+      JSON.stringify({ runId: 'r', recheck: 'off', results: [result] }),
+    );
+    const store = createBaselineStore(root, undefined);
+    return new RunDirSource({
+      projectRoot: root,
+      platform: {} as Platform,
+      store,
+      config: {} as ProjectConfig,
+      baseUrl: 'http://127.0.0.1:1',
+      runDir,
+      branch: 'main',
+      commitSha: 'abc',
+    });
+  }
+
+  it('is refused until `jux approve` confirms it, unless allowUnstable', async () => {
+    const source = await setup();
+    await expect(source.approve('a--b')).rejects.toThrow(/captured it once.*jux approve/);
+    await expect(source.approve('a--b', true)).resolves.toBeUndefined();
+  });
+});
+
 describe('mergeReports', () => {
   const verdict = {
     signature: 's',

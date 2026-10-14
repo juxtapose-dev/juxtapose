@@ -476,6 +476,12 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
             </Toolbar>
 
             {result.error && <Muted role="alert">{result.error}</Muted>}
+            {result.unrechecked && !result.unstable && (
+              <Muted role="status">
+                Captured once: run `jux approve` to confirm it is stable before it becomes
+                a baseline
+              </Muted>
+            )}
             {result.unstable && (
               <Muted role="alert">
                 {result.unstable.unconfirmed !== undefined

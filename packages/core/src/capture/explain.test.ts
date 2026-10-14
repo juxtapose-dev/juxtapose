@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
+import type { RecheckMode } from '../config/schema.js';
 import type { ProjectConfig, StoryManifest, StoryParams } from '../types.js';
 import { DEFAULT_VIEWPORT } from '../run/run.js';
 import { explainCapture, findCaptures, liveReader, type Explanation } from './explain.js';
@@ -22,7 +23,11 @@ function explain(
   stories: StoryManifest[],
   id: string,
   config: ProjectConfig = {},
-  extra: { call?: Parameters<typeof explainCapture>[2]['call']; live?: StoryParams } = {},
+  extra: {
+    call?: Parameters<typeof explainCapture>[2]['call'];
+    live?: StoryParams;
+    recheck?: RecheckMode;
+  } = {},
 ): Explanation {
   const log = new ProvenanceLog();
   const captures = expandVariants(stories, config.variants, config.stories, log);
@@ -36,6 +41,18 @@ const src = (e: Explanation, setting: string) =>
   row(e, setting)?.source.map((s) => (s.detail ? `${s.layer}:${s.detail}` : s.layer));
 
 describe('explainCapture', () => {
+  it('shows the recheck mode and the layer that set it', () => {
+    const dflt = explain([story('a')], 'a');
+    expect(row(dflt, 'recheck')).toMatchObject({ value: 'changed' });
+    expect(src(dflt, 'recheck')).toEqual(['default']);
+    const proj = explain([story('a')], 'a', { recheck: 'new' });
+    expect(row(proj, 'recheck')).toMatchObject({ value: 'new' });
+    expect(src(proj, 'recheck')).toEqual(['project']);
+    const cli = explain([story('a')], 'a', { recheck: 'new' }, { recheck: 'off' });
+    expect(row(cli, 'recheck')).toMatchObject({ value: 'off' });
+    expect(src(cli, 'recheck')).toEqual(['cli']);
+  });
+
   it('names a default for what no layer sets', () => {
     const e = explain([story('a')], 'a');
     expect(row(e, 'settle.timeout')).toMatchObject({ value: 1500 });

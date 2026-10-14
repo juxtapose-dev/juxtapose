@@ -107,6 +107,45 @@ depend on the story captured before it. A pass can then disagree with an
 earlier one for a few stories, with no code change behind it. Warm switching
 (`warmSwitch`) never starts a new renderer.
 
+`recheck` (default `"changed"`) sets which stories the run captures a second
+time. Approving a flaky capture makes it a permanently red baseline, so `jux run`
+captures a story it can't yet pass a second time and compares the hashes (see
+[Approval requires two identical captures](cli.md#approval-requires-two-identical-captures)).
+The recheck costs about one extra capture for each story it covers. Passing
+stories are never captured twice. The value is one of:
+
+| Value       | Captures twice          | Use                                              |
+| ----------- | ----------------------- | ------------------------------------------------ |
+| `"changed"` | new and failing stories | Local and agent runs. The default.               |
+| `"new"`     | new stories only        | CI, where many stories fail on purpose in a PR.  |
+| `"off"`     | nothing                 | The fastest run. `jux approve` confirms instead. |
+
+Pass `--recheck <mode>` (or `--no-recheck`, the same as `--recheck off`) to
+`jux run`, or `recheck` to the MCP `run` tool, to override the config for one
+call. `jux config --explain` shows the effective value and where it came from.
+
+A story the run didn't capture twice isn't approved on one capture.
+`report.json` marks it `unrechecked: true`, and `jux approve` captures it again
+and compares the hashes before it writes the baseline. If they match, the story
+is approved. If they differ, `jux approve` refuses the story as unstable, and
+`--allow-unstable` overrides that. With the recheck off, stories carry no
+`unstable` or `flake`, because nothing was compared. `report.json` records the
+mode in `recheck`, and `jux run` prints a line saying the recheck was off, so a
+missing `flake` isn't a mystery. `jux init` always rechecks, whatever the config
+says.
+
+Measured on examples/storybook, a first run of 18 captures (all new), with
+concurrency 4, on a shared machine (the run's own time, median of three):
+
+| `recheck`   | run time |
+| ----------- | -------- |
+| `"changed"` | 1.8 s    |
+| `"new"`     | 1.8 s    |
+| `"off"`     | 0.9 s    |
+
+`"changed"` and `"new"` match here because every story is new. They differ on a
+later run in which stories fail: `"new"` captures those once.
+
 Concurrency defaults to 8. Higher is not automatically better — past your core
 count, contention slows captures down rather than speeding them up.
 

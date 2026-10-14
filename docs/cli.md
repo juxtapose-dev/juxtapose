@@ -9,6 +9,8 @@
 | `jux approve --all`                  | promote the last run's captures to baselines (hash and structure; image to cache) |
 | `jux approve --story <id>`           | approve one story                                                                 |
 | `jux approve --all --allow-unstable` | also approve stories whose two run captures differed (see below)                  |
+| `jux run --recheck <mode>`           | which stories get a second capture: `changed` (default), `new` or `off`           |
+| `jux run --no-recheck`               | the same as `--recheck off`                                                       |
 | `jux check`                          | exit non-zero if anything still needs review — for CI                             |
 | `jux handoff <id>`                   | print an agent-ready prompt for one failing story                                 |
 | `jux config --explain <id>`          | the effective settings for one story or variant key, and which layer set each     |
@@ -100,14 +102,14 @@ network rules (first match wins):
 
 `<id>` is a story id or a capture key (`<id>__<variant>`). A story id explains
 its default capture and lists the capture keys of its variants. An id that
-matches nothing exits 2 and suggests the closest ones. The settle and
-`--network-external` flags are accepted and show as `CLI flag`, so you can
+matches nothing exits 2 and suggests the closest ones. The settle,
+`--network-external` and `--recheck` flags are accepted and show as `CLI flag`, so you can
 check what a command would change before running it.
 
 Sources are `default`, `project config`, `story parameters`,
 `stories['<glob>']` (each glob that set the value, or all that contributed to a
 list), `variant <name> (<where declared>)` (with `, extended by <name>` for a
-variant reached through `extends`), `live params`, `CLI flag` and `MCP arguments` (the MCP tool's `settle` and `network`). A list that
+variant reached through `extends`), `live params`, `CLI flag` and `MCP arguments` (the MCP tool's `settle`, `network` and `recheck`). A list that
 unions across layers (`mask`, `settle.network.ignore`, `settle.network.require`)
 shows each contributor joined by `+`.
 
@@ -213,8 +215,41 @@ unknown, so it is refused the same way (fail closed).
 What it costs: a green run captures nothing extra, and `stale` stories are not
 rechecked (their hash already matches a recorded baseline). Every `new` or
 `fail` story is captured twice, so a first run and `jux init` take about 2x as
-long (measured 1.7-1.9x on examples/storybook, linear in the story count), and
+long (measured 1.7-2.0x on examples/storybook, linear in the story count), and
 so does a run after a toolchain bump that fails everything.
+
+### Choose what gets rechecked
+
+The `recheck` config option and the `--recheck <mode>` flag of `jux run` choose
+which stories the run captures twice:
+
+| Mode        | Captures twice          | Use                                             |
+| ----------- | ----------------------- | ----------------------------------------------- |
+| `"changed"` | new and failing stories | Local and agent runs. The default.              |
+| `"new"`     | new stories only        | CI, where many stories fail on purpose in a PR. |
+| `"off"`     | nothing                 | The fastest run. `jux approve` confirms.        |
+
+`--no-recheck` is the same as `--recheck off`. The flag overrides the config,
+and `jux config --explain` shows the effective value and its source:
+
+```text
+recheck                   off          CLI flag
+```
+
+Approval stays safe in every mode. A story the run didn't capture twice has
+`unrechecked: true` in `report.json`. `jux approve` (and the MCP `approve` tool)
+captures it again first, which needs the same build or origin as `jux run` and
+launches a browser, and approves it only if the two hashes match. A story that
+comes out different is refused as unstable, and one that can't be captured
+again is refused as unconfirmed. `--allow-unstable` skips the extra capture.
+The confirming capture uses the project config, not the settle flags you
+passed to `jux run`, and it needs the same browser and operating system as the
+run: otherwise it refuses the story and tells you to run again.
+
+With the recheck off, stories carry no `unstable` and no `flake`: nothing was
+compared, so there is nothing to explain. `report.json` has `recheck: "off"`,
+and `jux run` prints a line saying so. The Storybook panel's approve button
+refuses an `unrechecked` story; use `jux approve`. `jux init` always rechecks.
 
 `jux approve`, `jux init`, the MCP `approve` tool and the Storybook panel all
 refuse an unstable story, name it, and approve the rest. The CLI exits 1; the

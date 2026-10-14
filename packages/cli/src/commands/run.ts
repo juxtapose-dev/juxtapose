@@ -59,6 +59,7 @@ import {
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
 import { stdio, type Io, type Session } from '../io.js';
+import { recheckFromFlags } from '../recheck-flags.js';
 import { settleFromFlags } from '../settle-flags.js';
 
 const MAX_GROUPS_SHOWN = 10;
@@ -81,6 +82,11 @@ export async function runCommand(
   const call = settleFromFlags(flags, 'jux run');
   if ('error' in call) {
     io.err(`${call.error}\n`);
+    return EXIT.usage;
+  }
+  const recheck = recheckFromFlags(flags, 'jux run');
+  if ('error' in recheck) {
+    io.err(`${recheck.error}\n`);
     return EXIT.usage;
   }
   const ctx = await resolveContext(flags);
@@ -259,6 +265,7 @@ export async function runCommand(
         flags['no-fresh-renderer'] === true
           ? { ...ctx.config, freshRenderer: false }
           : ctx.config,
+      ...(recheck.recheck ? { recheck: recheck.recheck } : {}),
       ...(call.settle || call.network
         ? {
             settle: {
@@ -473,6 +480,19 @@ async function emit(
 
   const timings = formatPhases(p);
   if (timings) io.out(`  ${timings}\n`);
+
+  // A missing `unstable` or `flake` is not "stable" when nothing was captured
+  // twice; say so, once, rather than leave the absence to be puzzled over.
+  const unrechecked = report.results.filter((r) => r.unrechecked).length;
+  const mode = report.recheck ?? 'changed';
+  if (mode === 'off' || unrechecked > 0)
+    io.out(
+      `  recheck ${mode}: ${
+        mode === 'off'
+          ? 'no story was captured twice, so none is checked for flakes'
+          : `${unrechecked} failing ${unrechecked === 1 ? 'story was' : 'stories were'} captured once`
+      }; \`jux approve\` captures what it approves again\n`,
+    );
 
   // Said outright: a story that vanished from the run because the config
   // skips it should never need explaining by whoever reads the output.

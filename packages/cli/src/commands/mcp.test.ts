@@ -168,6 +168,14 @@ describe('jux mcp protocol', () => {
       'approve',
     ]);
     for (const t of tools) expect(t.inputSchema).toMatchObject({ type: 'object' });
+    for (const name of ['run', 'explain'])
+      expect(
+        (
+          tools.find((t) => t.name === name)!.inputSchema as {
+            properties: Record<string, unknown>;
+          }
+        ).properties['recheck'],
+      ).toMatchObject({ type: 'string', enum: ['changed', 'new', 'off'] });
     // The config's shapes, as plain enums an agent reads at a glance.
     const snap = tools[0]!.inputSchema as {
       properties: Record<string, { properties: Record<string, unknown> }>;
@@ -231,6 +239,20 @@ describe('jux mcp protocol', () => {
         value: 9000,
         source: [{ layer: 'mcp' }],
       });
+      const mode = (r: Awaited<ReturnType<typeof c.call>>) =>
+        JSON.parse(text(r)).settings.find(
+          (x: { setting: string }) => x.setting === 'recheck',
+        );
+      expect(mode(ok)).toEqual({
+        setting: 'recheck',
+        value: 'changed',
+        source: [{ layer: 'default' }],
+      });
+      expect(mode(await c.call('explain', { story: 'home', recheck: 'off' }))).toEqual({
+        setting: 'recheck',
+        value: 'off',
+        source: [{ layer: 'mcp' }],
+      });
       const unknown = await c.call('explain', { story: 'hom' });
       expect(unknown.isError).toBe(true);
       expect(text(unknown)).toMatch(/Did you mean 'home'/);
@@ -279,6 +301,12 @@ describe('jux mcp protocol', () => {
     });
     expect(settle.isError).toBe(true);
     expect(text(settle)).toMatch(/'settle': settle.timeout must be a whole number of ms/);
+    // `recheck` is checked before any capture, on both tools that take it.
+    for (const tool of ['run', 'explain']) {
+      const mode = await c.call(tool, { story: 'x', recheck: 'sometimes' });
+      expect(mode.isError).toBe(true);
+      expect(text(mode)).toMatch(/'recheck' must be changed, new, off/);
+    }
     const pattern = await c.call('run', {
       settle: { network: { ignore: ['type:Nope'] } },
     });

@@ -50,6 +50,11 @@ export const MAX_SNAP_SLOTS = 16;
  *  occur in a name. */
 export const VARIANT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
+/** What the run captures a second time to confirm it is stable (#148, #195). */
+export const RECHECK_MODES = ['changed', 'new', 'off'] as const;
+export type RecheckMode = (typeof RECHECK_MODES)[number];
+export const DEFAULT_RECHECK: RecheckMode = 'changed';
+
 /** Custom string formats. Registered with TypeBox by ./validate.ts; an editor
  *  that doesn't know them ignores them. */
 export const URL_PATTERN_FORMAT = 'jux-url-pattern';
@@ -559,6 +564,13 @@ const projectChecked = {
         "Start each cold capture after a page's first in a new renderer process, so a story's hash doesn't depend on the story captured before it. Default true; false trades that for speed (about 220 ms per Storybook story).",
     }),
     'freshRenderer must be true or false, got {got}',
+  ),
+  recheck: settleScalar(
+    StringEnum(RECHECK_MODES, {
+      description:
+        'Which stories the run captures a second time, so approve can tell a stable capture from a flaky one. "changed" (default): new and failing stories. "new": new stories only. "off": none; `jux approve` takes the confirming capture instead. Passing stories are never captured twice. The `--recheck` flag overrides it.',
+    }),
+    'recheck must be "changed", "new" or "off", got {got}',
   ),
   storyTimeout: settleScalar(
     Type.Integer({

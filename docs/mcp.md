@@ -191,12 +191,13 @@ A diff that finds differences is a result, not an error.
 Captures workbench stories and compares them to the approved baselines. Same
 result as `jux run --json`: a `RunReport`.
 
-| Argument  | Type     | Description                                         |
-| --------- | -------- | --------------------------------------------------- |
-| `all`     | boolean  | Capture every story instead of the affected ones.   |
-| `since`   | string   | Git ref. Traces changed files since it for `cause`. |
-| `stories` | string[] | Story ids to capture.                               |
-| `settle`  | object   | Settle options for every story, as for `snap`.      |
+| Argument  | Type     | Description                                                                                          |
+| --------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `all`     | boolean  | Capture every story instead of the affected ones.                                                    |
+| `since`   | string   | Git ref. Traces changed files since it for `cause`.                                                  |
+| `stories` | string[] | Story ids to capture.                                                                                |
+| `settle`  | object   | Settle options for every story, as for `snap`.                                                       |
+| `recheck` | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
 
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.
@@ -205,6 +206,12 @@ An unstable result also has `flake: { cause, confidence, evidence, fix }`:
 why the two captures differed, and the exact config patch that fixes it (`null`
 when none helps). See [Why it flaked](cli.md#why-it-flaked). `handoff` prints
 the same fix as one line. A run-level `flakeGroups` lists stories that share one project-level fix.
+
+With `recheck: "off"` (or `"new"`, for a failing story) the run captures a
+story once. Its result has `unrechecked: true`, no `unstable` and no `flake`,
+and the report's `recheck` field names the mode. `approve` then captures it
+again before it writes the baseline. See
+[Choose what gets rechecked](cli.md#choose-what-gets-rechecked).
 
 A result captured at the settle cap has `flags: ["settle-timeout"]` (or
 `["settle-fallback"]`) and a
@@ -239,6 +246,7 @@ before changing a setting, to see which layer wins. It needs no earlier run.
 | `story`   | string | A story id, which also lists its variants' keys, or a capture key. |
 | `settle`  | object | As for `run`; shows as the `cli` layer, as the flags would.        |
 | `network` | object | As for `run`.                                                      |
+| `recheck` | string | As for `run`; shows as the `mcp` layer.                            |
 
 An id that matches nothing is a tool error that suggests the closest ones.
 
@@ -253,6 +261,10 @@ and structure the project commits; the image goes to the local cache, so never
 | --------------- | -------- | ----------------------------------------------------------------------------- |
 | `stories`       | string[] | Exact story ids from the last run. Required.                                  |
 | `allowUnstable` | boolean  | Approve stories the run captured twice with different results. Default false. |
+
+A story the run captured only once (`unrechecked`) is captured again first, and
+approved only if the two captures match. This launches the session's browser and
+needs the same build or origin as `run`. `allowUnstable` skips it.
 
 A story whose two run captures differed is `unstable` in the run result. It is
 refused with a reason in `failed` (the rest are still approved) unless

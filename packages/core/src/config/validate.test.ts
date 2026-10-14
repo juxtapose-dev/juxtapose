@@ -60,6 +60,20 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
   ],
   [
     'project',
+    { recheck: 'sometimes' },
+    undefined,
+    'SettleConfigError',
+    'jux: project config: recheck must be "changed", "new" or "off", got "sometimes"',
+  ],
+  [
+    'project',
+    { recheck: true },
+    undefined,
+    'SettleConfigError',
+    'jux: project config: recheck must be "changed", "new" or "off", got true',
+  ],
+  [
+    'project',
     { storyTimeout: 0 },
     undefined,
     'SettleConfigError',

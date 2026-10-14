@@ -756,6 +756,15 @@
       "description": "Start each cold capture after a page's first in a new renderer process, so a story's hash doesn't depend on the story captured before it. Default true; false trades that for speed (about 220 ms per Storybook story).",
       "type": "boolean"
     },
+    "recheck": {
+      "description": "Which stories the run captures a second time, so approve can tell a stable capture from a flaky one. \"changed\" (default): new and failing stories. \"new\": new stories only. \"off\": none; `jux approve` takes the confirming capture instead. Passing stories are never captured twice. The `--recheck` flag overrides it.",
+      "type": "string",
+      "enum": [
+        "changed",
+        "new",
+        "off"
+      ]
+    },
     "storyTimeout": {
       "minimum": 1000,
       "maximum": 2147483647,
