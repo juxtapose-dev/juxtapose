@@ -66,6 +66,7 @@ the whole session.
 | `run`     | Capture and compare the stories in a Storybook or Ladle build        |
 | `check`   | Report whether anything still needs review                           |
 | `handoff` | Get the verdict and a fix prompt for one failing story               |
+| `explain` | Which layer set each capture setting of a story or variant           |
 | `approve` | Approve stories by id; there is no approve-all                       |
 
 ### Without MCP

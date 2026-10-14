@@ -260,6 +260,23 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'explain',
+    description:
+      "Workbench projects: the settings one story or variant key would be captured with, and which layer each came from (project config, story parameters, a `stories` glob, a variant, live params, this call). Captures nothing. Use it before changing a setting, to see which layer wins. Returns juxtapose.explain/v1; a story id also lists its variants' keys.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        story: {
+          type: 'string',
+          description: 'Story id, or a capture key (id__variant)',
+        },
+        settle: SETTLE,
+        network: NETWORK,
+      },
+      required: ['story'],
+    },
+  },
+  {
     name: 'approve',
     description:
       'Promote the last run\'s captures of the named stories to baselines. Only when the user asks you to approve. Exact story ids; there is no "all". Returns {approved, failed}.',
@@ -285,7 +302,7 @@ export const TOOLS: Tool[] = [
 ];
 
 const INSTRUCTIONS =
-  'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops only when `explained` is not "full". For Storybook/Ladle projects use run, check and handoff. Never approve unless the user asks.';
+  'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops only when `explained` is not "full". For Storybook/Ladle projects use run, check and handoff; explain says which layer set the capture settings of a story. Never approve unless the user asks.';
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -520,6 +537,23 @@ export class McpServer {
             this.invoke(
               async (s) =>
                 (await import('./handoff.js')).handoffCommand(story, this.common(), s),
+              signal,
+            ),
+        };
+      }
+      case 'explain': {
+        const story = str(args, 'story', true)!;
+        const settle = settleArg(args);
+        return {
+          // Discovery shares run's cache directory, so it waits for a run.
+          locks: this.readsRun(),
+          exec: (signal) =>
+            this.invoke(
+              async (s) =>
+                (await import('./config.js')).configCommand(
+                  { ...this.common(), explain: story, callSource: 'mcp', ...settle },
+                  { ...s, browser: this.lend },
+                ),
               signal,
             ),
         };

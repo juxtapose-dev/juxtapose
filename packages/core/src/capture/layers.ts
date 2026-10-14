@@ -1,0 +1,46 @@
+// How a capture's project, story and call layers stack. This is the one
+// place the order lives: captureStory (to capture) and explainCapture (to say
+// where each value came from) both call it, so they cannot disagree.
+//
+// Lowest first: the project config, the story's own params (variants, `stories`
+// overrides and live params already folded in), the call (CLI flags, MCP
+// arguments).
+
+import type { NetworkParams, SettleParams } from '../config/schema.js';
+import type { StoryParams } from '../types.js';
+import { mergeNetwork } from './network-rules.js';
+import { layerScalars, mergeSettleLayers, type SettleLayer } from './settle-options.js';
+
+export interface CaptureLayers {
+  project?: SettleLayer;
+  call?: SettleLayer;
+}
+
+/** `network` for one capture, read before navigation from the params known
+ *  then (live params arrive too late). */
+export function layerNetwork(
+  layers: CaptureLayers | undefined,
+  params: StoryParams,
+): NetworkParams | undefined {
+  return mergeNetwork(
+    mergeNetwork(layers?.project?.network, params.network),
+    layers?.call?.network,
+  );
+}
+
+/** `waitForSelector` and `delay` (call > story > project) and `settle`
+ *  (merged field by field), once live params are in `params`. */
+export function layerCapture(
+  layers: CaptureLayers | undefined,
+  params: StoryParams,
+): { scalars: Pick<StoryParams, 'waitForSelector' | 'delay'>; settle?: SettleParams } {
+  const settle = mergeSettleLayers(
+    layers?.project?.settle,
+    params.settle,
+    layers?.call?.settle,
+  );
+  return {
+    scalars: layerScalars(layers?.project, params, layers?.call),
+    ...(settle ? { settle } : {}),
+  };
+}
