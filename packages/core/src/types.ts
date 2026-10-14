@@ -514,7 +514,7 @@ export interface BaselineEntry extends ApprovalMeta {
 /** Committed to the repo. The source of truth for what "approved" means,
  *  regardless of which store holds the actual bytes. */
 export interface BaselineManifest {
-  /** 1: hashes only. 2: some entry carries an inline `structure`. */
+  /** Always written as 1 (an older reader accepts only 1); 2 is read only. */
   version: 1 | 2;
   baselines: Record<string, BaselineEntry>;
 }
@@ -538,9 +538,6 @@ export type BaselineImageLookup =
  *  bytes vary by implementation. */
 export interface BaselineStore {
   get(storyId: string): Promise<Buffer | null>;
-  /** Optional: fold structure into manifest entries that lack it (a passing
-   *  run's snapshots). Returns how many entries gained structure. */
-  adoptStructures?(found: Map<string, StructureSnapshot>): Promise<number>;
   /** Optional: cache an image by its hash without touching the manifest. A
    *  passing run calls it so the cache fills from captures that match. */
   keepImage?(image: Buffer): Promise<void>;

@@ -14,9 +14,11 @@ import { isRecord } from '../browser/guards.js';
 export const MANIFEST_NAME = 'juxtapose.manifest.json';
 
 /**
- * Version 1 carries hashes only. Version 2 adds an inline `structure` per
- * story. A manifest is written as 2 only when some entry has structure, so a
- * project on the repo-backed store keeps writing the format it always did.
+ * The manifest is always written as version 1. The inline `structure` on an
+ * entry is additive: a reader from before it existed checks `version === 1`,
+ * reads each entry's `hash`, and ignores fields it does not know, so bumping
+ * the version would make an older jux read the whole manifest as empty (every
+ * story `new`). 2 is still read, for a manifest an unreleased build wrote.
  */
 const READABLE_VERSIONS: readonly number[] = [1, 2];
 
@@ -39,6 +41,9 @@ export class ManifestConflictError extends Error {
 
 const CONFLICT_MARKER = /^(<{7}|={7}|>{7})( |$)/m;
 
+/** True when `text` holds merge conflict markers. */
+export const hasConflictMarkers = (text: string): boolean => CONFLICT_MARKER.test(text);
+
 /**
  * The envelope only: a known version and a `baselines` object. A null or array
  * `baselines` (which `typeof` used to let through, to fail on first use) reads
@@ -57,7 +62,7 @@ function isBaselineManifest(v: unknown): v is BaselineManifest {
 const emptyManifest = (): BaselineManifest => ({ version: 1, baselines: {} });
 
 function parseManifest(text: string): BaselineManifest {
-  if (CONFLICT_MARKER.test(text)) throw new ManifestConflictError();
+  if (hasConflictMarkers(text)) throw new ManifestConflictError();
   try {
     const parsed: unknown = JSON.parse(text);
     // A corrupt manifest means every story reads as `new`, which is loud and
@@ -119,14 +124,10 @@ export async function writeManifestFile(
   // produces a minimal, readable diff — the whole point of keeping the hashes
   // in the repo.
   const ids = Object.keys(manifest.baselines).sort();
-  const withStructure = ids.some((id) => manifest.baselines[id]!.structure);
   const entries = ids.map(
     (id) =>
       `${indent(JSON.stringify(id), '    ')}: ${indent(serializeEntry(manifest.baselines[id]!), '    ').trimStart()}`,
   );
   const body = entries.length ? `\n${entries.join(',\n')}\n  ` : '';
-  await writeFile(
-    file,
-    `{\n  "version": ${withStructure ? 2 : 1},\n  "baselines": {${body}}\n}\n`,
-  );
+  await writeFile(file, `{\n  "version": 1,\n  "baselines": {${body}}\n}\n`);
 }

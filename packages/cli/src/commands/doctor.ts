@@ -6,16 +6,20 @@
 
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import {
+  CacheBaselineStore,
   DEFAULT_CACHE_DIR,
   LEGACY_IMAGE_DIR,
+  MANIFEST_NAME,
+  ManifestConflictError,
   committedPaths,
+  hasConflictMarkers,
   ignoredPaths,
   shellQuote,
 } from '@juxtapose/core';
-
-const MANIFEST_NAME = 'juxtapose.manifest.json';
 import { checkStorage, loadConfig, type CommonFlags } from '../context.js';
+import { NO_LITERAL_ENV } from '../printed-commands.js';
 import { ignoredCommittedPaths, missingIgnores } from '../gitignore.js';
 import { stdio, type Session } from '../io.js';
 
@@ -26,7 +30,8 @@ export interface DoctorIssue {
     | 'legacy-sidecars'
     | 'untracked-images'
     | 'missing-ignores'
-    | 'committed-paths-ignored';
+    | 'committed-paths-ignored'
+    | 'manifest-conflict';
   message: string;
   files?: string[];
   fix: string[];
@@ -83,8 +88,12 @@ const plural = (n: number, one: string, many: string): string => (n === 1 ? one 
 function commandsFor(projectRoot: string, cwd: string) {
   const here = path.resolve(cwd) === path.resolve(projectRoot);
   const root = shellQuote(projectRoot);
+  const git = (rest: string) => (here ? `git ${rest}` : `git -C ${root} ${rest}`);
   return {
-    git: (rest: string) => (here ? `git ${rest}` : `git -C ${root} ${rest}`),
+    git,
+    // For a command with `:(glob)` magic, which GIT_LITERAL_PATHSPECS=1 in the
+    // user's environment would turn into a file name that matches nothing.
+    globGit: (rest: string) => `${NO_LITERAL_ENV}${git(rest)}`,
     gitignore: here ? '.gitignore' : shellQuote(path.join(projectRoot, '.gitignore')),
     run: (rest: string) => (here ? `jux ${rest}` : `jux ${rest} --project ${root}`),
   };
@@ -96,6 +105,21 @@ export async function findIssues(
   cwd: string = process.cwd(),
 ): Promise<DoctorIssue[]> {
   const issues: DoctorIssue[] = [];
+  const manifestFile = path.join(projectRoot, MANIFEST_NAME);
+  if (
+    existsSync(manifestFile) &&
+    hasConflictMarkers(readFileSync(manifestFile, 'utf8'))
+  ) {
+    // Reported alone: nothing else doctor says is worth acting on until the
+    // lockfile is regenerated.
+    return [
+      {
+        code: 'manifest-conflict',
+        message: new ManifestConflictError().message,
+        fix: [],
+      },
+    ];
+  }
   const repoBacked = storage?.kind === 'git' || storage?.kind === 'fs';
   const ignores = ignoredPaths(storage);
   const cmd = commandsFor(projectRoot, cwd);
@@ -123,7 +147,7 @@ export async function findIssues(
             // that matches the manifest into the cache, which is the copy that
             // survives once the commit below deletes them from other clones.
             ...(dir === LEGACY_IMAGE_DIR ? [cmd.run('run --all')] : []),
-            cmd.git(`rm --cached -- ${globPathspec(dir, '.webp')}`),
+            cmd.globGit(`rm --cached -- ${globPathspec(dir, '.webp')}`),
             ...(missing.length > 0
               ? [ignoreFix(missing), cmd.git(`add -- ${shellQuote('.gitignore')}`)]
               : []),
@@ -141,11 +165,11 @@ export async function findIssues(
               `Structure now lives in ${MANIFEST_NAME}.`,
             files: sidecars,
             fix: [
-              // A run folds each passing story's structure into the manifest,
-              // and an approve does it for the rest; untrack only after.
-              cmd.run('run --all'),
-              cmd.run('approve --all'),
-              cmd.git(`rm --cached -- ${globPathspec(dir, '.structure.json.gz')}`),
+              // Folds each sidecar into the manifest where it matches the
+              // approved baseline. It captures nothing and approves nothing,
+              // so a failing or new story stays that way. Untrack only after.
+              cmd.run('doctor --fix'),
+              cmd.globGit(`rm --cached -- ${globPathspec(dir, '.structure.json.gz')}`),
               cmd.git(`add -- ${shellQuote(MANIFEST_NAME)}`),
               cmd.git(
                 `commit -m ${shellQuote('Move juxtapose structure into the manifest')}`,
@@ -203,7 +227,27 @@ export async function doctorCommand(
   const projectRoot = path.resolve(flags.project ?? process.cwd());
   const config = await loadConfig(projectRoot);
   checkStorage(config);
-  const issues = await findIssues(projectRoot, config.storage);
+  let issues = await findIssues(projectRoot, config.storage);
+
+  if (flags.fix === true && !issues.some((i) => i.code === 'manifest-conflict')) {
+    const kind = config.storage?.kind;
+    if (kind === 'git' || kind === 'fs' || kind === 's3') {
+      io.err('jux doctor --fix: only the default cache store has structure to fold\n');
+    } else {
+      const store = new CacheBaselineStore({
+        projectRoot,
+        ...(kind === 'cache' && config.storage?.dir ? { dir: config.storage.dir } : {}),
+      });
+      const { migrated, skipped } = await store.migrateLegacyStructures();
+      io.err(
+        `jux doctor --fix: folded structure into ${migrated} manifest ${plural(migrated, 'entry', 'entries')}` +
+          (skipped.length > 0
+            ? `; left ${skipped.length} alone (sidecar does not match the approved baseline): ${skipped.slice(0, SHOWN).join(', ')}\n`
+            : '\n'),
+      );
+      issues = await findIssues(projectRoot, config.storage);
+    }
+  }
 
   if (flags.json === true) {
     io.out(JSON.stringify({ ok: issues.length === 0, issues }) + '\n');

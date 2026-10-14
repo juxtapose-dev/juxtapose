@@ -23,7 +23,8 @@ Usage
   jux run [options]              capture affected stories and compare to baselines
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
-  jux doctor [--json]            warn if snapshot images are committed, and print the fix
+  jux doctor [--fix] [--json]    warn if snapshot images are committed, and print the fix;
+                                 --fix folds legacy structure sidecars into the manifest
   jux handoff <storyId>          print an agent prompt for one failing story
   jux snap <url>… [options]      capture pages: pixels + structure, no workbench
   jux browser install|path|status|start|stop  manage the pinned and warm browser (install downloads once, ~100 MB)
@@ -147,6 +148,7 @@ async function main(argv: string[]): Promise<number> {
       concurrency: { type: 'string' },
       since: { type: 'string' },
       all: { type: 'boolean', default: false },
+      fix: { type: 'boolean', default: false },
       'allow-unstable': { type: 'boolean', default: false },
       comment: { type: 'boolean', default: false },
       html: { type: 'boolean', default: false },

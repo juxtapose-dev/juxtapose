@@ -9,6 +9,7 @@ import {
   buildHandoffPrompt,
   handoffVariant,
   encodeStoryId,
+  ManifestConflictError,
   parseRunReport,
   type HandoffPayload,
   shellQuote,
@@ -100,7 +101,10 @@ export async function handoffCommand(
   let baselineImage: string | undefined;
   try {
     baselineImage = ctx.store.locate?.(storyId);
-  } catch {
+  } catch (err) {
+    // A manifest with conflict markers is the user's to regenerate (exit 2),
+    // not a store that merely cannot say.
+    if (err instanceof ManifestConflictError) throw err;
     // A store that cannot say just means no crops command.
   }
   const currentImage = path.join(images, `${safe}-current.webp`);

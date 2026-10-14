@@ -3,7 +3,7 @@
 | command                              | what it does                                                                      |
 | ------------------------------------ | --------------------------------------------------------------------------------- |
 | `jux init`                           | set up config and `.gitignore`, and capture the first baselines                   |
-| `jux doctor`                         | warn if baseline images are tracked by git, and print the migration commands      |
+| `jux doctor [--fix]`                 | warn if baseline images are tracked by git, and print the migration commands      |
 | `jux run`                            | capture affected stories and compare to baselines                                 |
 | `jux run --all`                      | capture everything, skipping change analysis                                      |
 | `jux approve --all`                  | promote the last run's captures to baselines (hash and structure; image to cache) |
@@ -39,8 +39,15 @@ It reports:
   commit. The pathspec is literal about the directory's own name.
 - `legacy-sidecars`: per-story `.structure.json.gz` files tracked under
   `.juxtapose/baselines/`. Structure now lives in the manifest; the fix runs
-  `jux run --all` and `jux approve --all` to fold it in, then untracks the files
-  and commits the manifest.
+  `jux doctor --fix` to fold it in, then untracks the files and commits the
+  manifest. `--fix` copies each sidecar into the manifest entry it belongs to
+  (the sidecar's hash matches the entry's, or, for an entry with none, the
+  legacy image's hash does), and nothing else: no capture, no approval, no
+  hash changes, so a failing story stays failing. A sidecar that does not match
+  is left alone and named.
+- `manifest-conflict`: `juxtapose.manifest.json` has merge conflict markers. It
+  is a lockfile: take either side and re-approve, don't hand-merge. Other
+  checks and `--fix` wait until it is regenerated.
 - `untracked-images`: images that are neither tracked nor ignored, which the
   next `git add .` would commit.
 - `committed-paths-ignored`: `.gitignore` (or another ignore file) ignores
@@ -53,7 +60,10 @@ A project that sets `storage.kind` to `git` or `fs` commits images on purpose,
 so tracked images are not reported for it.
 
 Pass `--project <dir>` to check another directory. The printed commands then use
-`git -C <dir>` and absolute paths, so they work from where you are.
+`git -C <dir>` and absolute paths, so they work from where you are. A printed
+command that uses pathspec magic (`:(glob)`, `:(literal)`) starts with
+`GIT_LITERAL_PATHSPECS=0`, so it also works in a shell that exports
+`GIT_LITERAL_PATHSPECS=1`.
 
 `--json` prints `{ "ok": boolean, "issues": [{ "code", "message", "files?", "fix": [string] }] }`,
 where `fix` is the commands to run, in order, each quoted for a POSIX shell.
