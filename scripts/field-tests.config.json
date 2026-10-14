@@ -1,0 +1,62 @@
+{
+  "$comment": "Gates for scripts/field-test.mjs --storybook <name>. knownVariable: stories allowed to differ across passes. maxUnlistedDifferences: how many differing stories NOT on that list the gate tolerates (CI runners are slow and load-sensitive, so a few new ones appear every run). allowedErrors: stories allowed to error. maxWallSeconds: ceiling per pass. concurrency: jux capture workers. Seeded from the macOS 0.13.0 scorecard and extended from Linux CI runs; see docs/field-tests.md.",
+  "storybooks": {
+    "chakra": {
+      "maxWallSeconds": 2400,
+      "allowedErrors": [],
+      "knownVariable": [
+        "components-card--basic",
+        "layout-aspectratio--map",
+        "foundations-sandbox--re-renders",
+        "components-avatar--store",
+        "rich-text-editor-tiptap--composition",
+        "components-rating--testimonial",
+        "components-timeline--sizes",
+        "components-card--horizontal",
+        "components-carousel--thumbnails",
+        "layout-box--composition"
+      ],
+      "concurrency": 3,
+      "maxUnlistedDifferences": 4
+    },
+    "primer": {
+      "maxWallSeconds": 2400,
+      "allowedErrors": ["components-treeview-features--contain-intrinsic-size"],
+      "knownVariable": [
+        "components-relativetime-features--count-down-timer",
+        "components-avatar-features--size-responsive",
+        "components-avatar-features--size",
+        "components-actionlist-features--block-description",
+        "components-radio-features--with-leading-visual"
+      ],
+      "concurrency": 3,
+      "maxUnlistedDifferences": 4
+    },
+    "spectrum": {
+      "maxWallSeconds": 2400,
+      "allowedErrors": [],
+      "knownVariable": [
+        "coachmark--with-gif",
+        "overlay--defined-overlay-element",
+        "overlay--click-content-closed-on-scroll",
+        "overlay-element--page",
+        "overlay--complex-modal",
+        "dialog-base--fully-custom",
+        "dialog-base--not-again",
+        "dialog-wrapper--form",
+        "dialog-wrapper--tooltips",
+        "tabs--default",
+        "color-slider--image",
+        "overlay-element--hover-tooltip",
+        "card--default",
+        "dialog-base--slotted",
+        "overlay-element--action-group",
+        "card--actions",
+        "card--href",
+        "card--toggles"
+      ],
+      "concurrency": 3,
+      "maxUnlistedDifferences": 4
+    }
+  }
+}
