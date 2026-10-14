@@ -1,6 +1,6 @@
 {
   "name": "@juxtapose/storybook",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "description": "Storybook addon for juxtapose — review visual diffs next to the story that produced them.",
   "keywords": [
