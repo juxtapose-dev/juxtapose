@@ -1,5 +1,12 @@
 # @juxtapose/storybook
 
+## 0.9.3
+
+### Patch Changes
+
+- Updated dependencies [bea2cfd]
+  - @juxtapose/adapter-storybook@0.4.13
+
 ## 0.9.2
 
 ### Patch Changes
