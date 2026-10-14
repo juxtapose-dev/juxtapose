@@ -66,7 +66,11 @@ export async function checkCommand(
     io.out(
       JSON.stringify({
         ok: blocking.length === 0,
-        blocking: blocking.map((r) => ({ storyId: r.storyId, status: r.status })),
+        blocking: blocking.map((r) => ({
+          storyId: r.storyId,
+          status: r.status,
+          ...(r.unstable ? { unstable: true } : {}),
+        })),
         runId: report.runId,
       }) + '\n',
     );
@@ -77,7 +81,7 @@ export async function checkCommand(
       `jux: ${blocking.length} ${blocking.length === 1 ? 'story needs' : 'stories need'} review\n`,
     );
     for (const r of blocking.slice(0, 20)) {
-      io.out(`  ${r.status.padEnd(6)} ${r.storyId}\n`);
+      io.out(`  ${r.status.padEnd(6)} ${r.storyId}${r.unstable ? '  (unstable)' : ''}\n`);
     }
   }
 

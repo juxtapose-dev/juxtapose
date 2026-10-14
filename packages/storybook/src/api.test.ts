@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   adjacentStory,
   approvableCaptures,
+  approveAllPending,
   approveEach,
   describeFailures,
   capturesFor,
@@ -172,5 +173,18 @@ describe('approveEach', () => {
     expect(tried).toEqual(['a', 'b', 'c']);
     expect(failed).toEqual([{ id: 'b', reason: '409' }]);
     expect(describeFailures(failed)).toBe('b (409)');
+  });
+});
+
+describe('approveAllPending', () => {
+  it('carries on past a refusal and reports it instead of swallowing it', async () => {
+    const msg = await approveAllPending(['a', 'b'], async (id) => {
+      if (id === 'a') throw new Error("story 'a' is unstable");
+    });
+    expect(msg).toContain('a');
+    expect(msg).toContain('unstable');
+  });
+  it('null when everything approves', async () => {
+    expect(await approveAllPending(['a'], async () => {})).toBeNull();
   });
 });

@@ -87,7 +87,9 @@ export async function approveCommand(
     if (result.unstable && !flags['allow-unstable']) {
       failed.push({
         storyId: result.storyId,
-        reason: new UnstableCaptureError(result.storyId).message,
+        reason: new UnstableCaptureError(result.storyId, result.unstable, {
+          freshRenderer: ctx.config.freshRenderer !== false,
+        }).message,
         unstable: true,
       });
       continue;

@@ -356,9 +356,11 @@ export interface DiffResult {
   hash?: string;
   /** Set when a new or failing story was captured a second time and the two
    *  hashes differed: the capture is nondeterministic, so approving it would
-   *  baseline a flake. `jux approve` refuses it unless told otherwise. Absent
+   *  baseline a flake. `jux approve` refuses it unless told otherwise.
+   *  `unconfirmed` (a reason) means the second capture produced no image, so
+   *  stability is unknown and approval is refused the same way. Absent
    *  when the two captures matched, and for every pass, skip and stale. */
-  unstable?: { hashes: [string, string] };
+  unstable?: { hashes: string[]; unconfirmed?: string };
   mismatchPixels: number;
   mismatchPercent: number;
   /** Bounding boxes of changed clusters. Empty unless status is 'fail'. */

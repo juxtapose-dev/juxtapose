@@ -288,6 +288,7 @@ export class RunDirSource implements ReviewSource {
       storyId,
       storyTitle: story ? `${story.title} — ${story.name}` : storyId,
       status: result.status,
+      ...(result.unstable ? { unstable: result.unstable } : {}),
       mismatchPercent: result.mismatchPercent,
       mismatchPixels: result.mismatchPixels,
       changedRegions: result.changedRegions,
@@ -335,7 +336,8 @@ export class RunDirSource implements ReviewSource {
       const result = (await this.loadReport())?.results.find(
         (r) => r.storyId === storyId,
       );
-      if (result?.unstable && !allowUnstable) throw new UnstableCaptureError(storyId);
+      if (result?.unstable && !allowUnstable)
+        throw new UnstableCaptureError(storyId, result.unstable);
       const image = await this.readImage('current', storyId);
       if (!image) throw new Error(`no capture for ${storyId} in the last run`);
       const { structureError } = await approveCapture(

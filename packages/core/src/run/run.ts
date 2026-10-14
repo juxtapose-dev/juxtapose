@@ -60,6 +60,8 @@ export interface RunOptions {
   /** Receives each story's images so the caller decides where they land. */
   onArtifact?: (artifact: RunArtifact) => Promise<void>;
   onProgress?: (done: number, total: number, storyId: string) => void;
+  /** Progress of the second-capture pass over new and failing stories. */
+  onRecheck?: (done: number, total: number, storyId: string) => void;
   /** Non-fatal capture notices; the caller decides where they go. */
   onWarning?: (message: string) => void;
   signal?: AbortSignal;
@@ -88,6 +90,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const p = opts.phases ?? phases();
   const manifest = await p.time('baselines', () => opts.store.readManifest());
   const results: DiffResult[] = [];
+  const firstPassWarnings = new Set<string>();
   const toConfirm = new Map<string, DiffResult>();
 
   const poolOptions = (onProgress: RunOptions['onProgress']) => ({
@@ -104,7 +107,14 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       : {}),
     viewport,
     onProgress,
-    ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
+    ...(opts.onWarning
+      ? {
+          onWarning: (m: string) => {
+            firstPassWarnings.add(m);
+            opts.onWarning!(m);
+          },
+        }
+      : {}),
     settleLayers: {
       project: {
         ...(opts.config?.settle ? { settle: opts.config.settle } : {}),
@@ -182,13 +192,48 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   // for free here, while the browser is open. Only stories that could be
   // approved are captured again (new and changed ones); a passing story
   // already matched a recorded hash and costs nothing extra.
-  if (toConfirm.size > 0 && !opts.signal?.aborted) {
+  //
+  // Fail closed: a story is stable only if its second capture produced an
+  // image with the same hash. An error, timeout, skip or abort leaves it
+  // `unconfirmed`, which approve refuses just like an unstable one.
+  if (toConfirm.size > 0) {
     const again = opts.stories.filter((s) => toConfirm.has(s.storyId));
-    for await (const outcome of capturePool(again, poolOptions(undefined))) {
+    const unseen = new Set(toConfirm.keys());
+    const seenWarnings = new Set<string>();
+    const warnOnce = opts.onWarning
+      ? (m: string) => {
+          // The first pass already said this; don't repeat it per pool.
+          if (!seenWarnings.has(m) && !firstPassWarnings.has(m)) {
+            seenWarnings.add(m);
+            opts.onWarning!(m);
+          }
+        }
+      : undefined;
+    let rechecked = 0;
+    for await (const outcome of capturePool(again, {
+      ...poolOptions(undefined),
+      onProgress: (_d, _t, id) => opts.onRecheck?.(++rechecked, again.length, id),
+      ...(warnOnce ? { onWarning: warnOnce } : {}),
+    })) {
       const first = toConfirm.get(outcome.story.storyId);
-      if (!first || !outcome.snapshot) continue;
+      if (!first) continue;
+      unseen.delete(first.storyId);
+      if (!outcome.snapshot) {
+        first.unstable = {
+          hashes: [first.hash!],
+          unconfirmed: outcome.error?.message ?? 'recheck capture produced no snapshot',
+        };
+        continue;
+      }
       const second = hashImage(outcome.snapshot.image);
       if (second !== first.hash) first.unstable = { hashes: [first.hash!, second] };
+      if (opts.signal?.aborted) break;
+    }
+    for (const id of unseen) {
+      toConfirm.get(id)!.unstable = {
+        hashes: [toConfirm.get(id)!.hash!],
+        unconfirmed: 'run aborted before the recheck capture',
+      };
     }
   }
 

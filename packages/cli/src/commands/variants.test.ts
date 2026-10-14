@@ -275,7 +275,7 @@ test('approve refuses an unstable story, names it, still approves the rest, exit
   expect(out.approved).toEqual(['steady']);
   expect(out.failed).toHaveLength(1);
   expect(out.failed[0]).toMatchObject({ storyId: 'rand', unstable: true });
-  expect(out.failed[0]!.reason).toMatch(/unstable.*mask.*stories.*freshRenderer/s);
+  expect(out.failed[0]!.reason).toMatch(/unstable.*mask.*stories/s);
   expect(Object.keys(manifestOf(root).baselines)).toEqual(['steady']);
 
   const io2 = captureIo();

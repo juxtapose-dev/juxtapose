@@ -105,6 +105,7 @@ export { encodeStructure, decodeStructure } from './capture/structure.js';
 export {
   approveCapture,
   UnstableCaptureError,
+  describeUnstable,
   readRunStructure,
   type RunStructure,
 } from './baseline/approve.js';

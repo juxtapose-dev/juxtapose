@@ -83,6 +83,16 @@ export function buildComment({ report, artifactUrl }: CommentOptions): string {
   lines.push(...table(rows));
   lines.push('');
 
+  const unstable = rows.filter((r) => r.unstable);
+  if (unstable.length > 0) {
+    lines.push(
+      `${unstable.length} unstable (approve refuses them): ${unstable
+        .map((r) => `\`${r.storyId}\``)
+        .join(', ')}`,
+      '',
+    );
+  }
+
   // A story the config skipped is not in the table; say so here too, or a
   // failing run reads as though everything was captured.
   const byConfig = report.results.filter((r) => r.skippedBy?.length).length;

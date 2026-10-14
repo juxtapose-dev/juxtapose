@@ -8,6 +8,9 @@ import { runCapture } from './run.js';
 
 const captures: string[] = [];
 let flaky = new Set<string>();
+// Stories whose second capture yields no snapshot (error / timeout / skip).
+let failSecond = new Set<string>();
+let abortAfterFirst: AbortController | null = null;
 
 vi.mock('../capture/pool.js', () => ({
   capturePool: (stories: StoryManifest[]) =>
@@ -15,6 +18,11 @@ vi.mock('../capture/pool.js', () => ({
       for (const story of stories) {
         captures.push(story.storyId);
         const n = captures.filter((id) => id === story.storyId).length;
+        if (n === 2 && failSecond.has(story.storyId)) {
+          yield { story, error: new Error('timed out'), durationMs: 1 };
+          continue;
+        }
+        if (n === 2) abortAfterFirst?.abort();
         const body = flaky.has(story.storyId) ? `${story.storyId}-${n}` : story.storyId;
         yield {
           story,
@@ -40,7 +48,7 @@ async function hashOf(body: string): Promise<string> {
   return hashImage(Buffer.from(body));
 }
 
-async function run(ids: string[], baselined: string[] = []) {
+async function run(ids: string[], baselined: string[] = [], signal?: AbortSignal) {
   captures.length = 0;
   const baselines = Object.fromEntries(
     await Promise.all(
@@ -67,6 +75,7 @@ async function run(ids: string[], baselined: string[] = []) {
     runId: 'r',
     branch: 'b',
     commitSha: 'c',
+    ...(signal ? { signal } : {}),
   });
 }
 
@@ -93,4 +102,27 @@ test('an all-green run captures each story once', async () => {
   flaky = new Set();
   await run(['a', 'b'], ['a', 'b']);
   expect(captures).toEqual(['a', 'b']);
+});
+
+test('a second capture that errors leaves the story unconfirmed, not stable', async () => {
+  flaky = new Set();
+  failSecond = new Set(['slow']);
+  const r = await run(['slow', 'steady']);
+  const slow = r.results.find((x) => x.storyId === 'slow')!;
+  expect(slow.status).toBe('new');
+  expect(slow.unstable?.unconfirmed).toMatch(/timed out/);
+  expect(r.results.find((x) => x.storyId === 'steady')!.unstable).toBeUndefined();
+  failSecond = new Set();
+});
+
+test('an abort during the second pass leaves the unchecked stories unconfirmed', async () => {
+  flaky = new Set();
+  failSecond = new Set();
+  const ac = new AbortController();
+  abortAfterFirst = ac;
+  const r = await run(['a', 'b', 'c'], [], ac.signal);
+  abortAfterFirst = null;
+  // The mock yields all three; the abort lands mid-pass, so the later ones
+  // are unverified by the loop's own check.
+  expect(r.results.filter((x) => x.unstable?.unconfirmed).length).toBeGreaterThan(0);
 });

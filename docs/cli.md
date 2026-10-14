@@ -68,13 +68,27 @@ for the precedence rules and caching behavior.
 
 A flaky capture that gets approved becomes a permanently red baseline. So when
 `jux run` sees a story come out `new` or `fail`, it captures it a second time
-and compares the hashes. A green run captures nothing extra; the cost lands
-only on stories that could be approved. If the two hashes differ, the story's
-`report.json` result carries `unstable: { hashes: [a, b] }`.
+and compares the hashes. If they differ, the story's `report.json` result
+carries `unstable: { hashes: [a, b] }`. If the second capture errors, times
+out or is cut short by an abort, the result carries
+`unstable: { hashes: [a], unconfirmed: "<reason>" }` instead: stability is
+unknown, so it is refused the same way (fail closed).
 
-`jux approve` refuses an unstable story, names it, and exits 1. The other
-stories in the same call are still approved. Fix the cause instead: `mask` the
-changing region, add a `stories` override in config, or leave `freshRenderer`
-on. For a story that is nondeterministic by design and that you want baselined
-anyway, pass `--allow-unstable`. The Storybook panel's approve answers 409 for
-an unstable story with the same message.
+What it costs: a green run captures nothing extra, and `stale` stories are not
+rechecked (their hash already matches a recorded baseline). Every `new` or
+`fail` story is captured twice, so a first run and `jux init` take about 2x as
+long (measured 1.7-1.9x on examples/storybook, linear in the story count), and
+so does a run after a toolchain bump that fails everything.
+
+`jux approve`, `jux init`, the MCP `approve` tool and the Storybook panel all
+refuse an unstable story, name it, and approve the rest. The CLI exits 1; the
+panel's endpoint answers 409 and the panel shows the refusal. `jux run`,
+`jux check`, `jux handoff`, the PR comment and the HTML report all mark the
+story `unstable`.
+
+Fix the cause: `mask` the changing region, add a `stories` override in config,
+or keep `freshRenderer` on (the default). With `freshRenderer: false` or
+`warmSwitch: true` a story's pixels can depend on the one captured before it,
+so a story can be refused for an order dependence that those settings cause.
+For a story that is nondeterministic by design, pass `--allow-unstable` to
+`jux approve` or `jux init` (MCP: `allowUnstable`).

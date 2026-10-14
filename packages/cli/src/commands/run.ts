@@ -30,6 +30,7 @@ import {
   VariantConfigError,
   checkProjectSettle,
   DEFAULT_VIEWPORT,
+  describeUnstable,
   type StoryManifest,
   formatPercent,
   formatPhases,
@@ -267,6 +268,11 @@ export async function runCommand(
       onProgress: (done, total, storyId) => {
         if (!ctx.json) {
           io.err(`\r  ${done}/${total}  ${storyId.slice(0, 48).padEnd(48)}`);
+        }
+      },
+      onRecheck: (done, total, storyId) => {
+        if (!ctx.json) {
+          io.err(`\r  recheck ${done}/${total}  ${storyId.slice(0, 40).padEnd(40)}`);
         }
       },
     });
@@ -541,11 +547,12 @@ function emptyReport(projectRoot: string, totalCount: number): RunReport {
  *  each; the handoff has the rest. An `unknown` cause is left to the
  *  handoff: under every story of a Storybook build it would be noise. */
 function explain(r: DiffResult): string[] {
+  const unstable = r.unstable ? [describeUnstable(r.unstable)] : [];
   const v = r.structural;
-  if (!v) return [];
+  if (!v) return unstable;
   const why =
     v.cause && v.cause.kind !== 'unknown' ? [`cause: ${describeCause(v.cause)}`] : [];
-  return [...why, v.summary];
+  return [...unstable, ...why, v.summary];
 }
 
 /** A variant declaration error is a usage error: exit 2 with its message. */
