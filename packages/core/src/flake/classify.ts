@@ -4,8 +4,10 @@
 // returns a verdict. The checks run in a fixed order and the first confident
 // match wins, because the causes overlap: a request still pending at the settle
 // cap also leaves text half-rendered, and an image from a random-photo service
-// also shows up as a "changed region". The order puts the most specific, most
-// directly actionable evidence first.
+// also shows up as a "changed region". Third-party images and frames that sit
+// in the changed pixels come first (the pixels name them), then what the settle
+// wait was stuck on; a pending request alone is often the page's own
+// background traffic, which no fix should touch.
 
 import type {
   CaptureFlag,
@@ -14,6 +16,7 @@ import type {
   FlakeConfidence,
   FlakeFix,
   FlakeSide,
+  PendingRequest,
   StoryOverride,
 } from '../types.js';
 import type { NetworkRule } from '../config/schema.js';
@@ -40,6 +43,9 @@ export interface OneSidedElement {
   presentIn: FlakeSide;
   /** Box area, px²: the biggest one is the most telling. */
   area: number;
+  /** The selector rests on a test id, id or class, not on the element's
+   *  position among its siblings. */
+  stable: boolean;
 }
 
 /** Which third-party requests the story's network config already answers. A
@@ -54,6 +60,19 @@ export interface FlakeObservations {
   storyId: string;
   /** What each capture's settle wait was still waiting on at its cap. */
   settlePending: string[];
+  /** A capture's settle wait hit its cap. */
+  settleTimedOut: boolean;
+  /** The requests still in flight, by full URL, from either capture. Empty on
+   *  a report written before they were recorded. */
+  settleRequests: PendingRequest[];
+  /** Requests in flight beyond the ones listed. */
+  settleOmitted: number;
+  /** The page's origin, to tell a third-party request from its own. */
+  settleOrigin?: string;
+  /** The changed pixels sit inside a custom element (a tag with a hyphen):
+   *  its shadow content is not in the structure snapshot, so "identical
+   *  structure" proves nothing there. */
+  inCustomElement: boolean;
   flags: CaptureFlag[];
   /** The captures that ran in a renderer process an earlier story used. */
   reused: FlakeSide[];
@@ -81,9 +100,9 @@ const MAX_RULES = 5;
 
 export function classifyFlake(o: FlakeObservations): Flake {
   return (
-    settleTimeout(o) ??
     externalImage(o) ??
     embed(o) ??
+    settleTimeout(o) ??
     orderDependence(o) ??
     asyncElement(o) ??
     textual(o) ??
@@ -107,60 +126,71 @@ const storyFix = (storyId: string, override: StoryOverride): FlakeFix => ({
 
 const hostOf = (origin: string): string => origin.replace(/^[a-z]+:\/\//, '');
 
-// -- 1. settle-timeout -------------------------------------------------------
+// -- settle-timeout ----------------------------------------------------------
 
-const REQUEST_LINE = /^\d+ requests? to (\S+) in flight \((\w+)\)$/;
-const IMAGE_LINE = /^\d+ images? still loading: (.+)$/;
+const REQUEST_LINE = /^\d+ requests? to \S+ in flight/;
+const WORK_LINE = /timers?\b|animation frame|posted message|worker/;
 
-/** A pending description reduced to a request a rule can name. */
-interface PendingRequest {
-  match: string;
-  placeholder: boolean;
-}
+/** The wait ended with timers, frames or messages still pending: the page
+ *  keeps running on its own, so what changed may be the moment it was caught. */
+const hasPendingWork = (o: FlakeObservations): boolean =>
+  o.settlePending.some((l) => WORK_LINE.test(l));
 
-/** The descriptions are for people (`describePending`), so this reads them
- *  back: a request to a path with a resource type, or the image list. Anything
- *  else pending (a timer, fonts) is not a request and yields nothing. */
-function pendingRequests(pending: string[]): PendingRequest[] {
-  const out: PendingRequest[] = [];
-  const add = (url: string, placeholder: boolean) => {
-    // A display URL is cut at 100 characters with an ellipsis; a rule built
-    // from half a URL would match nothing.
-    if (url.endsWith('…') || /[*\s]/.test(url)) return;
-    // The query varies between requests and a path rule matches without it.
-    const match = url.split('?')[0]!;
-    if (match === '' || out.some((r) => r.match === match)) return;
-    out.push({ match, placeholder });
-  };
-  for (const line of pending) {
-    const req = REQUEST_LINE.exec(line);
-    if (req) {
-      const type = req[2]!;
-      add(req[1]!, type === 'Image' || type === 'Document');
-      continue;
-    }
-    const imgs = IMAGE_LINE.exec(line);
-    if (imgs) for (const u of imgs[1]!.split(', ')) add(u, true);
-  }
-  return out.slice(0, MAX_RULES);
-}
+/** Resource types a placeholder can stand in for. Nothing else is ever
+ *  suggested for blocking: a stylesheet, script, font or API call the page
+ *  needs would change what is captured. */
+const PLACEHOLDER_TYPES: ReadonlySet<string> = new Set(['Image', 'Document']);
 
 function settleTimeout(o: FlakeObservations): Flake | undefined {
-  const requests = pendingRequests(o.settlePending);
-  if (requests.length === 0) return undefined;
-  const rules: NetworkRule[] = requests.map((r) => ({
-    match: r.match,
-    action: r.placeholder ? 'placeholder' : 'block',
-  }));
+  if (!o.settleTimedOut) return undefined;
+  const sawRequests =
+    o.settleRequests.length > 0 || o.settlePending.some((l) => REQUEST_LINE.test(l));
+  if (!sawRequests) return undefined;
+  // A line cut short, a summary ("14 more requests"), or requests the report
+  // did not list: the evidence is partial, so whatever is named may not be
+  // what the wait was stuck on.
+  const incomplete =
+    o.settleOmitted > 0 ||
+    o.settlePending.some((l) => l.includes('…') || /^\d+ more requests/.test(l)) ||
+    o.settleRequests.length === 0;
+
+  const rules: NetworkRule[] = [];
+  let unfixable = 0;
+  for (const r of o.settleRequests) {
+    let u: URL;
+    try {
+      u = new URL(r.url);
+    } catch {
+      continue;
+    }
+    // data:, blob:, ws: and the like never reach the network policy.
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+    const thirdParty = o.settleOrigin !== undefined && u.origin !== o.settleOrigin;
+    if (!thirdParty || !PLACEHOLDER_TYPES.has(r.type)) {
+      unfixable++;
+      continue;
+    }
+    // The whole host for that type, not the URL: a random-photo service
+    // redirects to a new path every run, so the path is useless next time. The
+    // type keeps the rule off the host's stylesheets and scripts.
+    const match = `type:${r.type} ${u.origin}/**`;
+    if (!rules.some((x) => x.match === match))
+      rules.push({ match, action: 'placeholder' });
+  }
+  const shown = rules.slice(0, MAX_RULES);
   return {
     cause: 'settle-timeout',
-    confidence: 'high',
+    confidence: incomplete
+      ? 'low'
+      : shown.length > 0 && unfixable === 0
+        ? 'high'
+        : 'medium',
     evidence: { pending: o.settlePending, flags: o.flags },
-    fix: storyFix(o.storyId, { network: { rules } }),
+    fix: shown.length > 0 ? storyFix(o.storyId, { network: { rules: shown } }) : null,
   };
 }
 
-// -- 2. external-image, 3. embed ---------------------------------------------
+// -- external-image, embed ---------------------------------------------
 
 /** The hits of the given kinds, biggest overlap first (the selector is the
  *  tie-break, so the answer never depends on discovery order). */
@@ -239,13 +269,17 @@ function asyncElement(o: FlakeObservations): Flake | undefined {
     (a, b) =>
       b.area - a.area || (a.selector < b.selector ? -1 : a.selector > b.selector ? 1 : 0),
   )[0]!;
+  // Waiting cannot help a page that keeps running (timers, frames pending at
+  // the cap), nor an element known only by its position among siblings, which
+  // is a different element the next time the list grows.
+  const hopeless = hasPendingWork(o) || !el.stable;
   return {
     cause: 'async-element',
     // Which side is the late one is not known: the element may be a spinner
     // that left, not content that arrived.
-    confidence: 'medium',
+    confidence: hopeless ? 'low' : 'medium',
     evidence: { selector: el.selector, presentIn: el.presentIn },
-    fix: storyFix(o.storyId, { waitForSelector: el.selector }),
+    fix: hopeless ? null : storyFix(o.storyId, { waitForSelector: el.selector }),
   };
 }
 
@@ -278,6 +312,10 @@ function textual(o: FlakeObservations): Flake | undefined {
 function renderDrift(o: FlakeObservations): Flake | undefined {
   if (!o.structureIdentical || o.mismatchPercent > RENDER_DRIFT_MAX_PERCENT)
     return undefined;
+  // "Nothing in the page changed" is only true of a page that was still: with
+  // work pending at the settle cap, or the pixels inside a custom element
+  // whose shadow content the structure cannot see, a jux bug is a guess.
+  if (o.settleTimedOut || hasPendingWork(o) || o.inCustomElement) return undefined;
   return {
     cause: 'render-drift',
     // The renderer-reuse flag is the known reason pixels move with nothing in

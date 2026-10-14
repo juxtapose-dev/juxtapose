@@ -65,6 +65,8 @@ export function describeFlake(f: Flake): string {
     const scope = f.fix.stories ? '' : ' (project setting)';
     return `${head}; fix: ${formatFix(f.fix)}${scope}${caution(f.confidence)}`;
   }
+  if (f.cause === 'settle-timeout')
+    return `${head}; no safe config change is known: ignore it with settle.network.ignore if it is not content, or raise settle.timeout${caution(f.confidence)}`;
   if (f.cause === 'render-drift')
     return `${head}; no config change helps. Report it as a jux bug and confirm freshRenderer is on${caution(f.confidence)}`;
   return head;

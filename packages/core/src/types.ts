@@ -49,12 +49,28 @@ export type SettleReport =
       /** What was still pending at the cap, one description per item, such
        *  as `1 request to /api/feed in flight (Fetch)`. Never empty. */
       pending: string[];
+      /** The counted requests still in flight, with their full URLs and CDP
+       *  resource types (`pending` shows paths only). At most
+       *  MAX_PENDING_REQUESTS; `requestsOmitted` counts the rest. Absent on
+       *  reports written before it was recorded. */
+      requests?: PendingRequest[];
+      requestsOmitted?: number;
+      /** The origin of the page, so a request to another one can be told
+       *  from the page's own. */
+      origin?: string;
     }
   | {
       status: 'fallback';
       /** Why the event-driven wait could not run. Never empty. */
       pending: string[];
     };
+
+/** A request still in flight at the settle cap. */
+export interface PendingRequest {
+  url: string;
+  /** CDP resource type (`Image`, `Fetch`, `Document`...); `Other` if unknown. */
+  type: string;
+}
 
 export type ColorScheme = 'light' | 'dark';
 

@@ -10,7 +10,8 @@ import path from 'node:path';
 import {
   analyzeFlake,
   compareCodeUnits,
-  decodeStructure,
+  readRunCapture,
+  configCoverage,
   describeFlake,
   describeFlakeGroup,
   groupFlakes,
@@ -21,8 +22,10 @@ import {
   shellQuote,
   type DiffResult,
   type Flake,
+  type ProjectConfig,
   type FlakeCapture,
 } from '@juxtapose/core';
+import { loadConfig } from '../context.js';
 import { EXIT } from '../exit-codes.js';
 import { errorMessage } from '../guards.js';
 import type { Io } from '../io.js';
@@ -107,15 +110,11 @@ export function compareRuns(a: RunSide, b: RunSide): RunsComparison {
  *  structure sidecar is optional: without it only pixels and settle flags
  *  explain the difference. */
 async function readCapture(side: RunSide, storyId: string): Promise<FlakeCapture> {
-  const base = path.join(side.dir, 'images', `${encodeStoryId(storyId)}-current`);
-  const image = await readFile(`${base}.webp`);
-  const structure = await readFile(`${base}.structure.json.gz`)
-    .then(decodeStructure)
-    .catch(() => undefined);
+  const stored = await readRunCapture(side.dir, storyId);
+  if (!stored) throw new Error(`no stored capture of ${storyId}`);
   const result = side.results.get(storyId);
   return {
-    image,
-    ...(structure ? { structure } : {}),
+    ...stored,
     ...(result?.settle ? { settle: result.settle } : {}),
     ...(result?.flags?.length ? { flags: result.flags } : {}),
   };
@@ -128,6 +127,7 @@ async function explainDifferences(
   sa: RunSide,
   sb: RunSide,
   ids: string[],
+  config: ProjectConfig,
 ): Promise<Map<string, Flake>> {
   const out = new Map<string, Flake>();
   for (const storyId of ids) {
@@ -138,6 +138,15 @@ async function explainDifferences(
           storyId,
           first: await readCapture(sa, storyId),
           second: await readCapture(sb, storyId),
+          // What the project config already answers: the same coverage a run
+          // computes, minus the story's own parameters.
+          covered: configCoverage(config, {
+            storyId,
+            ...(sa.results.get(storyId)?.baseStoryId
+              ? { baseStoryId: sa.results.get(storyId)!.baseStoryId! }
+              : {}),
+          }),
+          freshRenderer: config.freshRenderer !== false,
         }),
       );
     } catch {
@@ -177,7 +186,7 @@ export async function diffRuns(
   const [sa, sb] = sides as [RunSide, RunSide];
   const c = compareRuns(sa, sb);
   const clean = c.different.length === 0 && c.missing.length === 0;
-  const flakes = await explainDifferences(sa, sb, c.different);
+  const flakes = await explainDifferences(sa, sb, c.different, await loadConfig(root));
   const flakeGroups = groupFlakes(
     [...flakes].map(([storyId, flake]) => ({ storyId, flake })),
   );

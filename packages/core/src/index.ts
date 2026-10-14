@@ -128,6 +128,8 @@ export {
   formatFix,
   listStoryIds,
 } from './flake/describe.js';
+export { configCoverage } from './flake/coverage.js';
+export { readRunCapture } from './run/artifacts.js';
 export { groupFlakes, MIN_GROUP } from './flake/group.js';
 export { checkNetwork } from './capture/network-policy.js';
 export { mergeNetwork } from './capture/network-rules.js';

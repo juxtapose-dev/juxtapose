@@ -447,6 +447,11 @@ export async function captureStory(
             status: 'timeout' as const,
             timeoutMs: settle.timeoutMs,
             pending: flagged.pending ?? [],
+            ...(flagged.requests ? { requests: flagged.requests } : {}),
+            ...(flagged.requestsOmitted
+              ? { requestsOmitted: flagged.requestsOmitted }
+              : {}),
+            ...(pageOrigin(deps.baseUrl) ? { origin: pageOrigin(deps.baseUrl) } : {}),
           },
         }
       : flagged?.status === 'fallback'
@@ -565,4 +570,14 @@ function policyKey(p: NetworkPolicy): string {
     ...p,
     rules: p.rules.map((r) => [r.pattern.source, r.action]),
   });
+}
+
+/** The origin of the workbench the pages are served from, or undefined. */
+function pageOrigin(baseUrl: string): string | undefined {
+  try {
+    const u = new URL(baseUrl);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : undefined;
+  } catch {
+    return undefined;
+  }
 }

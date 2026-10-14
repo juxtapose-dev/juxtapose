@@ -12,6 +12,7 @@ import { snapPages } from '../capture/snap.js';
 import type { Flake, Snapshot, StoryParams } from '../types.js';
 import { analyzeFlake } from './analyze.js';
 import { describeFlake } from './describe.js';
+import { selectorFor } from './selector.js';
 
 const chrome = chromeForTests();
 let server: Server;
@@ -107,6 +108,20 @@ beforeAll(async () => {
         return html(
           `<!doctype html><body style="background:rgb(${Math.floor(Math.random() * 200)},50,50)">x`,
         );
+      case '/tricky':
+        // Ids and attributes frameworks really generate: React useId, Zag/Ark
+        // (colons), a quote in a test id, hashed classes, an id that starts
+        // with a digit.
+        return html(
+          doc(
+            `<div id="collapsible:_r_0_:content" class="css-1odw0y2 box">a</div>` +
+              `<div id="_r_1_" class="_a1b2c3">b</div>` +
+              `<div data-testid='say "hi"\\'>c</div>` +
+              `<ul><li>x</li><li>y</li><li id="9lives">z</li></ul>` +
+              `<my-widget><span>w</span></my-widget>` +
+              `<svg width="10" height="10"><circle id="c.1" r="4"/></svg>`,
+          ),
+        );
       case '/clock':
         // Time text that moves on every load, in a box of fixed width.
         return html(
@@ -170,6 +185,30 @@ async function twoCaptures(path: string, params: StoryParams = {}) {
 const patched = (flake: Flake, params: StoryParams = {}): StoryParams => ({
   ...params,
   ...flake.fix!.stories[STORY]!,
+});
+
+describe.skipIf(!chrome)('selectors the classifier emits', () => {
+  it('every one parses and matches in the browser (ids with colons, quotes, hashes)', async () => {
+    const snapshot = await snap('/tricky');
+    const structure = snapshot.structure!;
+    const selectors = structure.elements.map((_, i) => selectorFor(structure, i));
+    expect(selectors.length).toBeGreaterThan(8);
+    const context = await browser.newContext({ viewport: { width: 320, height: 240 } });
+    try {
+      const page = await context.newPage();
+      await page.goto(`${base}/tricky`, { waitUntil: 'load' });
+      const counts = await page.evaluate<number[]>(
+        `${JSON.stringify(selectors)}.map((s) => document.querySelectorAll(s).length)`,
+      );
+      // A selector the browser rejects throws SyntaxError and fails the call;
+      // one that parses but finds nothing is as useless.
+      expect(counts.filter((n) => n === 0)).toEqual([]);
+    } finally {
+      await context.close();
+    }
+    // The generated ones are not the anchor when a better handle exists.
+    expect(selectors.some((s) => s.includes('css-1odw0y2'))).toBe(false);
+  }, 60_000);
 });
 
 describe.skipIf(!chrome)('flake classification on real captures', () => {
@@ -256,7 +295,11 @@ describe.skipIf(!chrome)('flake classification on real captures', () => {
     expect(flake.cause).toBe('settle-timeout');
     expect(flake.fix).toEqual({
       stories: {
-        [STORY]: { network: { rules: [{ match: '/never.png', action: 'placeholder' }] } },
+        [STORY]: {
+          network: {
+            rules: [{ match: `type:Image ${other}/**`, action: 'placeholder' }],
+          },
+        },
       },
     });
 

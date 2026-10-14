@@ -41,18 +41,12 @@ import { phases, type Phases } from './phases.js';
 import type { CauseIndex } from '../analysis/cause.js';
 import { shellQuote } from '../shell-quote.js';
 import { captureFlags, settleFlag, type SettleLayer } from '../capture/settle-options.js';
-import { resolveNetwork } from '../capture/network-rules.js';
+import { networkCoverage } from '../flake/coverage.js';
 import { groupFlakes } from '../flake/group.js';
 import { analyzeFlake, type FlakeCapture } from '../flake/analyze.js';
 import type { NetworkCoverage } from '../flake/classify.js';
 
 export const DEFAULT_VIEWPORT: Viewport = { width: 1280, height: 800 };
-
-/** First captures kept for the flake analysis until the recheck says whether
- *  they are needed. Past this many image bytes, a story simply gets no `flake`
- *  (it is still `unstable`): a first run with hundreds of new stories must not
- *  hold every screenshot in memory for a rare explanation. */
-export const MAX_RETAINED_FIRST_BYTES = 256 * 1024 * 1024;
 
 export interface RunOptions {
   browser: Browser;
@@ -80,6 +74,12 @@ export interface RunOptions {
   phases?: Phases;
   /** From `jux run --since`: consulted only for a story that failed. */
   cause?: CauseIndex;
+  /** Reads back the first capture of a story that `onArtifact` stored, for the
+   *  flake analysis when its recheck differs. Captures are never kept in
+   *  memory for this. Without it, an unstable story gets no `flake`. */
+  readFirstCapture?: (
+    storyId: string,
+  ) => Promise<{ image: Buffer; structure?: StructureSnapshot } | undefined>;
   /** Per-call settle options (CLI flags, MCP arguments), layered over every
    *  story's own. The project's come from `config`. */
   settle?: SettleLayer;
@@ -102,8 +102,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const results: DiffResult[] = [];
   const firstPassWarnings = new Set<string>();
   const toConfirm = new Map<string, DiffResult>();
-  const firstCaptures = new Map<string, FlakeCapture>();
-  let retainedBytes = 0;
+  // What the recheck needs of a first capture besides its image and structure,
+  // which are read back from where `onArtifact` put them. Small: no pixels.
+  const firstNotes = new Map<string, Pick<FlakeCapture, 'settle' | 'flags'>>();
 
   const poolOptions = (onProgress: RunOptions['onProgress']) => ({
     browser: opts.browser,
@@ -197,10 +198,11 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     results.push(result);
     if ((result.status === 'new' || result.status === 'fail') && result.hash) {
       toConfirm.set(result.storyId, result);
-      if (retainedBytes + outcome.snapshot.image.length <= MAX_RETAINED_FIRST_BYTES) {
-        retainedBytes += outcome.snapshot.image.length;
-        firstCaptures.set(result.storyId, flakeCapture(outcome.snapshot));
-      }
+      const { settle, flags } = flakeCapture(outcome.snapshot);
+      firstNotes.set(result.storyId, {
+        ...(settle ? { settle } : {}),
+        ...(flags ? { flags } : {}),
+      });
     }
   }
 
@@ -244,11 +246,11 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       const second = hashImage(outcome.snapshot.image);
       if (second !== first.hash) {
         first.unstable = { hashes: [first.hash!, second] };
-        const before = firstCaptures.get(first.storyId);
-        const flake = before
+        const flake = opts.readFirstCapture
           ? await tryFlake(
               first.storyId,
-              before,
+              () => opts.readFirstCapture!(first.storyId),
+              firstNotes.get(first.storyId) ?? {},
               flakeCapture(outcome.snapshot),
               coverageOf(outcome.story, opts),
               opts.config?.freshRenderer !== false,
@@ -256,8 +258,6 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
           : undefined;
         if (flake) first.flake = flake;
       }
-      // Stable (or analysed): the first capture's bytes are no longer needed.
-      firstCaptures.delete(first.storyId);
       if (opts.signal?.aborted) break;
     }
     for (const id of unseen) {
@@ -411,35 +411,34 @@ function flakeCapture(snapshot: Snapshot): FlakeCapture {
  *  bug in the analysis must not turn a recheck into an error. */
 async function tryFlake(
   storyId: string,
-  first: FlakeCapture,
+  readFirst: () => Promise<Pick<FlakeCapture, 'image' | 'structure'> | undefined>,
+  firstNotes: Pick<FlakeCapture, 'settle' | 'flags'>,
   second: FlakeCapture,
   covered: NetworkCoverage,
   freshRenderer: boolean,
 ): Promise<DiffResult['flake']> {
   try {
-    return await analyzeFlake({ storyId, first, second, covered, freshRenderer });
+    const stored = await readFirst();
+    if (!stored) return undefined;
+    return await analyzeFlake({
+      storyId,
+      first: { ...stored, ...firstNotes },
+      second,
+      covered,
+      freshRenderer,
+    });
   } catch {
     return undefined;
   }
 }
 
-/** Which third-party requests the story's network config already answers, so
- *  the classifier never suggests a setting that is on. */
+/** The story's network config already answers some third-party requests. */
 function coverageOf(story: StoryManifest, opts: RunOptions): NetworkCoverage {
-  try {
-    const policy = resolveNetwork(
-      opts.config?.network,
-      story.params.network,
-      opts.settle?.network,
-    );
-    // A type's own entry beats `default`, so an explicit `allow` stays open
-    // even when `default` blocks.
-    const answered = (action: string | undefined) =>
-      action === undefined ? policy.default === 'block' : action !== 'allow';
-    return { images: answered(policy.images), frames: answered(policy.frames) };
-  } catch {
-    return { images: false, frames: false };
-  }
+  return networkCoverage(
+    opts.config?.network,
+    story.params.network,
+    opts.settle?.network,
+  );
 }
 
 /** A sidecar that is absent or unreadable is simply no baseline structure. */

@@ -117,13 +117,19 @@ test('a settle timeout in either capture is the cause, and the flags are kept', 
       settle: {
         status: 'timeout',
         timeoutMs: 1500,
-        pending: ['1 request to /api/feed in flight (Fetch)'],
+        pending: ['1 request to /photo.jpg in flight (Image)'],
+        requests: [{ url: 'https://cdn.example.com/photo.jpg', type: 'Image' }],
+        origin: 'http://127.0.0.1:6006',
       },
       flags: ['settle-timeout'],
     },
   });
   expect(flake.cause).toBe('settle-timeout');
+  expect(flake.confidence).toBe('high');
   expect(flake.evidence.flags).toEqual(['settle-timeout']);
+  expect(flake.fix?.stories?.s?.network?.rules).toEqual([
+    { match: 'type:Image https://cdn.example.com/**', action: 'placeholder' },
+  ]);
 });
 
 test('identical structure with a tiny pixel delta is render drift; a missing structure is unknown', async () => {
@@ -162,4 +168,56 @@ test('a capture that reused a renderer is order dependence unless freshRenderer 
   expect((await analyzeFlake({ ...input, freshRenderer: true })).cause).toBe(
     'render-drift',
   );
+});
+
+test('identical structure is not render drift when the wait hit its cap with timers pending, or the pixels are in a custom element', async () => {
+  const s = structure([el({})], 'same');
+  const timers = await analyzeFlake({
+    storyId: 's',
+    first: { image: await frame(null), structure: s },
+    second: {
+      image: await frame({ x: 30, y: 30 }),
+      structure: s,
+      settle: {
+        status: 'timeout',
+        timeoutMs: 500,
+        pending: ['1 timer due within 1000 ms'],
+      },
+      flags: ['settle-timeout'],
+    },
+  });
+  expect(timers.cause).toBe('unknown');
+  expect(timers.fix).toBeNull();
+
+  const host = structure(
+    [el({ tag: 'my-widget', rect: { x: 28, y: 28, w: 12, h: 12 } })],
+    'same',
+  );
+  const shadow = await analyzeFlake({
+    storyId: 's',
+    first: { image: await frame(null), structure: host },
+    second: { image: await frame({ x: 30, y: 30 }), structure: host },
+  });
+  expect(shadow.cause).toBe('unknown');
+});
+
+test('an element known only by its position, or a page still running, gets no waitForSelector', async () => {
+  const list = el({ path: 'html>body>ul', tag: 'ul', id: 'list' });
+  const row = el({
+    path: 'html>body>ul>li:nth-of-type(7)',
+    tag: 'li',
+    parent: 0,
+    rect: { x: 0, y: 0, w: 40, h: 10 },
+  });
+  const flake = await analyzeFlake({
+    storyId: 's',
+    first: { image: await frame(null), structure: structure([list], 'a') },
+    second: {
+      image: await frame({ x: 0, y: 0 }),
+      structure: structure([list, row], 'b'),
+    },
+  });
+  expect(flake.cause).toBe('async-element');
+  expect(flake.confidence).toBe('low');
+  expect(flake.fix).toBeNull();
 });

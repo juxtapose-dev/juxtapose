@@ -14,6 +14,10 @@ import { looksLikeTime } from './time-text.js';
 const base: FlakeObservations = {
   storyId: 'card--basic',
   settlePending: [],
+  settleTimedOut: false,
+  settleRequests: [],
+  settleOmitted: 0,
+  inCustomElement: false,
   flags: [],
   reused: [],
   mismatchPercent: 0.5,
@@ -37,8 +41,29 @@ const frame = {
 };
 const clock = { selector: '.clock', before: '10:41', after: '10:42' };
 const quote = { selector: '.quote', before: 'Hello', after: 'World' };
-const late = { selector: '.results', presentIn: 'second' as const, area: 1000 };
+const late = {
+  selector: '.results',
+  presentIn: 'second' as const,
+  area: 1000,
+  stable: true,
+};
 const pending = ['1 request to /api/feed in flight (Fetch)'];
+const ORIGIN = 'http://127.0.0.1:6006';
+/** A capture that hit the settle cap with these requests in flight. */
+const stuck = (
+  requests: Array<{ url: string; type: string }>,
+  more: Partial<FlakeObservations> = {},
+): Partial<FlakeObservations> => ({
+  settleTimedOut: true,
+  settleOrigin: ORIGIN,
+  settleRequests: requests,
+  settlePending: requests.map(
+    (r) => `1 request to ${new URL(r.url).pathname} in flight (${r.type})`,
+  ),
+  flags: ['settle-timeout'],
+  ...more,
+});
+const cdnImage = { url: 'https://cdn.example.com/id/78/200/300.jpg', type: 'Image' };
 
 /** The config accepts the patch as written: it is what a person pastes in. */
 function accepted(flake: Flake): boolean {
@@ -46,51 +71,119 @@ function accepted(flake: Flake): boolean {
 }
 
 describe('each cause', () => {
-  it('settle-timeout: a request pending at the cap gets a story-scoped block rule', () => {
-    const f = classifyFlake(obs({ settlePending: pending, flags: ['settle-timeout'] }));
+  it('settle-timeout: a third-party image still loading gets a host-wide placeholder for images', () => {
+    const f = classifyFlake(obs(stuck([cdnImage])));
     expect(f.cause).toBe('settle-timeout');
     expect(f.confidence).toBe('high');
-    expect(f.evidence.pending).toEqual(pending);
+    // The host and the type, never the path: a random-photo service
+    // redirects to a new path every run.
     expect(f.fix).toEqual({
       stories: {
         'card--basic': {
-          network: { rules: [{ match: '/api/feed', action: 'block' }] },
+          network: {
+            rules: [
+              { match: 'type:Image https://cdn.example.com/**', action: 'placeholder' },
+            ],
+          },
         },
       },
     });
   });
 
-  it('settle-timeout: a pending image or document gets a placeholder, other types a block', () => {
+  it('settle-timeout: a frame document is placeholdered by type, one rule per host and type', () => {
     const f = classifyFlake(
-      obs({
-        settlePending: [
-          '1 request to /hero.jpg?w=2 in flight (Image)',
-          '2 requests to /embed in flight (Document)',
-          '1 request to /track in flight (XHR)',
-          '1 image still loading: /a.png, /b.png',
-        ],
-      }),
+      obs(
+        stuck([
+          { url: 'https://maps.example.com/embed?a=1', type: 'Document' },
+          { url: 'https://maps.example.com/embed?a=2', type: 'Document' },
+          { url: 'https://maps.example.com/tile.png', type: 'Image' },
+        ]),
+      ),
     );
     expect(f.fix?.stories?.['card--basic']?.network?.rules).toEqual([
-      { match: '/hero.jpg', action: 'placeholder' },
-      { match: '/embed', action: 'placeholder' },
-      { match: '/track', action: 'block' },
-      { match: '/a.png', action: 'placeholder' },
-      { match: '/b.png', action: 'placeholder' },
+      { match: 'type:Document https://maps.example.com/**', action: 'placeholder' },
+      { match: 'type:Image https://maps.example.com/**', action: 'placeholder' },
     ]);
   });
 
-  it('settle-timeout: a pending timer is not a request, so it names no rule', () => {
-    const f = classifyFlake(obs({ settlePending: ['1 timer due within 1000 ms'] }));
+  it("settle-timeout: never blocks a stylesheet, script, font, API call or the page's own request", () => {
+    const f = classifyFlake(
+      obs(
+        stuck([
+          { url: 'https://fonts.googleapis.com/css', type: 'Stylesheet' },
+          { url: 'https://api.example.com/feed', type: 'Fetch' },
+          { url: 'https://cdn.example.com/app.js', type: 'Script' },
+          { url: `${ORIGIN}/api/feed`, type: 'Fetch' },
+          { url: `${ORIGIN}/hero.jpg`, type: 'Image' },
+        ]),
+      ),
+    );
+    expect(f.cause).toBe('settle-timeout');
+    expect(f.fix).toBeNull();
+    expect(f.confidence).toBe('medium');
+    expect(JSON.stringify(f)).not.toContain('block');
+  });
+
+  it('settle-timeout: data:, blob: and WebSocket requests are not rules', () => {
+    const f = classifyFlake(
+      obs(
+        stuck([
+          { url: 'data:image/png;base64,AAAA', type: 'Image' },
+          { url: 'blob:http://x/1', type: 'Image' },
+          { url: 'wss://live.example.com/socket', type: 'WebSocket' },
+          cdnImage,
+        ]),
+      ),
+    );
+    expect(f.fix?.stories?.['card--basic']?.network?.rules).toHaveLength(1);
+  });
+
+  it('settle-timeout: partial evidence is low confidence (a truncated URL, "14 more requests")', () => {
+    const f = classifyFlake(
+      obs(
+        stuck([cdnImage], {
+          settleOmitted: 14,
+          settlePending: [
+            `1 request to /${'a'.repeat(98)}… in flight (Image)`,
+            '14 more requests in flight',
+          ],
+        }),
+      ),
+    );
+    expect(f.cause).toBe('settle-timeout');
+    expect(f.confidence).toBe('low');
+  });
+
+  it('settle-timeout: a report without full URLs names no rule', () => {
+    const f = classifyFlake(
+      obs({ settleTimedOut: true, settlePending: pending, flags: ['settle-timeout'] }),
+    );
+    expect(f.cause).toBe('settle-timeout');
+    expect(f.confidence).toBe('low');
+    expect(f.fix).toBeNull();
+  });
+
+  it('settle-timeout: a pending timer is not a request, so it is not this cause', () => {
+    const f = classifyFlake(
+      obs({
+        settleTimedOut: true,
+        settlePending: ['1 timer due within 1000 ms'],
+        flags: ['settle-timeout'],
+      }),
+    );
     expect(f.cause).toBe('unknown');
     expect(f.evidence.pending).toEqual(['1 timer due within 1000 ms']);
   });
 
-  it('settle-timeout: a truncated URL is not turned into a rule', () => {
+  it('settle-timeout: a changed third-party image outranks a pending request', () => {
     const f = classifyFlake(
-      obs({ settlePending: [`1 request to /${'a'.repeat(98)}… in flight (Fetch)`] }),
+      obs(
+        stuck([{ url: 'https://api.example.com/feed', type: 'Fetch' }], {
+          externals: [image],
+        }),
+      ),
     );
-    expect(f.cause).toBe('unknown');
+    expect(f.cause).toBe('external-image');
   });
 
   it('external-image: a third-party image where the pixels changed', () => {
@@ -266,7 +359,7 @@ describe('each cause', () => {
 
 describe('precedence: the first confident match wins', () => {
   const all = obs({
-    settlePending: pending,
+    ...stuck([cdnImage]),
     externals: [image, frame],
     oneSided: [late],
     reused: ['second'],
@@ -274,24 +367,24 @@ describe('precedence: the first confident match wins', () => {
     structureIdentical: true,
     mismatchPercent: 0.01,
   });
+  const noSettle = {
+    settleTimedOut: false,
+    settleRequests: [],
+    settlePending: [],
+    flags: [],
+  };
 
   it('walks the documented order as each cause is removed', () => {
     const order: Array<[FlakeCause, Partial<FlakeObservations>]> = [
-      ['settle-timeout', {}],
-      ['external-image', { settlePending: [] }],
-      ['embed', { settlePending: [], externals: [frame] }],
-      ['order-dependence', { settlePending: [], externals: [] }],
-      ['async-element', { settlePending: [], externals: [], reused: [] }],
-      ['clock', { settlePending: [], externals: [], reused: [], oneSided: [] }],
+      ['external-image', {}],
+      ['embed', { externals: [frame] }],
+      ['settle-timeout', { externals: [] }],
+      ['order-dependence', { externals: [], ...noSettle }],
+      ['async-element', { externals: [], ...noSettle, reused: [] }],
+      ['clock', { externals: [], ...noSettle, reused: [], oneSided: [] }],
       [
         'render-drift',
-        {
-          settlePending: [],
-          externals: [],
-          reused: [],
-          oneSided: [],
-          textChanges: [],
-        },
+        { externals: [], ...noSettle, reused: [], oneSided: [], textChanges: [] },
       ],
     ];
     for (const [cause, change] of order)
@@ -328,8 +421,7 @@ describe('precedence: the first confident match wins', () => {
 
 describe('every fix is a patch the config accepts', () => {
   const cases: Array<[string, Partial<FlakeObservations>]> = [
-    ['settle-timeout', { settlePending: pending }],
-    ['settle-timeout placeholder', { settlePending: ['1 image still loading: /a.png'] }],
+    ['settle-timeout', stuck([cdnImage])],
     ['external-image', { externals: [image] }],
     ['embed', { externals: [frame] }],
     ['async-element', { oneSided: [late] }],
@@ -424,6 +516,15 @@ describe('looksLikeTime', () => {
     '1m 30s',
     '1760438400',
     'Updated 3 hours ago by sam',
+    'vor 5 Minuten',
+    'il y a 5 minutes',
+    'hace 5 minutos',
+    '5 minuten geleden',
+    '250ms',
+    '1.5s',
+    '2 hours',
+    '1600000000',
+    '12:30',
     'October 2026',
     'octubre de 2026',
     'Tuesday',
@@ -470,6 +571,13 @@ describe('looksLikeTime', () => {
     '5 min read',
     'may 3 things',
     'ratio 3:2',
+    'Score 3:15',
+    'May 3 items',
+    'Mar 2 results',
+    'ID 1600000000',
+    'Phone 1555123456',
+    '250ms latency budget',
+    '2 hours of footage',
     'march forward',
     'may be',
     'March forward',

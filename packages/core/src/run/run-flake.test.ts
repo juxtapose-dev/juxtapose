@@ -8,7 +8,7 @@ import type {
   StructureElement,
   StructureSnapshot,
 } from '../types.js';
-import { runCapture } from './run.js';
+import { runCapture, type RunOptions } from './run.js';
 
 // A story whose two captures differ is explained in the report (#190): the
 // recheck hands both captures to the flake classifier.
@@ -90,8 +90,27 @@ const story = (
   params: network ? { network } : {},
 });
 
-async function run(stories: StoryManifest[]) {
+/** The first capture, as `onArtifact` would have stored it. */
+const storedFirst = async () => ({
+  image: images[0]!,
+  structure: structure([
+    element({
+      classes: ['cover'],
+      external: [{ kind: 'image', origin: 'https://picsum.photos', path: '/200' }],
+    }),
+  ]),
+});
+const reads: string[] = [];
+
+async function run(
+  stories: StoryManifest[],
+  readFirstCapture: RunOptions['readFirstCapture'] | null = async (id) => {
+    reads.push(id);
+    return storedFirst();
+  },
+) {
   seen = [];
+  reads.length = 0;
   const store: BaselineStore = {
     get: async () => null,
     put: async () => {},
@@ -109,6 +128,7 @@ async function run(stories: StoryManifest[]) {
     runId: 'r',
     branch: 'b',
     commitSha: 'c',
+    ...(readFirstCapture ? { readFirstCapture } : {}),
   });
 }
 
@@ -152,4 +172,27 @@ test('three unstable stories under one host add a run-level group; two do not', 
   expect(three.results.every((r) => r.flake?.cause === 'external-image')).toBe(true);
   const two = await run([story('a--1'), story('b--1')]);
   expect(two.flakeGroups).toBeUndefined();
+});
+
+test('the first capture is read back from storage only for a story that turned out unstable', async () => {
+  await run([story('card--basic'), story('steady')]);
+  expect(reads).toEqual(['card--basic']);
+});
+
+test('a first capture that cannot be read, or analysis that throws, leaves the story unstable with no flake', async () => {
+  for (const reader of [
+    async () => undefined,
+    async () => {
+      throw new Error('disk gone');
+    },
+    async () => ({ image: Buffer.from('not an image') }),
+  ]) {
+    const r = await run([story('card--basic')], reader);
+    expect(r.results[0]!.unstable).toBeDefined();
+    expect(r.results[0]!.flake).toBeUndefined();
+  }
+  // And with no reader at all.
+  const none = await run([story('card--basic')], null);
+  expect(none.results[0]!.unstable).toBeDefined();
+  expect(none.results[0]!.flake).toBeUndefined();
 });

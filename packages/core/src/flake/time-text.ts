@@ -122,10 +122,14 @@ const WEEKDAYS =
 const WEEKDAY_ABBR = 'Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun';
 
 const TIME_PATTERNS: readonly RegExp[] = [
-  // 10:42, 10:42:07, 10:42 PM. Two-digit minutes keep "3:2" (a ratio) out.
-  /\b\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:\s?[AP]\.?M\.?)?(?!\d)/i,
+  // 10:42, 10:42:07, 9:05 PM. A clock needs seconds, a meridiem, a two-digit
+  // hour, or to be the whole text: "Score 3:15" and "ratio 3:2" are not times.
+  /\b\d{1,2}:[0-5]\d:[0-5]\d(?:\.\d+)?(?!\d)/,
+  /\b\d{1,2}:[0-5]\d\s?[AP]\.?M\.?(?![\p{L}\d])/iu,
+  /\b(?:[01]\d|2[0-3]):[0-5]\d(?![\d:])/,
+  /^\s*\d{1,2}:[0-5]\d\s*$/,
   // 2026-10-14, 2026/10/14
-  /\b\d{4}-\d{2}-\d{2}\b/,
+  /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/,
   /\b(?:19|20)\d{2}\/\d{1,2}\/\d{1,2}\b/,
   // 10/14/2026, 14/10/26
   /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/,
@@ -135,7 +139,8 @@ const TIME_PATTERNS: readonly RegExp[] = [
   token(`(?:${safe})\\.?\\s+${DAY}`),
   token(`${DAY}\\s+${OF}(?:${safe})`),
   // May 3, 3 March: a Capitalized word-like month beside a day
-  token(`(?:${wordlike})\\.?\\s+${DAY}`, 'u'),
+  // ...and not "May 3 items": a word after the day means it is a quantity.
+  token(`(?:${wordlike})\\.?\\s+${DAY}(?!\\s+(?!at\\b|de\\b|um\\b)\\p{L})`, 'u'),
   token(`${DAY}\\s+${OF}(?:${wordlike})`, 'u'),
   // "14 march 2026", "march 14, 2026": any case once a year is present
   token(`${DAY}\\s+${OF}(?:${wordlike})\\s+${OF}${YEAR}`, 'iu'),
@@ -159,8 +164,20 @@ const TIME_PATTERNS: readonly RegExp[] = [
   /\b\d+\s?h\s?\d+\s?m\b/,
   /\b\d+\s?m\s?\d+\s?s\b/,
   /\b\d+\s?d\s?\d+\s?h\b/,
-  // Unix seconds or milliseconds, 2017 to 2033
-  /\b1[5-9]\d{8}(?:\d{3})?\b/,
+  // Unix seconds or milliseconds, 2017 to 2033: only as the whole text, since
+  // an ID or a phone number is the same ten digits.
+  /^\s*1[5-9]\d{8}(?:\d{3})?\s*$/,
+  // vor 5 Minuten, il y a 5 minutes, hace 5 minutos, 5 minuti fa, há 5 minutos,
+  // 5 minuten geleden
+  /(?<![\p{L}])vor\s+\d+\s+(?:Sekunden?|Minuten?|Stunden?|Tagen?|Wochen?|Monaten?|Jahren?)/iu,
+  /(?<![\p{L}])il y a\s+\d+\s+(?:secondes?|minutes?|heures?|jours?|semaines?|mois|ans?)/iu,
+  /(?<![\p{L}])hace\s+\d+\s+(?:segundos?|minutos?|horas?|d[ií]as?|semanas?|meses|años?)/iu,
+  /(?<![\p{L}])h[aá]\s+\d+\s+(?:segundos?|minutos?|horas?|dias?|semanas?|mes(?:es)?|anos?)/iu,
+  /\b\d+\s+(?:secondi|minuti|ore|giorni|settimane|mesi|anni)\s+fa\b/i,
+  /\b\d+\s+(?:seconden|minuten|uur|dagen|weken|maanden|jaar)\s+geleden\b/i,
+  // A duration that is the whole text: 250ms, 1.5s, 2 hours. In a sentence
+  // ("250ms latency budget") a number with a unit is just a number.
+  /^\s*\d+(?:\.\d+)?\s?(?:ms|s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)\s*$/i,
 ];
 
 export function looksLikeTime(text: string): boolean {

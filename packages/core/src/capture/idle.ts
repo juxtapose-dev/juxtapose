@@ -33,6 +33,7 @@
 import { SendTimeoutError } from '../browser/cdp.js';
 import type { Page } from '../browser/page.js';
 import { matchPattern, type ResolvedSettle } from './settle-options.js';
+import type { PendingRequest } from '../types.js';
 
 /** What the page reported at its last check. */
 export interface IdleSnapshot {
@@ -63,7 +64,13 @@ export interface IdleResult {
   /** Set on `timeout` (what was still pending) and `fallback` (why).
    *  Never empty. */
   pending?: string[];
+  /** On `timeout`: the counted requests still in flight, full URLs. */
+  requests?: PendingRequest[];
+  requestsOmitted?: number;
 }
+
+/** Most requests a settle report lists by URL; the rest are counted. */
+export const MAX_PENDING_REQUESTS = 20;
 
 /**
  * Runs before any page script (Page.addScriptToEvaluateOnNewDocument), so the
@@ -546,6 +553,7 @@ export async function waitForIdle(
     waitedMs: now() - t0,
     ...(snap ? { snap } : {}),
     pending: describePending(snap, idle.net, s),
+    ...pendingRequests(idle.net, s),
   });
   for (;;) {
     const remaining = capMs - (now() - t0);
@@ -672,6 +680,32 @@ export async function movedSincePaint(
 }
 
 const MAX_REQUEST_LINES = 5;
+
+/** The in-flight requests by full URL, for the flake classifier: `pending`
+ *  is worded for people and shows only a path. Read from what the tracker
+ *  already holds. */
+function pendingRequests(
+  net: NetworkTracker | null,
+  s: ResolvedSettle,
+): { requests?: PendingRequest[]; requestsOmitted?: number } {
+  if (!net) return {};
+  const seen = new Set<string>();
+  const all: PendingRequest[] = [];
+  for (const r of net.counted(s)) {
+    const key = `${r.type ?? 'Other'} ${r.url}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    all.push({ url: r.url, type: r.type ?? 'Other' });
+  }
+  if (all.length === 0) return {};
+  all.sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0));
+  return {
+    requests: all.slice(0, MAX_PENDING_REQUESTS),
+    ...(all.length > MAX_PENDING_REQUESTS
+      ? { requestsOmitted: all.length - MAX_PENDING_REQUESTS }
+      : {}),
+  };
+}
 
 /** A request URL as a person would name it: the path and query for http(s),
  *  else the URL, either one trimmed. */

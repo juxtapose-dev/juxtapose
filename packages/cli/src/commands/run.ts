@@ -34,6 +34,7 @@ import {
   DEFAULT_VIEWPORT,
   describeUnstable,
   describeFlake,
+  readRunCapture,
   describeFlakeGroup,
   listStoryIds,
   type StoryManifest,
@@ -273,6 +274,7 @@ export async function runCommand(
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
       onArtifact: (a) => writeArtifact(runDir, a),
+      readFirstCapture: (id) => readRunCapture(runDir, id),
       onWarning: warn,
       onProgress: (done, total, storyId) => {
         if (!ctx.json) {

@@ -23,7 +23,7 @@ import {
   type OneSidedElement,
   type TextChange,
 } from './classify.js';
-import { selectorFor } from './selector.js';
+import { describeSelector, selectorFor } from './selector.js';
 
 /** One capture of the story: what the run kept of it. */
 export interface FlakeCapture {
@@ -108,13 +108,13 @@ export async function analyzeFlake(input: FlakeAnalysisInput): Promise<Flake> {
     if (!a.truncated && !b.truncated) {
       for (const i of match.removed)
         oneSided.push({
-          selector: selectorFor(a, i),
+          ...describeSelector(a, i),
           presentIn: 'first',
           area: area(a.elements[i]!.rect),
         });
       for (const j of match.added)
         oneSided.push({
-          selector: selectorFor(b, j),
+          ...describeSelector(b, j),
           presentIn: 'second',
           area: area(b.elements[j]!.rect),
         });
@@ -126,9 +126,30 @@ export async function analyzeFlake(input: FlakeAnalysisInput): Promise<Flake> {
     .flatMap((s) => s.pending);
   const flags = [...new Set([...(first.flags ?? []), ...(second.flags ?? [])])].sort();
 
+  const timeouts = [first.settle, second.settle].filter(
+    (s): s is Extract<SettleReport, { status: 'timeout' }> => s?.status === 'timeout',
+  );
+  const settleRequests = [
+    ...new Map(
+      timeouts.flatMap((s) => s.requests ?? []).map((r) => [`${r.type} ${r.url}`, r]),
+    ).values(),
+  ];
+  const customElement = [a, b].some((s) =>
+    s?.elements.some(
+      (el) => el.tag.includes('-') && overlapWith(el.rect, pixels.changedRegions) > 0,
+    ),
+  );
+
   return classifyFlake({
     storyId,
     settlePending: [...new Set(settlePending)],
+    settleTimedOut: timeouts.length > 0,
+    settleRequests,
+    settleOmitted: timeouts.reduce((n, s) => n + (s.requestsOmitted ?? 0), 0),
+    ...(timeouts.find((s) => s.origin)?.origin
+      ? { settleOrigin: timeouts.find((s) => s.origin)!.origin! }
+      : {}),
+    inCustomElement: customElement,
     flags,
     reused: (['first', 'second'] as const).filter((side) =>
       input[side].flags?.includes('renderer-reused'),

@@ -251,3 +251,25 @@ test('three stories under one host are one group: one project fix, one line', as
   // The group stands in for the three per-story lines.
   expect(text).not.toContain('Unstable:');
 });
+
+test('a project config that already placeholders images is not told to do it again', async () => {
+  await writeFlakyRuns(['card--basic']);
+  await writeFile(
+    path.join(root, 'juxtapose.config.json'),
+    JSON.stringify({ network: { external: { images: 'placeholder' } } }),
+  );
+  const json = JSON.parse((await diffRuns('r1', 'r2')).out);
+  expect(json.flake['card--basic'].cause).not.toBe('external-image');
+});
+
+test('a stories override that already placeholders images counts too', async () => {
+  await writeFlakyRuns(['card--basic']);
+  await writeFile(
+    path.join(root, 'juxtapose.config.json'),
+    JSON.stringify({
+      stories: { 'card--*': { network: { external: { images: 'placeholder' } } } },
+    }),
+  );
+  const json = JSON.parse((await diffRuns('r1', 'r2')).out);
+  expect(json.flake['card--basic'].cause).not.toBe('external-image');
+});
