@@ -5,14 +5,37 @@
 // edited, never rewritten, because it belongs to the project.
 
 import { readFile, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
 /** `a`, `/a`, `a/` and `/a/` all ignore the same directory. */
 const normalize = (line: string): string =>
   line.trim().replace(/^\/+/, '').replace(/\/+$/, '');
 
-/** The entries `.gitignore` does not already cover. A commented-out line does
- *  not count as present. */
+/** A path that `entry` is meant to cover, for asking git about it. */
+const sampleFor = (entry: string): string =>
+  entry.endsWith('/') ? `${entry}x` : entry.replaceAll('*', 'x');
+
+/**
+ * `true`/`false` when git can say whether `sample` is ignored (any pattern,
+ * any parent `.gitignore`, the global excludes), `undefined` outside a repo.
+ * `--no-index` so a still-tracked file counts as covered by the pattern.
+ */
+function gitIgnores(projectRoot: string, sample: string): boolean | undefined {
+  try {
+    execFileSync('git', ['check-ignore', '-q', '--no-index', '--', sample], {
+      cwd: projectRoot,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch (err) {
+    return (err as { status?: number }).status === 1 ? false : undefined;
+  }
+}
+
+/** The entries not already covered. Git decides when it can, so a broader
+ *  pattern (`.juxtapose/`) or a parent `.gitignore` counts; outside a repo the
+ *  file's own lines are compared, and a commented-out line never counts. */
 export async function missingIgnores(
   projectRoot: string,
   entries: readonly string[],
@@ -24,7 +47,9 @@ export async function missingIgnores(
       .filter((l) => !l.trim().startsWith('#'))
       .map(normalize),
   );
-  return entries.filter((e) => !present.has(normalize(e)));
+  return entries.filter(
+    (e) => !(gitIgnores(projectRoot, sampleFor(e)) ?? present.has(normalize(e))),
+  );
 }
 
 const readGitignore = (projectRoot: string): Promise<string> =>

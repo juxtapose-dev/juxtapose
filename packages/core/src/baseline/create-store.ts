@@ -1,7 +1,7 @@
 // One place that maps the `storage` config onto a store, so the CLI and the
 // Storybook addon cannot disagree about where baselines are.
 
-import type { StorageConfig } from '../config/schema.js';
+import { STORAGE_DIR_PATTERN, type StorageConfig } from '../config/schema.js';
 import type { BaselineStore } from '../types.js';
 import {
   CacheBaselineStore,
@@ -19,9 +19,12 @@ import { MANIFEST_NAME } from './manifest-file.js';
  * they are refused at the one place every consumer passes through.
  */
 export function safeStorageDir(dir: string | undefined): string | undefined {
-  // eslint-disable-next-line no-control-regex
-  if (dir !== undefined && /[\u0000-\u001f\u007f]/.test(dir))
-    throw new Error('storage.dir must not contain control characters or newlines');
+  // The schema's own pattern, so the runtime backstop cannot drift from it:
+  // config is cast, not validated, when it is loaded.
+  if (dir !== undefined && !new RegExp(STORAGE_DIR_PATTERN).test(dir))
+    throw new Error(
+      `storage.dir ${JSON.stringify(dir)} is not allowed: use a relative path inside the project, without \`..\`, glob characters, control characters or a leading '-', and not .juxtapose or .juxtapose/structure`,
+    );
   return dir;
 }
 
@@ -68,5 +71,10 @@ export function ignoredPaths(storage: StorageConfig | undefined): string[] {
   if (chosen.kind !== 'cache') return [runs];
   const dir = (checked ?? DEFAULT_CACHE_DIR).replace(/\/+$/, '');
   // The default sits under .juxtapose/cache/ so a future cache kind shares one entry.
-  return dir === DEFAULT_CACHE_DIR ? ['.juxtapose/cache/', runs] : [`${dir}/`, runs];
+  // The old layout's images are ignored too, so untracking them (the migration)
+  // leaves nothing for `git status` to offer back as untracked.
+  const legacy = `${LEGACY_IMAGE_DIR}/*.webp`;
+  return dir === DEFAULT_CACHE_DIR
+    ? ['.juxtapose/cache/', legacy, runs]
+    : [`${dir}/`, legacy, runs];
 }

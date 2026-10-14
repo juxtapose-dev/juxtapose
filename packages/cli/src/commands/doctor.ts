@@ -19,7 +19,7 @@ import { stdio, type Session } from '../io.js';
 
 /** One thing doctor found, with the commands that fix it. */
 export interface DoctorIssue {
-  code: 'tracked-images' | 'missing-ignores';
+  code: 'tracked-images' | 'untracked-images' | 'missing-ignores';
   message: string;
   files?: string[];
   fix: string[];
@@ -28,11 +28,21 @@ export interface DoctorIssue {
 /** Files shown per issue in text output; --json lists all of them. */
 const SHOWN = 5;
 
-/** Tracked `*.webp` files under `dir`, or null when `projectRoot` is not a
- *  repo (nothing to check, which is not a problem). */
-function trackedImages(projectRoot: string, dir: string): string[] | null {
+/** `*.webp` files under `dir` that git lists, or null when `projectRoot` is
+ *  not a repo (nothing to check, which is not a problem). `others` lists the
+ *  untracked, not-ignored ones instead of the tracked ones. */
+function listedImages(
+  projectRoot: string,
+  dir: string,
+  others: boolean,
+): string[] | null {
   try {
-    const out = execFileSync('git', ['ls-files', '-z', '--', dir], {
+    const args = [
+      'ls-files',
+      '-z',
+      ...(others ? ['--others', '--exclude-standard'] : []),
+    ];
+    const out = execFileSync('git', [...args, '--', dir], {
       cwd: projectRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -45,13 +55,32 @@ function trackedImages(projectRoot: string, dir: string): string[] | null {
 
 const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many);
 
+/**
+ * Where the printed commands run. Doctor can be pointed at another project
+ * with `--project`, and a command that only works from that directory would
+ * silently touch the wrong repo, so from anywhere else they say `git -C`.
+ */
+function commandsFor(projectRoot: string, cwd: string) {
+  const here = path.resolve(cwd) === path.resolve(projectRoot);
+  const root = shellQuote(projectRoot);
+  return {
+    git: (rest: string) => (here ? `git ${rest}` : `git -C ${root} ${rest}`),
+    gitignore: here ? '.gitignore' : shellQuote(path.join(projectRoot, '.gitignore')),
+    run: (rest: string) => (here ? `jux ${rest}` : `jux ${rest} --project ${root}`),
+  };
+}
+
 export async function findIssues(
   projectRoot: string,
   storage: Parameters<typeof committedPaths>[0],
+  cwd: string = process.cwd(),
 ): Promise<DoctorIssue[]> {
   const issues: DoctorIssue[] = [];
   const repoBacked = storage?.kind === 'git' || storage?.kind === 'fs';
   const ignores = ignoredPaths(storage);
+  const cmd = commandsFor(projectRoot, cwd);
+  const ignoreFix = (lines: string[]) =>
+    `printf '%s\\n' ${lines.map(shellQuote).join(' ')} >> ${cmd.gitignore}`;
 
   // An explicit repo-backed store tracks its images on purpose. Otherwise both
   // the old layout and the cache dir are places an image must not be tracked.
@@ -59,19 +88,37 @@ export async function findIssues(
     const cacheDir =
       (storage?.kind === 'cache' ? storage.dir : undefined) ?? DEFAULT_CACHE_DIR;
     for (const dir of [LEGACY_IMAGE_DIR, cacheDir.replace(/\/+$/, '')]) {
-      const files = trackedImages(projectRoot, dir);
-      if (!files?.length) continue;
-      issues.push({
-        code: 'tracked-images',
-        message:
-          `${files.length} baseline ${plural(files.length, 'image is', 'images are')} tracked in ${dir}/. ` +
-          `juxtapose commits hashes and structure, never images.`,
-        files,
-        fix: [
-          `git rm --cached -- ${shellQuote(`${dir}/*.webp`)}`,
-          `git commit -m "Stop tracking juxtapose baseline images"`,
-        ],
-      });
+      const files = listedImages(projectRoot, dir, false);
+      if (files?.length) {
+        issues.push({
+          code: 'tracked-images',
+          message:
+            `${files.length} baseline ${plural(files.length, 'image is', 'images are')} tracked in ${dir}/. ` +
+            `juxtapose commits hashes and structure, never images.`,
+          files,
+          fix: [
+            // First, while the files are still on disk: a run copies each image
+            // that matches the manifest into the cache, which is the copy that
+            // survives once the commit below deletes them from other clones.
+            ...(dir === LEGACY_IMAGE_DIR ? [cmd.run('run --all')] : []),
+            cmd.git(`rm --cached -- ${shellQuote(`${dir}/*.webp`)}`),
+            ignoreFix(ignores),
+            cmd.git(`add -- ${shellQuote('.gitignore')}`),
+            cmd.git(`commit -m ${shellQuote('Stop tracking juxtapose baseline images')}`),
+          ],
+        });
+      }
+      const loose = listedImages(projectRoot, dir, true);
+      if (loose?.length) {
+        issues.push({
+          code: 'untracked-images',
+          message:
+            `${loose.length} baseline ${plural(loose.length, 'image in', 'images in')} ${dir}/ ` +
+            `${plural(loose.length, 'is', 'are')} neither tracked nor ignored, so the next \`git add .\` commits them.`,
+          files: loose,
+          fix: [ignoreFix(ignores)],
+        });
+      }
     }
   }
 
@@ -80,7 +127,7 @@ export async function findIssues(
     issues.push({
       code: 'missing-ignores',
       message: `.gitignore does not cover ${missing.join(', ')}.`,
-      fix: [`printf '%s\\n' ${missing.map(shellQuote).join(' ')} >> .gitignore`],
+      fix: [ignoreFix(missing)],
     });
   }
   return issues;
@@ -100,8 +147,11 @@ export async function doctorCommand(
   }
 
   if (issues.length === 0) {
+    const kind = config.storage?.kind;
     io.out(
-      'jux doctor: ok. No snapshot images are tracked, and .gitignore covers them.\n',
+      kind === 'git' || kind === 'fs'
+        ? 'jux doctor: ok. This project commits its images on purpose (storage.kind is set).\n'
+        : 'jux doctor: ok. No snapshot images are tracked, and .gitignore covers them.\n',
     );
     return 0;
   }
@@ -116,9 +166,12 @@ export async function doctorCommand(
     for (const line of issue.fix) io.out(`      ${line}\n`);
     if (issue.code === 'tracked-images') {
       io.out(
-        '    The files stay on disk, and jux keeps reading them until the cache has the\n' +
-          '    same images, so no diff goes blank. Structure sidecars (.structure.json.gz)\n' +
-          '    can stay tracked; new approvals write them to .juxtapose/structure/.\n' +
+        '    Run the first step before the commit. Once the commit lands, git deletes the\n' +
+          '    images from every clone that pulls it. The run copies each image that matches\n' +
+          '    the manifest into your cache, but teammates and CI start with an empty one and\n' +
+          '    get structure-only reports until their own run, or a restored CI cache\n' +
+          '    (docs/ci.md), fills it. Structure sidecars (.structure.json.gz) can stay\n' +
+          '    tracked; new approvals write them to .juxtapose/structure/.\n' +
           `    From now on commit ${committedPaths(undefined).map(shellQuote).join(' and ')}.\n`,
       );
     }

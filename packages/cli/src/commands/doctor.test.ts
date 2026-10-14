@@ -30,7 +30,9 @@ async function doctor(root: string, json = false) {
 }
 
 test('a clean project passes', async () => {
-  const root = await repo({ '.gitignore': '.juxtapose/cache/\n.juxtapose/runs/\n' });
+  const root = await repo({
+    '.gitignore': '.juxtapose/cache/\n.juxtapose/baselines/*.webp\n.juxtapose/runs/\n',
+  });
   const r = await doctor(root);
   expect(r.code).toBe(0);
   expect(r.out).toContain('ok');
@@ -45,7 +47,9 @@ test('tracked images in the old layout are reported with the exact migration', a
   const r = await doctor(root);
   expect(r.code).toBe(1);
   expect(r.out).toContain('1 baseline image is tracked');
-  expect(r.out).toContain("git rm --cached -- '.juxtapose/baselines/*.webp'");
+  expect(r.out).toContain("rm --cached -- '.juxtapose/baselines/*.webp'");
+  // The cache must be filled before the commit deletes the files elsewhere.
+  expect(r.out.indexOf('run --all')).toBeLessThan(r.out.indexOf('rm --cached'));
   // Structure sidecars are data CI still wants, so only images leave the index.
   expect(r.out).toContain('Structure sidecars');
   expect(r.out).toContain('.juxtapose/cache/');
@@ -58,7 +62,9 @@ test('--json lists the tracked files and the fix', async () => {
   expect(body.issues[0]).toMatchObject({
     code: 'tracked-images',
     files: ['.juxtapose/baselines/a.webp'],
-    fix: expect.arrayContaining(["git rm --cached -- '.juxtapose/baselines/*.webp'"]),
+    fix: expect.arrayContaining([
+      expect.stringContaining("rm --cached -- '.juxtapose/baselines/*.webp'"),
+    ]),
   });
 });
 
@@ -80,7 +86,7 @@ test('a tracked file in the cache dir is reported too', async () => {
   });
   const r = await doctor(root);
   expect(r.code).toBe(1);
-  expect(r.out).toContain("git rm --cached -- '.juxtapose/cache/baselines/*.webp'");
+  expect(r.out).toContain("rm --cached -- '.juxtapose/cache/baselines/*.webp'");
 });
 
 test('missing ignore lines are reported with the lines to add', async () => {
@@ -97,9 +103,10 @@ const hostile = 'x\'; $(touch pwned) `id` "q" y';
 
 test('a hostile storage.dir reaches the shell as a literal in every printed fix', async () => {
   const root = await repo({ [`${hostile}/a.webp`]: 'img' });
-  const issues = await findIssues(root, { kind: 'cache', dir: hostile });
+  const issues = await findIssues(root, { kind: 'cache', dir: hostile }, root);
   const tracked = issues.find((i) => i.code === 'tracked-images')!;
   const rm = tracked.fix[0]!.replace(/^git rm --cached -- /, '');
+  expect(tracked.fix[0]).toMatch(/^git rm --cached -- /);
   expect(execFileSync('sh', ['-c', `printf %s ${rm}`], { cwd: root }).toString()).toBe(
     `${hostile}/*.webp`,
   );
@@ -107,7 +114,7 @@ test('a hostile storage.dir reaches the shell as a literal in every printed fix'
   const args = /^printf '%s\\n' (.*) >> \.gitignore$/.exec(ignore)![1]!;
   expect(
     execFileSync('sh', ['-c', `printf '%s\\n' ${args}`], { cwd: root }).toString(),
-  ).toBe(`${hostile}/\n.juxtapose/runs/\n`);
+  ).toBe(`${hostile}/\n.juxtapose/baselines/*.webp\n.juxtapose/runs/\n`);
   expect(existsSync(path.join(root, 'pwned'))).toBe(false);
 });
 
@@ -117,4 +124,55 @@ test('a storage.dir with a newline or control character is refused', async () =>
     /control characters/,
   );
   await expect(findIssues(root, { kind: 'git', dir: 'a\u0001b' })).rejects.toThrow();
+});
+
+test('commands work from another directory: git -C and an absolute .gitignore, quoted', async () => {
+  const root = await repo({ '.juxtapose/baselines/a.webp': 'img' });
+  const issues = await findIssues(root, undefined, tmpdir());
+  const text = issues.flatMap((i) => i.fix).join('\n');
+  expect(text).toContain(`git -C ${root} rm --cached --`);
+  expect(text).toContain(`>> ${path.join(root, '.gitignore')}`);
+});
+
+// Following the printed commands must leave the repo clean and doctor happy.
+test('the full migration: run its fix commands, then nothing is untracked and doctor is ok', async () => {
+  const root = await repo({
+    '.juxtapose/baselines/a.webp': 'img',
+    '.juxtapose/baselines/b.webp': 'img2',
+    '.juxtapose/baselines/a.structure.json.gz': 'gz',
+    'juxtapose.manifest.json': '{"version":1,"baselines":{}}',
+  });
+  run(root, 'config', 'user.email', 'a@b.c');
+  run(root, 'config', 'user.name', 't');
+  const issues = await findIssues(root, undefined, root);
+  const tracked = issues.find((i) => i.code === 'tracked-images')!;
+  // `jux run` needs a workbench; the rest is what a person would paste.
+  for (const line of tracked.fix.filter((l) => !l.startsWith('jux '))) {
+    execFileSync('sh', ['-c', line], { cwd: root, stdio: 'ignore' });
+  }
+  const status = execFileSync('git', ['status', '--porcelain', '-uall'], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+  expect(status).not.toMatch(/\?\? .*\.webp/);
+  expect(await findIssues(root, undefined, root)).toEqual([]);
+  // The structure sidecar stayed tracked.
+  const files = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
+  expect(files).toContain('a.structure.json.gz');
+  expect(files).not.toContain('.webp');
+});
+
+test('untracked, un-ignored images are flagged', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jux-doctor-'));
+  run(root, 'init', '-q');
+  await mkdir(path.join(root, '.juxtapose/baselines'), { recursive: true });
+  await writeFile(path.join(root, '.juxtapose/baselines/a.webp'), 'img');
+  const codes = (await findIssues(root, undefined, root)).map((i) => i.code);
+  expect(codes).toContain('untracked-images');
+  expect(codes).toContain('missing-ignores');
+});
+
+test('a broader pattern or a parent .gitignore counts as covered', async () => {
+  const root = await repo({ '.gitignore': '.juxtapose/\n' });
+  expect(await findIssues(root, undefined, root)).toEqual([]);
 });

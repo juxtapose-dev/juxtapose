@@ -585,16 +585,31 @@ const projectChecked = {
   ),
 };
 
+/**
+ * Where a storage directory may point. It comes from the repo's own config and
+ * ends up in commands an agent is told to run, in `.gitignore` lines and in
+ * path joins, so it is a relative path inside the project with nothing a shell,
+ * a glob or a terminal could read as more than a name:
+ * no absolute path, no `..`, no leading `-` (an option to `git rm`), no
+ * `* ? [ ]`, no control characters (C0, DEL, C1), no line or bidi controls
+ * (U+2028/2029, U+202A-202E, U+2066-2069), and not `.juxtapose` or
+ * `.juxtapose/structure`, which hold the committed structure sidecars.
+ */
+export const STORAGE_DIR_PATTERN =
+  '^(?!-)(?!/)(?![A-Za-z]:)(?!(?:\\./)*\\.{0,2}/?$)(?!(?:\\./)*\\.juxtapose/?$)(?!(?:\\./)*\\.juxtapose/structure(?:/|$))(?!(?:.*/)?\\.\\.(?:/|$))[^*?\\[\\]\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]+$';
+
+const storageDir = (description: string) =>
+  Type.String({ pattern: STORAGE_DIR_PATTERN, description });
+
 export const StorageConfigSchema = Type.Union(
   [
     Type.Object(
       {
         kind: Type.Literal('cache'),
         dir: Type.Optional(
-          Type.String({
-            description:
-              'Local image cache directory, git-ignored. Default `.juxtapose/cache/baselines`.',
-          }),
+          storageDir(
+            'Local image cache directory, git-ignored. Default `.juxtapose/cache/baselines`.',
+          ),
         ),
       },
       {
@@ -606,7 +621,7 @@ export const StorageConfigSchema = Type.Union(
     Type.Object(
       {
         kind: Type.Literal('git'),
-        dir: Type.Optional(Type.String({ description: 'Baseline image directory.' })),
+        dir: Type.Optional(storageDir('Baseline image directory.')),
       },
       {
         additionalProperties: false,
@@ -616,7 +631,7 @@ export const StorageConfigSchema = Type.Union(
     Type.Object(
       {
         kind: Type.Literal('fs'),
-        dir: Type.String({ description: 'Baseline image directory.' }),
+        dir: storageDir('Baseline image directory.'),
       },
       { additionalProperties: false },
     ),
