@@ -6,6 +6,9 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+
+/** Config-derived paths reach git here; none of them is a pattern. */
+const LITERAL_PATHSPECS = { ...process.env, GIT_LITERAL_PATHSPECS: '1' };
 import path from 'node:path';
 
 /** `a`, `/a`, `a/` and `/a/` all ignore the same directory. */
@@ -26,6 +29,7 @@ function gitIgnores(projectRoot: string, sample: string): boolean | undefined {
     execFileSync('git', ['check-ignore', '-q', '--no-index', '--', sample], {
       cwd: projectRoot,
       stdio: 'ignore',
+      env: LITERAL_PATHSPECS,
     });
     return true;
   } catch (err) {
@@ -80,10 +84,7 @@ export async function ensureIgnored(
 
 /** Files jux needs committed; a path that git ignores here silently drops out
  *  of every `git add`, and CI loses the structure diffs without a word. */
-const COMMITTED_SAMPLES = [
-  'juxtapose.manifest.json',
-  '.juxtapose/structure/x.structure.json',
-];
+const COMMITTED_SAMPLES = ['juxtapose.manifest.json', 'juxtapose.config.json'];
 
 export interface IgnoredCommitted {
   /** The sample path git would ignore. */
@@ -101,7 +102,12 @@ export function ignoredCommittedPaths(projectRoot: string): IgnoredCommitted[] {
       const line = execFileSync(
         'git',
         ['check-ignore', '-v', '--no-index', '--', sample],
-        { cwd: projectRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+        {
+          cwd: projectRoot,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          env: LITERAL_PATHSPECS,
+        },
       ).trim();
       // "<source>:<line>:<pattern>\t<path>"
       const m = /^(.*?):\d+:(.*)\t/.exec(line);

@@ -391,12 +391,17 @@ export interface BaselineEntry extends ApprovalMeta {
   /** sha256 of the baseline image bytes. Detects drift between manifest
    *  and store without downloading the image. */
   hash: string;
+  /** The approved structure, inline, so CI can name the elements that changed
+   *  with no image and no second file to keep in step. `structureHash` is
+   *  stored once, in `ApprovalMeta`, and put back on read. */
+  structure?: Omit<StructureSnapshot, 'structureHash'>;
 }
 
 /** Committed to the repo. The source of truth for what "approved" means,
  *  regardless of which store holds the actual bytes. */
 export interface BaselineManifest {
-  version: 1;
+  /** 1: hashes only. 2: some entry carries an inline `structure`. */
+  version: 1 | 2;
   baselines: Record<string, BaselineEntry>;
 }
 
@@ -419,6 +424,9 @@ export type BaselineImageLookup =
  *  bytes vary by implementation. */
 export interface BaselineStore {
   get(storyId: string): Promise<Buffer | null>;
+  /** Optional: fold structure into manifest entries that lack it (a passing
+   *  run's snapshots). Returns how many entries gained structure. */
+  adoptStructures?(found: Map<string, StructureSnapshot>): Promise<number>;
   /** Optional: cache an image by its hash without touching the manifest. A
    *  passing run calls it so the cache fills from captures that match. */
   keepImage?(image: Buffer): Promise<void>;

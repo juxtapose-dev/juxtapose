@@ -594,12 +594,11 @@ const UNSAFE_CHARS = String.raw`\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u2
  * commands an agent is told to run and into path joins, so it is a relative
  * path inside the project with nothing a shell, a glob or a terminal could read
  * as more than a name: no absolute path or UNC share, no `..`, no leading `-`
- * (an option to `git rm`), no `* ? [ ]`, no unsafe characters, and not
- * `.juxtapose` or `.juxtapose/structure`, which hold the committed structure
- * sidecars. `\` counts as a separator everywhere `/` does, for Windows.
+ * (an option to `git rm`), no `* ? [ ]`, no unsafe characters, and not the
+ * manifest. `\` counts as a separator everywhere `/` does, for Windows.
  */
 export const STORAGE_DIR_PATTERN =
-  String.raw`^(?!-)(?![/\\])(?![A-Za-z]:)(?!(?:\.[/\\])*\.{0,2}[/\\]?$)(?!(?:\.[/\\])*\.juxtapose[/\\]?$)(?!(?:\.[/\\])*\.juxtapose[/\\]structure(?:[/\\]|$))(?!(?:.*[/\\])?\.\.(?:[/\\]|$))[^*?\[\]` +
+  String.raw`^(?!-)(?![/\\])(?![A-Za-z]:)(?!(?:\.[/\\])*\.{0,2}[/\\]?$)(?!(?:\.[/\\])*juxtapose\.manifest\.json(?:[/\\]|$))(?!(?:.*[/\\])?\.\.(?:[/\\]|$))[^*?\[\]` +
   UNSAFE_CHARS +
   String.raw`]+$`;
 

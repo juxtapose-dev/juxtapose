@@ -10,6 +10,7 @@ import { parseArgs } from 'node:util';
 import { EXIT } from './exit-codes.js';
 import { isRecord } from './guards.js';
 import { checkArgs, SPECS } from './cli-args.js';
+import { ManifestConflictError } from '@juxtapose/core';
 import { UserError } from './user-error.js';
 import { distance } from './suggest.js';
 import { BROWSER_HELP } from './commands/browser-help.js';
@@ -355,6 +356,11 @@ main(process.argv.slice(2))
     if (err instanceof UserError) {
       process.stderr.write(`jux: ${err.message}\n`);
       return exitAfterFlush(err.exit);
+    }
+    // The lockfile guidance is the whole message; it is the user's to act on.
+    if (err instanceof ManifestConflictError) {
+      process.stderr.write(`jux: ${err.message}\n`);
+      return exitAfterFlush(EXIT.usage);
     }
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(

@@ -23,24 +23,16 @@ test('an explicit git or fs kind keeps the repo-backed store', async () => {
 });
 
 test('commit hashes and structure, ignore images, by default', () => {
-  expect(committedPaths(undefined)).toEqual([
-    'juxtapose.manifest.json',
-    '.juxtapose/structure',
-  ]);
-  expect(ignoredPaths(undefined)).toEqual([
-    '.juxtapose/cache/',
-    '.juxtapose/tmp/',
-    '.juxtapose/baselines/*.webp',
-    '.juxtapose/runs/',
-  ]);
+  expect(committedPaths(undefined)).toEqual(['juxtapose.manifest.json']);
+  // One line: .juxtapose/ holds only machine-local data.
+  expect(ignoredPaths(undefined)).toEqual(['.juxtapose/']);
 });
 
 test('a custom cache dir is what gets ignored', () => {
   expect(ignoredPaths({ kind: 'cache', dir: 'tmp/imgs/' })).toEqual([
+    '.juxtapose/',
     'tmp/imgs/',
     'tmp/imgs.tmp/',
-    '.juxtapose/baselines/*.webp',
-    '.juxtapose/runs/',
   ]);
 });
 
@@ -62,14 +54,11 @@ test.each([
   'a*',
   'a[1]',
   '.',
-  '.juxtapose',
-  '.juxtapose/structure',
-  '.juxtapose/structure/x',
+  'juxtapose.manifest.json',
+  './juxtapose.manifest.json',
   // Windows separators count as separators.
   '..\\x',
   'a\\..\\b',
-  '.juxtapose\\structure',
-  '.juxtapose\\structure\\x',
   '\\\\server\\share',
   '\\abs',
 ])('cache dir %j is refused by the runtime check and the schema', (dir) => {

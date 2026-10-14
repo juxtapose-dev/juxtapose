@@ -13,6 +13,8 @@ import {
   ignoredPaths,
   shellQuote,
 } from '@juxtapose/core';
+
+const MANIFEST_NAME = 'juxtapose.manifest.json';
 import { checkStorage, loadConfig, type CommonFlags } from '../context.js';
 import { ignoredCommittedPaths, missingIgnores } from '../gitignore.js';
 import { stdio, type Session } from '../io.js';
@@ -20,10 +22,25 @@ import { stdio, type Session } from '../io.js';
 /** One thing doctor found, with the commands that fix it. */
 export interface DoctorIssue {
   code:
-    'tracked-images' | 'untracked-images' | 'missing-ignores' | 'committed-paths-ignored';
+    | 'tracked-images'
+    | 'legacy-sidecars'
+    | 'untracked-images'
+    | 'missing-ignores'
+    | 'committed-paths-ignored';
   message: string;
   files?: string[];
   fix: string[];
+}
+
+/** `storage.dir` may hold `* ? [` and git expands those in a pathspec, so every
+ *  git call here reads its paths literally. */
+const LITERAL_PATHSPECS = { ...process.env, GIT_LITERAL_PATHSPECS: '1' };
+
+/** A pathspec for the files directly in `dir` ending in `suffix`, for a printed
+ *  command: `:(glob)` so `*` means "any name" and the directory's own glob
+ *  characters are escaped to mean themselves. */
+export function globPathspec(dir: string, suffix: string): string {
+  return shellQuote(`:(glob)${dir.replace(/[\\*?[\]]/g, '\\$&')}/*${suffix}`);
 }
 
 /** Files shown per issue in text output; --json lists all of them. */
@@ -36,6 +53,7 @@ function listedImages(
   projectRoot: string,
   dir: string,
   others: boolean,
+  suffix = '.webp',
 ): string[] | null {
   try {
     const args = [
@@ -45,10 +63,11 @@ function listedImages(
     ];
     const out = execFileSync('git', [...args, '--', dir], {
       cwd: projectRoot,
+      env: LITERAL_PATHSPECS,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
-    return out.split('\0').filter((f) => f.endsWith('.webp'));
+    return out.split('\0').filter((f) => f.endsWith(suffix));
   } catch {
     return null;
   }
@@ -67,9 +86,6 @@ function commandsFor(projectRoot: string, cwd: string) {
   return {
     git: (rest: string) => (here ? `git ${rest}` : `git -C ${root} ${rest}`),
     gitignore: here ? '.gitignore' : shellQuote(path.join(projectRoot, '.gitignore')),
-    gitignoreTmp: here
-      ? '.gitignore.jux-new'
-      : shellQuote(path.join(projectRoot, '.gitignore.jux-new')),
     run: (rest: string) => (here ? `jux ${rest}` : `jux ${rest} --project ${root}`),
   };
 }
@@ -107,13 +123,36 @@ export async function findIssues(
             // that matches the manifest into the cache, which is the copy that
             // survives once the commit below deletes them from other clones.
             ...(dir === LEGACY_IMAGE_DIR ? [cmd.run('run --all')] : []),
-            cmd.git(`rm --cached -- ${shellQuote(`${dir}/*.webp`)}`),
+            cmd.git(`rm --cached -- ${globPathspec(dir, '.webp')}`),
             ...(missing.length > 0
               ? [ignoreFix(missing), cmd.git(`add -- ${shellQuote('.gitignore')}`)]
               : []),
             cmd.git(`commit -m ${shellQuote('Stop tracking juxtapose baseline images')}`),
           ],
         });
+      }
+      if (dir === LEGACY_IMAGE_DIR) {
+        const sidecars = listedImages(projectRoot, dir, false, '.structure.json.gz');
+        if (sidecars?.length) {
+          issues.push({
+            code: 'legacy-sidecars',
+            message:
+              `${sidecars.length} legacy structure ${plural(sidecars.length, 'file is', 'files are')} tracked in ${dir}/. ` +
+              `Structure now lives in ${MANIFEST_NAME}.`,
+            files: sidecars,
+            fix: [
+              // A run folds each passing story's structure into the manifest,
+              // and an approve does it for the rest; untrack only after.
+              cmd.run('run --all'),
+              cmd.run('approve --all'),
+              cmd.git(`rm --cached -- ${globPathspec(dir, '.structure.json.gz')}`),
+              cmd.git(`add -- ${shellQuote(MANIFEST_NAME)}`),
+              cmd.git(
+                `commit -m ${shellQuote('Move juxtapose structure into the manifest')}`,
+              ),
+            ],
+          });
+        }
       }
       const loose = listedImages(projectRoot, dir, true);
       if (loose?.length) {
@@ -141,29 +180,17 @@ export async function findIssues(
     });
   }
 
-  // The files jux needs committed must not be ignored. A broad `.juxtapose/`
-  // line hides the structure sidecars: git cannot re-include a file whose
-  // parent directory is excluded, so the fix rewrites that line to
-  // `.juxtapose/*` (ignore the contents) and then un-ignores the structure dir.
+  // The files jux needs committed must not be ignored: `git add` would skip
+  // them silently. The patterns that do it are the user's, so the fix is theirs.
   const hidden = ignoredCommittedPaths(projectRoot);
   if (hidden.length > 0) {
-    const broad = hidden.every(
-      (h) => h.source === '.gitignore' && /^\/?\.juxtapose\/?$/.test(h.pattern ?? ''),
-    );
     issues.push({
       code: 'committed-paths-ignored',
       message:
         `.gitignore ignores ${hidden.map((h) => h.path).join(' and ')}, which juxtapose commits, ` +
-        `so \`git add\` skips them and CI loses the structure diffs.` +
-        (broad
-          ? ''
-          : ` Edit the pattern that matches (${hidden[0]?.source ?? 'unknown'}) by hand.`),
-      fix: broad
-        ? [
-            `sed 's|^/\\{0,1\\}\\.juxtapose/\\{0,1\\}$|.juxtapose/*|' ${cmd.gitignore} > ${cmd.gitignoreTmp} && mv ${cmd.gitignoreTmp} ${cmd.gitignore}`,
-            `printf '%s\\n' '!.juxtapose/structure/' >> ${cmd.gitignore}`,
-          ]
-        : [],
+        `so \`git add\` skips ${hidden.length === 1 ? 'it' : 'them'}. ` +
+        `Edit the pattern that matches (${hidden[0]?.source ?? 'unknown'}${hidden[0]?.pattern ? `: ${hidden[0].pattern}` : ''}) by hand.`,
+      fix: [],
     });
   }
   return issues;

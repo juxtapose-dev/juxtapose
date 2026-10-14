@@ -141,7 +141,6 @@ export { GitBaselineStore, encodeStoryId } from './baseline/git-store.js';
 export {
   CacheBaselineStore,
   DEFAULT_CACHE_DIR,
-  STRUCTURE_DIR,
   LEGACY_IMAGE_DIR,
 } from './baseline/cache-store.js';
 export {
@@ -154,6 +153,7 @@ export {
 // hashImage is exported because anything comparing against a manifest entry
 // must use the same function the manifest was written with, not its own copy.
 export { hashImage } from './baseline/status.js';
+export { ManifestConflictError } from './baseline/manifest-file.js';
 export type { BaselineStatus, AncestryCheck } from './baseline/status.js';
 export { createAncestryCheck, alwaysAncestor } from './git/ancestry.js';
 

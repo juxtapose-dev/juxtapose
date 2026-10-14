@@ -3,8 +3,10 @@
 // A project commits hashes and metadata, never pixels:
 //   - `juxtapose.manifest.json`: the per-story hash. This alone decides
 //     pass/fail, so CI needs no image to detect a change.
-//   - `.juxtapose/structure/<id>.structure.json`: the per-story structure
-//     sidecar, so CI can also say which elements changed without an image.
+//     The same entry carries the approved structure inline, so CI can also say
+//     which elements changed without an image. One committed file, like a
+//     lockfile; it is regenerated on a merge conflict, not hand-merged.
+// Everything under `.juxtapose/` is machine-local and ignored as one line.
 // Images live in a local, git-ignored cache keyed by their own sha256
 // (`<hash>.webp`). Content addressing is what makes this safe to rebuild
 // from anywhere: a main-branch CI run saves the directory, a PR run restores
@@ -18,13 +20,23 @@
 
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import type {
   ApprovalMeta,
   BaselineImageLookup,
   BaselineManifest,
   BaselineStore,
+  StructureSnapshot,
 } from '../types.js';
 import { encodeStoryId } from './git-store.js';
 import {
@@ -33,6 +45,7 @@ import {
   readManifestFileSync,
   writeManifestFile,
 } from './manifest-file.js';
+import { decodeStructure } from '../capture/structure.js';
 import { hashImage } from './status.js';
 
 /** A manifest is repo content, so its hash is untrusted input to a path join. */
@@ -55,7 +68,6 @@ export function tmpDirFor(cacheDir: string | undefined): string {
     : `${cacheDir.replace(/\/+$/, '')}.tmp`;
 }
 
-export const STRUCTURE_DIR = '.juxtapose/structure';
 /** Where the repo-backed store kept images. Read-only here, so a project that
  *  upgrades keeps its diffs until it migrates. */
 export const LEGACY_IMAGE_DIR = '.juxtapose/baselines';
@@ -64,20 +76,26 @@ export interface CacheStoreOptions {
   projectRoot: string;
   /** Image cache, relative to projectRoot. Default `.juxtapose/cache/baselines`. */
   dir?: string;
+  /** Told when a directory is refused because it is a link or leads outside
+   *  the project. Caching is skipped; nothing is ever written through it. */
+  onWarning?: (message: string) => void;
 }
 
 export class CacheBaselineStore implements BaselineStore {
   private readonly cacheDir: string;
   private readonly tmpDir: string;
   private swept = false;
-  private readonly structureDir: string;
   private readonly legacyDir: string;
   private readonly manifestPath: string;
+  private readonly root: string;
+  private readonly warn: (message: string) => void;
+  private readonly refused = new Set<string>();
 
   constructor(opts: CacheStoreOptions) {
+    this.root = opts.projectRoot;
+    this.warn = opts.onWarning ?? (() => {});
     this.cacheDir = path.join(opts.projectRoot, opts.dir ?? DEFAULT_CACHE_DIR);
     this.tmpDir = path.join(opts.projectRoot, tmpDirFor(opts.dir));
-    this.structureDir = path.join(opts.projectRoot, STRUCTURE_DIR);
     this.legacyDir = path.join(opts.projectRoot, LEGACY_IMAGE_DIR);
     this.manifestPath = path.join(opts.projectRoot, MANIFEST_NAME);
   }
@@ -88,10 +106,6 @@ export class CacheBaselineStore implements BaselineStore {
 
   private legacyImagePath(storyId: string): string {
     return path.join(this.legacyDir, `${encodeStoryId(storyId)}.webp`);
-  }
-
-  private structurePath(storyId: string): string {
-    return path.join(this.structureDir, `${encodeStoryId(storyId)}.structure.json`);
   }
 
   async lookup(storyId: string): Promise<BaselineImageLookup> {
@@ -137,17 +151,51 @@ export class CacheBaselineStore implements BaselineStore {
   }
 
   /**
+   * A directory jux may write into: a real directory, not a link, whose real
+   * path is where it claims to be. A repo can commit `.juxtapose/tmp` as a
+   * symlink; writing or deleting through it would reach wherever it points.
+   * Refused once per directory, with a warning, and the caller skips the work.
+   */
+  private async ensureRealDir(dir: string): Promise<boolean> {
+    const refuse = (why: string) => {
+      if (!this.refused.has(dir)) {
+        this.refused.add(dir);
+        this.warn(`not using ${path.relative(this.root, dir)}: ${why}`);
+      }
+      return false;
+    };
+    const before = await lstat(dir).catch(() => null);
+    if (before && (before.isSymbolicLink() || !before.isDirectory()))
+      return refuse('it is a link or not a directory');
+    await mkdir(dir, { recursive: true });
+    const [real, rootReal] = await Promise.all([realpath(dir), realpath(this.root)]);
+    return real === path.join(rootReal, path.relative(this.root, dir))
+      ? true
+      : refuse('it resolves outside the project');
+  }
+
+  /** Same test without creating anything, for deletes. */
+  private async isRealDir(dir: string): Promise<boolean> {
+    const info = await lstat(dir).catch(() => null);
+    return info !== null && info.isDirectory() && !info.isSymbolicLink();
+  }
+
+  /**
    * Delete temp files older than an hour: a process killed mid-write (kill -9,
-   * a CI timeout) leaves one, and nothing else ever would. Best effort. The
-   * cache dir is swept too, for temp files an older version left inside it.
+   * a CI timeout) leaves one, and nothing else ever would. Best effort, and
+   * only regular files in real directories, never following a link. The cache
+   * dir is swept too, for temp files an older version left inside it.
    */
   async sweepStaleTmp(now = Date.now()): Promise<void> {
     for (const dir of [this.tmpDir, this.cacheDir]) {
+      if (!(await this.isRealDir(dir))) continue;
       const names = await readdir(dir).catch(() => [] as string[]);
       for (const name of names.filter((n) => n.endsWith('.tmp'))) {
         const file = path.join(dir, name);
-        const info = await stat(file).catch(() => null);
-        if (info && now - info.mtimeMs > STALE_TMP_MS) await rm(file, { force: true });
+        const info = await lstat(file).catch(() => null);
+        if (info?.isFile() && now - info.mtimeMs > STALE_TMP_MS) {
+          await rm(file, { force: true });
+        }
       }
     }
   }
@@ -168,8 +216,8 @@ export class CacheBaselineStore implements BaselineStore {
       return bytes !== null && hashImage(bytes) === hash;
     };
     if (await valid()) return;
-    await mkdir(this.cacheDir, { recursive: true });
-    await mkdir(this.tmpDir, { recursive: true });
+    if (!(await this.ensureRealDir(this.cacheDir))) return;
+    if (!(await this.ensureRealDir(this.tmpDir))) return;
     if (!this.swept) {
       this.swept = true;
       await this.sweepStaleTmp().catch(() => {});
@@ -179,7 +227,8 @@ export class CacheBaselineStore implements BaselineStore {
     // pid alone collides between concurrent calls in one process.
     const tmp = path.join(this.tmpDir, `${hash}.${randomUUID()}.tmp`);
     try {
-      await writeFile(tmp, image);
+      // `wx`: never overwrite, and never open something already there.
+      await writeFile(tmp, image, { flag: 'wx' });
       await rename(tmp, file);
     } catch (err) {
       await rm(tmp, { force: true });
@@ -194,8 +243,6 @@ export class CacheBaselineStore implements BaselineStore {
     await this.keepImage(image);
     // A previous baseline's sidecar must not outlive its pixels: a capture
     // approved without structure would otherwise inherit the old one.
-    await rm(this.structurePath(storyId), { force: true });
-
     const manifest = await this.readManifest();
     manifest.baselines[storyId] = { ...meta, hash };
     await this.writeManifest(manifest);
@@ -204,27 +251,61 @@ export class CacheBaselineStore implements BaselineStore {
   async remove(storyId: string): Promise<void> {
     // The image stays: it is named by content, so another story or another
     // commit's manifest may still point at it.
-    await rm(this.structurePath(storyId), { force: true });
     const manifest = await this.readManifest();
     delete manifest.baselines[storyId];
     await this.writeManifest(manifest);
   }
 
   async putStructure(storyId: string, structure: Buffer): Promise<void> {
-    await mkdir(this.structureDir, { recursive: true });
-    await writeFile(this.structurePath(storyId), structure);
+    const manifest = await this.readManifest();
+    const entry = manifest.baselines[storyId];
+    if (!entry)
+      throw new Error(`no manifest entry for ${storyId} to attach structure to`);
+    // `put` already wrote the entry, so this is its second write; stores are
+    // not batched because approvals are one story at a time.
+    const { structureHash, ...rest } = decodeStructure(structure);
+    manifest.baselines[storyId] = { ...entry, structureHash, structure: rest };
+    await this.writeManifest(manifest);
   }
 
   async getStructure(storyId: string): Promise<Buffer | null> {
-    for (const file of [
-      this.structurePath(storyId),
-      // Old layout: gzip beside the image.
-      path.join(this.legacyDir, `${encodeStoryId(storyId)}.structure.json.gz`),
-    ]) {
-      const bytes = await readFile(file).catch(() => null);
-      if (bytes) return bytes;
+    const entry = (await this.readManifest()).baselines[storyId];
+    if (entry?.structure && entry.structureHash) {
+      // Same plain JSON `decodeStructure` reads from any other source.
+      return Buffer.from(
+        JSON.stringify({ ...entry.structure, structureHash: entry.structureHash }),
+      );
     }
-    return null;
+    // Old layout: gzip beside the image.
+    return readFile(
+      path.join(this.legacyDir, `${encodeStoryId(storyId)}.structure.json.gz`),
+    ).catch(() => null);
+  }
+
+  /**
+   * Fold structure into entries that lack it. A project upgrading from the old
+   * layout has its structure in per-story files; a passing run proves the
+   * capture is the approved one, so its structure is the approved structure
+   * (same hash, same render) and can move into the manifest. One write.
+   * Returns how many entries gained structure.
+   */
+  async adoptStructures(found: Map<string, StructureSnapshot>): Promise<number> {
+    const manifest = await this.readManifest();
+    let changed = 0;
+    for (const [id, snapshot] of found) {
+      const entry = manifest.baselines[id];
+      if (!entry || entry.structure) continue;
+      if (
+        entry.structureHash !== undefined &&
+        entry.structureHash !== snapshot.structureHash
+      )
+        continue;
+      const { structureHash, ...rest } = snapshot;
+      manifest.baselines[id] = { ...entry, structureHash, structure: rest };
+      changed++;
+    }
+    if (changed > 0) await this.writeManifest(manifest);
+    return changed;
   }
 
   readManifest(): Promise<BaselineManifest> {

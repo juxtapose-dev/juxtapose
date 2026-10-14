@@ -37,6 +37,7 @@ import {
   formatPercent,
   BASELINE_IMAGE_UNAVAILABLE,
   type ProjectConfig,
+  type StructureSnapshot,
   committedPaths,
   formatPhases,
   phases,
@@ -244,6 +245,9 @@ export async function runCommand(
 
     // Inside the try, so a failed mkdir still closes the browser below.
     await mkdir(path.join(runDir, 'images'), { recursive: true });
+    // Passing captures' structure, to fold into manifest entries that lack it
+    // (a project upgrading from per-story sidecar files).
+    const passed = new Map<string, StructureSnapshot>();
     const report = await runCapture({
       browser,
       platform: ctx.platform,
@@ -276,7 +280,10 @@ export async function runCommand(
         await writeArtifact(runDir, a);
         // A pass matches the manifest hash, so this capture is the approved
         // image: keep it for the failure that needs it later.
-        if (a.status === 'pass') await ctx.store.keepImage?.(a.current).catch(() => {});
+        if (a.status === 'pass') {
+          await ctx.store.keepImage?.(a.current).catch(() => {});
+          if (a.structure) passed.set(a.storyId, a.structure);
+        }
       },
       onWarning: warn,
       onProgress: (done, total, storyId) => {
@@ -292,6 +299,9 @@ export async function runCommand(
     });
 
     if (!ctx.json) io.err('\r' + ' '.repeat(70) + '\r');
+    if (passed.size > 0 && !signal?.aborted) {
+      await ctx.store.adoptStructures?.(passed).catch(() => {});
+    }
 
     // A cancelled run (jux mcp) captured only part of the selection. Writing
     // its report would make it the "last run" that check, handoff and approve

@@ -11,7 +11,6 @@ import {
   CacheBaselineStore,
   DEFAULT_CACHE_DIR,
   LEGACY_IMAGE_DIR,
-  STRUCTURE_DIR,
   tmpDirFor,
 } from './cache-store.js';
 import { GitBaselineStore } from './git-store.js';
@@ -41,7 +40,7 @@ export function safeStorageDir(
   if (dir !== undefined && !new RegExp(pattern).test(dir))
     throw new StorageConfigError(
       kind === 'cache'
-        ? `storage.dir ${JSON.stringify(dir)} is not allowed for the cache: use a relative path inside the project, without \`..\`, glob characters, control characters or a leading '-', and not .juxtapose or .juxtapose/structure`
+        ? `storage.dir ${JSON.stringify(dir)} is not allowed for the cache: use a relative path inside the project, without \`..\`, glob characters, control characters or a leading '-', and not the manifest`
         : `storage.dir ${JSON.stringify(dir)} is not allowed: it must not start with '-' or contain control, line-separator or bidi characters`,
     );
   return dir;
@@ -85,7 +84,7 @@ export function committedPaths(storage: StorageConfig | undefined): string[] {
   const chosen: StorageConfig = storage ?? { kind: 'cache' };
   return chosen.kind === 'git' || chosen.kind === 'fs'
     ? [MANIFEST_NAME, safeStorageDir(chosen.dir, chosen.kind) ?? LEGACY_IMAGE_DIR]
-    : [MANIFEST_NAME, STRUCTURE_DIR];
+    : [MANIFEST_NAME];
 }
 
 /**
@@ -96,17 +95,19 @@ export function committedPaths(storage: StorageConfig | undefined): string[] {
  */
 export function ignoredPaths(storage: StorageConfig | undefined): string[] {
   const chosen: StorageConfig = storage ?? { kind: 'cache' };
-  const runs = '.juxtapose/runs/';
   const checked =
     chosen.kind === 's3' ? undefined : safeStorageDir(chosen.dir, chosen.kind);
-  if (chosen.kind !== 'cache') return [runs];
+  // Repo-backed stores commit `.juxtapose/baselines`, so they ignore only the
+  // run output.
+  if (chosen.kind !== 'cache') return ['.juxtapose/runs/'];
   const dir = (checked ?? DEFAULT_CACHE_DIR).replace(/\/+$/, '');
-  // The default sits under .juxtapose/cache/ so a future cache kind shares one entry.
-  // The old layout's images are ignored too, so untracking them (the migration)
-  // leaves nothing for `git status` to offer back as untracked.
-  const legacy = `${LEGACY_IMAGE_DIR}/*.webp`;
-  const tmp = `${tmpDirFor(dir)}/`;
-  return dir === DEFAULT_CACHE_DIR
-    ? ['.juxtapose/cache/', tmp, legacy, runs]
-    : [`${dir}/`, tmp, legacy, runs];
+  // `.juxtapose/` holds only machine-local data (cache, runs, tmp, the old
+  // image layout), so one line covers it. A cache dir elsewhere, and the temp
+  // dir beside it, need their own.
+  return dir.startsWith('.juxtapose/')
+    ? [
+        '.juxtapose/',
+        ...(tmpDirFor(dir).startsWith('.juxtapose/') ? [] : [`${tmpDirFor(dir)}/`]),
+      ]
+    : ['.juxtapose/', `${dir}/`, `${tmpDirFor(dir)}/`];
 }
