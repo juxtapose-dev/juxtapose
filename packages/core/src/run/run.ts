@@ -317,14 +317,28 @@ async function judge(
 
   const baseline = await opts.store.get(story.storyId);
   if (!baseline) {
-    // The manifest claimed a baseline the store can't produce.
+    // The manifest's hash decided this failure; the image behind it is not on
+    // this machine (cold CI cache, fresh clone). That is the normal state of a
+    // project that never commits images, so explain with structure alone
+    // rather than erroring: no pixel diff exists, and none is claimed.
     await opts.onArtifact?.({
       storyId: story.storyId,
       status,
       current: snapshot.image,
       structure: snapshot.structure,
     });
-    return { ...base, error: 'baseline missing from store' };
+    const structural = await tryStructural(
+      opts,
+      story,
+      snapshot,
+      { changedRegions: [], dimensionMismatch: false },
+      p,
+    );
+    return {
+      ...base,
+      baselineImage: 'unavailable',
+      ...(structural ? { structural } : {}),
+    };
   }
 
   // Counted as well as timed: under a byte-exact hash the number of diffs is

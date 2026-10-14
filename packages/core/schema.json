@@ -1356,10 +1356,29 @@
       }
     },
     "storage": {
-      "description": "Where baseline images live. The manifest is always in git. Default `{ \"kind\": \"git\" }`.",
+      "description": "Where baseline images live. The manifest and structure sidecars are always committed. Default `{ \"kind\": \"cache\" }`.",
       "anyOf": [
         {
           "additionalProperties": false,
+          "description": "The default. Images live in a local cache keyed by hash and are never committed; the manifest and `.juxtapose/structure/` are.",
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "cache",
+              "type": "string"
+            },
+            "dir": {
+              "description": "Local image cache directory, git-ignored. Default `.juxtapose/cache/baselines`.",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "description": "Commit baseline images to the repo (the layout before 0.15).",
           "type": "object",
           "required": [
             "kind"

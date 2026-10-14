@@ -589,10 +589,29 @@ export const StorageConfigSchema = Type.Union(
   [
     Type.Object(
       {
+        kind: Type.Literal('cache'),
+        dir: Type.Optional(
+          Type.String({
+            description:
+              'Local image cache directory, git-ignored. Default `.juxtapose/cache/baselines`.',
+          }),
+        ),
+      },
+      {
+        additionalProperties: false,
+        description:
+          'The default. Images live in a local cache keyed by hash and are never committed; the manifest and `.juxtapose/structure/` are.',
+      },
+    ),
+    Type.Object(
+      {
         kind: Type.Literal('git'),
         dir: Type.Optional(Type.String({ description: 'Baseline image directory.' })),
       },
-      { additionalProperties: false },
+      {
+        additionalProperties: false,
+        description: 'Commit baseline images to the repo (the layout before 0.15).',
+      },
     ),
     Type.Object(
       {
@@ -616,7 +635,7 @@ export const StorageConfigSchema = Type.Union(
   ],
   {
     description:
-      'Where baseline images live. The manifest is always in git. Default `{ "kind": "git" }`.',
+      'Where baseline images live. The manifest and structure sidecars are always committed. Default `{ "kind": "cache" }`.',
   },
 );
 

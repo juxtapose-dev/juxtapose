@@ -196,11 +196,26 @@ test('a store whose getStructure throws never fails the run', async () => {
   expect(r.results[0].structural?.flags).toContain('no-baseline-structure');
 });
 
-test('a baseline missing from the store has no structural', async () => {
+// The cache store holds hashes and structure in the repo but not the image, so
+// a failing story with a cold cache must still be reported by hash and
+// structure instead of erroring.
+test('a baseline image missing from the store fails by hash with structure only', async () => {
   const s = { ...store('ok'), get: async () => null };
   const r = await run(s);
-  expect(r.results[0].error).toBe('baseline missing from store');
-  expect(r.results[0].structural).toBeUndefined();
+  expect(r.results[0].status).toBe('fail');
+  expect(r.results[0].error).toBeUndefined();
+  expect(r.results[0].baselineImage).toBe('unavailable');
+  expect(r.results[0].structural?.classification).toBe('style-only');
+  // No pixel diff ran, so no pixel numbers are claimed.
+  expect(r.results[0].mismatchPixels).toBe(0);
+  expect(r.results[0].changedRegions).toEqual([]);
+});
+
+test('a missing baseline image and a missing sidecar still do not throw', async () => {
+  const s = { ...store('missing'), get: async () => null };
+  const r = await run(s);
+  expect(r.results[0].status).toBe('fail');
+  expect(r.results[0].baselineImage).toBe('unavailable');
 });
 
 test('a dimension mismatch carries the error and still a verdict', async () => {

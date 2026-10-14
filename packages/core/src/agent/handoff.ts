@@ -19,7 +19,7 @@ import type {
 import { describeDeltas } from '../diff/structural/summary.js';
 import { describeUnstable } from '../baseline/approve.js';
 import { shellQuote } from '../shell-quote.js';
-import { compareCodeUnits } from '../report/format.js';
+import { BASELINE_IMAGE_UNAVAILABLE, compareCodeUnits } from '../report/format.js';
 
 export interface HandoffPayload {
   storyId: string;
@@ -30,6 +30,8 @@ export interface HandoffPayload {
   mismatchPercent: number;
   mismatchPixels: number;
   changedRegions: ChangedRegion[];
+  /** See DiffResult.baselineImage: no pixel numbers below are real. */
+  baselineImage?: 'unavailable';
   viewport: Viewport;
   /** Absolute path to the story's source file, when known. */
   componentPath: string;
@@ -167,6 +169,14 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     lines.push(`Read \`${p.diffDataPath}\` for the full machine-readable diff.`, '');
   }
 
+  const imageUnavailable = p.baselineImage === 'unavailable';
+  if (imageUnavailable) {
+    lines.push(
+      `Note: ${BASELINE_IMAGE_UNAVAILABLE}. The hash differs from the approved one, but the approved image is not on this machine, so there is no pixel diff, crops, or diff overlay. Restore the image cache (or run \`jux run\` on the base commit) to get them.`,
+      '',
+    );
+  }
+
   const v = p.structural;
   // Missing data is not a verdict: with no snapshot on one side and nothing
   // to list, a structure section would be empty and misleading.
@@ -218,43 +228,45 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     lines.push('');
   }
 
-  lines.push(v && !missing ? '## Pixels' : '## What changed');
-  lines.push('');
-  lines.push('```json');
-  lines.push(
-    JSON.stringify(
-      {
-        storyId: p.storyId,
-        mismatchPercent: round(p.mismatchPercent),
-        mismatchPixels: p.mismatchPixels,
-        viewport: p.viewport,
-        regionCount: p.changedRegions.length,
-      },
-      null,
-      2,
-    ),
-  );
-  lines.push('```');
-  lines.push('');
-
-  if (p.changedRegions.length > 0) {
-    lines.push('## Where it changed');
+  if (!imageUnavailable) {
+    lines.push(v && !missing ? '## Pixels' : '## What changed');
     lines.push('');
-    for (const r of p.changedRegions.slice(0, MAX_REGIONS)) {
-      lines.push(`- ${describeRegion(r, p.viewport)}`);
+    lines.push('```json');
+    lines.push(
+      JSON.stringify(
+        {
+          storyId: p.storyId,
+          mismatchPercent: round(p.mismatchPercent),
+          mismatchPixels: p.mismatchPixels,
+          viewport: p.viewport,
+          regionCount: p.changedRegions.length,
+        },
+        null,
+        2,
+      ),
+    );
+    lines.push('```');
+    lines.push('');
+
+    if (p.changedRegions.length > 0) {
+      lines.push('## Where it changed');
+      lines.push('');
+      for (const r of p.changedRegions.slice(0, MAX_REGIONS)) {
+        lines.push(`- ${describeRegion(r, p.viewport)}`);
+      }
+      if (p.changedRegions.length > MAX_REGIONS) {
+        lines.push(
+          `- …and ${p.changedRegions.length - MAX_REGIONS} more (see the diff data file)`,
+        );
+      }
+      lines.push('');
     }
-    if (p.changedRegions.length > MAX_REGIONS) {
-      lines.push(
-        `- …and ${p.changedRegions.length - MAX_REGIONS} more (see the diff data file)`,
-      );
-    }
+
+    lines.push('## Assessment');
+    lines.push('');
+    lines.push(magnitudeHint(p.mismatchPercent, p.structural?.deltaCount ?? 0));
     lines.push('');
   }
-
-  lines.push('## Assessment');
-  lines.push('');
-  lines.push(magnitudeHint(p.mismatchPercent, p.structural?.deltaCount ?? 0));
-  lines.push('');
 
   lines.push(...actions(p, { approveVerb: 'accept the new rendering' }));
 

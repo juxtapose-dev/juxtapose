@@ -133,6 +133,8 @@ export function imageUrl(
 export function isSubThreshold(result: DiffResult | undefined): boolean {
   return (
     result?.status === 'fail' &&
+    // No pixel diff ran at all; "marks no pixels" would be a false claim.
+    result.baselineImage !== 'unavailable' &&
     result.mismatchPixels === 0 &&
     result.mismatchPercent === 0
   );

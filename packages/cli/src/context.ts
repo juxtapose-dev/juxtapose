@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import type { BaselineStore, Platform, ProjectConfig } from '@juxtapose/core';
-import { GitBaselineStore, createUrlPlatform } from '@juxtapose/core';
+import { createBaselineStore, createUrlPlatform } from '@juxtapose/core';
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 import { LadlePlatform } from '@juxtapose/adapter-ladle';
 import { UserError } from './user-error.js';
@@ -139,17 +139,12 @@ async function resolvePlatform(
 }
 
 function createStore(projectRoot: string, config: ProjectConfig): BaselineStore {
-  const storage = config.storage ?? { kind: 'git' as const };
-  switch (storage.kind) {
-    case 'git':
-      return new GitBaselineStore({ projectRoot, dir: storage.dir });
-    case 'fs':
-      return new GitBaselineStore({ projectRoot, dir: storage.dir });
-    case 's3':
-      throw new UserError(
-        'the s3 baseline store is not implemented yet; use the default git store',
-      );
+  if (config.storage?.kind === 's3') {
+    throw new UserError(
+      'the s3 baseline store is not implemented yet; use the default cache store',
+    );
   }
+  return createBaselineStore(projectRoot, config.storage);
 }
 
 /**

@@ -433,3 +433,25 @@ describe('buildComment with variants', () => {
     expect(body).toContain('2 stories match their baselines.');
   });
 });
+
+describe('baseline image unavailable', () => {
+  const unavailable = (): DiffResult => ({
+    ...result('a--b', 'fail'),
+    baselineImage: 'unavailable',
+  });
+
+  it('says structure diff only instead of a percentage, and still triages', () => {
+    const body = buildComment({ report: report([unavailable()]) });
+    expect(body).toContain(
+      'baseline image not available (not in cache); structure diff only',
+    );
+    expect(body).not.toContain('0%');
+    expect(body).not.toContain('subtle');
+  });
+
+  it('tells reviewers to commit the manifest and structure, never images', () => {
+    const body = buildComment({ report: report([unavailable()]) });
+    expect(body).toContain('.juxtapose/structure/');
+    expect(body).not.toContain('.juxtapose/baselines/');
+  });
+});

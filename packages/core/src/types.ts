@@ -316,6 +316,10 @@ export interface DiffResult {
   viewport?: Viewport;
   /** Set when the capture or diff threw. status is 'fail' in that case. */
   error?: string;
+  /** Set on a 'fail' whose approved image is not on this machine (not in the
+   *  baseline cache): the hash mismatch stands, the pixel diff could not run,
+   *  and `structural` is all there is to explain it. */
+  baselineImage?: 'unavailable';
   /** Tier-0 explanation of a failure. Present only when status is 'fail' and
    *  the current capture produced a structure; never consulted on pass. */
   structural?: StructuralVerdict;
@@ -396,15 +400,33 @@ export interface BaselineManifest {
   baselines: Record<string, BaselineEntry>;
 }
 
+/**
+ * What a store can say about a story's baseline image. A manifest hash does
+ * not imply the bytes are on this machine (the default store keeps images in
+ * a local cache that CI restores), so "no image" is a normal answer with a
+ * reason, not an error.
+ */
+export type BaselineImageLookup =
+  | { kind: 'found'; image: Buffer }
+  | {
+      kind: 'unavailable';
+      reason: 'no-manifest-entry' | 'not-in-cache';
+      /** The approved hash the missing image would have had. */
+      hash?: string;
+    };
+
 /** Baseline persistence. The manifest always lives in git; only the image
  *  bytes vary by implementation. */
 export interface BaselineStore {
   get(storyId: string): Promise<Buffer | null>;
+  /** Optional: `get` with the reason an image is missing. */
+  lookup?(storyId: string): Promise<BaselineImageLookup>;
   put(storyId: string, image: Buffer, meta: ApprovalMeta): Promise<void>;
   remove(storyId: string): Promise<void>;
   readManifest(): Promise<BaselineManifest>;
   writeManifest(manifest: BaselineManifest): Promise<void>;
-  /** Optional: stores that can hold the gzipped structure sidecar. */
+  /** Optional: stores that can hold the structure sidecar (readable JSON from
+   *  `formatStructure`; legacy sidecars are gzip, `decodeStructure` takes both). */
   putStructure?(storyId: string, gz: Buffer): Promise<void>;
   getStructure?(storyId: string): Promise<Buffer | null>;
   /** Optional: where the baseline image lives on disk, for stores that keep

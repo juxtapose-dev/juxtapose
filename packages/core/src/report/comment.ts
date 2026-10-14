@@ -16,6 +16,7 @@
 
 import type { DiffResult, RunReport, Viewport } from '../types.js';
 import {
+  BASELINE_IMAGE_UNAVAILABLE,
   captureLabel,
   countStories,
   formatPercent,
@@ -339,8 +340,8 @@ function guidance(rows: DiffResult[]): string[] {
   }
 
   paras.push(
-    'Then commit `juxtapose.manifest.json` and `.juxtapose/baselines/` — that is what ' +
-      'makes approval a reviewable diff.',
+    'Then commit `juxtapose.manifest.json` and `.juxtapose/structure/` — hashes and ' +
+      'structure are what make approval a reviewable diff. Never commit images.',
   );
   paras.push(
     'Prefer a UI? Start the run from the **Visual** panel in Storybook to approve, ' +
@@ -395,6 +396,12 @@ function detail(r: DiffResult): string {
   // Reachable only after a byte-exact hash match (baseline/status.ts), so this
   // is a guarantee rather than a guess.
   if (r.status === 'stale') return 'pixels identical';
+  // No pixel diff ran, so there is no percentage: say why, and let the
+  // structural summary (hash-level change, element deltas) carry the rest.
+  if (r.baselineImage === 'unavailable')
+    return cell(
+      `${BASELINE_IMAGE_UNAVAILABLE}${r.structural ? ` — ${r.structural.summary}` : ''}`,
+    );
   // A sub-tolerance colour change has no percentage worth printing: "0%" in
   // a table of changes reads as "nothing changed".
   const parts = [

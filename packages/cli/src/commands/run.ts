@@ -35,6 +35,7 @@ import {
   describeUnstable,
   type StoryManifest,
   formatPercent,
+  BASELINE_IMAGE_UNAVAILABLE,
   formatPhases,
   phases,
   type Phases,
@@ -470,11 +471,13 @@ async function emit(
     io.out('\n');
     for (const r of needsReview.slice(0, 20)) {
       const detail =
-        r.status === 'fail' && r.mismatchPercent > 0
-          ? ` ${formatPercent(r.mismatchPercent)}`
-          : r.error
-            ? ` ${r.error}`
-            : '';
+        r.baselineImage === 'unavailable'
+          ? ` ${BASELINE_IMAGE_UNAVAILABLE}`
+          : r.status === 'fail' && r.mismatchPercent > 0
+            ? ` ${formatPercent(r.mismatchPercent)}`
+            : r.error
+              ? ` ${r.error}`
+              : '';
       io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}${detail}\n`);
       for (const line of explain(r)) io.out(`         ${line}\n`);
     }

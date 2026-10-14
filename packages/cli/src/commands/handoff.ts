@@ -83,6 +83,7 @@ export async function handoffCommand(
         ...(result.unstable ? { unstable: result.unstable } : {}),
         mismatchPercent: result.mismatchPercent,
         mismatchPixels: result.mismatchPixels,
+        ...(result.baselineImage ? { baselineImage: result.baselineImage } : {}),
         viewport,
         changedRegions: result.changedRegions,
         structural: result.structural,
@@ -120,6 +121,7 @@ export async function handoffCommand(
     mismatchPercent: result.mismatchPercent,
     mismatchPixels: result.mismatchPixels,
     changedRegions: result.changedRegions,
+    ...(result.baselineImage ? { baselineImage: result.baselineImage } : {}),
     viewport,
     componentPath: story?.componentPath ?? '',
     diffDataPath,
@@ -128,7 +130,11 @@ export async function handoffCommand(
     images: {
       baseline: haveBaseline ? baselineImage : undefined,
       current: currentImage,
-      diff: result.status === 'fail' ? path.join(images, `${safe}-diff.webp`) : undefined,
+      // No pixel diff runs when the baseline image is unavailable, so no overlay exists.
+      diff:
+        result.status === 'fail' && !result.baselineImage
+          ? path.join(images, `${safe}-diff.webp`)
+          : undefined,
     },
     projectRoot: ctx.projectRoot,
     ...(variant ? { variant } : {}),
