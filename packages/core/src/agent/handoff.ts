@@ -324,6 +324,7 @@ function actions(p: HandoffPayload, opts: { approveVerb: string }): string[] {
   out.push(
     '',
     `- **Intentional** → \`jux approve --story ${shellQuote(p.storyId)}\` to ${opts.approveVerb}.`,
+    '  Commit `juxtapose.manifest.json` and `.juxtapose/structure/` only. Never `git add` an image: baseline images stay in the local cache.',
     '- **Regression** → propose a fix. Do not apply it without confirmation.',
   );
   return out;

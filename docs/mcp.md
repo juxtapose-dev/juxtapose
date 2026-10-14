@@ -240,7 +240,9 @@ An id that matches nothing is a tool error that suggests the closest ones.
 ### approve
 
 Promotes the last run's captures of the named stories to baselines. Same result
-as `jux approve --story <id> --json`: `{ approved, failed }`.
+as `jux approve --story <id> --json`: `{ approved, failed }`. It writes the hash
+and structure the project commits; the image goes to the local cache, so never
+`git add` one.
 
 | Argument        | Type     | Description                                                                   |
 | --------------- | -------- | ----------------------------------------------------------------------------- |

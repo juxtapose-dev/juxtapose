@@ -188,8 +188,15 @@ change to `capture/` rather than trusting a single green run.
 Releases go through changesets. Add one with `pnpm changeset` when a change
 should ship; merging to main without a changeset publishes nothing.
 
-Committing baselines (`juxtapose.manifest.json` + `.juxtapose/baselines/`) is
-normal and intended — it is what makes approval a reviewable diff. The
-`examples/` directories are the exception: antialiasing differs across machines
-and Chromium versions, so committed baselines there would be red for everyone
-but the author.
+Projects that use jux commit hashes and metadata, never images:
+`juxtapose.config.json`, `juxtapose.manifest.json` (the per-story hashes, which
+alone decide pass/fail, so an approval is a reviewable diff of hashes) and
+`.juxtapose/structure/` (per-story structure, so CI can name the elements that
+changed). Baseline images live in a git-ignored, hash-keyed cache
+(`.juxtapose/cache/`), `.juxtapose/runs/` is ignored too, and `jux init` writes
+those `.gitignore` lines. Never `git add` an image; `jux doctor` flags tracked
+ones. A failing story whose image is not in the cache is reported by hash and
+structure, not as an error. `storage: { "kind": "git" }` is the opt-in legacy
+layout. The `examples/` directories commit nothing at all: antialiasing differs
+across machines and Chromium versions, so committed baselines there would be
+red for everyone but the author.

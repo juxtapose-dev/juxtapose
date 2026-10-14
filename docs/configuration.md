@@ -8,7 +8,7 @@
   "platform": "storybook",
   "concurrency": 8,
   "viewport": { "width": 1280, "height": 800 },
-  "storage": { "kind": "git" }
+  "storage": { "kind": "cache" }
 }
 ```
 
@@ -593,7 +593,37 @@ so jux loads its preview again on every run.
 
 ## Baseline storage
 
-`storage.kind` accepts `"s3"`, but the CLI throws on it in this version. Git is
-the only implemented backend, and `"fs"` is the same store pointed at a
-directory you choose. See the
-[issues](https://github.com/juxtapose-dev/juxtapose/issues) for the roadmap.
+Projects commit hashes and metadata, never snapshot images.
+
+| Commit                        | Ignore                                |
+| ----------------------------- | ------------------------------------- |
+| `juxtapose.config.json`       | baseline images (`.webp`)             |
+| `juxtapose.manifest.json`     | `.juxtapose/runs/` (runs, reports)    |
+| `.juxtapose/structure/*.json` | `.juxtapose/cache/` (the image cache) |
+
+`storage.kind` picks where the images live:
+
+- `"cache"` (default): a local, git-ignored directory of `<sha256>.webp` files,
+  `.juxtapose/cache/baselines/` unless you set `dir`. Approving writes the hash
+  to the manifest, the structure to `.juxtapose/structure/<id>.structure.json`,
+  and the image to the cache. A passing run also keeps its capture in the cache.
+- `"git"`: commit images under `.juxtapose/baselines/` (or `dir`). The layout
+  before 0.15, kept for projects that want pixels in the repo.
+- `"fs"`: the repo-backed store pointed at a `dir` you choose.
+- `"s3"`: declared, but the CLI throws on it in this version.
+
+Pass/fail needs no image: a story passes when its captured hash equals the
+manifest's. The image is only for the pixel diff and the review UI. When a
+story fails and its approved image is not in the cache (a fresh clone, a CI job
+with a cold cache), jux reports the failure by hash and structure and says
+"baseline image not available (not in cache); structure diff only". It does not
+error. To get pixel diffs in CI, save and restore the cache; see [CI](ci.md).
+
+`jux init` adds `.juxtapose/cache/` and `.juxtapose/runs/` to `.gitignore`. A
+project with no `storage` key and images already committed under
+`.juxtapose/baselines/` keeps working: jux reads those images (when they match
+the manifest hash) and writes new ones to the cache. Run `jux doctor` for the
+migration commands.
+
+Structure sidecars are plain JSON, one element per line, so an approval's diff
+shows which elements moved. Legacy `.structure.json.gz` sidecars are still read.

@@ -178,17 +178,27 @@ interface BaselineStore {
 }
 ```
 
-- **`git` (default)** — baselines committed under `.juxtapose/baselines/` as
-  WebP. Zero infra, baselines version with the code, review happens in the PR
-  diff, and branches get correct baselines by construction. Costs repo size,
-  though lossless WebP of a flat UI render is usually smaller than the PNG.
+- **`cache` (default)** — images live in a local, git-ignored directory
+  (`.juxtapose/cache/baselines/`) named by their own sha256, so any commit's
+  manifest finds its image if it was ever captured here, and two caches merge
+  without conflict. The repo carries only the manifest and the structure
+  sidecars (`.juxtapose/structure/<id>.structure.json`, plain JSON, one element
+  per line so an approval's diff shows which elements moved). A passing run
+  keeps its capture in the cache; CI saves and restores the directory (see
+  [CI](docs/ci.md)). A failing story whose image is missing is reported by hash
+  and structure ("structure diff only"), never as an error. It still reads an
+  old committed `.juxtapose/baselines/` layout, hash-checked, so upgrading does
+  not blank existing diffs.
+- **`git`** — the opt-in legacy layout: baselines committed under
+  `.juxtapose/baselines/` as WebP. Costs repo size for good, since every
+  approval adds binary history.
 - **`fs`** — the same store pointed at a directory you choose, rather than a
   separate implementation.
 - **`s3`** — declared in `StorageConfig` but **not implemented**: the CLI
-  throws if you select it. Intended for suites too large to carry in git.
+  throws if you select it.
 
-The `BaselineManifest` is committed in every case. Even with the S3 store, the
-manifest in git is what defines "approved" — the bucket only holds the bytes.
+The `BaselineManifest` is committed in every case. It, not the image, defines
+"approved".
 
 ## Pass/fail is a hash, not a threshold
 

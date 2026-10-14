@@ -1,22 +1,23 @@
 # Commands
 
-| command                              | what it does                                                                     |
-| ------------------------------------ | -------------------------------------------------------------------------------- |
-| `jux init`                           | set up config and capture the first baselines                                    |
-| `jux run`                            | capture affected stories and compare to baselines                                |
-| `jux run --all`                      | capture everything, skipping change analysis                                     |
-| `jux approve --all`                  | promote the last run's captures to baselines                                     |
-| `jux approve --story <id>`           | approve one story                                                                |
-| `jux approve --all --allow-unstable` | also approve stories whose two run captures differed (see below)                 |
-| `jux check`                          | exit non-zero if anything still needs review — for CI                            |
-| `jux handoff <id>`                   | print an agent-ready prompt for one failing story                                |
-| `jux config --explain <id>`          | the effective settings for one story or variant key, and which layer set each    |
-| `jux snap <url>… --as <name>`        | capture a page (or several with `--as-prefix`): pixels + structure, no workbench |
-| `jux diff <a> <b> --json`            | tier-0 verdict: what changed between two snaps, no browser                       |
-| `jux diff <a> <b> --crops`           | the verdict plus side-by-side PNG strips per changed region, no browser          |
-| `jux diff --runs <runA> <runB>`      | are two runs byte-identical? per-story hash comparison, no browser               |
-| `jux browser install\|status\|path`  | install, inspect or locate the pinned browser                                    |
-| `jux browser start\|stop`            | start or stop the warm browser (see [Warm browser](browser.md#warm-browser))     |
+| command                              | what it does                                                                      |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| `jux init`                           | set up config and `.gitignore`, and capture the first baselines                   |
+| `jux doctor`                         | warn if baseline images are tracked by git, and print the migration commands      |
+| `jux run`                            | capture affected stories and compare to baselines                                 |
+| `jux run --all`                      | capture everything, skipping change analysis                                      |
+| `jux approve --all`                  | promote the last run's captures to baselines (hash and structure; image to cache) |
+| `jux approve --story <id>`           | approve one story                                                                 |
+| `jux approve --all --allow-unstable` | also approve stories whose two run captures differed (see below)                  |
+| `jux check`                          | exit non-zero if anything still needs review — for CI                             |
+| `jux handoff <id>`                   | print an agent-ready prompt for one failing story                                 |
+| `jux config --explain <id>`          | the effective settings for one story or variant key, and which layer set each     |
+| `jux snap <url>… --as <name>`        | capture a page (or several with `--as-prefix`): pixels + structure, no workbench  |
+| `jux diff <a> <b> --json`            | tier-0 verdict: what changed between two snaps, no browser                        |
+| `jux diff <a> <b> --crops`           | the verdict plus side-by-side PNG strips per changed region, no browser           |
+| `jux diff --runs <runA> <runB>`      | are two runs byte-identical? per-story hash comparison, no browser                |
+| `jux browser install\|status\|path`  | install, inspect or locate the pinned browser                                     |
+| `jux browser start\|stop`            | start or stop the warm browser (see [Warm browser](browser.md#warm-browser))      |
 
 `jux <command> --help` (or `-h`) prints that command's usage and exits 0. An
 unknown option, or a positional a command does not take (`jux run some-id`),
