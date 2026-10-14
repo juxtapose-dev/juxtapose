@@ -24,7 +24,15 @@
 // check it, an ErrorText. Types, schema.json, the MCP tool schemas and
 // validation follow.
 
-import { Type, type Static, type TOptional, type TSchema } from '@sinclair/typebox';
+import {
+  Kind,
+  Type,
+  type SchemaOptions,
+  type Static,
+  type TOptional,
+  type TSchema,
+  type TUnsafe,
+} from '@sinclair/typebox/type';
 import type { Viewport } from '../browser/types.js';
 
 // ---------------------------------------------------------------------------
@@ -46,6 +54,23 @@ export const VARIANT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
  *  that doesn't know them ignores them. */
 export const URL_PATTERN_FORMAT = 'jux-url-pattern';
 export const CSS_SELECTOR_FORMAT = 'jux-css-selector';
+/** TypeBox kind of a StringEnum; checked by the validator registerFormats()
+ *  installs (./formats.ts). */
+export const STRING_ENUM_KIND = 'JuxStringEnum';
+
+/** A choice of strings, written as a plain `enum` in JSON Schema. TypeBox's
+ *  own union of literals serializes as `anyOf` of consts, which editors and
+ *  agents read less easily. */
+export const StringEnum = <const T extends readonly string[]>(
+  values: T,
+  options: SchemaOptions = {},
+): TUnsafe<T[number]> & { enum: T } =>
+  Type.Unsafe<T[number]>({
+    ...options,
+    [Kind]: STRING_ENUM_KIND,
+    type: 'string',
+    enum: values,
+  }) as TUnsafe<T[number]> & { enum: T };
 
 // ---------------------------------------------------------------------------
 // Error wording
@@ -161,7 +186,7 @@ export const SettleSchema = withText(
 );
 
 export const ExternalNetworkSchema = withText(
-  Type.Union([Type.Literal('allow'), Type.Literal('block')], {
+  StringEnum(['allow', 'block'] as const, {
     description:
       "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
   }),
@@ -268,7 +293,7 @@ const captureOptions = {
 /** Options only a story (or a variant) sets; not available to `stories`. */
 const storyOnlyOptions = {
   viewport: ViewportSchema,
-  animations: Type.Union([Type.Literal('play'), Type.Literal('disabled')], {
+  animations: StringEnum(['play', 'disabled'] as const, {
     description:
       "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
   }),
@@ -289,7 +314,7 @@ const variantName = (description: string) =>
   Type.String({ pattern: VARIANT_NAME.source, description });
 
 const COLOR_SCHEME = withText(
-  Type.Union([Type.Literal('light'), Type.Literal('dark')], {
+  StringEnum(['light', 'dark'] as const, {
     description:
       'prefers-color-scheme for this variant. The default capture is always light.',
   }),
@@ -380,7 +405,7 @@ export const JuxtaposeParametersSchema = Type.Object(
     ),
     variants: Type.Optional(VariantsSchema),
     colorScheme: Type.Optional(
-      Type.Union([Type.Literal('light'), Type.Literal('dark')], {
+      StringEnum(['light', 'dark'] as const, {
         description:
           "Set on a variant's resolved params. The default capture is always light, so a story's own colorScheme is ignored.",
       }),
@@ -516,12 +541,9 @@ export const ProjectConfigSchema = Type.Object(
       Type.String({ description: 'The JSON Schema this file follows, for editors.' }),
     ),
     platform: Type.Optional(
-      Type.Union(
-        [Type.Literal('storybook'), Type.Literal('ladle'), Type.Literal('urls')],
-        {
-          description: 'Which workbench. Autodetected when omitted.',
-        },
-      ),
+      StringEnum(['storybook', 'ladle', 'urls'] as const, {
+        description: 'Which workbench. Autodetected when omitted.',
+      }),
     ),
     urls: Type.Optional(
       Type.Array(UrlEntrySchema, {

@@ -24,9 +24,8 @@ import {
   withText,
   type NetworkParams,
 } from '../config/schema.js';
-import { configError, validate } from '../config/validate.js';
-import { Type } from '@sinclair/typebox';
-import { Value } from '@sinclair/typebox/value';
+import { configError, fits, validate } from '../config/validate.js';
+import { Type } from '@sinclair/typebox/type';
 import { SettleConfigError } from './config-errors.js';
 import { parsePattern, type UrlPattern } from './url-pattern.js';
 
@@ -151,7 +150,7 @@ export const captureFlags = (
 /** A settle cap: a whole number of ms, 1 to MAX_SETTLE_TIMEOUT_MS. The CLI
  *  and the MCP server check per-call values with this too. */
 export function isSettleTimeout(v: unknown): v is number {
-  return Value.Check(SettleSchema.properties.timeout, v);
+  return fits(SettleSchema.properties.timeout, v);
 }
 
 /**

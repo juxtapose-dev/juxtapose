@@ -4,7 +4,7 @@
 
 ```json
 {
-  "$schema": "./node_modules/@juxtapose/core/schema.json",
+  "$schema": "./node_modules/@juxtapose/cli/schema.json",
   "platform": "storybook",
   "concurrency": 8,
   "viewport": { "width": 1280, "height": 800 },
@@ -21,11 +21,40 @@ makes a story's verdict depend on where it lands in the queue.
 `stories` sets per-story options by story id glob, for a Storybook you don't
 own: see [Override stories you don't own](#override-stories-you-dont-own).
 
-The `$schema` line, which `jux init` writes, gives editors such as VS Code
-completion, hover docs and validation for every option. The schema is
-`@juxtapose/core/schema.json`. pnpm doesn't hoist dependencies, so with pnpm
-add `@juxtapose/core` as a dev dependency for that path to exist. The editor flags any key the schema doesn't know, while
-`jux` itself still checks only the options this page says it checks.
+The `$schema` line gives editors such as VS Code completion, hover docs and
+validation for every option. `jux init` writes it pinned to the installed
+version of `@juxtapose/core`, so the editor knows the options your jux knows:
+`https://cdn.jsdelivr.net/npm/@juxtapose/core@<version>/schema.json`. Update
+the version when you upgrade. To work offline, point it at a local copy
+instead:
+
+- `./node_modules/@juxtapose/cli/schema.json`, which works with any package
+  manager when `@juxtapose/cli` is a dependency of the project.
+- `./node_modules/@juxtapose/core/schema.json`, which needs `@juxtapose/core`
+  as a direct dependency under pnpm, since pnpm doesn't hoist.
+
+The schema isn't on SchemaStore yet, so editors don't find it without the
+`$schema` line.
+
+The editor flags any key the schema doesn't know. `jux` doesn't refuse one.
+`jux run`, `init`, `snap`, `mcp` and the review server print one warning per
+unknown key on stderr, with the closest option it could mean. The warning
+doesn't change the exit code or `--json` output:
+
+```
+jux: project config: unknown option 'concurency' is ignored (did you mean 'concurrency'?)
+```
+
+An unknown key in `parameters.juxtapose` is reported once per run, naming the
+first story that sets it and how many more do.
+
+The schemas are also exported from `@juxtapose/core` (`ProjectConfigSchema`,
+`JuxtaposeParametersSchema`, `SettleSchema` and others) as
+[TypeBox](https://github.com/sinclairzx81/typebox) schemas. They use jux's own
+string formats (URL patterns, CSS selectors) and an enum kind. Call
+`registerFormats()` before checking a value with TypeBox. If your TypeBox is a
+different copy from the one `@juxtapose/core` uses, pass its registries:
+`registerFormats({ FormatRegistry, TypeRegistry })`.
 
 `.juxtaposerc.json` works as well. JSON only — a `.ts` or `.js` config is not
 loaded.
@@ -110,7 +139,9 @@ import type {} from '@juxtapose/storybook';
 ```
 
 The type is `JuxtaposeParameters`, exported by `@juxtapose/storybook` and
-`@juxtapose/core`.
+`@juxtapose/core`. The augmentation has been verified with Storybook 8.6's
+`Meta` and `StoryObj`. It targets `storybook/internal/csf`, which Storybook 9
+and 10 also export, but it hasn't been checked against them yet.
 
 Captures are reproducible: juxtapose freezes animations, waits for the page to
 finish its work (see [Settle](#settle)), and pins rendering to settings that

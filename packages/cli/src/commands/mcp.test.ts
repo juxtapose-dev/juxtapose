@@ -167,6 +167,15 @@ describe('jux mcp protocol', () => {
       'approve',
     ]);
     for (const t of tools) expect(t.inputSchema).toMatchObject({ type: 'object' });
+    // The config's shapes, as plain enums an agent reads at a glance.
+    const snap = tools[0]!.inputSchema as {
+      properties: Record<string, { properties: Record<string, unknown> }>;
+    };
+    expect(snap.properties['network']!.properties['external']).toEqual({
+      type: 'string',
+      enum: ['allow', 'block'],
+      description: 'Default allow',
+    });
     expect((await c.request('nope/nope')).error?.code).toBe(-32601);
     expect((await c.request('tools/call', { name: 'nope' })).error?.code).toBe(-32602);
     expect(await c.close()).toBe(0);

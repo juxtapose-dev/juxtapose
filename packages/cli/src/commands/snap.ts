@@ -21,6 +21,7 @@ import {
   type SettleReport,
   type SnapPageResult,
   checkProjectSettle,
+  configWarnings,
   captureFlags,
   VariantConfigError,
   type Viewport,
@@ -136,6 +137,7 @@ export async function snapCommand(
     io.err(`${err.message}\n`);
     return EXIT.usage;
   }
+  for (const m of configWarnings(config)) io.err(`jux: ${m}\n`);
 
   const prefix = flags['as-prefix']
     ? snapName(flags['as-prefix'], flags['as-prefix'])

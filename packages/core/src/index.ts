@@ -62,10 +62,17 @@ export {
   VariantSchema,
   StoryOverrideSchema,
   MAX_SNAP_SLOTS,
+  StringEnum,
   type JuxtaposeParameters,
   type ExternalNetwork,
 } from './config/schema.js';
-export { configJsonSchema, configJsonSchemaText } from './config/json-schema.js';
+export {
+  configJsonSchema,
+  configJsonSchemaText,
+  configSchemaUrl,
+} from './config/json-schema.js';
+export { registerFormats } from './config/formats.js';
+export { configWarnings, storyParamWarnings } from './config/warnings.js';
 
 // Implementing a platform adapter.
 export type { Platform, EnumerateTarget, SettleContext } from './platform.js';

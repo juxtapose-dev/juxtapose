@@ -30,6 +30,8 @@ import {
   VariantConfigError,
   checkProjectSettle,
   storyOverrideWarnings,
+  configWarnings,
+  storyParamWarnings,
   type RunReport,
   type StoryManifest,
 } from '@juxtapose/core';
@@ -177,6 +179,8 @@ export class RunDirSource implements ReviewSource {
     // SettleConfigError is a VariantConfigError, so it is cached and served
     // as a config error naming `project config`, not a failure per story.
     checkProjectSettle(this.opts.config);
+    for (const m of configWarnings(this.opts.config))
+      process.stderr.write(`juxtapose: ${m}\n`);
     const enumerated = await this.indexStories();
     const projectVariants = this.opts.config.variants;
     const projectStories = this.opts.config.stories;
@@ -194,6 +198,8 @@ export class RunDirSource implements ReviewSource {
         })
       : expandVariants(enumerated, projectVariants, projectStories);
     for (const m of storyOverrideWarnings(projectStories, captures))
+      process.stderr.write(`juxtapose: ${m}\n`);
+    for (const m of storyParamWarnings(captures))
       process.stderr.write(`juxtapose: ${m}\n`);
     return captures;
   }

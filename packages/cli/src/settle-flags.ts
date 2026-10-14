@@ -24,7 +24,7 @@ export interface SettleFlags {
 }
 
 /** `network.external` values, from the config schema. */
-const EXTERNAL: readonly string[] = ExternalNetworkSchema.anyOf.map((s) => s.const);
+const EXTERNAL: readonly string[] = ExternalNetworkSchema.enum;
 const isExternal = (v: string): v is ExternalNetwork => EXTERNAL.includes(v);
 
 /** The flags as a `settle` object, undefined when none is set; or the usage

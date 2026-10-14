@@ -4,32 +4,19 @@
 // it), with the `prefix` texts of the nodes on the way down in front. The
 // messages are pinned byte for byte by validate.test.ts.
 
-import { FormatRegistry, Kind, type TSchema } from '@sinclair/typebox';
-import { Value, ValueErrorType, type ValueError } from '@sinclair/typebox/value';
-import { isCssSelector } from '../browser/selectors.js';
+import { Kind, type TSchema } from '@sinclair/typebox/type';
+// Errors alone, not '@sinclair/typebox/value': the value namespace also loads
+// cast, convert, create, decode and the rest, none of which this needs.
+import { Errors, ValueErrorType, type ValueError } from '@sinclair/typebox/errors';
 import { SettleConfigError, VariantConfigError } from '../capture/config-errors.js';
-import { parsePattern } from '../capture/url-pattern.js';
-import {
-  CSS_SELECTOR_FORMAT,
-  ErrorText,
-  URL_PATTERN_FORMAT,
-  type ErrorTexts,
-} from './schema.js';
+import { formatReasons, registerFormats } from './formats.js';
+import { ErrorText, type ErrorTexts } from './schema.js';
 
-/** Why a value failed a format, for `{reason}`. */
-const formatReasons: Record<string, (v: string) => string | undefined> = {
-  [URL_PATTERN_FORMAT]: (v) => {
-    try {
-      parsePattern(v);
-      return undefined;
-    } catch (e) {
-      return e instanceof Error ? e.message : String(e);
-    }
-  },
-  [CSS_SELECTOR_FORMAT]: (v) => (isCssSelector(v) ? undefined : 'not a CSS selector'),
-};
-for (const [name, reason] of Object.entries(formatReasons))
-  if (!FormatRegistry.Has(name)) FormatRegistry.Set(name, (v) => reason(v) === undefined);
+registerFormats();
+
+/** Whether `value` fits `schema`. */
+export const fits = (schema: TSchema, value: unknown): boolean =>
+  Errors(schema, value).First() === undefined;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -68,9 +55,15 @@ function* flatten(errors: Iterable<ValueError>): Generator<ValueError> {
  * array of selectors" rather than "not a CSS selector".
  */
 function firstError(schema: TSchema, value: unknown): ValueError | undefined {
-  if (Value.Check(schema, value)) return undefined;
-  const all = [...flatten(Value.Errors(schema, value))];
-  const keyed = all.map((e, i) => ({ e, i, k: walk(schema, value, e.path, e).order }));
+  const all = [...flatten(Errors(schema, value))];
+  if (all.length === 0) return undefined;
+  if (all.length === 1) return all[0];
+  const keyIndex = new WeakMap<object, Map<string, number>>();
+  const keyed = all.map((e, i) => ({
+    e,
+    i,
+    k: walk(schema, value, e.path, e, keyIndex).order,
+  }));
   keyed.sort((a, b) => compareOrder(a.k, b.k) || a.i - b.i);
   return keyed[0]?.e;
 }
@@ -82,24 +75,28 @@ function compareOrder(a: number[], b: number[]): number {
   return 0;
 }
 
-interface Step {
+export interface Step {
   schema: TSchema;
   value: unknown;
   /** The property name or index that led here. */
   key?: string;
   /** The nearest map key at or above this step. */
   name?: string;
+  /** How `key` was reached: an object property, a map entry, an array item. */
+  via?: 'prop' | 'entry' | 'item';
 }
 
-const unescapeSeg = (s: string) => s.replace(/~1/g, '/').replace(/~0/g, '~');
+export const unescapeSeg = (s: string) => s.replace(/~1/g, '/').replace(/~0/g, '~');
 
 /** The schema nodes from the root down to `pointer`, as far as they go, and
  *  the order key of an error there (see firstError). */
-function walk(
+export function walk(
   root: TSchema,
   value: unknown,
   pointer: string,
   error?: ValueError,
+  /** Each map's key positions, built once per map rather than per error. */
+  keyIndex?: WeakMap<object, Map<string, number>>,
 ): { steps: Step[]; order: number[] } {
   const steps: Step[] = [{ schema: root, value }];
   const order: number[] = [];
@@ -109,19 +106,27 @@ function walk(
   for (const seg of pointer.split('/').slice(1).map(unescapeSeg)) {
     if (isRecord(v)) cur = objectBranch(cur) ?? cur;
     let next: TSchema | undefined;
+    let via: Step['via'] = 'prop';
     if (cur[Kind] === 'Object') next = (cur.properties as Record<string, TSchema>)[seg];
     else if (cur[Kind] === 'Record') {
       next = Object.values(cur.patternProperties as Record<string, TSchema>)[0];
       name = seg;
-      order.push(isRecord(v) ? Object.keys(v).indexOf(seg) : 0);
+      via = 'entry';
+      if (keyIndex && isRecord(v)) {
+        let index = keyIndex.get(v);
+        if (!index)
+          keyIndex.set(v, (index = new Map(Object.keys(v).map((k, i) => [k, i]))));
+        order.push(index.get(seg) ?? 0);
+      } else order.push(0);
     } else if (cur[Kind] === 'Array') {
       next = cur.items as TSchema;
+      via = 'item';
       order.push(error?.type === ValueErrorType.StringFormat ? 1 : 0);
     }
     if (!next) break;
     v = (v as Record<string, unknown> | undefined)?.[seg];
     cur = next;
-    steps.push({ schema: next, value: v, key: seg, name });
+    steps.push({ schema: next, value: v, key: seg, name, via });
   }
   return { steps, order };
 }

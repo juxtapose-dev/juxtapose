@@ -22,6 +22,7 @@ import {
   acquireBrowser,
   checkNetwork,
   checkSettle,
+  configWarnings,
   MAX_CROPS,
   MAX_SNAP_SLOTS,
   NetworkSchema,
@@ -933,6 +934,9 @@ const SIGNALS = { SIGINT: 2, SIGTERM: 15 } as const;
 
 export async function mcpCommand(flags: McpFlags, version: string): Promise<number> {
   const config = await loadConfig(path.resolve(flags.project ?? process.cwd()));
+  // Once at startup, on stderr (stdout is the protocol); each snap and run
+  // call also reports them in its own result.
+  for (const m of configWarnings(config)) process.stderr.write(`jux mcp: ${m}\n`);
   const pool = resolveSnapSlots(flags.concurrency, config.mcp?.concurrency);
   if ('error' in pool) {
     process.stderr.write(`jux mcp: ${pool.error}.\n`);

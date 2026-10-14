@@ -11,19 +11,11 @@
     },
     "platform": {
       "description": "Which workbench. Autodetected when omitted.",
-      "anyOf": [
-        {
-          "const": "storybook",
-          "type": "string"
-        },
-        {
-          "const": "ladle",
-          "type": "string"
-        },
-        {
-          "const": "urls",
-          "type": "string"
-        }
+      "type": "string",
+      "enum": [
+        "storybook",
+        "ladle",
+        "urls"
       ]
     },
     "urls": {
@@ -128,15 +120,10 @@
                 "properties": {
                   "external": {
                     "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                    "anyOf": [
-                      {
-                        "const": "allow",
-                        "type": "string"
-                      },
-                      {
-                        "const": "block",
-                        "type": "string"
-                      }
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "block"
                     ]
                   }
                 }
@@ -176,15 +163,10 @@
               },
               "animations": {
                 "description": "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
-                "anyOf": [
-                  {
-                    "const": "play",
-                    "type": "string"
-                  },
-                  {
-                    "const": "disabled",
-                    "type": "string"
-                  }
+                "type": "string",
+                "enum": [
+                  "play",
+                  "disabled"
                 ]
               },
               "captureAfterPlay": {
@@ -234,15 +216,10 @@
                           },
                           "animations": {
                             "description": "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
-                            "anyOf": [
-                              {
-                                "const": "play",
-                                "type": "string"
-                              },
-                              {
-                                "const": "disabled",
-                                "type": "string"
-                              }
+                            "type": "string",
+                            "enum": [
+                              "play",
+                              "disabled"
                             ]
                           },
                           "captureAfterPlay": {
@@ -322,15 +299,10 @@
                             "properties": {
                               "external": {
                                 "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                                "anyOf": [
-                                  {
-                                    "const": "allow",
-                                    "type": "string"
-                                  },
-                                  {
-                                    "const": "block",
-                                    "type": "string"
-                                  }
+                                "type": "string",
+                                "enum": [
+                                  "allow",
+                                  "block"
                                 ]
                               }
                             }
@@ -349,15 +321,10 @@
                           },
                           "colorScheme": {
                             "description": "prefers-color-scheme for this variant. The default capture is always light.",
-                            "anyOf": [
-                              {
-                                "const": "light",
-                                "type": "string"
-                              },
-                              {
-                                "const": "dark",
-                                "type": "string"
-                              }
+                            "type": "string",
+                            "enum": [
+                              "light",
+                              "dark"
                             ]
                           },
                           "extends": {
@@ -372,15 +339,10 @@
               },
               "colorScheme": {
                 "description": "Set on a variant's resolved params. The default capture is always light, so a story's own colorScheme is ignored.",
-                "anyOf": [
-                  {
-                    "const": "light",
-                    "type": "string"
-                  },
-                  {
-                    "const": "dark",
-                    "type": "string"
-                  }
+                "type": "string",
+                "enum": [
+                  "light",
+                  "dark"
                 ]
               }
             }
@@ -424,15 +386,10 @@
                       },
                       "animations": {
                         "description": "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
-                        "anyOf": [
-                          {
-                            "const": "play",
-                            "type": "string"
-                          },
-                          {
-                            "const": "disabled",
-                            "type": "string"
-                          }
+                        "type": "string",
+                        "enum": [
+                          "play",
+                          "disabled"
                         ]
                       },
                       "captureAfterPlay": {
@@ -512,15 +469,10 @@
                         "properties": {
                           "external": {
                             "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                            "anyOf": [
-                              {
-                                "const": "allow",
-                                "type": "string"
-                              },
-                              {
-                                "const": "block",
-                                "type": "string"
-                              }
+                            "type": "string",
+                            "enum": [
+                              "allow",
+                              "block"
                             ]
                           }
                         }
@@ -539,15 +491,10 @@
                       },
                       "colorScheme": {
                         "description": "prefers-color-scheme for this variant. The default capture is always light.",
-                        "anyOf": [
-                          {
-                            "const": "light",
-                            "type": "string"
-                          },
-                          {
-                            "const": "dark",
-                            "type": "string"
-                          }
+                        "type": "string",
+                        "enum": [
+                          "light",
+                          "dark"
                         ]
                       },
                       "extends": {
@@ -637,15 +584,10 @@
       "properties": {
         "external": {
           "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-          "anyOf": [
-            {
-              "const": "allow",
-              "type": "string"
-            },
-            {
-              "const": "block",
-              "type": "string"
-            }
+          "type": "string",
+          "enum": [
+            "allow",
+            "block"
           ]
         }
       }
@@ -737,15 +679,10 @@
               "properties": {
                 "external": {
                   "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                  "anyOf": [
-                    {
-                      "const": "allow",
-                      "type": "string"
-                    },
-                    {
-                      "const": "block",
-                      "type": "string"
-                    }
+                  "type": "string",
+                  "enum": [
+                    "allow",
+                    "block"
                   ]
                 }
               }
@@ -847,15 +784,10 @@
                 },
                 "animations": {
                   "description": "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
-                  "anyOf": [
-                    {
-                      "const": "play",
-                      "type": "string"
-                    },
-                    {
-                      "const": "disabled",
-                      "type": "string"
-                    }
+                  "type": "string",
+                  "enum": [
+                    "play",
+                    "disabled"
                   ]
                 },
                 "captureAfterPlay": {
@@ -935,15 +867,10 @@
                   "properties": {
                     "external": {
                       "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
-                      "anyOf": [
-                        {
-                          "const": "allow",
-                          "type": "string"
-                        },
-                        {
-                          "const": "block",
-                          "type": "string"
-                        }
+                      "type": "string",
+                      "enum": [
+                        "allow",
+                        "block"
                       ]
                     }
                   }
@@ -962,15 +889,10 @@
                 },
                 "colorScheme": {
                   "description": "prefers-color-scheme for this variant. The default capture is always light.",
-                  "anyOf": [
-                    {
-                      "const": "light",
-                      "type": "string"
-                    },
-                    {
-                      "const": "dark",
-                      "type": "string"
-                    }
+                  "type": "string",
+                  "enum": [
+                    "light",
+                    "dark"
                   ]
                 },
                 "extends": {
