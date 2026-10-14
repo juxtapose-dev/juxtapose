@@ -120,7 +120,7 @@ describe('paths', () => {
 });
 
 describe('resolveChrome', () => {
-  it('prefers flag, then env, then the jux cache, then ms-playwright', () => {
+  it('prefers flag, then env, then the jux cache, and never ms-playwright', () => {
     const all = have('/f', '/e', juxBin, juxMarker, pwBin, pwMarker);
     expect(
       resolveChrome({ ...mac, flag: '/f', env: { JUX_CHROME: '/e' }, exists: all }),
@@ -132,10 +132,8 @@ describe('resolveChrome', () => {
     expect(
       resolveChrome({ ...mac, exists: have(juxBin, juxMarker, pwBin, pwMarker) }),
     ).toEqual({ path: juxBin, source: 'jux-cache' });
-    expect(resolveChrome({ ...mac, exists: have(pwBin, pwMarker) })).toEqual({
-      path: pwBin,
-      source: 'ms-playwright',
-    });
+    // #141: Playwright's copy is not a source; adopt.ts copies it into ours first.
+    expect(resolveChrome({ ...mac, exists: have(pwBin, pwMarker) })).toBeNull();
   });
   it('requires the install markers, not just the binary', () => {
     // A half-extracted install must not be used: the marker is written last.
@@ -161,44 +159,14 @@ describe('resolveChrome', () => {
     expect(noBrowserMessage({ ...mac, platform: 'linux', arch: 'arm64' })).toMatch(
       /linux-arm64/,
     );
-    expect(noBrowserMessage(mac)).toBe(NO_BROWSER_MESSAGE);
+    const msg = noBrowserMessage(mac);
+    expect(msg).toContain(juxBin);
+    expect(msg).toMatch(/npx -p @juxtapose\/cli jux browser install/);
+    expect(msg).toMatch(/JUX_CHROME/);
   });
 });
 
 describe('resolveChrome details', () => {
-  const winPw =
-    'C:\\Users\\u\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1234';
-  const winPwBin = `${winPw}\\chrome-headless-shell-win64\\chrome-headless-shell.exe`;
-  it('finds the win32 Playwright install by its INSTALLATION_COMPLETE marker', () => {
-    expect(
-      resolveChrome({
-        ...win,
-        exists: have(winPwBin, `${winPw}\\INSTALLATION_COMPLETE`),
-      }),
-    ).toEqual({ path: winPwBin, source: 'ms-playwright' });
-    expect(resolveChrome({ ...win, exists: have(winPwBin) })).toBeNull();
-  });
-  it('honours PLAYWRIGHT_BROWSERS_PATH on linux, but not the "0" sentinel', () => {
-    const bin =
-      '/pw/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell';
-    const marker = '/pw/chromium_headless_shell-1234/INSTALLATION_COMPLETE';
-    expect(
-      resolveChrome({
-        ...lin,
-        env: { PLAYWRIGHT_BROWSERS_PATH: '/pw' },
-        exists: have(bin, marker),
-      }),
-    ).toEqual({ path: bin, source: 'ms-playwright' });
-    const zero =
-      '0/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell';
-    expect(
-      resolveChrome({
-        ...lin,
-        env: { PLAYWRIGHT_BROWSERS_PATH: '0' },
-        exists: have(zero, '0/chromium_headless_shell-1234/INSTALLATION_COMPLETE'),
-      }),
-    ).toBeNull();
-  });
   it('returns null on linux-arm64 even with JUX_CHROME unset', () => {
     expect(resolveChrome({ ...lin, arch: 'arm64', exists: () => true })).toBeNull();
   });

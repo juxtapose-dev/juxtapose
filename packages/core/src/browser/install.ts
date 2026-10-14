@@ -11,9 +11,8 @@
 // a proxy variable is present (`proxyReexecArgs`), and this module names the
 // variable in the error for every other caller (Node 22 included).
 
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { stat, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   CHROME_PINS,
@@ -29,6 +28,7 @@ import {
   resolveChrome,
   type ChromeSource,
 } from './resolve.js';
+import { adoptPlaywrightBrowser, pathExists, pinnedVersionProblem } from './adopt.js';
 import { errorMessage } from './guards.js';
 import { installZip } from './zip.js';
 
@@ -40,7 +40,7 @@ export interface InstallOptions {
   onProgress?: (received: number, total: number | null) => void;
   /** Test seam: a pin for a fixture zip. */
   pin?: ChromePin;
-  /** Reinstall even when a usable browser is already in the jux or Playwright cache. */
+  /** Reinstall even when a usable browser is already in the jux cache (or adoptable from Playwright's). */
   force?: boolean;
   /** Test seams: the flags this Node accepts, and the zip installer. */
   nodeFlags?: ReadonlySet<string>;
@@ -115,10 +115,12 @@ export async function installChrome(opts: InstallOptions): Promise<InstallResult
   if (!opts.force) {
     // JUX_CHROME is not "installed": it may point anywhere, so ignore it here.
     const { JUX_CHROME: _ignored, ...rest } = env;
-    const found = resolveChrome({
+    const target = {
       ...NODE_TARGET[platform],
       env: { ...rest, JUX_CACHE_DIR: opts.cacheDir },
-    });
+    };
+    // A matching Playwright build is copied into our cache, never used in place (#141).
+    const found = resolveChrome(target) ?? (await adoptPlaywrightBrowser(target));
     if (found) {
       return {
         path: found.path,
@@ -204,34 +206,9 @@ async function verifyInstall(installDir: string, binary: string): Promise<void> 
         'Check permissions on the cache directory (JUX_CACHE_DIR) and retry.',
     );
   };
-  if (!(await exists(path.join(installDir, INSTALL_MARKER))))
+  if (!(await pathExists(path.join(installDir, INSTALL_MARKER))))
     return fail(`${INSTALL_MARKER} marker is missing`);
-  if (!(await exists(binary))) return fail(`${binary} is missing`);
-  let out: string;
-  try {
-    out = await new Promise<string>((resolve, reject) =>
-      execFile(binary, ['--version'], { timeout: 15_000 }, (err, stdout) =>
-        // ExecFileException is an Error at runtime but an Omit<> type, which
-        // the reject-with-an-Error lint cannot see through; instanceof can.
-        err
-          ? reject(err instanceof Error ? err : new Error(err.message, { cause: err }))
-          : resolve(stdout),
-      ),
-    );
-  } catch (err) {
-    return fail(`\`${binary} --version\` failed: ${errorMessage(err)}`);
-  }
-  if (!out.includes(CHROME_VERSION))
-    return fail(
-      `\`--version\` printed ${JSON.stringify(out.trim())}, expected ${CHROME_VERSION}`,
-    );
-}
-
-async function exists(p: string): Promise<boolean> {
-  try {
-    await stat(p);
-    return true;
-  } catch {
-    return false;
-  }
+  if (!(await pathExists(binary))) return fail(`${binary} is missing`);
+  const problem = await pinnedVersionProblem(binary);
+  if (problem) return fail(problem);
 }

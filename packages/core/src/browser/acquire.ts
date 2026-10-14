@@ -8,7 +8,8 @@ import { Browser } from './browser.js';
 import { connectWarmBrowser, daemonEnabled, daemonIdleMinutes } from './daemon/client.js';
 import { daemonSupported } from './daemon/state.js';
 import type { SpawnFn } from './launch.js';
-import { juxStateDir, noBrowserMessage, resolveChrome } from './resolve.js';
+import { resolveOrAdoptChrome } from './adopt.js';
+import { juxStateDir, noBrowserMessage } from './resolve.js';
 
 export interface AcquireOptions {
   /** `--chrome <path>`; wins over JUX_CHROME and the caches. */
@@ -24,8 +25,8 @@ export interface AcquireOptions {
 
 export async function acquireBrowser(opts: AcquireOptions = {}): Promise<Browser> {
   const env = opts.env ?? process.env;
-  const resolved = resolveChrome({ flag: opts.chrome, env });
-  if (!resolved) throw new Error(noBrowserMessage());
+  const resolved = await resolveOrAdoptChrome({ flag: opts.chrome, env });
+  if (!resolved) throw new Error(noBrowserMessage({ env }));
   // Ruling 22: no daemon on Windows; CI and the opt-outs get PR 1's path exactly.
   if (!daemonSupported() || !daemonEnabled(env, opts.noDaemon))
     return Browser.launch({ executablePath: resolved.path, spawn: opts.spawn });

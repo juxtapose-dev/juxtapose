@@ -176,6 +176,7 @@ export {
   type ChromeSource,
   type ResolvedChrome,
 } from './browser/resolve.js';
+export { adoptPlaywrightBrowser, resolveOrAdoptChrome } from './browser/adopt.js';
 export {
   installChrome,
   proxyReexecArgs,

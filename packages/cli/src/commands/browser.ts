@@ -19,6 +19,7 @@ import {
   noBrowserMessage,
   proxyReexecArgs,
   resolveChrome,
+  resolveOrAdoptChrome,
   startDaemon,
   stderrProgress,
   stopAllDaemons,
@@ -143,7 +144,8 @@ export async function installWithProxy(
   const cacheDir = juxCacheDir({ env: io.env });
   // JUX_CHROME is not "installed" (installChrome ignores it too).
   const present =
-    !opts.force && resolveChrome({ env: { ...io.env, JUX_CHROME: '' } }) !== null;
+    !opts.force &&
+    (await resolveOrAdoptChrome({ env: { ...io.env, JUX_CHROME: '' } })) !== null;
   if (!present) {
     const mb = Math.round(CHROME_PINS[chromePlatform()].bytes / 1048576);
     io.writeErr(
@@ -159,12 +161,15 @@ export async function installWithProxy(
   return { result };
 }
 
-function resolveOrExplain(
+/** `adopt` also copies a matching Playwright build into jux's cache (commands that run the browser); reporting commands only look. */
+async function resolveOrExplain(
   flag: string | undefined,
   io: BrowserCommandIo,
-): { chrome: ResolvedChrome | null } | { error: string } {
+  adopt = false,
+): Promise<{ chrome: ResolvedChrome | null } | { error: string }> {
   try {
-    return { chrome: resolveChrome({ flag, env: io.env }) };
+    const opts = { flag, env: io.env };
+    return { chrome: adopt ? await resolveOrAdoptChrome(opts) : resolveChrome(opts) };
   } catch (err) {
     // An explicit path that does not exist: say so, never fall back silently.
     return { error: errorMessage(err) };
@@ -266,7 +271,7 @@ export async function browserCommand(
     // An explicit browser (--chrome / JUX_CHROME) is what jux will use, so
     // there is nothing to download unless --force asks for the pinned one.
     if (!force && (flag || io.env.JUX_CHROME)) {
-      const r = resolveOrExplain(flag, io);
+      const r = await resolveOrExplain(flag, io);
       if ('error' in r) {
         io.writeErr(`${r.error}\n`);
         return EXIT.failure;
@@ -303,7 +308,7 @@ export async function browserCommand(
   }
 
   if (sub === 'path' || sub === 'status') {
-    const r = resolveOrExplain(flag, io);
+    const r = await resolveOrExplain(flag, io);
     if ('error' in r) {
       // Under --json, stdout is one object even here: `JSON.parse` of the
       // output never meets an empty string.
@@ -329,7 +334,7 @@ export async function browserCommand(
         ) + '\n',
       );
     if (!r.chrome) {
-      if (!json) io.writeErr(`${noBrowserMessage()}\n`);
+      if (!json) io.writeErr(`${noBrowserMessage({ env: io.env })}\n`);
       return EXIT.failure;
     }
     if (!json) {
@@ -391,7 +396,7 @@ async function daemonCommand(
   json: boolean,
   io: BrowserCommandIo,
 ): Promise<number> {
-  const r = resolveOrExplain(flag, io);
+  const r = await resolveOrExplain(flag, io, sub === 'start');
   if ('error' in r) return daemonFailure(sub, json, io, r.error);
   if (sub === 'stop') {
     // Every daemon in the state dir, not only this build's key: the key
@@ -442,7 +447,7 @@ async function daemonCommand(
     );
     return EXIT.clean;
   }
-  if (!r.chrome) return daemonFailure(sub, json, io, noBrowserMessage());
+  if (!r.chrome) return daemonFailure(sub, json, io, noBrowserMessage({ env: io.env }));
   // Running means it answered a hello, not that its pid is alive (a reused
   // pid after a reboot is not a warm browser).
   const before = await daemonStatus(warmOptions(r.chrome, io));

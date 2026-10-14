@@ -9,11 +9,28 @@ npx -p @juxtapose/cli jux browser install   # once, ~100 MB
 ```
 
 It lands in `~/Library/Caches/jux` (macOS), `~/.cache/jux` (Linux) or
-`%LOCALAPPDATA%\jux` (Windows); `JUX_CACHE_DIR` overrides. If Playwright's
-cache already holds the same build, jux uses it and downloads nothing.
+`%LOCALAPPDATA%\jux` (Windows); `JUX_CACHE_DIR` overrides.
 `JUX_CHROME=<path>` or `--chrome <path>` uses your own Chromium instead; the
 version is recorded in each run's `env`, so a mismatch is reported rather
-than silently red. Behind a proxy, set `HTTPS_PROXY` as usual — the installer
+than silently red.
+
+Lookup order, first match wins:
+
+1. `--chrome <path>`
+2. `JUX_CHROME=<path>`
+3. jux's own cache (the install above)
+4. Nothing: jux stops with `jux: no browser at <expected path>` and tells you
+   to run `jux browser install` (exit 1).
+
+jux never runs a browser from Playwright's cache, because `playwright
+install`, a Playwright upgrade or a disk cleanup can delete it at any time.
+If Playwright's cache holds the same build (`chromium_headless_shell-1234`)
+and jux's own copy is missing, the first `jux snap`, `run`, `init`, `mcp`,
+`browser start` or `browser install` copies it into jux's cache (a
+copy-on-write clone where the filesystem has one), runs `--version` on the
+copy and only then marks it usable, so nothing downloads. Playwright's
+directory is only read. `jux browser status` and `path` just report; they do
+not copy. A build that fails the version check is ignored. Behind a proxy, set `HTTPS_PROXY` as usual — the installer
 re-runs itself with Node's `--use-env-proxy`. Linux needs Chromium's shared
 libraries — on Ubuntu 24.04: `sudo apt-get install libasound2t64
 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64
