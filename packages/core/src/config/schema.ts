@@ -587,7 +587,7 @@ const projectChecked = {
 
 /** Characters no directory name should carry: C0, DEL and C1 controls, the line
  *  separators U+2028/2029 and the bidi controls U+202A-202E, U+2066-2069. */
-const UNSAFE_CHARS = String.raw`\u0000-\u001f\u007f-\u009f  ‪-‮⁦-⁩`;
+const UNSAFE_CHARS = String.raw`\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069`;
 
 /**
  * Where the cache's directory may point. It goes into `.gitignore`, into
