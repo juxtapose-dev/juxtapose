@@ -1,0 +1,165 @@
+name: field tests
+
+# Runs jux against three large public Storybooks (built from pinned commits)
+# and fails on capture errors, unexpected cross-pass differences, or a slow
+# run. See docs/field-tests.md and scripts/field-tests.config.json.
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/core/src/capture/**'
+      - 'packages/core/src/browser/**'
+      - 'scripts/field-test.mjs'
+      - 'scripts/field-tests.config.json'
+      - '.github/workflows/field-tests.yml'
+
+# Third-party build scripts run in this workflow: read-only token, no secrets.
+permissions:
+  contents: read
+
+concurrency:
+  group: field-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  field-test:
+    name: field test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `sha` is the commit docs/field-tests.md pins. `output` is where the
+          # repo's own build leaves the static Storybook, relative to its root.
+          - name: chakra
+            repo: chakra-ui/chakra-ui
+            sha: fa9696f328ea5a0df8685c6d8460edbd779b63b9
+            node: '24'
+            output: storybook-static
+          - name: primer
+            repo: primer/react
+            sha: 7f5303d803986887187d86dcebaeda22a4dc6823
+            node: '24'
+            output: packages/react/storybook-static
+          - name: spectrum
+            repo: adobe/spectrum-web-components
+            sha: 9d8151f41f7cd363613aa4f3f1ae17739e69dd65
+            node: '24'
+            output: 1st-gen/projects/documentation/dist/storybook
+    env:
+      STORYBOOK_DISABLE_TELEMETRY: '1'
+      SB_CACHE: ${{ runner.temp }}/sb-cache
+      SB_SRC: ${{ runner.temp }}/sb-src
+      OUT_DIR: ${{ runner.temp }}/field-out
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/jux
+          key: chrome-headless-shell-151.0.7922.34-${{ runner.os }}
+
+      - name: Install Chromium
+        run: node packages/cli/dist/index.js browser install
+
+      # deb.deps ships beside the binary in the Chrome for Testing zip.
+      # Lines may carry version constraints and `a | b` alternatives, which
+      # `apt-get satisfy` understands (comma-joined). If satisfy rejects a line
+      # (a renamed package, a missing deb.deps), fall back to the README's
+      # Ubuntu 24.04 list.
+      - name: Install Chromium system libraries
+        run: |
+          dir=$(dirname "$(node packages/cli/dist/index.js browser path)")
+          sudo apt-get update
+          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$dir/deb.deps")" ||
+            sudo apt-get install -y --no-install-recommends libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
+
+      # The static build only, keyed by the pinned commit.
+      - name: Restore the static Storybook
+        id: sb
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SB_CACHE }}
+          key: ${{ matrix.name }}-${{ matrix.sha }}-${{ runner.os }}
+
+      # Third-party code: cloned outside the jux checkout, at the exact pinned
+      # commit, with no credentials in the environment or the git config.
+      - name: Clone ${{ matrix.repo }} at the pinned commit
+        if: steps.sb.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$SB_SRC"
+          cd "$SB_SRC"
+          git init -q .
+          git remote add origin "https://github.com/${{ matrix.repo }}.git"
+          git fetch --depth 1 origin "${{ matrix.sha }}"
+          git checkout -q FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
+
+      # Build commands are the ones in docs/field-tests.md.
+      - name: Build the static Storybook
+        if: steps.sb.outputs.cache-hit != 'true'
+        working-directory: ${{ env.SB_SRC }}
+        run: |
+          case "${{ matrix.name }}" in
+            chakra)
+              # packageManager pins pnpm 11.10.0
+              npx --yes pnpm@11.10.0 install --frozen-lockfile
+              npx --yes pnpm@11.10.0 build:storybook
+              ;;
+            primer)
+              npm ci
+              cd packages/react
+              DEPLOY_ENV=production npx storybook build
+              ;;
+            spectrum)
+              # The repo ships its own Yarn release; corepack makes `yarn`
+              # resolvable for the nested script calls, and yarnPath wins.
+              corepack enable
+              yarn install
+              yarn build
+              cd 1st-gen
+              yarn storybook:build
+              ;;
+          esac
+          test -f "${{ matrix.output }}/index.html"
+          mkdir -p "$SB_CACHE"
+          cp -R "${{ matrix.output }}/." "$SB_CACHE/"
+
+      # Saved right after the build, not at job end, so a failing gate does not
+      # throw the build away.
+      - name: Save the static Storybook
+        if: steps.sb.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SB_CACHE }}
+          key: ${{ matrix.name }}-${{ matrix.sha }}-${{ runner.os }}
+
+      - name: Field test (two passes)
+        run: |
+          mkdir -p "$OUT_DIR"
+          node scripts/field-test.mjs "$SB_CACHE" 2 --storybook "${{ matrix.name }}" \
+            --json "$OUT_DIR/result.json" --report-dir "$OUT_DIR"
+          echo "cache-hit=${{ steps.sb.outputs.cache-hit || 'false' }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: field-test-${{ matrix.name }}
+          path: ${{ env.OUT_DIR }}
+          if-no-files-found: ignore
+          retention-days: 14

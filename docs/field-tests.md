@@ -183,6 +183,22 @@ CLI, `node packages/cli/dist/index.js` from the jux checkout.
 
    See [Commands](cli.md) for the output and exit codes.
 
+### Run it in CI
+
+`.github/workflows/field-tests.yml` runs the script against all three
+Storybooks every night, on manual dispatch, and on pull requests that touch
+the capture code, the browser code or the script. Each job builds the Storybook
+from the pinned commit above (cached by commit), runs two passes, and fails on
+a capture error, on a story that differs across passes, or on a slow run.
+
+The gate reads `scripts/field-tests.config.json`: for each Storybook,
+`knownVariable` lists stories allowed to differ across passes, `allowedErrors`
+lists stories allowed to error, and `maxWallSeconds` is the per-pass ceiling.
+The first lists came from the macOS runs above. Linux can differ, for example
+in fonts and timing, so after a CI run shows a story that is stable or newly
+variable, edit the list and note why in the commit. To run the same gate
+locally, add `--storybook <name>`.
+
 ### Run the script
 
 `scripts/field-test.mjs` does steps 2 to 4 for fresh passes. It takes a
