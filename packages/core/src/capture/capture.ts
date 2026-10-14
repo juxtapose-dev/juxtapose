@@ -416,6 +416,20 @@ async function freezeAnimations(page: Page, params: StoryParams): Promise<void> 
   if (params.animations === 'play') return;
   if (styleInjected.has(page)) return;
   await page.addStyleTag({ content: FREEZE_ANIMATIONS_CSS }).catch(() => {});
+  // A document stylesheet stops at a shadow boundary (issue #152): the idle
+  // init script adopts the same rules into every open shadow root, now and
+  // as later ones attach, until the next navigation. Closed roots are out of
+  // reach. Without the init script (it could not be installed) the shadow
+  // roots stay unfrozen, as they always were.
+  await page
+    .evaluate(
+      (css: string) =>
+        (
+          window as unknown as { __juxIdle?: { freeze?: (css: string) => void } }
+        ).__juxIdle?.freeze?.(css),
+      FREEZE_ANIMATIONS_CSS,
+    )
+    .catch(() => {});
   styleInjected.add(page);
 }
 
