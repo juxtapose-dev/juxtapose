@@ -314,7 +314,10 @@ function defaultConfig(ctx: {
   // Platform.name is any string; the config accepts the three jux ships.
   if (name !== 'storybook' && name !== 'ladle' && name !== 'urls')
     throw new Error(`jux init: platform '${name}' cannot be written to the config`);
-  const config: ProjectConfig = { platform: name };
+  const config: ProjectConfig = {
+    $schema: './node_modules/@juxtapose/core/schema.json',
+    platform: name,
+  };
   if (ctx.buildDir) {
     config.buildDir = path.relative(ctx.projectRoot, ctx.buildDir) || '.';
   }

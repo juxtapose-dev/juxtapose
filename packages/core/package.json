@@ -24,15 +24,18 @@
     ".": "./dist/index.js",
     "./browser": "./dist/browser/index.js",
     "./format": "./dist/report/format.js",
+    "./schema.json": "./schema.json",
     "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "schema.json"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && node scripts/write-schema.mjs"
   },
   "dependencies": {
+    "@sinclair/typebox": "0.34.52",
     "devtools-protocol": "0.0.1653615",
     "pixelmatch": "^6.0.0",
     "sharp": "^0.35.3"

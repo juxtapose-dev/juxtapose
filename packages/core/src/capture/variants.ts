@@ -10,6 +10,8 @@
 import { checkNetwork } from './network-policy.js';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
 import type { StoryManifest, StoryOverride, StoryParams, VariantSpec } from '../types.js';
+import { VariantsRuntimeSchema } from '../config/schema.js';
+import { validate } from '../config/validate.js';
 import { VariantConfigError } from './config-errors.js';
 import { checkSettle, mergeSettle } from './settle-options.js';
 import {
@@ -19,8 +21,7 @@ import {
   withOverride,
 } from './story-overrides.js';
 
-/** Underscores are excluded so the `__` key separator can't occur in a name. */
-export const VARIANT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
+export { VARIANT_NAME } from '../config/schema.js';
 
 export const VARIANT_SEPARATOR = '__';
 
@@ -32,9 +33,6 @@ export const captureKey = (baseStoryId: string, variant: string): string =>
 /** The id every platform call receives: the platform's own, never the key. */
 export const platformStoryId = (story: { storyId: string; baseStoryId?: string }) =>
   story.baseStoryId ?? story.storyId;
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /**
  * Expand each story into its default capture plus one entry per variant,
@@ -120,44 +118,7 @@ const describe = (s: StoryManifest): string =>
  *  the error names the place the user has to edit. */
 function checkDeclared(raw: unknown, where: string): Record<string, VariantSpec | false> {
   if (raw === undefined) return {};
-  if (!isRecord(raw)) {
-    throw new VariantConfigError(
-      `${where}: 'variants' must be an object of named variants`,
-    );
-  }
-  for (const [name, spec] of Object.entries(raw)) {
-    if (!VARIANT_NAME.test(name)) {
-      throw new VariantConfigError(
-        `${where}: variant name '${name}' must match ${VARIANT_NAME.source} (lowercase letters, digits and dashes; no underscores)`,
-      );
-    }
-    if (spec === false) continue;
-    if (!isRecord(spec)) {
-      throw new VariantConfigError(
-        `${where}: variant '${name}' must be an object of capture settings, or false to opt out`,
-      );
-    }
-    if ('skip' in spec) {
-      throw new VariantConfigError(
-        `${where}: variant '${name}' sets 'skip'; set the variant to false instead`,
-      );
-    }
-    const scheme = spec['colorScheme'];
-    if (scheme !== undefined && scheme !== 'light' && scheme !== 'dark') {
-      throw new VariantConfigError(
-        `${where}: variant '${name}' colorScheme must be 'light' or 'dark'`,
-      );
-    }
-    checkSettle(spec['settle'], `${where}: variant '${name}'`);
-    checkNetwork(spec['network'], `${where}: variant '${name}'`);
-    const ext = spec['extends'];
-    if (ext !== undefined && typeof ext !== 'string') {
-      throw new VariantConfigError(
-        `${where}: variant '${name}' extends must be a variant name`,
-      );
-    }
-  }
-  return raw as Record<string, VariantSpec | false>;
+  return validate<Record<string, VariantSpec | false>>(VariantsRuntimeSchema, raw, where);
 }
 
 /** The variant's own layer: its extends chain (farthest ancestor first),

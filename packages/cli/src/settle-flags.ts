@@ -3,9 +3,11 @@
 
 import {
   checkPatterns,
+  ExternalNetworkSchema,
   isSettleTimeout,
   MAX_SETTLE_TIMEOUT_MS,
   shellQuote,
+  type ExternalNetwork,
   type NetworkParams,
   type SettleParams,
 } from '@juxtapose/core';
@@ -21,6 +23,10 @@ export interface SettleFlags {
   'network-external'?: string;
 }
 
+/** `network.external` values, from the config schema. */
+const EXTERNAL: readonly string[] = ExternalNetworkSchema.anyOf.map((s) => s.const);
+const isExternal = (v: string): v is ExternalNetwork => EXTERNAL.includes(v);
+
 /** The flags as a `settle` object, undefined when none is set; or the usage
  *  error naming the flag. */
 export function settleFromFlags(
@@ -29,9 +35,9 @@ export function settleFromFlags(
 ): { settle?: SettleParams; network?: NetworkParams } | { error: string } {
   const settle: SettleParams = {};
   const external = flags['network-external'];
-  if (external !== undefined && external !== 'allow' && external !== 'block')
+  if (external !== undefined && !isExternal(external))
     return {
-      error: `${command}: --network-external must be allow or block, got '${external}'. Try --network-external block.`,
+      error: `${command}: --network-external must be ${EXTERNAL.join(' or ')}, got '${external}'. Try --network-external block.`,
     };
   const raw = flags['settle-timeout'];
   if (raw !== undefined) {

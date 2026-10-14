@@ -1,0 +1,1064 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "title": "juxtapose config",
+  "description": "juxtapose.config.json, .juxtaposerc.json, or the `juxtapose` key in package.json.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "The JSON Schema this file follows, for editors.",
+      "type": "string"
+    },
+    "platform": {
+      "description": "Which workbench. Autodetected when omitted.",
+      "anyOf": [
+        {
+          "const": "storybook",
+          "type": "string"
+        },
+        {
+          "const": "ladle",
+          "type": "string"
+        },
+        {
+          "const": "urls",
+          "type": "string"
+        }
+      ]
+    },
+    "urls": {
+      "description": "Pages to capture when `platform` is 'urls'.",
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "description": "One page for the `urls` platform.",
+        "type": "object",
+        "required": [
+          "id",
+          "url"
+        ],
+        "properties": {
+          "id": {
+            "description": "Stable id; used as the story id and for file names.",
+            "type": "string"
+          },
+          "url": {
+            "description": "Absolute, or relative to `origin`.",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": false,
+            "description": "Per-story capture options: `parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle.",
+            "type": "object",
+            "properties": {
+              "skip": {
+                "description": "Never capture this story.",
+                "type": "boolean"
+              },
+              "mask": {
+                "description": "CSS selectors to paint over before the shutter: a solid box over each match's bounding box. For a clock or a random avatar; prefer stubbing the input.",
+                "type": "array",
+                "items": {
+                  "minLength": 1,
+                  "format": "jux-css-selector",
+                  "description": "A CSS selector. Playwright-only syntax (`text=`) is refused.",
+                  "type": "string"
+                }
+              },
+              "delay": {
+                "minimum": 0,
+                "description": "Fixed extra wait after settle, in ms; last resort. Prefer waitForSelector.",
+                "type": "number"
+              },
+              "waitForSelector": {
+                "minLength": 1,
+                "format": "jux-css-selector",
+                "description": "Wait for async content juxtapose can't detect: capture once this CSS selector matches.",
+                "type": "string"
+              },
+              "captureTimeout": {
+                "exclusiveMinimum": 0,
+                "description": "Max ms to wait for render-ready before capturing anyway. Default 2000.",
+                "type": "number"
+              },
+              "settle": {
+                "additionalProperties": false,
+                "description": "How long to wait for the page to finish before capture. Layered: project config, then the story, then `stories` overrides, then the command.",
+                "type": "object",
+                "properties": {
+                  "timeout": {
+                    "minimum": 1,
+                    "maximum": 60000,
+                    "description": "The cap on the wait, in ms, from 1 to 60000. Default 1500. At the cap the page is captured anyway and the result is flagged settle-timeout.",
+                    "type": "integer"
+                  },
+                  "ready": {
+                    "description": "Also wait until the page calls `window.__juxtapose.ready()`. Default false.",
+                    "type": "boolean"
+                  },
+                  "network": {
+                    "additionalProperties": false,
+                    "description": "Which requests the settle wait counts.",
+                    "type": "object",
+                    "properties": {
+                      "ignore": {
+                        "description": "URL patterns never counted as pending, added to the built-in list (type:WebSocket, type:EventSource, type:Ping, type:Prefetch). A pattern is a URL glob, a `type:<ResourceType>`, or both.",
+                        "type": "array",
+                        "items": {
+                          "format": "jux-url-pattern",
+                          "type": "string"
+                        }
+                      },
+                      "require": {
+                        "description": "URL patterns that must each see a matching request complete before capture. Wins over `ignore`.",
+                        "type": "array",
+                        "items": {
+                          "format": "jux-url-pattern",
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "network": {
+                "additionalProperties": false,
+                "description": "Which requests the page may make. Layered like `settle`; only values known before navigation apply.",
+                "type": "object",
+                "properties": {
+                  "external": {
+                    "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
+                    "anyOf": [
+                      {
+                        "const": "allow",
+                        "type": "string"
+                      },
+                      {
+                        "const": "block",
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              },
+              "threshold": {
+                "minimum": 0,
+                "maximum": 1,
+                "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+                "type": "number"
+              },
+              "minDiffPercent": {
+                "minimum": 0,
+                "maximum": 100,
+                "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+                "type": "number"
+              },
+              "viewport": {
+                "additionalProperties": false,
+                "description": "The capture size, in CSS pixels.",
+                "type": "object",
+                "required": [
+                  "width",
+                  "height"
+                ],
+                "properties": {
+                  "width": {
+                    "minimum": 1,
+                    "description": "CSS pixels.",
+                    "type": "integer"
+                  },
+                  "height": {
+                    "minimum": 1,
+                    "description": "CSS pixels.",
+                    "type": "integer"
+                  }
+                }
+              },
+              "animations": {
+                "description": "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
+                "anyOf": [
+                  {
+                    "const": "play",
+                    "type": "string"
+                  },
+                  {
+                    "const": "disabled",
+                    "type": "string"
+                  }
+                ]
+              },
+              "captureAfterPlay": {
+                "description": "Screenshot after the story's play function, not at first render.",
+                "type": "boolean"
+              },
+              "liveCapture": {
+                "description": "false excludes this story from watch-mode recapture while leaving normal runs alone. Default true.",
+                "type": "boolean"
+              },
+              "variants": {
+                "additionalProperties": false,
+                "description": "Named capture variants, each captured, judged and approved on its own under `<story id>__<name>`. `false` opts out of a project-wide variant of that name.",
+                "type": "object",
+                "patternProperties": {
+                  "^[a-z0-9][a-z0-9-]{0,31}$": {
+                    "anyOf": [
+                      {
+                        "const": false,
+                        "type": "boolean"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "description": "A named capture variant, captured, judged and approved on its own under `<story id>__<name>`. `skip` is not an option; set the variant to false instead.",
+                        "type": "object",
+                        "properties": {
+                          "viewport": {
+                            "additionalProperties": false,
+                            "description": "The capture size, in CSS pixels.",
+                            "type": "object",
+                            "required": [
+                              "width",
+                              "height"
+                            ],
+                            "properties": {
+                              "width": {
+                                "minimum": 1,
+                                "description": "CSS pixels.",
+                                "type": "integer"
+                              },
+                              "height": {
+                                "minimum": 1,
+                                "description": "CSS pixels.",
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "animations": {
+                            "description": "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
+                            "anyOf": [
+                              {
+                                "const": "play",
+                                "type": "string"
+                              },
+                              {
+                                "const": "disabled",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "captureAfterPlay": {
+                            "description": "Screenshot after the story's play function, not at first render.",
+                            "type": "boolean"
+                          },
+                          "mask": {
+                            "description": "CSS selectors to paint over before the shutter: a solid box over each match's bounding box. For a clock or a random avatar; prefer stubbing the input.",
+                            "type": "array",
+                            "items": {
+                              "minLength": 1,
+                              "format": "jux-css-selector",
+                              "description": "A CSS selector. Playwright-only syntax (`text=`) is refused.",
+                              "type": "string"
+                            }
+                          },
+                          "delay": {
+                            "minimum": 0,
+                            "description": "Fixed extra wait after settle, in ms; last resort. Prefer waitForSelector.",
+                            "type": "number"
+                          },
+                          "waitForSelector": {
+                            "minLength": 1,
+                            "format": "jux-css-selector",
+                            "description": "Wait for async content juxtapose can't detect: capture once this CSS selector matches.",
+                            "type": "string"
+                          },
+                          "captureTimeout": {
+                            "exclusiveMinimum": 0,
+                            "description": "Max ms to wait for render-ready before capturing anyway. Default 2000.",
+                            "type": "number"
+                          },
+                          "settle": {
+                            "additionalProperties": false,
+                            "description": "How long to wait for the page to finish before capture. Layered: project config, then the story, then `stories` overrides, then the command.",
+                            "type": "object",
+                            "properties": {
+                              "timeout": {
+                                "minimum": 1,
+                                "maximum": 60000,
+                                "description": "The cap on the wait, in ms, from 1 to 60000. Default 1500. At the cap the page is captured anyway and the result is flagged settle-timeout.",
+                                "type": "integer"
+                              },
+                              "ready": {
+                                "description": "Also wait until the page calls `window.__juxtapose.ready()`. Default false.",
+                                "type": "boolean"
+                              },
+                              "network": {
+                                "additionalProperties": false,
+                                "description": "Which requests the settle wait counts.",
+                                "type": "object",
+                                "properties": {
+                                  "ignore": {
+                                    "description": "URL patterns never counted as pending, added to the built-in list (type:WebSocket, type:EventSource, type:Ping, type:Prefetch). A pattern is a URL glob, a `type:<ResourceType>`, or both.",
+                                    "type": "array",
+                                    "items": {
+                                      "format": "jux-url-pattern",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "require": {
+                                    "description": "URL patterns that must each see a matching request complete before capture. Wins over `ignore`.",
+                                    "type": "array",
+                                    "items": {
+                                      "format": "jux-url-pattern",
+                                      "type": "string"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "network": {
+                            "additionalProperties": false,
+                            "description": "Which requests the page may make. Layered like `settle`; only values known before navigation apply.",
+                            "type": "object",
+                            "properties": {
+                              "external": {
+                                "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
+                                "anyOf": [
+                                  {
+                                    "const": "allow",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "block",
+                                    "type": "string"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "threshold": {
+                            "minimum": 0,
+                            "maximum": 1,
+                            "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+                            "type": "number"
+                          },
+                          "minDiffPercent": {
+                            "minimum": 0,
+                            "maximum": 100,
+                            "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+                            "type": "number"
+                          },
+                          "colorScheme": {
+                            "description": "prefers-color-scheme for this variant. The default capture is always light.",
+                            "anyOf": [
+                              {
+                                "const": "light",
+                                "type": "string"
+                              },
+                              {
+                                "const": "dark",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "extends": {
+                            "description": "Another variant (of this story or the project) whose fields this one starts from. Chains resolve; a cycle or an unknown name is an error.",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "colorScheme": {
+                "description": "Set on a variant's resolved params. The default capture is always light, so a story's own colorScheme is ignored.",
+                "anyOf": [
+                  {
+                    "const": "light",
+                    "type": "string"
+                  },
+                  {
+                    "const": "dark",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          },
+          "variants": {
+            "additionalProperties": false,
+            "description": "Named capture variants, each captured, judged and approved on its own under `<story id>__<name>`. `false` opts out of a project-wide variant of that name.",
+            "type": "object",
+            "patternProperties": {
+              "^[a-z0-9][a-z0-9-]{0,31}$": {
+                "anyOf": [
+                  {
+                    "const": false,
+                    "type": "boolean"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "description": "A named capture variant, captured, judged and approved on its own under `<story id>__<name>`. `skip` is not an option; set the variant to false instead.",
+                    "type": "object",
+                    "properties": {
+                      "viewport": {
+                        "additionalProperties": false,
+                        "description": "The capture size, in CSS pixels.",
+                        "type": "object",
+                        "required": [
+                          "width",
+                          "height"
+                        ],
+                        "properties": {
+                          "width": {
+                            "minimum": 1,
+                            "description": "CSS pixels.",
+                            "type": "integer"
+                          },
+                          "height": {
+                            "minimum": 1,
+                            "description": "CSS pixels.",
+                            "type": "integer"
+                          }
+                        }
+                      },
+                      "animations": {
+                        "description": "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
+                        "anyOf": [
+                          {
+                            "const": "play",
+                            "type": "string"
+                          },
+                          {
+                            "const": "disabled",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "captureAfterPlay": {
+                        "description": "Screenshot after the story's play function, not at first render.",
+                        "type": "boolean"
+                      },
+                      "mask": {
+                        "description": "CSS selectors to paint over before the shutter: a solid box over each match's bounding box. For a clock or a random avatar; prefer stubbing the input.",
+                        "type": "array",
+                        "items": {
+                          "minLength": 1,
+                          "format": "jux-css-selector",
+                          "description": "A CSS selector. Playwright-only syntax (`text=`) is refused.",
+                          "type": "string"
+                        }
+                      },
+                      "delay": {
+                        "minimum": 0,
+                        "description": "Fixed extra wait after settle, in ms; last resort. Prefer waitForSelector.",
+                        "type": "number"
+                      },
+                      "waitForSelector": {
+                        "minLength": 1,
+                        "format": "jux-css-selector",
+                        "description": "Wait for async content juxtapose can't detect: capture once this CSS selector matches.",
+                        "type": "string"
+                      },
+                      "captureTimeout": {
+                        "exclusiveMinimum": 0,
+                        "description": "Max ms to wait for render-ready before capturing anyway. Default 2000.",
+                        "type": "number"
+                      },
+                      "settle": {
+                        "additionalProperties": false,
+                        "description": "How long to wait for the page to finish before capture. Layered: project config, then the story, then `stories` overrides, then the command.",
+                        "type": "object",
+                        "properties": {
+                          "timeout": {
+                            "minimum": 1,
+                            "maximum": 60000,
+                            "description": "The cap on the wait, in ms, from 1 to 60000. Default 1500. At the cap the page is captured anyway and the result is flagged settle-timeout.",
+                            "type": "integer"
+                          },
+                          "ready": {
+                            "description": "Also wait until the page calls `window.__juxtapose.ready()`. Default false.",
+                            "type": "boolean"
+                          },
+                          "network": {
+                            "additionalProperties": false,
+                            "description": "Which requests the settle wait counts.",
+                            "type": "object",
+                            "properties": {
+                              "ignore": {
+                                "description": "URL patterns never counted as pending, added to the built-in list (type:WebSocket, type:EventSource, type:Ping, type:Prefetch). A pattern is a URL glob, a `type:<ResourceType>`, or both.",
+                                "type": "array",
+                                "items": {
+                                  "format": "jux-url-pattern",
+                                  "type": "string"
+                                }
+                              },
+                              "require": {
+                                "description": "URL patterns that must each see a matching request complete before capture. Wins over `ignore`.",
+                                "type": "array",
+                                "items": {
+                                  "format": "jux-url-pattern",
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "network": {
+                        "additionalProperties": false,
+                        "description": "Which requests the page may make. Layered like `settle`; only values known before navigation apply.",
+                        "type": "object",
+                        "properties": {
+                          "external": {
+                            "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
+                            "anyOf": [
+                              {
+                                "const": "allow",
+                                "type": "string"
+                              },
+                              {
+                                "const": "block",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "threshold": {
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+                        "type": "number"
+                      },
+                      "minDiffPercent": {
+                        "minimum": 0,
+                        "maximum": 100,
+                        "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+                        "type": "number"
+                      },
+                      "colorScheme": {
+                        "description": "prefers-color-scheme for this variant. The default capture is always light.",
+                        "anyOf": [
+                          {
+                            "const": "light",
+                            "type": "string"
+                          },
+                          {
+                            "const": "dark",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "extends": {
+                        "description": "Another variant (of this story or the project) whose fields this one starts from. Chains resolve; a cycle or an unknown name is an error.",
+                        "type": "string"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "buildDir": {
+      "description": "The built static workbench, relative to the project root. jux serves it for the length of the run. The `--build-dir` flag overrides it.",
+      "type": "string"
+    },
+    "origin": {
+      "description": "Capture a running or deployed workbench at this URL instead of a build. The `--origin` flag overrides it.",
+      "type": "string"
+    },
+    "concurrency": {
+      "minimum": 1,
+      "description": "Parallel pages. Default 8. Past your core count, contention slows captures down.",
+      "type": "integer"
+    },
+    "warmSwitch": {
+      "description": "Switch stories in place instead of navigating. ~4x faster, but doesn't reproduce cold-load pixels exactly, so a story's verdict can depend on queue order. Default false.",
+      "type": "boolean"
+    },
+    "freshRenderer": {
+      "description": "Start each cold capture after a page's first in a new renderer process, so a story's hash doesn't depend on the story captured before it. Default true; false trades that for speed (about 220 ms per Storybook story).",
+      "type": "boolean"
+    },
+    "storyTimeout": {
+      "minimum": 1000,
+      "maximum": 2147483647,
+      "description": "Budget for capturing one story, navigation through encode, in ms (whole number from 1000). Default 60000. A story that uses it all fails once with an error naming the step it was stuck in.",
+      "type": "integer"
+    },
+    "settle": {
+      "additionalProperties": false,
+      "description": "How long to wait for the page to finish before capture. Layered: project config, then the story, then `stories` overrides, then the command.",
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "minimum": 1,
+          "maximum": 60000,
+          "description": "The cap on the wait, in ms, from 1 to 60000. Default 1500. At the cap the page is captured anyway and the result is flagged settle-timeout.",
+          "type": "integer"
+        },
+        "ready": {
+          "description": "Also wait until the page calls `window.__juxtapose.ready()`. Default false.",
+          "type": "boolean"
+        },
+        "network": {
+          "additionalProperties": false,
+          "description": "Which requests the settle wait counts.",
+          "type": "object",
+          "properties": {
+            "ignore": {
+              "description": "URL patterns never counted as pending, added to the built-in list (type:WebSocket, type:EventSource, type:Ping, type:Prefetch). A pattern is a URL glob, a `type:<ResourceType>`, or both.",
+              "type": "array",
+              "items": {
+                "format": "jux-url-pattern",
+                "type": "string"
+              }
+            },
+            "require": {
+              "description": "URL patterns that must each see a matching request complete before capture. Wins over `ignore`.",
+              "type": "array",
+              "items": {
+                "format": "jux-url-pattern",
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "network": {
+      "additionalProperties": false,
+      "description": "Which requests the page may make. Layered like `settle`; only values known before navigation apply.",
+      "type": "object",
+      "properties": {
+        "external": {
+          "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
+          "anyOf": [
+            {
+              "const": "allow",
+              "type": "string"
+            },
+            {
+              "const": "block",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    "stories": {
+      "additionalProperties": false,
+      "description": "Per-story overrides keyed by story id glob, for a workbench you don't own. `*` matches anything but `/`, `**` anything, `?` one character. A key matching a story id covers its variants; `<id>__<variant>` targets one variant.",
+      "type": "object",
+      "patternProperties": {
+        "\\S": {
+          "additionalProperties": false,
+          "description": "Options for the stories this glob matches, with the meaning they have in `parameters.juxtapose`. Layered over the story's own.",
+          "type": "object",
+          "properties": {
+            "skip": {
+              "description": "Never capture this story.",
+              "type": "boolean"
+            },
+            "mask": {
+              "description": "CSS selectors to paint over before the shutter: a solid box over each match's bounding box. For a clock or a random avatar; prefer stubbing the input.",
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "format": "jux-css-selector",
+                "description": "A CSS selector. Playwright-only syntax (`text=`) is refused.",
+                "type": "string"
+              }
+            },
+            "delay": {
+              "minimum": 0,
+              "description": "Fixed extra wait after settle, in ms; last resort. Prefer waitForSelector.",
+              "type": "number"
+            },
+            "waitForSelector": {
+              "minLength": 1,
+              "format": "jux-css-selector",
+              "description": "Wait for async content juxtapose can't detect: capture once this CSS selector matches.",
+              "type": "string"
+            },
+            "captureTimeout": {
+              "exclusiveMinimum": 0,
+              "description": "Max ms to wait for render-ready before capturing anyway. Default 2000.",
+              "type": "number"
+            },
+            "settle": {
+              "additionalProperties": false,
+              "description": "How long to wait for the page to finish before capture. Layered: project config, then the story, then `stories` overrides, then the command.",
+              "type": "object",
+              "properties": {
+                "timeout": {
+                  "minimum": 1,
+                  "maximum": 60000,
+                  "description": "The cap on the wait, in ms, from 1 to 60000. Default 1500. At the cap the page is captured anyway and the result is flagged settle-timeout.",
+                  "type": "integer"
+                },
+                "ready": {
+                  "description": "Also wait until the page calls `window.__juxtapose.ready()`. Default false.",
+                  "type": "boolean"
+                },
+                "network": {
+                  "additionalProperties": false,
+                  "description": "Which requests the settle wait counts.",
+                  "type": "object",
+                  "properties": {
+                    "ignore": {
+                      "description": "URL patterns never counted as pending, added to the built-in list (type:WebSocket, type:EventSource, type:Ping, type:Prefetch). A pattern is a URL glob, a `type:<ResourceType>`, or both.",
+                      "type": "array",
+                      "items": {
+                        "format": "jux-url-pattern",
+                        "type": "string"
+                      }
+                    },
+                    "require": {
+                      "description": "URL patterns that must each see a matching request complete before capture. Wins over `ignore`.",
+                      "type": "array",
+                      "items": {
+                        "format": "jux-url-pattern",
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "network": {
+              "additionalProperties": false,
+              "description": "Which requests the page may make. Layered like `settle`; only values known before navigation apply.",
+              "type": "object",
+              "properties": {
+                "external": {
+                  "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
+                  "anyOf": [
+                    {
+                      "const": "allow",
+                      "type": "string"
+                    },
+                    {
+                      "const": "block",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            "threshold": {
+              "minimum": 0,
+              "maximum": 1,
+              "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+              "type": "number"
+            },
+            "minDiffPercent": {
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "waitForSelector": {
+      "description": "Project-wide `waitForSelector`; a story's own wins.",
+      "type": "string"
+    },
+    "delay": {
+      "minimum": 0,
+      "description": "Project-wide `delay`, ms; a story's own wins.",
+      "type": "number"
+    },
+    "viewport": {
+      "additionalProperties": false,
+      "description": "The capture size, in CSS pixels.",
+      "type": "object",
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "minimum": 1,
+          "description": "CSS pixels.",
+          "type": "integer"
+        },
+        "height": {
+          "minimum": 1,
+          "description": "CSS pixels.",
+          "type": "integer"
+        }
+      }
+    },
+    "threshold": {
+      "minimum": 0,
+      "maximum": 1,
+      "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+      "type": "number"
+    },
+    "minDiffPercent": {
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+      "type": "number"
+    },
+    "variants": {
+      "additionalProperties": false,
+      "description": "Named capture variants, each captured, judged and approved on its own under `<story id>__<name>`. `false` opts out of a project-wide variant of that name.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9-]{0,31}$": {
+          "anyOf": [
+            {
+              "const": false,
+              "type": "boolean"
+            },
+            {
+              "additionalProperties": false,
+              "description": "A named capture variant, captured, judged and approved on its own under `<story id>__<name>`. `skip` is not an option; set the variant to false instead.",
+              "type": "object",
+              "properties": {
+                "viewport": {
+                  "additionalProperties": false,
+                  "description": "The capture size, in CSS pixels.",
+                  "type": "object",
+                  "required": [
+                    "width",
+                    "height"
+                  ],
+                  "properties": {
+                    "width": {
+                      "minimum": 1,
+                      "description": "CSS pixels.",
+                      "type": "integer"
+                    },
+                    "height": {
+                      "minimum": 1,
+                      "description": "CSS pixels.",
+                      "type": "integer"
+                    }
+                  }
+                },
+                "animations": {
+                  "description": "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
+                  "anyOf": [
+                    {
+                      "const": "play",
+                      "type": "string"
+                    },
+                    {
+                      "const": "disabled",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "captureAfterPlay": {
+                  "description": "Screenshot after the story's play function, not at first render.",
+                  "type": "boolean"
+                },
+                "mask": {
+                  "description": "CSS selectors to paint over before the shutter: a solid box over each match's bounding box. For a clock or a random avatar; prefer stubbing the input.",
+                  "type": "array",
+                  "items": {
+                    "minLength": 1,
+                    "format": "jux-css-selector",
+                    "description": "A CSS selector. Playwright-only syntax (`text=`) is refused.",
+                    "type": "string"
+                  }
+                },
+                "delay": {
+                  "minimum": 0,
+                  "description": "Fixed extra wait after settle, in ms; last resort. Prefer waitForSelector.",
+                  "type": "number"
+                },
+                "waitForSelector": {
+                  "minLength": 1,
+                  "format": "jux-css-selector",
+                  "description": "Wait for async content juxtapose can't detect: capture once this CSS selector matches.",
+                  "type": "string"
+                },
+                "captureTimeout": {
+                  "exclusiveMinimum": 0,
+                  "description": "Max ms to wait for render-ready before capturing anyway. Default 2000.",
+                  "type": "number"
+                },
+                "settle": {
+                  "additionalProperties": false,
+                  "description": "How long to wait for the page to finish before capture. Layered: project config, then the story, then `stories` overrides, then the command.",
+                  "type": "object",
+                  "properties": {
+                    "timeout": {
+                      "minimum": 1,
+                      "maximum": 60000,
+                      "description": "The cap on the wait, in ms, from 1 to 60000. Default 1500. At the cap the page is captured anyway and the result is flagged settle-timeout.",
+                      "type": "integer"
+                    },
+                    "ready": {
+                      "description": "Also wait until the page calls `window.__juxtapose.ready()`. Default false.",
+                      "type": "boolean"
+                    },
+                    "network": {
+                      "additionalProperties": false,
+                      "description": "Which requests the settle wait counts.",
+                      "type": "object",
+                      "properties": {
+                        "ignore": {
+                          "description": "URL patterns never counted as pending, added to the built-in list (type:WebSocket, type:EventSource, type:Ping, type:Prefetch). A pattern is a URL glob, a `type:<ResourceType>`, or both.",
+                          "type": "array",
+                          "items": {
+                            "format": "jux-url-pattern",
+                            "type": "string"
+                          }
+                        },
+                        "require": {
+                          "description": "URL patterns that must each see a matching request complete before capture. Wins over `ignore`.",
+                          "type": "array",
+                          "items": {
+                            "format": "jux-url-pattern",
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "network": {
+                  "additionalProperties": false,
+                  "description": "Which requests the page may make. Layered like `settle`; only values known before navigation apply.",
+                  "type": "object",
+                  "properties": {
+                    "external": {
+                      "description": "`block` fails requests to origins other than the page's own (the story URL's origin) at once. Default `allow`.",
+                      "anyOf": [
+                        {
+                          "const": "allow",
+                          "type": "string"
+                        },
+                        {
+                          "const": "block",
+                          "type": "string"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "threshold": {
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+                  "type": "number"
+                },
+                "minDiffPercent": {
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+                  "type": "number"
+                },
+                "colorScheme": {
+                  "description": "prefers-color-scheme for this variant. The default capture is always light.",
+                  "anyOf": [
+                    {
+                      "const": "light",
+                      "type": "string"
+                    },
+                    {
+                      "const": "dark",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "extends": {
+                  "description": "Another variant (of this story or the project) whose fields this one starts from. Chains resolve; a cycle or an unknown name is an error.",
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "storage": {
+      "description": "Where baseline images live. The manifest is always in git. Default `{ \"kind\": \"git\" }`.",
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "git",
+              "type": "string"
+            },
+            "dir": {
+              "description": "Baseline image directory.",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind",
+            "dir"
+          ],
+          "properties": {
+            "kind": {
+              "const": "fs",
+              "type": "string"
+            },
+            "dir": {
+              "description": "Baseline image directory.",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "description": "Not implemented yet; the CLI refuses it.",
+          "type": "object",
+          "required": [
+            "kind",
+            "bucket"
+          ],
+          "properties": {
+            "kind": {
+              "const": "s3",
+              "type": "string"
+            },
+            "bucket": {
+              "type": "string"
+            },
+            "prefix": {
+              "type": "string"
+            },
+            "endpoint": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "mcp": {
+      "additionalProperties": false,
+      "description": "`jux mcp` settings.",
+      "type": "object",
+      "properties": {
+        "concurrency": {
+          "minimum": 1,
+          "maximum": 16,
+          "description": "Snaps `jux mcp` captures at once, 1 to 16. Default half the CPU cores, 1 to 4.",
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

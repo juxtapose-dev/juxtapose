@@ -20,37 +20,12 @@
 // `network` merge field by field (settle.network lists concatenate).
 
 import type { StoryManifest, StoryOverride, StoryParams } from '../types.js';
-import { assertCssSelector } from '../browser/selectors.js';
-import { VariantConfigError } from './config-errors.js';
-import { checkNetwork } from './network-policy.js';
-import { checkSettle, globToRegExp, mergeSettle } from './settle-options.js';
-
-const KEYS = [
-  'skip',
-  'mask',
-  'delay',
-  'waitForSelector',
-  'captureTimeout',
-  'settle',
-  'network',
-  'threshold',
-  'minDiffPercent',
-] as const;
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
+import { StoriesSchema } from '../config/schema.js';
+import { validate } from '../config/validate.js';
+import { globToRegExp } from './url-pattern.js';
+import { mergeSettle } from './settle-options.js';
 
 const isWild = (glob: string) => /[*?]/.test(glob);
-
-function selectorOk(sel: string, key: string, fail: (m: string) => Error): void {
-  try {
-    assertCssSelector(sel);
-  } catch {
-    throw fail(
-      `${key} '${sel}' is not a CSS selector (Playwright-only syntax is refused)`,
-    );
-  }
-}
 
 /** Validate `stories` where it is declared. `where` names the config (e.g.
  *  `project config`); each message names the glob and the key. */
@@ -59,47 +34,7 @@ export function checkStoryOverrides(
   where = 'project config',
 ): Record<string, StoryOverride> {
   if (raw === undefined) return {};
-  if (!isRecord(raw)) {
-    throw new VariantConfigError(
-      `${where}: 'stories' must be an object of story id globs`,
-    );
-  }
-  for (const [glob, spec] of Object.entries(raw)) {
-    const at = `${where}: stories['${glob}']`;
-    const fail = (m: string) => new VariantConfigError(`${at}: ${m}`);
-    if (glob.trim() === '') throw fail(`the story id glob must not be empty`);
-    if (!isRecord(spec)) throw fail(`must be an object of capture settings`);
-    for (const k of Object.keys(spec)) {
-      if (!(KEYS as readonly string[]).includes(k))
-        throw fail(`unknown option '${k}' (expected ${KEYS.join(', ')})`);
-    }
-    if (spec['skip'] !== undefined && typeof spec['skip'] !== 'boolean')
-      throw fail(`skip must be true or false, got ${JSON.stringify(spec['skip'])}`);
-    const mask = spec['mask'];
-    if (
-      mask !== undefined &&
-      (!Array.isArray(mask) || !mask.every((m) => typeof m === 'string' && m !== ''))
-    )
-      throw fail(`mask must be an array of selectors`);
-    // Up front: a `text=` mask would otherwise fail story by story at capture.
-    for (const m of (mask as string[] | undefined) ?? []) selectorOk(m, 'mask', fail);
-    const num = (k: string, ok: (n: number) => boolean, what: string) => {
-      const v = spec[k];
-      if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v) || !ok(v)))
-        throw fail(`${k} must be ${what}, got ${JSON.stringify(v)}`);
-    };
-    num('delay', (n) => n >= 0, 'a number of ms, 0 or more');
-    num('captureTimeout', (n) => n > 0, 'a number of ms above 0');
-    num('threshold', (n) => n >= 0 && n <= 1, 'a number from 0 to 1');
-    num('minDiffPercent', (n) => n >= 0 && n <= 100, 'a percentage from 0 to 100');
-    const w = spec['waitForSelector'];
-    if (w !== undefined && (typeof w !== 'string' || w === ''))
-      throw fail(`waitForSelector must be a CSS selector`);
-    if (typeof w === 'string') selectorOk(w, 'waitForSelector', fail);
-    checkSettle(spec['settle'], at);
-    checkNetwork(spec['network'], at);
-  }
-  return raw as Record<string, StoryOverride>;
+  return validate<Record<string, StoryOverride>>(StoriesSchema, raw, where);
 }
 
 export interface CompiledOverride {

@@ -6,3 +6,4 @@ examples/*/build/
 examples/*/.juxtapose/
 **/juxtapose.manifest.json
 .superpowers/
+packages/core/schema.json

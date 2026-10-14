@@ -4,6 +4,7 @@
 
 ```json
 {
+  "$schema": "./node_modules/@juxtapose/core/schema.json",
   "platform": "storybook",
   "concurrency": 8,
   "viewport": { "width": 1280, "height": 800 },
@@ -19,6 +20,12 @@ makes a story's verdict depend on where it lands in the queue.
 
 `stories` sets per-story options by story id glob, for a Storybook you don't
 own: see [Override stories you don't own](#override-stories-you-dont-own).
+
+The `$schema` line, which `jux init` writes, gives editors such as VS Code
+completion, hover docs and validation for every option. The schema is
+`@juxtapose/core/schema.json`. pnpm doesn't hoist dependencies, so with pnpm
+add `@juxtapose/core` as a dev dependency for that path to exist. The editor flags any key the schema doesn't know, while
+`jux` itself still checks only the options this page says it checks.
 
 `.juxtaposerc.json` works as well. JSON only — a `.ts` or `.js` config is not
 loaded.
@@ -92,6 +99,18 @@ Per-story options go through the platform's own parameter mechanism
 | `captureTimeout`               | max ms to wait for render-ready (default 2000)      |
 | `mask`                         | paint over selectors before the shutter (see below) |
 | `liveCapture: false`           | exclude from watch-mode recapture (see below)       |
+
+In a TypeScript Storybook, `parameters.juxtapose` is typed once
+`@juxtapose/storybook` is part of the program, so a misspelled option is a type
+error. Import it for its types anywhere in the project, for example in
+`.storybook/preview.ts`:
+
+```ts
+import type {} from '@juxtapose/storybook';
+```
+
+The type is `JuxtaposeParameters`, exported by `@juxtapose/storybook` and
+`@juxtapose/core`.
 
 Captures are reproducible: juxtapose freezes animations, waits for the page to
 finish its work (see [Settle](#settle)), and pins rendering to settings that

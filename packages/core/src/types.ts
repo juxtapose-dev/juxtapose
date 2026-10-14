@@ -2,77 +2,32 @@ import type { Viewport } from './browser/types.js';
 // Core data model. Deliberately free of any platform (Storybook/Ladle) types —
 // adapters map their world onto these.
 
-/** Per-story tuning, read from the platform's story parameters. */
-export interface StoryParams {
-  /** Exclude this story from capture entirely. */
-  skip?: boolean;
-  viewport?: Viewport;
-  /** Fixed extra wait after settle, ms. Escape hatch; prefer waitForSelector. */
-  delay?: number;
-  /** pixelmatch colour-distance threshold, 0..1. Default 0.1. */
-  threshold?: number;
-  /** Mismatch % below which a diff still passes. Suppresses AA noise. Default 0. */
-  minDiffPercent?: number;
-  /** CSS animations during capture. Default 'disabled' so spinners don't flake. */
-  animations?: 'play' | 'disabled';
-  /** Capture after the story's interaction/play phase rather than at first render. */
-  captureAfterPlay?: boolean;
-  /** Wait for this selector before screenshotting. For async content the
-   *  network drain can't see (SDK init, lazy canvas). */
-  waitForSelector?: string;
-  /** Max ms to wait for render-ready before screenshotting anyway. Default 2000. */
-  captureTimeout?: number;
-  /** Selectors to cover with a solid box before the screenshot. For a clock or
-   *  a random avatar; prefer stubbing the input. Masks the element's bounding
-   *  box, so give it a fixed size or the box resizes with the content. */
-  mask?: string[];
-  /** Exclude from watch-mode recapture while leaving normal runs alone. For
-   *  stories whose play function or delay makes a keystroke-triggered capture
-   *  cost more than it returns. Default true. */
-  liveCapture?: boolean;
-  /** Named capture variants of this story: each is captured, judged and
-   *  approved on its own under the key `${storyId}__${name}`. `false` opts
-   *  this story out of a project-wide variant of that name. */
-  variants?: Record<string, VariantSpec | false>;
-  /** Set on a variant's resolved params; a variant-only field. The default
-   *  capture is always light, so a story's own `colorScheme` is ignored. */
-  colorScheme?: ColorScheme;
-  /** How the capture decides the page has finished. Layered over the project
-   *  config's `settle` and under per-call options. */
-  settle?: SettleParams;
-  /** Which requests the page may make. Layered like `settle`; read before
-   *  navigation, so only the story's static params count, not live ones. */
-  network?: NetworkParams;
-}
+// Configuration types are derived from config/schema.ts, the one source the
+// published JSON Schema and the runtime validation also come from.
+import type {
+  JuxtaposeParameters,
+  NetworkParams,
+  ProjectConfig,
+  SettleParams,
+  StorageConfig,
+  StoryOverride,
+  UrlEntry,
+  VariantSpec,
+} from './config/schema.js';
+export type {
+  JuxtaposeParameters,
+  NetworkParams,
+  ProjectConfig,
+  SettleParams,
+  StorageConfig,
+  StoryOverride,
+  UrlEntry,
+  VariantSpec,
+};
 
-/** Third-party requests during capture (issue #147). */
-export interface NetworkParams {
-  /** `'block'` fails requests to origins other than the page's own, so a
-   *  random photo or a broken link neither changes the pixels nor holds the
-   *  page to the settle cap. Default `'allow'`. */
-  external?: 'allow' | 'block';
-}
-
-/**
- * The event-driven settle wait: the page is captured once it reports no
- * pending timers, frames, messages, fonts or images and no counted request is
- * in flight, or at `timeout`, whichever comes first.
- */
-export interface SettleParams {
-  /** Hard cap on the wait, ms, 1 to 60000. Default 1500. At the cap the
-   *  page is captured anyway and the result is flagged `settle-timeout`. */
-  timeout?: number;
-  /** Also wait for the page to call `window.__juxtapose.ready()`. */
-  ready?: boolean;
-  network?: {
-    /** Requests never counted as pending. Added to the defaults
-     *  (`type:WebSocket`, `type:EventSource`, `type:Ping`, `type:Prefetch`). */
-    ignore?: string[];
-    /** Each pattern must see a matching request complete before the page
-     *  counts as settled. Wins over `ignore`. */
-    require?: string[];
-  };
-}
+/** Per-story tuning, read from the platform's story parameters: what
+ *  `parameters.juxtapose` accepts. */
+export type StoryParams = JuxtaposeParameters;
 
 /** Something about a capture that doesn't fail it but should be read.
  *  `settle-timeout`: the settle wait hit its cap. `settle-fallback`: the
@@ -102,19 +57,6 @@ export type SettleReport =
     };
 
 export type ColorScheme = 'light' | 'dark';
-
-/** One named variant: any per-story option, plus a color scheme and the name
- *  of another variant to start from. `skip` is not a field; set the variant to
- *  `false` to drop it. */
-export interface VariantSpec extends Omit<
-  StoryParams,
-  'skip' | 'variants' | 'liveCapture'
-> {
-  colorScheme?: ColorScheme;
-  /** Another variant (of this story or the project) whose fields this one
-   *  starts from. Chains resolve; a cycle or unknown name is a config error. */
-  extends?: string;
-}
 
 // Lives with the browser driver, which must not import from the rest of core.
 export type { Viewport } from './browser/types.js';
@@ -453,96 +395,6 @@ export interface BaselineManifest {
   version: 1;
   baselines: Record<string, BaselineEntry>;
 }
-
-/** One page for the `urls` platform. */
-export interface UrlEntry {
-  /** Stable id; used as the story id and for file names. */
-  id: string;
-  /** Absolute, or relative to --origin. */
-  url: string;
-  params?: StoryParams;
-  /** Same as `params.variants`; the two are merged, and these win. */
-  variants?: Record<string, VariantSpec | false>;
-}
-
-/** What a project config `stories` entry can set for the stories its glob
- *  matches: the capture settings a story may declare in `parameters.juxtapose`
- *  that are about stability, plus the two diff tolerances. Layered OVER the
- *  story's own params (see capture/story-overrides.ts). */
-export type StoryOverride = Pick<
-  StoryParams,
-  | 'skip'
-  | 'mask'
-  | 'delay'
-  | 'waitForSelector'
-  | 'captureTimeout'
-  | 'settle'
-  | 'network'
-  | 'threshold'
-  | 'minDiffPercent'
->;
-
-/** Project config, from juxtapose.config.{ts,js,json} or package.json#juxtapose. */
-export interface ProjectConfig {
-  /** Which workbench. Autodetected when omitted. */
-  platform?: 'storybook' | 'ladle' | 'urls';
-  /** Pages to capture when `platform` is 'urls'. */
-  urls?: UrlEntry[];
-  /** Where the built static workbench lives. */
-  buildDir?: string;
-  /** Capture against an already-running dev server instead of building. */
-  origin?: string;
-  /** Parallel pages. Default 8. More is not better — CPU saturation
-   *  causes render timeouts. Scale to core count. */
-  concurrency?: number;
-  /** Reuse warm pages and switch stories in place instead of navigating.
-   *  Much faster, but warm and cold captures do not currently produce
-   *  identical pixels, which makes results depend on queue order under a
-   *  byte-exact hash. Opt in only if you have measured it on your suite. */
-  warmSwitch?: boolean;
-  /** Start each cold capture after a page's first in a new renderer process.
-   *  Default true. The renderer keeps state such as canvas text measurement
-   *  and raster caches across stories, so without it a story's hash can
-   *  depend on the story captured before it. Costs about 220 ms per
-   *  Storybook story; false trades that order dependence for speed. */
-  freshRenderer?: boolean;
-  /** Budget for capturing one story, ms; default 60000. A story that uses
-   *  it all errors once, naming the step it was stuck in, and its page is
-   *  replaced so the run goes on. */
-  storyTimeout?: number;
-  viewport?: Viewport;
-  threshold?: number;
-  minDiffPercent?: number;
-  /** Project-wide settle options; a story's `settle` is layered over them. */
-  settle?: SettleParams;
-  /** Project-wide network policy; a story's `network` is layered over it. */
-  network?: NetworkParams;
-  /** Project-wide `waitForSelector`; a story's own wins. */
-  waitForSelector?: string;
-  /** Project-wide `delay`, ms; a story's own wins. */
-  delay?: number;
-  /** Variants every story gets, by name. A story's own variant of the same
-   *  name wins; a story sets one to `false` to opt out. Applies to every
-   *  platform, the urls list included. */
-  variants?: Record<string, VariantSpec | false>;
-  /** Per-story overrides by story id glob, for a workbench you don't own.
-   *  Layered over the story's own `parameters.juxtapose`; see
-   *  docs/configuration.md. A key matching a base id covers its variants. */
-  stories?: Record<string, StoryOverride>;
-  storage?: StorageConfig;
-  /** `jux mcp` settings. */
-  mcp?: {
-    /** Snap calls that may capture at once (1-16). Default: half the CPU
-     *  cores, 1 to 4; the
-     *  `--concurrency` flag overrides it. */
-    concurrency?: number;
-  };
-}
-
-export type StorageConfig =
-  | { kind: 'git'; dir?: string }
-  | { kind: 'fs'; dir: string }
-  | { kind: 's3'; bucket: string; prefix?: string; endpoint?: string };
 
 /** Baseline persistence. The manifest always lives in git; only the image
  *  bytes vary by implementation. */
