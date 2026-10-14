@@ -274,7 +274,7 @@ export function buildSummary(a: SummaryArgs): string {
       a.noPixelDiff
         ? NO_PIXEL_DIFF
         : subThreshold
-          ? 'Pixel diff below tolerance'
+          ? 'Pixel diff marks no region, which is not evidence the change is harmless'
           : `${a.regionCount} changed region${a.regionCount === 1 ? '' : 's'}`,
     );
   } else if (a.deltas.length === 0 && a.noPixelDiff) {

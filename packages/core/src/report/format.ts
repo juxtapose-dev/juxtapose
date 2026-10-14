@@ -10,6 +10,44 @@ export function formatPercent(pct: number): string {
   return pct > 0 ? '<0.01%' : '0%';
 }
 
+/** Regions at most this many px thick on their short side are hairs. */
+const NOISE_MAX_THICKNESS = 3;
+/** Under this much of the frame differing, a change can still be real: a
+ *  font-size, colour, icon or border change routinely lands here. */
+export const SMALL_MISMATCH_PERCENT = 0.1;
+
+/**
+ * The only evidence on which a surface may call a change rendering noise.
+ *
+ * Pass/fail is a byte-exact hash, so a small mismatch percentage means a
+ * small element changed, not that nothing did. Noise needs POSITIVE structural
+ * evidence: both snapshots exist, the structural diff found no element that
+ * moved, resized or changed text or style (`render-drift`, no deltas), and
+ * every changed region is a thin hairline, the shape antialiasing leaves.
+ * A missing snapshot, a delta, a fat region or no regions at all is not
+ * evidence; it is "unexplained" and a reader must look.
+ */
+export function isLikelyRenderingNoise(r: {
+  mismatchPercent: number;
+  changedRegions: { width: number; height: number }[];
+  structural?: {
+    classification: string;
+    deltaCount: number;
+    flags: readonly string[];
+  };
+}): boolean {
+  const v = r.structural;
+  if (!v) return false;
+  if (v.classification !== 'render-drift' || v.deltaCount > 0) return false;
+  if (v.flags.includes('no-baseline-structure')) return false;
+  if (v.flags.includes('no-current-structure')) return false;
+  if (r.mismatchPercent >= SMALL_MISMATCH_PERCENT) return false;
+  return (
+    r.changedRegions.length > 0 &&
+    r.changedRegions.every((c) => Math.min(c.width, c.height) <= NOISE_MAX_THICKNESS)
+  );
+}
+
 /**
  * A failure the pixel diff cannot show.
  *
