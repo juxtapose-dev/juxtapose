@@ -112,6 +112,35 @@ export interface StoryManifest {
   skippedBy?: string[];
 }
 
+/**
+ * Wall time per phase of one capture, ms to 0.1. Measurement only: the clock is
+ * read around calls the capture already makes, so it cannot change a pixel.
+ * The named phases plus `other` sum to `durationMs` (within rounding).
+ */
+export interface CaptureTimings {
+  /** The platform's showStory (goto and its ready signal) or switchStory. */
+  navigate: number;
+  /** The data: URL hop into a new renderer process (issue #153); 0 on a
+   *  page's first story or with freshRenderer off. */
+  freshRenderer: number;
+  /** Waiting for the story to render: the platform's settle and the live
+   *  params read after it. */
+  render: number;
+  /** Generic settling: waitForSelector, the idle wait (and the second one
+   *  when work landed in the paint barrier), the fixed delay. */
+  settle: number;
+  /** The paint barrier: layer re-raster, two rAFs, the moved-since check. */
+  paint: number;
+  structure: number;
+  /** page.screenshot: the CDP capture, PNG encode and transfer included. */
+  screenshot: number;
+  /** PNG to lossless WebP in sharp. */
+  encode: number;
+  /** The remainder: page setup, viewport and scheme, network policy, the
+   *  animation freeze, the renderer check. */
+  other: number;
+}
+
 export interface Snapshot {
   storyId: string;
   /** Copied from the StoryManifest: set only on a variant capture. */
@@ -123,6 +152,8 @@ export interface Snapshot {
   capturedAt: string;
   /** Wall time for this story's capture, ms. */
   durationMs: number;
+  /** Where `durationMs` went. */
+  timings?: CaptureTimings;
   /** Visible elements and their styles, from the same frame as `image`.
    *  Absent when structure capture failed or was disabled — it explains a
    *  failure, it never decides one. */
@@ -376,6 +407,9 @@ export interface DiffResult {
    *  second capture produced an image to compare). */
   flake?: Flake;
   durationMs: number;
+  /** Per-phase split of `durationMs`; absent on reports written before it
+   *  existed, on skips, and on a capture that threw. */
+  timings?: CaptureTimings;
 }
 
 /** Why two captures of one story differ. Ordered as the classifier checks

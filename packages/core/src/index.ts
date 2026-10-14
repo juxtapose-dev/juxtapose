@@ -18,6 +18,7 @@ export type {
   Viewport,
   StoryManifest,
   Snapshot,
+  CaptureTimings,
   StructureSnapshot,
   StructureElement,
   StructureRect,
