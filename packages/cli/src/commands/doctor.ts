@@ -11,6 +11,7 @@ import {
   LEGACY_IMAGE_DIR,
   committedPaths,
   ignoredPaths,
+  shellQuote,
 } from '@juxtapose/core';
 import { loadConfig, type CommonFlags } from '../context.js';
 import { missingIgnores } from '../gitignore.js';
@@ -67,7 +68,7 @@ export async function findIssues(
           `juxtapose commits hashes and structure, never images.`,
         files,
         fix: [
-          `git rm --cached -- '${dir}/*.webp'`,
+          `git rm --cached -- ${shellQuote(`${dir}/*.webp`)}`,
           `git commit -m "Stop tracking juxtapose baseline images"`,
         ],
       });
@@ -79,7 +80,7 @@ export async function findIssues(
     issues.push({
       code: 'missing-ignores',
       message: `.gitignore does not cover ${missing.join(', ')}.`,
-      fix: [`printf '%s\\n' ${missing.map((m) => `'${m}'`).join(' ')} >> .gitignore`],
+      fix: [`printf '%s\\n' ${missing.map(shellQuote).join(' ')} >> .gitignore`],
     });
   }
   return issues;
@@ -118,7 +119,7 @@ export async function doctorCommand(
         '    The files stay on disk, and jux keeps reading them until the cache has the\n' +
           '    same images, so no diff goes blank. Structure sidecars (.structure.json.gz)\n' +
           '    can stay tracked; new approvals write them to .juxtapose/structure/.\n' +
-          `    From now on commit ${committedPaths(undefined).join(' and ')}.\n`,
+          `    From now on commit ${committedPaths(undefined).map(shellQuote).join(' and ')}.\n`,
       );
     }
   }

@@ -12,6 +12,19 @@ import {
 import { GitBaselineStore } from './git-store.js';
 import { MANIFEST_NAME } from './manifest-file.js';
 
+/**
+ * A storage dir comes from the repo's config, and tools print it inside
+ * commands an agent is told to run. Newlines and control characters have no
+ * business in a directory name and would split or hide a printed command, so
+ * they are refused at the one place every consumer passes through.
+ */
+export function safeStorageDir(dir: string | undefined): string | undefined {
+  // eslint-disable-next-line no-control-regex
+  if (dir !== undefined && /[\u0000-\u001f\u007f]/.test(dir))
+    throw new Error('storage.dir must not contain control characters or newlines');
+  return dir;
+}
+
 export function createBaselineStore(
   projectRoot: string,
   storage: StorageConfig | undefined,
@@ -22,10 +35,10 @@ export function createBaselineStore(
   const chosen: StorageConfig = storage ?? { kind: 'cache' };
   switch (chosen.kind) {
     case 'cache':
-      return new CacheBaselineStore({ projectRoot, dir: chosen.dir });
+      return new CacheBaselineStore({ projectRoot, dir: safeStorageDir(chosen.dir) });
     case 'git':
     case 'fs':
-      return new GitBaselineStore({ projectRoot, dir: chosen.dir });
+      return new GitBaselineStore({ projectRoot, dir: safeStorageDir(chosen.dir) });
     case 's3':
       throw new Error('the s3 baseline store is not implemented yet');
   }
@@ -38,7 +51,7 @@ export function createBaselineStore(
 export function committedPaths(storage: StorageConfig | undefined): string[] {
   const chosen: StorageConfig = storage ?? { kind: 'cache' };
   return chosen.kind === 'git' || chosen.kind === 'fs'
-    ? [MANIFEST_NAME, chosen.dir ?? LEGACY_IMAGE_DIR]
+    ? [MANIFEST_NAME, safeStorageDir(chosen.dir) ?? LEGACY_IMAGE_DIR]
     : [MANIFEST_NAME, STRUCTURE_DIR];
 }
 
@@ -51,8 +64,9 @@ export function committedPaths(storage: StorageConfig | undefined): string[] {
 export function ignoredPaths(storage: StorageConfig | undefined): string[] {
   const chosen: StorageConfig = storage ?? { kind: 'cache' };
   const runs = '.juxtapose/runs/';
+  const checked = chosen.kind === 's3' ? undefined : safeStorageDir(chosen.dir);
   if (chosen.kind !== 'cache') return [runs];
-  const dir = (chosen.dir ?? DEFAULT_CACHE_DIR).replace(/\/+$/, '');
+  const dir = (checked ?? DEFAULT_CACHE_DIR).replace(/\/+$/, '');
   // The default sits under .juxtapose/cache/ so a future cache kind shares one entry.
   return dir === DEFAULT_CACHE_DIR ? ['.juxtapose/cache/', runs] : [`${dir}/`, runs];
 }

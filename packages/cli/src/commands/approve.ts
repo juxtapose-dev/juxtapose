@@ -8,6 +8,7 @@ import path from 'node:path';
 import {
   approveCapture,
   committedPaths,
+  shellQuote,
   UnstableCaptureError,
   encodeStoryId,
   parseRunReport,
@@ -139,7 +140,7 @@ export async function approveCommand(
       const cache =
         ctx.config.storage === undefined || ctx.config.storage.kind === 'cache';
       io.out(
-        `\n  Commit ${committedPaths(ctx.config.storage).join(' and ')} to record this.\n` +
+        `\n  Commit ${committedPaths(ctx.config.storage).map(shellQuote).join(' and ')} to record this.\n` +
           (cache ? '  Images stay in the local cache and are never committed.\n' : ''),
       );
     }

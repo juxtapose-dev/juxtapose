@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test } from 'vitest';
 import { captureIo } from '../io.js';
-import { doctorCommand } from './doctor.js';
+import { doctorCommand, findIssues } from './doctor.js';
 
 const run = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, stdio: 'ignore' });
@@ -88,4 +89,32 @@ test('missing ignore lines are reported with the lines to add', async () => {
   expect(r.code).toBe(1);
   expect(r.out).toContain('.juxtapose/cache/');
   expect(r.out).toContain('.juxtapose/runs/');
+});
+
+// Fix commands are printed for an agent to run, and the directory comes from
+// the repo's own config, so it must reach the shell as one literal argument.
+const hostile = 'x\'; $(touch pwned) `id` "q" y';
+
+test('a hostile storage.dir reaches the shell as a literal in every printed fix', async () => {
+  const root = await repo({ [`${hostile}/a.webp`]: 'img' });
+  const issues = await findIssues(root, { kind: 'cache', dir: hostile });
+  const tracked = issues.find((i) => i.code === 'tracked-images')!;
+  const rm = tracked.fix[0]!.replace(/^git rm --cached -- /, '');
+  expect(execFileSync('sh', ['-c', `printf %s ${rm}`], { cwd: root }).toString()).toBe(
+    `${hostile}/*.webp`,
+  );
+  const ignore = issues.find((i) => i.code === 'missing-ignores')!.fix[0]!;
+  const args = /^printf '%s\\n' (.*) >> \.gitignore$/.exec(ignore)![1]!;
+  expect(
+    execFileSync('sh', ['-c', `printf '%s\\n' ${args}`], { cwd: root }).toString(),
+  ).toBe(`${hostile}/\n.juxtapose/runs/\n`);
+  expect(existsSync(path.join(root, 'pwned'))).toBe(false);
+});
+
+test('a storage.dir with a newline or control character is refused', async () => {
+  const root = await repo({ 'package.json': '{}' });
+  await expect(findIssues(root, { kind: 'cache', dir: 'a\nb' })).rejects.toThrow(
+    /control characters/,
+  );
+  await expect(findIssues(root, { kind: 'git', dir: 'a\u0001b' })).rejects.toThrow();
 });

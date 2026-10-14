@@ -15,10 +15,12 @@ import {
   approveCapture,
   committedPaths,
   ignoredPaths,
+  shellQuote,
   acquireBrowser,
   installChrome,
   resolveChrome,
   encodeStoryId,
+  encodeStructure,
   runCapture,
   alwaysAncestor,
   createAncestryCheck,
@@ -305,7 +307,9 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     );
     say('');
     say(
-      `  git add ${[CONFIG_NAME, ...committedPaths(ctx.config.storage), '.gitignore'].join(' ')}`,
+      `  git add ${[CONFIG_NAME, ...committedPaths(ctx.config.storage), '.gitignore']
+        .map(shellQuote)
+        .join(' ')}`,
     );
     say(`  git commit -m "Add juxtapose visual baselines"`);
     say('');
@@ -347,6 +351,15 @@ export function defaultConfig(ctx: {
 async function writeArtifact(runDir: string, a: RunArtifact): Promise<void> {
   const safe = encodeStoryId(a.storyId);
   await writeFile(path.join(runDir, 'images', `${safe}-current.webp`), a.current);
+  // approveCapture reads the sidecar from here. Without it init baselined
+  // every story with a hash and no structure, which matters more now that
+  // the sidecar is the only thing CI has to explain a change with.
+  if (a.structure) {
+    await writeFile(
+      path.join(runDir, 'images', `${safe}-current.structure.json.gz`),
+      encodeStructure(a.structure),
+    );
+  }
 }
 
 const capturePath = (runDir: string, storyId: string) =>

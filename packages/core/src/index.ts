@@ -144,7 +144,11 @@ export {
   STRUCTURE_DIR,
   LEGACY_IMAGE_DIR,
 } from './baseline/cache-store.js';
-export { createBaselineStore, committedPaths, ignoredPaths } from './baseline/create-store.js';
+export {
+  createBaselineStore,
+  committedPaths,
+  ignoredPaths,
+} from './baseline/create-store.js';
 // hashImage is exported because anything comparing against a manifest entry
 // must use the same function the manifest was written with, not its own copy.
 export { hashImage } from './baseline/status.js';
