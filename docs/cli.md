@@ -28,3 +28,19 @@ story for that command: `--settle-timeout <ms>`, `--settle-ready` or
 `--no-settle-ready`, `--settle-ignore <pattern>` and `--settle-require <pattern>`, the last two
 repeatable. `jux snap` also takes `--delay <ms>`. See
 [Settle](configuration.md#settle).
+
+## Capture a built or deployed Storybook
+
+Use `--build-dir <dir>` to capture a static build. Use `--origin <url>` to
+capture a deployed Storybook. Each flag overrides the matching key in the
+config, and each one works with `jux run`:
+
+```bash
+jux run --build-dir storybook-static
+jux run --origin https://storybook.chakra-ui.com/
+```
+
+When you use `--origin`, jux doesn't serve a build. Keep `--build-dir` or
+`buildDir` set as well if you want `jux run` to use the build's manifest for
+change analysis. See [Capture a built or deployed Storybook](configuration.md#capture-a-built-or-deployed-storybook)
+for the precedence rules and caching behavior.

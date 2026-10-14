@@ -228,6 +228,43 @@ dimensions:
 If you can't change the element, mask a fixed-size container around it
 instead.
 
+## Capture a built or deployed Storybook
+
+Set `buildDir` to capture a static build. The path is relative to the project
+root. jux serves the build on `127.0.0.1` for the length of the run, so you
+don't need a web server:
+
+```json
+{
+  "buildDir": "storybook-static"
+}
+```
+
+Set `origin` to capture a deployed Storybook. jux fetches `index.json` from the
+URL to list the stories, and the browser loads `iframe.html` for each one:
+
+```json
+{
+  "origin": "https://storybook.chakra-ui.com/"
+}
+```
+
+If you set neither, jux looks for a build in `storybook-static`, `build`,
+`.ladle/build` and `dist/storybook`, in that order. A set `origin` turns this
+search off.
+
+If you set both, `origin` decides what jux captures. jux doesn't serve
+`buildDir`. `jux run` still reads `buildDir` for change analysis, so point it at
+the build that produced the deployed site.
+
+The `--build-dir` and `--origin` flags override `buildDir` and `origin`
+from the config. See [Commands](cli.md#capture-a-built-or-deployed-storybook).
+
+jux caches the story parameters it reads from a `buildDir`. It keys the cache
+on the hashes of `index.json` and `iframe.html`, so a changed build invalidates it.
+jux never caches for an `origin`. A remote Storybook can change between runs,
+so jux loads its preview again on every run.
+
 ## Baseline storage
 
 `storage.kind` accepts `"s3"`, but the CLI throws on it in this version. Git is
