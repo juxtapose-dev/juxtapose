@@ -18,7 +18,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type {
   ApprovalMeta,
@@ -39,6 +39,22 @@ import { hashImage } from './status.js';
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 export const DEFAULT_CACHE_DIR = '.juxtapose/cache/baselines';
+/** Where half-written images live until they are renamed into the cache. Not
+ *  inside the cache: CI saves that directory, and a killed process must not
+ *  leave debris in what gets saved. */
+export const DEFAULT_TMP_DIR = '.juxtapose/tmp';
+/** A temp file this old belongs to a process that died. */
+const STALE_TMP_MS = 60 * 60 * 1000;
+
+/** The temp dir for a cache dir: the default's lives beside it under
+ *  `.juxtapose`; a custom cache dir gets `<dir>.tmp`, in the same parent so the
+ *  rename never crosses a filesystem. */
+export function tmpDirFor(cacheDir: string | undefined): string {
+  return cacheDir === undefined || cacheDir.replace(/\/+$/, '') === DEFAULT_CACHE_DIR
+    ? DEFAULT_TMP_DIR
+    : `${cacheDir.replace(/\/+$/, '')}.tmp`;
+}
+
 export const STRUCTURE_DIR = '.juxtapose/structure';
 /** Where the repo-backed store kept images. Read-only here, so a project that
  *  upgrades keeps its diffs until it migrates. */
@@ -52,12 +68,15 @@ export interface CacheStoreOptions {
 
 export class CacheBaselineStore implements BaselineStore {
   private readonly cacheDir: string;
+  private readonly tmpDir: string;
+  private swept = false;
   private readonly structureDir: string;
   private readonly legacyDir: string;
   private readonly manifestPath: string;
 
   constructor(opts: CacheStoreOptions) {
     this.cacheDir = path.join(opts.projectRoot, opts.dir ?? DEFAULT_CACHE_DIR);
+    this.tmpDir = path.join(opts.projectRoot, tmpDirFor(opts.dir));
     this.structureDir = path.join(opts.projectRoot, STRUCTURE_DIR);
     this.legacyDir = path.join(opts.projectRoot, LEGACY_IMAGE_DIR);
     this.manifestPath = path.join(opts.projectRoot, MANIFEST_NAME);
@@ -118,6 +137,22 @@ export class CacheBaselineStore implements BaselineStore {
   }
 
   /**
+   * Delete temp files older than an hour: a process killed mid-write (kill -9,
+   * a CI timeout) leaves one, and nothing else ever would. Best effort. The
+   * cache dir is swept too, for temp files an older version left inside it.
+   */
+  async sweepStaleTmp(now = Date.now()): Promise<void> {
+    for (const dir of [this.tmpDir, this.cacheDir]) {
+      const names = await readdir(dir).catch(() => [] as string[]);
+      for (const name of names.filter((n) => n.endsWith('.tmp'))) {
+        const file = path.join(dir, name);
+        const info = await stat(file).catch(() => null);
+        if (info && now - info.mtimeMs > STALE_TMP_MS) await rm(file, { force: true });
+      }
+    }
+  }
+
+  /**
    * Cache an image without touching the manifest. A passing story's capture is
    * by definition the approved image, so a run that keeps it is how a CI job
    * (or a clone that never approved anything) fills the cache that later
@@ -134,10 +169,15 @@ export class CacheBaselineStore implements BaselineStore {
     };
     if (await valid()) return;
     await mkdir(this.cacheDir, { recursive: true });
+    await mkdir(this.tmpDir, { recursive: true });
+    if (!this.swept) {
+      this.swept = true;
+      await this.sweepStaleTmp().catch(() => {});
+    }
     // Write-then-rename: a reader (or a CI cache save) never sees half an image
     // under a name that promises its hash. The suffix is random because the
     // pid alone collides between concurrent calls in one process.
-    const tmp = `${file}.${randomUUID()}.tmp`;
+    const tmp = path.join(this.tmpDir, `${hash}.${randomUUID()}.tmp`);
     try {
       await writeFile(tmp, image);
       await rename(tmp, file);

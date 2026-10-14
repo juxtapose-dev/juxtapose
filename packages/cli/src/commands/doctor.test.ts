@@ -31,7 +31,8 @@ async function doctor(root: string, json = false) {
 
 test('a clean project passes', async () => {
   const root = await repo({
-    '.gitignore': '.juxtapose/cache/\n.juxtapose/baselines/*.webp\n.juxtapose/runs/\n',
+    '.gitignore':
+      '.juxtapose/cache/\n.juxtapose/tmp/\n.juxtapose/baselines/*.webp\n.juxtapose/runs/\n',
   });
   const r = await doctor(root);
   expect(r.code).toBe(0);
@@ -114,7 +115,7 @@ test('a hostile storage.dir reaches the shell as a literal in every printed fix'
   const args = /^printf '%s\\n' (.*) >> \.gitignore$/.exec(ignore)![1]!;
   expect(
     execFileSync('sh', ['-c', `printf '%s\\n' ${args}`], { cwd: root }).toString(),
-  ).toBe(`${hostile}/\n.juxtapose/baselines/*.webp\n.juxtapose/runs/\n`);
+  ).toBe(`${hostile}/\n${hostile}.tmp/\n.juxtapose/baselines/*.webp\n.juxtapose/runs/\n`);
   expect(existsSync(path.join(root, 'pwned'))).toBe(false);
 });
 

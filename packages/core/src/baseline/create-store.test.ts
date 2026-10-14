@@ -29,6 +29,7 @@ test('commit hashes and structure, ignore images, by default', () => {
   ]);
   expect(ignoredPaths(undefined)).toEqual([
     '.juxtapose/cache/',
+    '.juxtapose/tmp/',
     '.juxtapose/baselines/*.webp',
     '.juxtapose/runs/',
   ]);
@@ -37,6 +38,7 @@ test('commit hashes and structure, ignore images, by default', () => {
 test('a custom cache dir is what gets ignored', () => {
   expect(ignoredPaths({ kind: 'cache', dir: 'tmp/imgs/' })).toEqual([
     'tmp/imgs/',
+    'tmp/imgs.tmp/',
     '.juxtapose/baselines/*.webp',
     '.juxtapose/runs/',
   ]);

@@ -12,6 +12,7 @@ import {
   DEFAULT_CACHE_DIR,
   LEGACY_IMAGE_DIR,
   STRUCTURE_DIR,
+  tmpDirFor,
 } from './cache-store.js';
 import { GitBaselineStore } from './git-store.js';
 import { MANIFEST_NAME } from './manifest-file.js';
@@ -104,7 +105,8 @@ export function ignoredPaths(storage: StorageConfig | undefined): string[] {
   // The old layout's images are ignored too, so untracking them (the migration)
   // leaves nothing for `git status` to offer back as untracked.
   const legacy = `${LEGACY_IMAGE_DIR}/*.webp`;
+  const tmp = `${tmpDirFor(dir)}/`;
   return dir === DEFAULT_CACHE_DIR
-    ? ['.juxtapose/cache/', legacy, runs]
-    : [`${dir}/`, legacy, runs];
+    ? ['.juxtapose/cache/', tmp, legacy, runs]
+    : [`${dir}/`, tmp, legacy, runs];
 }

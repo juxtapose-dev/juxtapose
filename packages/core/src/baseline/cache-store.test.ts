@@ -1,5 +1,13 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -218,4 +226,38 @@ test('a manifest hash that is not 64 hex characters never reaches a path', async
   await store.writeManifest(manifest);
   expect((await store.lookup('a')).kind).toBe('unavailable');
   expect(store.locate('a')).toBeUndefined();
+});
+
+test('temp files live outside the cache, so a CI cache save never sees debris', async () => {
+  await store.keepImage(image);
+  expect(await readdir(cacheDir())).toEqual([`${hash}.webp`]);
+  expect(existsSync(path.join(root, '.juxtapose', 'tmp'))).toBe(true);
+});
+
+test('stale temp files from a killed process are swept, fresh ones are kept', async () => {
+  const tmp = path.join(root, '.juxtapose', 'tmp');
+  await mkdir(tmp, { recursive: true });
+  await mkdir(cacheDir(), { recursive: true });
+  const stale = path.join(tmp, 'a.tmp');
+  const fresh = path.join(tmp, 'b.tmp');
+  const legacyDebris = path.join(cacheDir(), `${hash}.webp.dead.tmp`);
+  for (const f of [stale, fresh, legacyDebris]) await writeFile(f, 'half');
+  const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  await utimes(stale, old, old);
+  await utimes(legacyDebris, old, old);
+  await store.sweepStaleTmp();
+  expect(existsSync(stale)).toBe(false);
+  expect(existsSync(legacyDebris)).toBe(false);
+  expect(existsSync(fresh)).toBe(true);
+});
+
+test('the first write sweeps without being asked', async () => {
+  const tmp = path.join(root, '.juxtapose', 'tmp');
+  await mkdir(tmp, { recursive: true });
+  const stale = path.join(tmp, 'dead.tmp');
+  await writeFile(stale, 'half');
+  const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  await utimes(stale, old, old);
+  await store.keepImage(image);
+  expect(existsSync(stale)).toBe(false);
 });
