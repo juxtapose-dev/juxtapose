@@ -51,10 +51,15 @@ jobs:
             output: 1st-gen/projects/documentation/dist/storybook
     env:
       STORYBOOK_DISABLE_TELEMETRY: '1'
-      SB_CACHE: ${{ runner.temp }}/sb-cache
-      SB_SRC: ${{ runner.temp }}/sb-src
-      OUT_DIR: ${{ runner.temp }}/field-out
     steps:
+      # The runner context is not available in job-level env.
+      - name: Set paths
+        run: |
+          {
+            echo "SB_CACHE=$RUNNER_TEMP/sb-cache"
+            echo "SB_SRC=$RUNNER_TEMP/sb-src"
+            echo "OUT_DIR=$RUNNER_TEMP/field-out"
+          } >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -93,7 +98,7 @@ jobs:
         id: sb
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.SB_CACHE }}
+          path: ${{ runner.temp }}/sb-cache
           key: ${{ matrix.name }}-${{ matrix.sha }}-${{ runner.os }}
 
       # Third-party code: cloned outside the jux checkout, at the exact pinned
@@ -112,7 +117,7 @@ jobs:
       # Build commands are the ones in docs/field-tests.md.
       - name: Build the static Storybook
         if: steps.sb.outputs.cache-hit != 'true'
-        working-directory: ${{ env.SB_SRC }}
+        working-directory: ${{ runner.temp }}/sb-src
         run: |
           case "${{ matrix.name }}" in
             chakra)
@@ -145,7 +150,7 @@ jobs:
         if: steps.sb.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.SB_CACHE }}
+          path: ${{ runner.temp }}/sb-cache
           key: ${{ matrix.name }}-${{ matrix.sha }}-${{ runner.os }}
 
       - name: Field test (two passes)
@@ -160,6 +165,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: field-test-${{ matrix.name }}
-          path: ${{ env.OUT_DIR }}
+          path: ${{ runner.temp }}/field-out
           if-no-files-found: ignore
           retention-days: 14
