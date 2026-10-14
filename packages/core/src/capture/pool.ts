@@ -7,8 +7,8 @@ import {
   type Browser,
   type BrowserContext,
 } from '../browser/browser.js';
-import { TargetClosedError } from '../browser/cdp.js';
-import { PageCrashedError, type Page } from '../browser/page.js';
+import { SendTimeoutError, TargetClosedError } from '../browser/cdp.js';
+import { PageCrashedError, TimeoutError, type Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
 import type { Snapshot, StoryManifest, Viewport } from '../types.js';
 import { captureStory, type CaptureDeps } from './capture.js';
@@ -163,29 +163,9 @@ export async function* capturePool(
         }
 
         const started = Date.now();
-        let phase = 'starting';
-        let effectiveMs = budgetMs;
         try {
-          const snapshot = await withBudget(
-            captureStory(
-              session.page,
-              story,
-              {
-                ...baseDeps,
-                onPhase: (p) => (phase = p),
-                onSettleBudget: (ms) => {
-                  // Measured from now, not from the start: a slow navigation
-                  // must not eat the allowance settle was promised.
-                  effectiveMs = Math.max(
-                    budgetMs,
-                    Date.now() - started + ms + SETTLE_ALLOWANCE_MS,
-                  );
-                },
-              },
-              opts.viewport,
-            ),
-            () => effectiveMs,
-            () => new StoryTimeoutError(story.storyId, effectiveMs, phase),
+          const snapshot = await budgetedCapture(story.storyId, budgetMs, (hooks) =>
+            captureStory(session!.page, story, { ...baseDeps, ...hooks }, opts.viewport),
           );
           // null means the story declared `skip` in params only visible once
           // it had rendered. Report it as skipped, not as a failure.
@@ -212,18 +192,16 @@ export async function* capturePool(
           } else if (
             err instanceof PageCrashedError ||
             err instanceof TargetClosedError ||
+            // A busy main thread usually trips the 30 s navigation or call
+            // cap, below the story budget; the page stays busy.
+            err instanceof TimeoutError ||
+            err instanceof SendTimeoutError ||
             err instanceof StoryTimeoutError
           ) {
             // For a timeout the abandoned capture is still running against
             // this page; closing the context rejects its pending calls, which
-            // withBudget has already detached. The close itself is bounded: a
-            // wedged renderer may not answer it.
-            let grace: NodeJS.Timeout | undefined;
-            await Promise.race([
-              session.context.close().catch(() => {}),
-              new Promise<void>((r) => (grace = setTimeout(r, CLOSE_GRACE_MS))),
-            ]);
-            clearTimeout(grace);
+            // withBudget has already detached.
+            await closeBounded(session.context);
             session = await open().catch((e: unknown) => {
               died ??= new BrowserDiedError(e);
               return null;
@@ -268,6 +246,51 @@ export async function* capturePool(
 
 /** How long a worker waits for a wedged context to close before moving on. */
 const CLOSE_GRACE_MS = 5_000;
+
+/** Close a context that may be wedged: a busy renderer may never answer, so
+ *  the wait is bounded. */
+export async function closeBounded(context: BrowserContext): Promise<void> {
+  let grace: NodeJS.Timeout | undefined;
+  await Promise.race([
+    context.close().catch(() => {}),
+    new Promise<void>((r) => (grace = setTimeout(r, CLOSE_GRACE_MS))),
+  ]);
+  clearTimeout(grace);
+}
+
+/** The hooks captureStory takes that the budget listens to. */
+export interface BudgetHooks {
+  onPhase: (phase: string) => void;
+  onSettleBudget: (ms: number) => void;
+}
+
+/**
+ * Run one capture under the per-story budget. The effective budget is
+ * max(budgetMs, elapsed + settle cap + delay + waitForSelector + allowance),
+ * so it never pre-empts settle; expiry rejects with a StoryTimeoutError naming
+ * the phase the capture was stuck in. Shared by the pool and `snapPages`.
+ */
+export function budgetedCapture<T>(
+  storyId: string,
+  budgetMs: number,
+  run: (hooks: BudgetHooks) => Promise<T>,
+): Promise<T> {
+  const started = Date.now();
+  let phase = 'starting';
+  let effectiveMs = budgetMs;
+  return withBudget(
+    run({
+      onPhase: (p) => (phase = p),
+      onSettleBudget: (ms) => {
+        // Measured from now, not from the start: a slow navigation
+        // must not eat the allowance settle was promised.
+        effectiveMs = Math.max(budgetMs, Date.now() - started + ms + SETTLE_ALLOWANCE_MS);
+      },
+    }),
+    () => effectiveMs,
+    () => new StoryTimeoutError(storyId, effectiveMs, phase),
+  );
+}
 
 /** Reject with `expired()` once `work` has run `ms()` (re-read as it grows,
  *  see onSettleBudget). `work` is detached, not cancelled: the caller discards

@@ -23,7 +23,12 @@ let base: string;
 beforeAll(async () => {
   server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(`<!doctype html><body style="margin:0">${req.url}</body>`);
+    // /busy holds the renderer's main thread from DOMContentLoaded on.
+    res.end(
+      req.url === '/busy'
+        ? `<!doctype html><body><script>addEventListener('DOMContentLoaded',()=>{const t=Date.now();while(Date.now()-t<90000);})</script>busy</body>`
+        : `<!doctype html><body style="margin:0">${req.url}</body>`,
+    );
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -194,6 +199,15 @@ describe.skipIf(!chrome)('capturePool after a renderer crash', () => {
       'PASS',
     ]);
   });
+
+  // At the default 60 s budget the 30 s navigation cap fires first, as a
+  // TimeoutError the pool did not treat as a dead page: every later story on
+  // the worker failed at 30 s each (#163 review: busy, ok, ok, ok all failed).
+  it('a busy page that trips the navigation cap does not fail the stories after it', async () => {
+    const results = await run(['busy', 'ok1', 'ok2'], 1);
+    expect(results[0]).toMatch(/^FAIL /);
+    expect(results.slice(1)).toEqual(['PASS', 'PASS']);
+  }, 90_000);
 
   it('a dead browser fails the rest with one clear browser error', async () => {
     const results = await run(['die', 'ok1', 'ok2', 'ok3'], 1);

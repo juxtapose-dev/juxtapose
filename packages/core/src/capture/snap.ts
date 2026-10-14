@@ -11,6 +11,14 @@ import type { CaptureEnv, Snapshot, StoryParams, Viewport } from '../types.js';
 import { createUrlPlatform } from '../platforms/urls.js';
 import { captureStory } from './capture.js';
 import { captureEnv } from './env.js';
+import {
+  budgetedCapture,
+  closeBounded,
+  DEFAULT_STORY_TIMEOUT_MS,
+  StoryTimeoutError,
+} from './pool.js';
+import { PageCrashedError, TimeoutError } from '../browser/page.js';
+import { SendTimeoutError, TargetClosedError } from '../browser/cdp.js';
 import type { SettleLayer } from './settle-options.js';
 
 export interface SnapOptions {
@@ -34,6 +42,8 @@ export interface SnapPagesOptions {
   params?: StoryParams;
   /** The project config's settle options, below `params`. */
   projectSettle?: SettleLayer;
+  /** Per-URL budget, ms; the config's `storyTimeout`. See DEFAULT_STORY_TIMEOUT_MS. */
+  storyTimeoutMs?: number;
   /** Acquired by the caller (acquireBrowser); not closed here. */
   browser: Browser;
 }
@@ -61,13 +71,24 @@ export async function snapPages(
   opts: SnapPagesOptions,
 ): Promise<{ env: CaptureEnv; pages: SnapPageResult[] }> {
   const viewport = opts.viewport ?? DEFAULT_SNAP_VIEWPORT;
-  const context = await opts.browser.newContext({ viewport, blockServiceWorkers: true });
+  let context = await opts.browser.newContext({ viewport, blockServiceWorkers: true });
+  const budgetMs = opts.storyTimeoutMs ?? DEFAULT_STORY_TIMEOUT_MS;
+  let page = await context.newPage().catch(async (err: unknown) => {
+    await context.close().catch(() => {});
+    throw err;
+  });
   try {
-    const page = await context.newPage();
     let status: number | null = null;
-    const off = page.onMainResponse((s) => (status = s));
+    let off = page.onMainResponse((s) => (status = s));
     const pages: SnapPageResult[] = [];
+    // Set when a replacement page could not be opened (the browser is gone):
+    // the remaining URLs fail with it, and the captured results are kept.
+    let lost: string | null = null;
     for (const [k, url] of opts.urls.entries()) {
+      if (lost !== null) {
+        pages.push({ url, status: null, error: lost });
+        continue;
+      }
       status = null;
       const id = `snap-${k}`;
       const platform = createUrlPlatform([
@@ -76,17 +97,21 @@ export async function snapPages(
       try {
         // A url platform enumerates exactly the one entry it was given.
         const [story] = await platform.enumerate({ projectRoot: process.cwd() });
-        const snapshot = await captureStory(
-          page,
-          story!,
-          {
-            platform,
-            baseUrl: url,
-            ...(opts.projectSettle
-              ? { settleLayers: { project: opts.projectSettle } }
-              : {}),
-          },
-          viewport,
+        const live = page;
+        const snapshot = await budgetedCapture(id, budgetMs, (hooks) =>
+          captureStory(
+            live,
+            story!,
+            {
+              platform,
+              baseUrl: url,
+              ...hooks,
+              ...(opts.projectSettle
+                ? { settleLayers: { project: opts.projectSettle } }
+                : {}),
+            },
+            viewport,
+          ),
         );
         if (!snapshot) throw new Error('page declared skip');
         pages.push({ url, snapshot, status });
@@ -96,13 +121,42 @@ export async function snapPages(
           status,
           error: err instanceof Error ? err.message : String(err),
         });
+        // A wedged or crashed page stays wedged: left alone it fails every
+        // later URL at its full cap (3 URLs, 90 s, all failed: #163). A busy
+        // main thread usually surfaces as the 30 s navigation or call cap,
+        // below the story budget, so those count too. Only then is the shared
+        // page replaced; the normal path keeps reusing it.
+        if (
+          opts.browser.isConnected() &&
+          (err instanceof StoryTimeoutError ||
+            err instanceof TimeoutError ||
+            err instanceof SendTimeoutError ||
+            err instanceof PageCrashedError ||
+            err instanceof TargetClosedError)
+        ) {
+          off();
+          await closeBounded(context);
+          try {
+            context = await opts.browser.newContext({
+              viewport,
+              blockServiceWorkers: true,
+            });
+            page = await context.newPage();
+            off = page.onMainResponse((s) => (status = s));
+          } catch (e) {
+            lost = `jux: could not open a fresh page after the previous one hung: ${
+              e instanceof Error ? e.message : String(e)
+            }`;
+          }
+          continue; // the new context starts clean: nothing to reset
+        }
       }
       await resetBetweenPages(context, page, url);
     }
     off();
     return { env: captureEnv(opts.browser), pages };
   } finally {
-    await context.close().catch(() => {});
+    await closeBounded(context);
   }
 }
 
