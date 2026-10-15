@@ -1,0 +1,792 @@
+{
+  "node": "v26.11.1",
+  "platform": "darwin",
+  "browserVersion": "151.0.7922.34",
+  "buildDir": "/Users/jer/Code/juxtapose/.claude/worktrees/warm-pulse/examples/storybook/storybook-profile",
+  "cpu": "Apple M5 Pro",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "count": 10,
+  "properties": {
+    "full": [
+      "color",
+      "background-color",
+      "background-image",
+      "font-family",
+      "font-size",
+      "font-weight",
+      "font-style",
+      "line-height",
+      "letter-spacing",
+      "text-align",
+      "text-decoration-line",
+      "text-transform",
+      "padding-top",
+      "padding-right",
+      "padding-bottom",
+      "padding-left",
+      "margin-top",
+      "margin-right",
+      "margin-bottom",
+      "margin-left",
+      "border-top-width",
+      "border-right-width",
+      "border-bottom-width",
+      "border-left-width",
+      "border-top-color",
+      "border-right-color",
+      "border-bottom-color",
+      "border-left-color",
+      "border-top-left-radius",
+      "border-top-right-radius",
+      "border-bottom-right-radius",
+      "border-bottom-left-radius",
+      "opacity",
+      "transform",
+      "box-shadow",
+      "gap",
+      "z-index",
+      "fill",
+      "stroke",
+      "stroke-width",
+      "content",
+      "visibility"
+    ],
+    "compact": [
+      "color",
+      "background-color",
+      "background-image",
+      "font-family",
+      "font-size",
+      "font-weight",
+      "font-style",
+      "line-height",
+      "letter-spacing",
+      "text-align",
+      "text-decoration-line",
+      "text-transform",
+      "padding",
+      "margin",
+      "border-width",
+      "border-top-color",
+      "border-right-color",
+      "border-bottom-color",
+      "border-left-color",
+      "border-top-left-radius",
+      "border-top-right-radius",
+      "border-bottom-right-radius",
+      "border-bottom-left-radius",
+      "opacity",
+      "transform",
+      "box-shadow",
+      "gap",
+      "z-index",
+      "fill",
+      "stroke",
+      "stroke-width",
+      "content",
+      "visibility"
+    ]
+  },
+  "note": "One settled page per story, rotated arms, two warmups. Visibility is diagnostic only and drops structural coverage. No end-to-end speedup claim.",
+  "rawResults": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-extraction-probe-cUz8d7/results.json",
+  "stories": [
+    {
+      "story": "profile--async-large",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 10.92,
+          "parseMs": 1.202,
+          "bytes": 460270.0,
+          "expandMs": 0.0,
+          "normalizeMs": 1.323
+        },
+        "compact": {
+          "roundtripMs": 10.386,
+          "parseMs": 1.194,
+          "bytes": 405617.0,
+          "expandMs": 0.883,
+          "normalizeMs": 1.257
+        },
+        "visibility": {
+          "roundtripMs": 5.647,
+          "parseMs": 0.66,
+          "bytes": 196779.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--async-medium",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 3.145,
+          "parseMs": 0.349,
+          "bytes": 132745.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.622
+        },
+        "compact": {
+          "roundtripMs": 2.963,
+          "parseMs": 0.311,
+          "bytes": 118916.0,
+          "expandMs": 0.161,
+          "normalizeMs": 0.668
+        },
+        "visibility": {
+          "roundtripMs": 1.817,
+          "parseMs": 0.214,
+          "bytes": 65814.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--async-small",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 1.253,
+          "parseMs": 0.115,
+          "bytes": 43392.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.266
+        },
+        "compact": {
+          "roundtripMs": 1.169,
+          "parseMs": 0.131,
+          "bytes": 40903.0,
+          "expandMs": 0.064,
+          "normalizeMs": 0.297
+        },
+        "visibility": {
+          "roundtripMs": 0.953,
+          "parseMs": 0.095,
+          "bytes": 31061.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--cards-large",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 11.427,
+          "parseMs": 1.215,
+          "bytes": 454499.0,
+          "expandMs": 0.0,
+          "normalizeMs": 1.604
+        },
+        "compact": {
+          "roundtripMs": 10.657,
+          "parseMs": 1.016,
+          "bytes": 400994.0,
+          "expandMs": 0.558,
+          "normalizeMs": 1.556
+        },
+        "visibility": {
+          "roundtripMs": 5.224,
+          "parseMs": 0.633,
+          "bytes": 196782.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--cards-medium",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 3.07,
+          "parseMs": 0.273,
+          "bytes": 132087.0,
+          "expandMs": 0.0,
+          "normalizeMs": 1.232
+        },
+        "compact": {
+          "roundtripMs": 2.686,
+          "parseMs": 0.25,
+          "bytes": 118542.0,
+          "expandMs": 0.246,
+          "normalizeMs": 1.219
+        },
+        "visibility": {
+          "roundtripMs": 1.512,
+          "parseMs": 0.166,
+          "bytes": 66466.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--cards-small",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 0.857,
+          "parseMs": 0.08,
+          "bytes": 43901.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.303
+        },
+        "compact": {
+          "roundtripMs": 0.833,
+          "parseMs": 0.082,
+          "bytes": 41456.0,
+          "expandMs": 0.056,
+          "normalizeMs": 0.307
+        },
+        "visibility": {
+          "roundtripMs": 0.568,
+          "parseMs": 0.061,
+          "bytes": 31640.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--charts-large",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 5.773,
+          "parseMs": 0.517,
+          "bytes": 212817.0,
+          "expandMs": 0.0,
+          "normalizeMs": 4.733
+        },
+        "compact": {
+          "roundtripMs": 5.556,
+          "parseMs": 0.473,
+          "bytes": 189138.0,
+          "expandMs": 0.374,
+          "normalizeMs": 3.984
+        },
+        "visibility": {
+          "roundtripMs": 2.63,
+          "parseMs": 0.322,
+          "bytes": 97644.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--charts-medium",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 1.78,
+          "parseMs": 0.168,
+          "bytes": 73805.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.916
+        },
+        "compact": {
+          "roundtripMs": 1.808,
+          "parseMs": 0.165,
+          "bytes": 67622.0,
+          "expandMs": 0.121,
+          "normalizeMs": 0.963
+        },
+        "visibility": {
+          "roundtripMs": 1.07,
+          "parseMs": 0.125,
+          "bytes": 43507.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--charts-small",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 0.746,
+          "parseMs": 0.066,
+          "bytes": 34713.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.209
+        },
+        "compact": {
+          "roundtripMs": 0.708,
+          "parseMs": 0.062,
+          "bytes": 33390.0,
+          "expandMs": 0.044,
+          "normalizeMs": 0.194
+        },
+        "visibility": {
+          "roundtripMs": 0.527,
+          "parseMs": 0.054,
+          "bytes": 27995.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--forms-large",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 22.026,
+          "parseMs": 2.071,
+          "bytes": 1108449.0,
+          "expandMs": 0.0,
+          "normalizeMs": 1.988
+        },
+        "compact": {
+          "roundtripMs": 21.341,
+          "parseMs": 1.886,
+          "bytes": 977199.0,
+          "expandMs": 1.026,
+          "normalizeMs": 1.967
+        },
+        "visibility": {
+          "roundtripMs": 10.438,
+          "parseMs": 1.141,
+          "bytes": 495749.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--forms-medium",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 6.359,
+          "parseMs": 0.613,
+          "bytes": 294127.0,
+          "expandMs": 0.0,
+          "normalizeMs": 1.915
+        },
+        "compact": {
+          "roundtripMs": 6.3,
+          "parseMs": 0.583,
+          "bytes": 261157.0,
+          "expandMs": 0.477,
+          "normalizeMs": 1.831
+        },
+        "visibility": {
+          "roundtripMs": 3.356,
+          "parseMs": 0.371,
+          "bytes": 139779.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--forms-small",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 1.335,
+          "parseMs": 0.125,
+          "bytes": 70232.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.556
+        },
+        "compact": {
+          "roundtripMs": 1.302,
+          "parseMs": 0.122,
+          "bytes": 64562.0,
+          "expandMs": 0.095,
+          "normalizeMs": 0.57
+        },
+        "visibility": {
+          "roundtripMs": 0.841,
+          "parseMs": 0.086,
+          "bytes": 43204.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--images-large",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 7.65,
+          "parseMs": 0.757,
+          "bytes": 507784.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.765
+        },
+        "compact": {
+          "roundtripMs": 7.631,
+          "parseMs": 0.679,
+          "bytes": 468661.0,
+          "expandMs": 0.571,
+          "normalizeMs": 0.754
+        },
+        "visibility": {
+          "roundtripMs": 4.417,
+          "parseMs": 0.443,
+          "bytes": 317997.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--images-medium",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 2.02,
+          "parseMs": 0.195,
+          "bytes": 145280.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.787
+        },
+        "compact": {
+          "roundtripMs": 1.992,
+          "parseMs": 0.182,
+          "bytes": 135317.0,
+          "expandMs": 0.147,
+          "normalizeMs": 0.811
+        },
+        "visibility": {
+          "roundtripMs": 1.188,
+          "parseMs": 0.123,
+          "bytes": 96789.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--images-small",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 0.718,
+          "parseMs": 0.068,
+          "bytes": 45589.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.234
+        },
+        "compact": {
+          "roundtripMs": 0.693,
+          "parseMs": 0.063,
+          "bytes": 43726.0,
+          "expandMs": 0.045,
+          "normalizeMs": 0.213
+        },
+        "visibility": {
+          "roundtripMs": 0.535,
+          "parseMs": 0.052,
+          "bytes": 36338.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--nested-large",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 99.536,
+          "parseMs": 9.912,
+          "bytes": 5054829.0,
+          "expandMs": 0.0,
+          "normalizeMs": 4.052
+        },
+        "compact": {
+          "roundtripMs": 97.685,
+          "parseMs": 8.926,
+          "bytes": 4418434.0,
+          "expandMs": 8.9,
+          "normalizeMs": 4.538
+        },
+        "visibility": {
+          "roundtripMs": 43.678,
+          "parseMs": 4.928,
+          "bytes": 2044557.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--nested-medium",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 23.732,
+          "parseMs": 2.379,
+          "bytes": 1262903.0,
+          "expandMs": 0.0,
+          "normalizeMs": 1.229
+        },
+        "compact": {
+          "roundtripMs": 23.047,
+          "parseMs": 2.117,
+          "bytes": 1103651.0,
+          "expandMs": 1.081,
+          "normalizeMs": 1.161
+        },
+        "visibility": {
+          "roundtripMs": 10.808,
+          "parseMs": 1.249,
+          "bytes": 509261.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--nested-small",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 4.23,
+          "parseMs": 0.433,
+          "bytes": 228515.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.727
+        },
+        "compact": {
+          "roundtripMs": 3.977,
+          "parseMs": 0.387,
+          "bytes": 201803.0,
+          "expandMs": 0.195,
+          "normalizeMs": 0.717
+        },
+        "visibility": {
+          "roundtripMs": 2.117,
+          "parseMs": 0.24,
+          "bytes": 101693.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--tables-large",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 19.926,
+          "parseMs": 1.942,
+          "bytes": 1024063.0,
+          "expandMs": 0.0,
+          "normalizeMs": 1.582
+        },
+        "compact": {
+          "roundtripMs": 19.259,
+          "parseMs": 1.799,
+          "bytes": 897001.0,
+          "expandMs": 0.89,
+          "normalizeMs": 1.653
+        },
+        "visibility": {
+          "roundtripMs": 8.94,
+          "parseMs": 1.021,
+          "bytes": 419639.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--tables-medium",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 5.314,
+          "parseMs": 0.532,
+          "bytes": 276036.0,
+          "expandMs": 0.0,
+          "normalizeMs": 1.205
+        },
+        "compact": {
+          "roundtripMs": 5.03,
+          "parseMs": 0.476,
+          "bytes": 243798.0,
+          "expandMs": 0.25,
+          "normalizeMs": 1.244
+        },
+        "visibility": {
+          "roundtripMs": 2.543,
+          "parseMs": 0.298,
+          "bytes": 122344.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--tables-small",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 1.457,
+          "parseMs": 0.148,
+          "bytes": 69766.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.576
+        },
+        "compact": {
+          "roundtripMs": 1.425,
+          "parseMs": 0.144,
+          "bytes": 63868.0,
+          "expandMs": 0.082,
+          "normalizeMs": 0.579
+        },
+        "visibility": {
+          "roundtripMs": 0.921,
+          "parseMs": 0.096,
+          "bytes": 41276.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--typography-large",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 13.716,
+          "parseMs": 1.473,
+          "bytes": 778110.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.422
+        },
+        "compact": {
+          "roundtripMs": 12.78,
+          "parseMs": 1.333,
+          "bytes": 690746.0,
+          "expandMs": 0.597,
+          "normalizeMs": 0.398
+        },
+        "visibility": {
+          "roundtripMs": 6.889,
+          "parseMs": 0.827,
+          "bytes": 355616.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--typography-medium",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 3.438,
+          "parseMs": 0.371,
+          "bytes": 212078.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.223
+        },
+        "compact": {
+          "roundtripMs": 3.185,
+          "parseMs": 0.334,
+          "bytes": 190182.0,
+          "expandMs": 0.164,
+          "normalizeMs": 0.205
+        },
+        "visibility": {
+          "roundtripMs": 1.722,
+          "parseMs": 0.213,
+          "bytes": 105242.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    },
+    {
+      "story": "profile--typography-small",
+      "pixelsStable": true,
+      "exactParity": true,
+      "median": {
+        "full": {
+          "roundtripMs": 0.875,
+          "parseMs": 0.091,
+          "bytes": 57249.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.164
+        },
+        "compact": {
+          "roundtripMs": 0.864,
+          "parseMs": 0.085,
+          "bytes": 53504.0,
+          "expandMs": 0.046,
+          "normalizeMs": 0.164
+        },
+        "visibility": {
+          "roundtripMs": 0.594,
+          "parseMs": 0.066,
+          "bytes": 38139.0,
+          "expandMs": 0.0,
+          "normalizeMs": 0.0
+        }
+      }
+    }
+  ],
+  "totals": {
+    "full": {
+      "roundtripMs": 2530.21,
+      "parseMs": 258.3,
+      "bytes": 127232390,
+      "expandMs": 0.028,
+      "normalizeMs": 301.204
+    },
+    "compact": {
+      "roundtripMs": 2433.65,
+      "parseMs": 233.652,
+      "bytes": 112301870,
+      "expandMs": 170.17,
+      "normalizeMs": 289.88
+    },
+    "visibility": {
+      "roundtripMs": 1197.255,
+      "parseMs": 136.629,
+      "bytes": 56253110,
+      "expandMs": 0,
+      "normalizeMs": 0
+    }
+  }
+}
