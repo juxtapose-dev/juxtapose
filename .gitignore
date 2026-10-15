@@ -7,6 +7,7 @@ coverage/
 
 # Example workbench build output
 examples/*/storybook-static/
+examples/*/storybook-profile/
 examples/*/build/
 examples/*/.juxtapose/
 examples/*/juxtapose.manifest.json

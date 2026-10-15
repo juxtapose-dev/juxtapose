@@ -1,5 +1,8 @@
 export default {
-  stories: ['../stories/**/*.stories.jsx'],
+  stories:
+    process.env.JUX_PROFILE_STORIES === '1'
+      ? ['../profiling/**/*.stories.jsx']
+      : ['../stories/**/*.stories.jsx'],
   framework: { name: '@storybook/react-vite', options: {} },
   addons: ['@juxtapose/storybook'],
 
@@ -12,6 +15,10 @@ export default {
     // The addon records the module graph `jux run --since` uses to pick the
     // stories a change reaches. Vite's own manifest is optional now: only
     // `cause` (why a story changed) still reads it.
-    build: { ...config.build, manifest: true },
+    build: {
+      ...config.build,
+      manifest: true,
+      ...(process.env.JUX_PROFILE_STORIES === '1' ? { assetsInlineLimit: 0 } : {}),
+    },
   }),
 };
