@@ -246,7 +246,7 @@
                 "type": "object",
                 "properties": {
                   "clock": {
-                    "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                    "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing as timers fire (or after 10,000 consecutive clock reads to let synchronous waits finish). `true` uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` (default) keeps the real clock.",
                     "anyOf": [
                       {
                         "type": "boolean"
@@ -258,7 +258,7 @@
                     ]
                   },
                   "random": {
-                    "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                    "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default false.",
                     "type": "boolean"
                   }
                 }
@@ -560,7 +560,7 @@
                             "type": "object",
                             "properties": {
                               "clock": {
-                                "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                                "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing as timers fire (or after 10,000 consecutive clock reads to let synchronous waits finish). `true` uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` (default) keeps the real clock.",
                                 "anyOf": [
                                   {
                                     "type": "boolean"
@@ -572,7 +572,7 @@
                                 ]
                               },
                               "random": {
-                                "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                                "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default false.",
                                 "type": "boolean"
                               }
                             }
@@ -865,7 +865,7 @@
                         "type": "object",
                         "properties": {
                           "clock": {
-                            "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                            "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing as timers fire (or after 10,000 consecutive clock reads to let synchronous waits finish). `true` uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` (default) keeps the real clock.",
                             "anyOf": [
                               {
                                 "type": "boolean"
@@ -877,7 +877,7 @@
                             ]
                           },
                           "random": {
-                            "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                            "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default false.",
                             "type": "boolean"
                           }
                         }
@@ -1124,7 +1124,7 @@
       "type": "object",
       "properties": {
         "clock": {
-          "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+          "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing as timers fire (or after 10,000 consecutive clock reads to let synchronous waits finish). `true` uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` (default) keeps the real clock.",
           "anyOf": [
             {
               "type": "boolean"
@@ -1136,7 +1136,7 @@
           ]
         },
         "random": {
-          "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+          "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default false.",
           "type": "boolean"
         },
         "images": {
@@ -1358,7 +1358,7 @@
               "type": "object",
               "properties": {
                 "clock": {
-                  "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                  "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing as timers fire (or after 10,000 consecutive clock reads to let synchronous waits finish). `true` uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` (default) keeps the real clock.",
                   "anyOf": [
                     {
                       "type": "boolean"
@@ -1370,7 +1370,7 @@
                   ]
                 },
                 "random": {
-                  "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                  "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default false.",
                   "type": "boolean"
                 }
               }
@@ -1681,7 +1681,7 @@
                   "type": "object",
                   "properties": {
                     "clock": {
-                      "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.",
+                      "description": "Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing as timers fire (or after 10,000 consecutive clock reads to let synchronous waits finish). `true` uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` (default) keeps the real clock.",
                       "anyOf": [
                         {
                           "type": "boolean"
@@ -1693,7 +1693,7 @@
                       ]
                     },
                     "random": {
-                      "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.",
+                      "description": "Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default false.",
                       "type": "boolean"
                     }
                   }

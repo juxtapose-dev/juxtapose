@@ -259,7 +259,7 @@ Per-story options go through the platform's own parameter mechanism
 | `waitForSelector`              | wait for async content juxtapose can't detect       |
 | `delay`                        | fixed extra wait; last resort                       |
 | `settle`                       | how long to wait for the page to finish (see below) |
-| `freeze` | clock and random sources (see below) |
+| `freeze`                       | clock and random sources (see below)                |
 | `threshold` / `minDiffPercent` | tune the _reported_ diff in exact mode              |
 | `captureTimeout`               | max ms to wait for render-ready (default 2000)      |
 | `mask`                         | paint over selectors before the shutter (see below) |
@@ -586,7 +586,8 @@ fails every run. jux makes these inputs fixed before any page script runs:
 }
 ```
 
-These are the defaults, so you don't need to set them.
+Animated images freeze by default. Clock and random freezing are opt-in: their
+defaults are `false`, preserving application timing and native randomness.
 
 ### `freeze.clock`
 
@@ -594,15 +595,16 @@ These are the defaults, so you don't need to set them.
 `formatToParts()` with no date) and `Temporal.Now` start at
 2024-01-01T12:00:00Z. Set an ISO 8601 date (`"2030-06-15"`, read as UTC
 midnight) or a date-time with `Z` or an offset to start somewhere else, or
-`false` to keep the real clock. A date-time without an offset is an error:
+`false` (the default) to keep the real clock. A date-time without an offset is an error:
 each machine would read it in its own time zone.
 
 The clock doesn't follow the wall clock. It moves forward only when a timer
-fires, to that timer's due time. A story reads the same time on every run, to
-the millisecond, and code that measures elapsed time with `Date` still
-progresses: a debounce built on `Date.now()` (lodash's `debounce` and
+fires, to that timer's due time. Code that measures elapsed time with `Date`
+still progresses: a debounce built on `Date.now()` (lodash's `debounce` and
 `throttle`) still runs. A synchronous loop that waits on `Date.now()` ends
-after 10,000 reads.
+by advancing 1 ms per read after 10,000 reads without a timer callback.
+This does not make asynchronous execution deterministic: different callback
+orders or interval counts can still produce different dates.
 
 `performance.now()`, `requestAnimationFrame` timestamps and event
 timestamps stay real. jux's own settle wait measures with them.
@@ -614,16 +616,19 @@ format dates in an explicit time zone.
 
 ### `freeze.random`
 
-`Math.random()`, `crypto.getRandomValues()` and `crypto.randomUUID()`
-return a fixed-seed sequence, the same on every run. The sequence doesn't
-repeat within a page, so generated ids stay unique. Web workers keep their
-own, unseeded, sources.
+When enabled, `Math.random()`, `crypto.getRandomValues()` and
+`crypto.randomUUID()` return a fixed-seed sequence. Different call ordering can
+still change which value a component receives. Values repeat across page
+loads; use this only for test fixtures, never to generate real credentials.
+Web workers keep their own, unseeded, sources.
 
 ### `freeze.images`
 
 Animated GIF, WebP and APNG images show their first frame, in `<img>`,
 `<picture>` and CSS backgrounds. This is a Chrome launch setting, so it
 applies to the whole run: set it in the project config, not on a story.
+`animations: 'play'` only controls CSS/Web Animations; to test animated images,
+set `freeze.images: false` for the project.
 
 ### Opting out and layering
 
@@ -645,7 +650,8 @@ shows the effective values and where each came from.
 
 Turning a freeze on changes the pixels of the stories that render a date, a
 random value or an animated image, so their baselines need approving again
-once. With the freeze off, those stories were failing anyway.
+once. Even a previously stable story can change if it consumes dates or random
+values during initialization.
 
 ## Content that changes every run
 

@@ -32,8 +32,8 @@ export const DEFAULT_FROZEN_INSTANT = '2024-01-01T12:00:00.000Z';
 export const DEFAULT_FREEZE: Required<Pick<FreezeParams, 'random' | 'images'>> & {
   clock: boolean;
 } = {
-  clock: true,
-  random: true,
+  clock: false,
+  random: false,
   images: true,
 };
 
@@ -84,9 +84,6 @@ export function resolveFreeze(freeze: FreezeParams | undefined): ResolvedFreeze 
   };
 }
 
-/** Clock modes measured for #146; see FREEZE_INIT. */
-type ClockMode = 'timers' | 'fixed' | 'real';
-
 /**
  * The init script. Runs before any page script in every document of the
  * page, after the idle detector's (installed first), so its timer wrappers
@@ -112,42 +109,42 @@ type ClockMode = 'timers' | 'fixed' | 'real';
  * Random: Math.random, crypto.getRandomValues and crypto.randomUUID draw
  * from two fixed-seed sfc32 streams, one for Math.random and one for
  * crypto, so a page that adds a Math.random call does not shift its UUIDs.
- * A seeded sequence never repeats within a page, so ids stay unique. The
+ * Separate deterministic streams keep Math.random calls from shifting UUIDs. The
  * native getRandomValues still runs first, so its argument checks and
  * errors are unchanged. Workers keep their own, unseeded, globals.
  */
 export function freezeInit(clockMs: number | null, random: boolean): string {
-  const mode: ClockMode =
-    (process.env.JUX_EXP_CLOCK_MODE as ClockMode | undefined) ?? 'timers';
   return `(function () {
   if (window.__juxFreeze) return;
   window.__juxFreeze = true;
   var W = window;
-  ${clockMs === null ? '' : clockSource(clockMs, mode)}
+  ${clockMs === null ? '' : clockSource(clockMs)}
   ${random ? RANDOM_SOURCE : ''}
 })();`;
 }
 
-function clockSource(clockMs: number, mode: ClockMode): string {
+function clockSource(clockMs: number): string {
   return `
-  var T0 = ${clockMs}, MODE = ${JSON.stringify(mode)};
-  var OD = W.Date, perf = W.performance, pnow = perf.now.bind(perf), p0 = pnow();
+  var T0 = ${clockMs};
+  var OD = W.Date;
   var clock = T0, reads = 0, STUCK = 10000;
   var advance = function (t) { if (t > clock) clock = t; reads = 0; };
-  var now = MODE === 'fixed' ? function () { return T0; }
-    : MODE === 'real' ? function () { return Math.floor(T0 + pnow() - p0); }
-    : function () { if (++reads > STUCK) clock += 1; return clock; };
-  if (MODE === 'timers') {
+  var now = function () { if (++reads > STUCK) clock += 1; return clock; };
+  {
     var oST = W.setTimeout, oSI = W.setInterval;
+    // Web IDL coerces timer delays to signed 32-bit integers; Infinity and
+    // overflow must not push Date into an invalid or far-future instant.
+    // Coerce once with unary + (including native BigInt/Symbol errors), then
+    // pass the primitive to Chrome so object valueOf has no second effect.
     W.setTimeout = function setTimeout(fn, delay) {
       if (typeof fn !== 'function') return oST.apply(W, arguments);
-      var due = clock + Math.max(0, Number(delay) || 0), args = Array.prototype.slice.call(arguments, 2);
-      return oST.call(W, function () { advance(due); return fn.apply(W, args); }, delay);
+      var delayMs = +delay | 0, due = clock + Math.max(0, delayMs), args = Array.prototype.slice.call(arguments, 2);
+      return oST.call(W, function () { advance(due); return fn.apply(W, args); }, delayMs);
     };
     W.setInterval = function setInterval(fn, delay) {
       if (typeof fn !== 'function') return oSI.apply(W, arguments);
-      var d = Math.max(0, Number(delay) || 0), due = clock, args = Array.prototype.slice.call(arguments, 2);
-      return oSI.call(W, function () { due += d; advance(due); return fn.apply(W, args); }, delay);
+      var delayMs = +delay | 0, d = Math.max(0, delayMs), due = clock, args = Array.prototype.slice.call(arguments, 2);
+      return oSI.call(W, function () { due += d; advance(due); return fn.apply(W, args); }, delayMs);
     };
   }
   // Date called as a function returns a string; with new, a Date. A subclass
@@ -226,15 +223,12 @@ export async function applyFreeze(page: Page, freeze: ResolvedFreeze): Promise<b
   const prev = installed.get(page);
   if (prev?.source === source) return false;
   if (prev?.id)
-    await page
-      .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: prev.id })
-      .catch(() => {});
+    await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: prev.id });
   let id: string | null = null;
   if (source)
     id = await page
       .send('Page.addScriptToEvaluateOnNewDocument', { source })
-      .then((r) => r.identifier)
-      .catch(() => null);
+      .then((r) => r.identifier);
   installed.set(page, { source, id });
   return prev !== undefined;
 }

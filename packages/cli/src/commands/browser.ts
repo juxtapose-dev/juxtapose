@@ -13,6 +13,7 @@ import {
   daemonStatus,
   daemonSupported,
   installChrome,
+  freezeImages,
   juxCacheDir,
   listDaemons,
   juxStateDir,
@@ -30,7 +31,9 @@ import {
   type InstallResult,
   type ResolvedChrome,
 } from '@juxtapose/core';
+import { imageAnimationArgs } from '@juxtapose/core/browser';
 import { EXIT } from '../exit-codes.js';
+import { loadConfig } from '../context.js';
 import { BROWSER_HELP } from './browser-help.js';
 
 export interface BrowserCommandIo {
@@ -176,8 +179,10 @@ async function resolveOrExplain(
   }
 }
 
-function warmOptions(chrome: ResolvedChrome, io: BrowserCommandIo) {
+async function warmOptions(chrome: ResolvedChrome, io: BrowserCommandIo) {
+  const config = await loadConfig(process.cwd());
   return {
+    args: freezeImages(config) ? imageAnimationArgs() : [],
     executablePath: chrome.path,
     stateDir: juxStateDir({ env: io.env }),
     env: io.env,
@@ -208,7 +213,7 @@ async function daemonsReport(
   let current: string | null = null;
   let live: DaemonState[] = [];
   try {
-    if (chrome) current = daemonKeyFor({ executablePath: chrome.path, env: io.env });
+    if (chrome) current = daemonKeyFor(await warmOptions(chrome, io));
     live = await listDaemons({
       stateDir: juxStateDir({ env: io.env }),
       readCommand: io.readCommand,
@@ -450,7 +455,7 @@ async function daemonCommand(
   if (!r.chrome) return daemonFailure(sub, json, io, noBrowserMessage({ env: io.env }));
   // Running means it answered a hello, not that its pid is alive (a reused
   // pid after a reboot is not a warm browser).
-  const before = await daemonStatus(warmOptions(r.chrome, io));
+  const before = await daemonStatus(await warmOptions(r.chrome, io));
   if (before) {
     const d = daemonReport(before, true);
     io.write(
@@ -469,7 +474,7 @@ async function daemonCommand(
     );
   // The capture path's connect-or-spawn, minus its private-launch fallback:
   // a failed start reports why instead of launching a Chrome to close it.
-  const result = await startDaemon(warmOptions(r.chrome, io));
+  const result = await startDaemon(await warmOptions(r.chrome, io));
   if ('error' in result)
     return daemonFailure(
       sub,

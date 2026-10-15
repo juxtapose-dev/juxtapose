@@ -105,6 +105,13 @@ const PAGES: Record<string, string> = {
     <img src="/a.gif"><img src="/a.webp"><img src="/a.png">
     <div style="width:40px;height:40px;background:url(/a.gif)"></div>
     <picture><source srcset="/a.webp" type="image/webp"><img src="/missing.png"></picture></body>`,
+  '/canvas': `<!doctype html><body style="margin:0"><canvas width="40" height="40"></canvas><script>
+    const img = new Image(); img.onload = () => setTimeout(() => {
+      const canvas = document.querySelector('canvas');
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      canvas.dataset.ready = 'true';
+    }, 150); img.src = '/a.gif';
+    </script></body>`,
   '/clock': page(
     `add('iso ' + new Date().toISOString()); add('now ' + Date.now()); add('call ' + Date().slice(0, 15));
      add('intl ' + new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'medium' }).format());`,
@@ -116,6 +123,14 @@ const PAGES: Record<string, string> = {
   ),
   // lodash's debounce: the timer re-arms until Date.now() has passed the wait.
   // Under a clock that never moves the call never runs.
+  '/timer-object': page(
+    `let calls = 0; const delay = { valueOf() { return ++calls; } };
+     setTimeout(() => { add('coercions ' + calls); document.body.dataset.ready = 'true'; }, delay);
+     try { setTimeout(() => {}, 1n); } catch (error) { add('bigint ' + error.name); }`,
+  ),
+  '/timer-coercion': page(
+    `setTimeout(() => { add('iso ' + new Date().toISOString()); document.body.dataset.ready = 'true'; }, Infinity);`,
+  ),
   '/debounce': page(
     `const wait = 200; let last = Date.now();
      const expired = () => { const left = wait - (Date.now() - last); if (left > 0) setTimeout(expired, left); else add('final'); };
@@ -172,7 +187,7 @@ async function snap(
     urls: [`${base}${path}`],
     browser,
     viewport: { width: 320, height: 240 },
-    params,
+    params: { ...params, freeze: { clock: true, random: true, ...params.freeze } },
   });
   if (!pages[0]!.snapshot) throw new Error(pages[0]!.error);
   return pages[0]!.snapshot;
@@ -205,6 +220,11 @@ describe.skipIf(!chrome)('freeze: animated images', () => {
     expect(new Set(shots.map((s) => s.image.toString('base64'))).size).toBe(1);
   });
 
+  it('freezes animated images drawn into a canvas', async () => {
+    const shot = await snap('/canvas', { waitForSelector: 'canvas[data-ready]' });
+    expect((await colours(shot))[0]).toBe('R');
+  });
+
   it('without the launch setting the images play (the control)', async () => {
     const seen = new Set<string>();
     for (const delay of [0, 150, 250, 350])
@@ -233,6 +253,17 @@ describe.skipIf(!chrome)('freeze: clock', () => {
     const s = await snap('/debounce');
     expect(texts(s)).toContain('final');
     expect(s.settle).toBeUndefined();
+  });
+
+  it('coerces object delays once and preserves native BigInt rejection', async () => {
+    const s = await snap('/timer-object', { waitForSelector: 'body[data-ready]' });
+    expect(line(s, 'coercions')).toBe('1');
+    expect(line(s, 'bigint')).toBe('TypeError');
+  });
+
+  it('keeps Date valid when a timer delay is coerced to zero by the browser', async () => {
+    const s = await snap('/timer-coercion', { waitForSelector: 'body[data-ready]' });
+    expect(line(s, 'iso')).toBe('2024-01-01T12:00:00.000Z');
   });
 
   it('lets a synchronous wait on Date.now finish', async () => {

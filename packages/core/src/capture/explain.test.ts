@@ -65,10 +65,10 @@ describe('explainCapture', () => {
   it('shows freeze per field: defaults, project, a stories override, the story', () => {
     const dflt = explain([story('a')], 'a');
     expect(row(dflt, 'freeze.clock')).toMatchObject({
-      value: '2024-01-01T12:00:00.000Z',
+      value: false,
     });
     expect(src(dflt, 'freeze.clock')).toEqual(['default']);
-    expect(row(dflt, 'freeze.random')).toMatchObject({ value: true });
+    expect(row(dflt, 'freeze.random')).toMatchObject({ value: false });
     expect(row(dflt, 'freeze.images')).toMatchObject({ value: true });
     const e = explain([story('a', { freeze: { clock: false } })], 'a', {
       freeze: { random: false, images: false, clock: '2030-01-01' },
@@ -83,8 +83,8 @@ describe('explainCapture', () => {
   });
 
   it('notes a live freeze, which is read too late to apply', () => {
-    const e = explain([story('a')], 'a', {}, { live: { freeze: { clock: false } } });
-    expect(row(e, 'freeze.clock')).toMatchObject({ value: '2024-01-01T12:00:00.000Z' });
+    const e = explain([story('a')], 'a', {}, { live: { freeze: { clock: true } } });
+    expect(row(e, 'freeze.clock')).toMatchObject({ value: false });
     expect(e.notes.join('\n')).toMatch(/live parameters set freeze .*ignored/);
   });
 

@@ -118,20 +118,20 @@ export function expandVariants(
           // Base params, then the extends chain, then the variant itself;
           // the config override goes over all three.
           withFreeze(
-          withNetwork(
-            withSettle(
-              {
-                ...baseParams,
-                ...layer,
-                ...(baseParams.renderer || layer.renderer
-                  ? { renderer: { ...baseParams.renderer, ...layer.renderer } }
-                  : {}),
-              },
-              baseParams.settle,
-              layer.settle,
-            ),
-            baseParams.network,
-            layer.network,
+            withNetwork(
+              withSettle(
+                {
+                  ...baseParams,
+                  ...layer,
+                  ...(baseParams.renderer || layer.renderer
+                    ? { renderer: { ...baseParams.renderer, ...layer.renderer } }
+                    : {}),
+                },
+                baseParams.settle,
+                layer.settle,
+              ),
+              baseParams.network,
+              layer.network,
             ),
             baseParams.freeze,
             layer.freeze,

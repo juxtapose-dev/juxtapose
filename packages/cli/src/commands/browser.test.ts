@@ -4,7 +4,13 @@ import { spawn } from 'node:child_process';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { CI_ENV_VARS, resolveChrome, type InstallOptions } from '@juxtapose/core';
+import {
+  CI_ENV_VARS,
+  daemonKeyFor,
+  resolveChrome,
+  type InstallOptions,
+} from '@juxtapose/core';
+import { imageAnimationArgs } from '@juxtapose/core/browser';
 import {
   browserCommand,
   installWithProxy,
@@ -319,6 +325,13 @@ describe('jux browser start|stop|status (warm browser)', () => {
           started: true,
           daemon: { running: true, enabled: true, idleMinutes: 1 },
         });
+        expect(a.out.daemon.key).toBe(
+          daemonKeyFor({
+            executablePath: chrome!.path,
+            env,
+            args: imageAnimationArgs(),
+          }),
+        );
         const pid = a.out.daemon.pid as number;
         const b = await run(['start']);
         expect(b.out).toMatchObject({ started: false, daemon: { pid } });

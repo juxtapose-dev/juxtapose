@@ -315,7 +315,7 @@ export const NetworkSchema = withText(
 const FREEZE_CLOCK = withText(
   Type.Union([Type.Boolean(), Type.String({ format: INSTANT_FORMAT })], {
     description:
-      'Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing only as timers fire. `true` (default) uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` keeps the real clock.',
+      'Start `Date`, `Date.now()` and `Intl.DateTimeFormat` at a fixed instant, advancing as timers fire (or after 10,000 consecutive clock reads to let synchronous waits finish). `true` uses 2024-01-01T12:00:00Z; an ISO 8601 date or date-time with `Z` or an offset picks another; `false` (default) keeps the real clock.',
   }),
   {
     type: 'freeze.clock must be true, false, or an ISO 8601 date or a date-time with Z or an offset, got {got}',
@@ -324,7 +324,7 @@ const FREEZE_CLOCK = withText(
 const FREEZE_RANDOM = withText(
   Type.Boolean({
     description:
-      'Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default true.',
+      'Seed `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`, so each page draws the same sequence every run. Default false.',
   }),
   { type: 'freeze.random must be true or false, got {got}' },
 );

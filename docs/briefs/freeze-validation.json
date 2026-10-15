@@ -1,0 +1,681 @@
+{
+  "date": "2026-10-15",
+  "environment": {
+    "browser": "151.0.7922.34",
+    "os": "darwin-arm64",
+    "encoder": "8.18.3"
+  },
+  "runsPerMode": 3,
+  "concurrency": 3,
+  "modes": {
+    "native": {
+      "clock": false,
+      "random": false,
+      "images": false
+    },
+    "freeze": {
+      "clock": true,
+      "random": true,
+      "images": true
+    }
+  },
+  "suites": {
+    "chakra": {
+      "buildDir": "/Users/jer/.claude/jobs/6ff71ac8/tmp/chakra-src/storybook-static",
+      "stories": {
+        "foundations-sandbox--re-renders": {
+          "native": {
+            "hashes": [
+              "28d64db71b1afdb65aa3df87e1b2d3d07357d092cd5b7ad2791caa3cd687c8ac",
+              "c8caa0d0cc6eb1cf5ab1457a013dec862f0b3cfb4f37cf5f412430a9daa04d9f",
+              "e44147f6f0156acf334bf2f01b22eed0f1cc3b41f954b64e0b28ec7b652a51ce"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "78df35d9fae8cbaf2a8fcb74a4c3b01c381bf2eabfeb65f2426bf781ed73455e"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "charts-area-chart--axis-label": {
+          "native": {
+            "hashes": [
+              "9fa95896afcf16de7b4a1611dcc1a5ae45713a10b59429419e14032da9635de1"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "9fa95896afcf16de7b4a1611dcc1a5ae45713a10b59429419e14032da9635de1"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "charts-line-chart--reference-point": {
+          "native": {
+            "hashes": [
+              "9bcbfde3cb5c02b3d829040b68e2b273f7c1f048b47d10e1e5268ea16f108dfc",
+              "eb5e278ad693ccd2ec7ab4376055007b25b67e72d59c4296920a83f9c49c1795"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "eb5e278ad693ccd2ec7ab4376055007b25b67e72d59c4296920a83f9c49c1795"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-avatar--basic": {
+          "native": {
+            "hashes": [
+              "4e5db2194bd96f10a8308b5d9dcc658708029cc56eb971bffa246e6479bae4a5",
+              "121868f9af2c99bd2319b11979096723d8044349e1fe0ff839349ea2ce3a97fd"
+            ],
+            "errors": 0,
+            "timeouts": 1
+          },
+          "freeze": {
+            "hashes": [
+              "4e5db2194bd96f10a8308b5d9dcc658708029cc56eb971bffa246e6479bae4a5",
+              "121868f9af2c99bd2319b11979096723d8044349e1fe0ff839349ea2ce3a97fd"
+            ],
+            "errors": 0,
+            "timeouts": 2
+          }
+        },
+        "components-carousel--indicators": {
+          "native": {
+            "hashes": [
+              "8c8bc23bff7d5b1a418734eb999c2633355beaf79f43d118d009752faf798b38"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "8c8bc23bff7d5b1a418734eb999c2633355beaf79f43d118d009752faf798b38"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-codeblock--title": {
+          "native": {
+            "hashes": [
+              "f80bbea4361c45fca2b13c276181f8c5903c1e2500609caa9153292b087f9a96"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "f80bbea4361c45fca2b13c276181f8c5903c1e2500609caa9153292b087f9a96"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-combobox--links": {
+          "native": {
+            "hashes": [
+              "2dcc57648724e1fde10777294e277ce4347cb1b63628e45aa04c7a866b763d6d"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "2dcc57648724e1fde10777294e277ce4347cb1b63628e45aa04c7a866b763d6d"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-date-picker--presets-sidebar": {
+          "native": {
+            "hashes": [
+              "6b926f1d4373a28c2b3e04bbc7cc32aab0ccac5c4aa328481fc5efe9d9dd08b2"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "feb8c67f849cff3c7c5f7fbd2dbb8a9f2a9ac7c5e7bad4e1a7f264e717aa8cff"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-editable--double-click": {
+          "native": {
+            "hashes": [
+              "93ee3bf14ec850cd2daa68e2b83700c2d3a7b545a976f25db977f7ca90345731"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "93ee3bf14ec850cd2daa68e2b83700c2d3a7b545a976f25db977f7ca90345731"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-hovercard--placement": {
+          "native": {
+            "hashes": [
+              "1179e72eb477db3fa2c25e1ee4ed9721e6fba47526ce42663c6a5f681c4777fd"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "1179e72eb477db3fa2c25e1ee4ed9721e6fba47526ce42663c6a5f681c4777fd"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-listbox--icon": {
+          "native": {
+            "hashes": [
+              "da7b874365e8e5b70f2680b9cfe1213b42be341cfd05c291fd32e357cc0cdfce"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "da7b874365e8e5b70f2680b9cfe1213b42be341cfd05c291fd32e357cc0cdfce"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-numberinput--invalid": {
+          "native": {
+            "hashes": [
+              "1bf6d8f6ccfc0dab929a07fb15c0602f481f43124e43f25fc1c90bd231e781a7"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "1bf6d8f6ccfc0dab929a07fb15c0602f481f43124e43f25fc1c90bd231e781a7"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-progress--label": {
+          "native": {
+            "hashes": [
+              "037034e200cadb90d2b0b5ceb644152693bd53dec2253b0479ce483ed23cb4fb"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "037034e200cadb90d2b0b5ceb644152693bd53dec2253b0479ce483ed23cb4fb"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-segment-group--hook-form": {
+          "native": {
+            "hashes": [
+              "e8b9bef4e852b056262eb2424f0f7c23caded3ed963d298c00087ac02d411743"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "e8b9bef4e852b056262eb2424f0f7c23caded3ed963d298c00087ac02d411743"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-slider--store": {
+          "native": {
+            "hashes": [
+              "c0d9dad8b30882b5f05bf58cda4e5f3d1a5b96bfa65522af829c158344bb8e44"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "c0d9dad8b30882b5f05bf58cda4e5f3d1a5b96bfa65522af829c158344bb8e44"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-switch--tooltip": {
+          "native": {
+            "hashes": [
+              "0a407fa9a126a23d7bec32d27ece01580fe4708313d6626f0468263aeb3a2c99"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "0a407fa9a126a23d7bec32d27ece01580fe4708313d6626f0468263aeb3a2c99"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-tags-input--store": {
+          "native": {
+            "hashes": [
+              "ecb9453d50c8b4bf4592ed6957396b1790173ba1df3d2ae69156959b0670e326"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "ecb9453d50c8b4bf4592ed6957396b1790173ba1df3d2ae69156959b0670e326"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-treeview--controlled-expansion": {
+          "native": {
+            "hashes": [
+              "a7bbc48a29a8288acacb90f03e22045cfae1175d1848ee752128280adb86c20c"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "a7bbc48a29a8288acacb90f03e22045cfae1175d1848ee752128280adb86c20c"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "hooks-createoverlay--return-value": {
+          "native": {
+            "hashes": [
+              "853680f280f97d10e2e9f598502ae225ede7f952a31605321b30053028c2bc81"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "853680f280f97d10e2e9f598502ae225ede7f952a31605321b30053028c2bc81"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "layout-stack--horizontal": {
+          "native": {
+            "hashes": [
+              "79228e8a48ff993d7e3f97a85f266bd91664f5f1faeb5c5b6a2aeb883a2744b3"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "79228e8a48ff993d7e3f97a85f266bd91664f5f1faeb5c5b6a2aeb883a2744b3"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        }
+      }
+    },
+    "primer": {
+      "buildDir": "/Users/jer/.claude/jobs/6ff71ac8/tmp/primer-src/packages/react/storybook-static",
+      "stories": {
+        "components-relativetime-features--count-down-timer": {
+          "native": {
+            "hashes": [
+              "05c69d10aef0ee65ddacbf8e3f42f2ad83275e56a1e145f7e2ee56081a71f7a5",
+              "d4f160cccfb1e6846778582cc8f0c5d047da7b8beb27ce4d37f8d5799a8dcfdf",
+              "ac2beae9d5ddbb9815971c5fd9ade08944e4f3b8ca7d8fb596eecaf5cd0988b0"
+            ],
+            "errors": 0,
+            "timeouts": 3
+          },
+          "freeze": {
+            "hashes": [
+              "898fd55a403fc8444dc32a89d8a1c1127a6e8139866eb9b5c291b394e216d07f"
+            ],
+            "errors": 0,
+            "timeouts": 3
+          }
+        },
+        "behaviors-portal--default": {
+          "native": {
+            "hashes": [
+              "c7a5830b12b1098e76b776ccf1a93fff8000a2073f049e62e609ce44cdb75102"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "c7a5830b12b1098e76b776ccf1a93fff8000a2073f049e62e609ce44cdb75102"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-actionmenu-examples--context-menu": {
+          "native": {
+            "hashes": [
+              "199c7c1073dba96d10ea86fdaf8bbbd43ba7edeb0ae3815d6af19ea5be25d4d6"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "199c7c1073dba96d10ea86fdaf8bbbd43ba7edeb0ae3815d6af19ea5be25d4d6"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-autocomplete-features--custom-search-filter-fn": {
+          "native": {
+            "hashes": [
+              "c631e29165c4c6d91eff40765ea14020def4432b45005607c52f477d465b610e"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "c631e29165c4c6d91eff40765ea14020def4432b45005607c52f477d465b610e"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-breadcrumbs-features--spacious-variant-with-overflow-menu": {
+          "native": {
+            "hashes": [
+              "c9941f3c3c5ea295042d07eea6f6f65e14a64abc0790c3e7a99f67736accbd6b"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "c9941f3c3c5ea295042d07eea6f6f65e14a64abc0790c3e7a99f67736accbd6b"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-checkbox-features--with-leading-visual": {
+          "native": {
+            "hashes": [
+              "09cfe53ec259a1a5cb65937463013b56bc1c0b0bea9661e9672cc838d8c77db3"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "09cfe53ec259a1a5cb65937463013b56bc1c0b0bea9661e9672cc838d8c77db3"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-formcontrol-features--with-caption-and-disabled": {
+          "native": {
+            "hashes": [
+              "6d724ffcd9d2d9a14bab344077c82ebfd761dc1aa06c13c0c6c9ef6222e7b60b"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "6d724ffcd9d2d9a14bab344077c82ebfd761dc1aa06c13c0c6c9ef6222e7b60b"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-link--default": {
+          "native": {
+            "hashes": [
+              "e12021b481f376416074d96fdc74216c1039b9526eaa3ec47c7fab4ca502508e"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "e12021b481f376416074d96fdc74216c1039b9526eaa3ec47c7fab4ca502508e"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-pageheader-features--with-actions": {
+          "native": {
+            "hashes": [
+              "d6cba2a33d75edb142042df7e78293e423456f15e3256beaa7690107668e1fe7"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "d6cba2a33d75edb142042df7e78293e423456f15e3256beaa7690107668e1fe7"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-pagination-features--hide-page-numbers": {
+          "native": {
+            "hashes": [
+              "dc19195e50f9a16fea641fa5e39cae4c57d608a4ab250d8122e40ab35db931cc"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "dc19195e50f9a16fea641fa5e39cae4c57d608a4ab250d8122e40ab35db931cc"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-segmentedcontrol-responsive-tests--full-width-responsive": {
+          "native": {
+            "hashes": [
+              "03ac745caf7d83f57555bbf37eeb7078fec655ec1180ebdcb3e2e029857798c0"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "03ac745caf7d83f57555bbf37eeb7078fec655ec1180ebdcb3e2e029857798c0"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-skeleton-skeletonavatar-features--in-a-stack": {
+          "native": {
+            "hashes": [
+              "fb724e8ce6e46f6015862bd6431bb0c673eb36a209470c7c2fda45a0142ed862"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "fb724e8ce6e46f6015862bd6431bb0c673eb36a209470c7c2fda45a0142ed862"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-statelabel-features--issue-opened": {
+          "native": {
+            "hashes": [
+              "b5832d0b5d803b437a9f544a6eb31c78a6e7aa6783af926edde0ec4cf1b914e2"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "b5832d0b5d803b437a9f544a6eb31c78a6e7aa6783af926edde0ec4cf1b914e2"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-textinput-features--with-character-limit-exceeded": {
+          "native": {
+            "hashes": [
+              "cda9b4765dfcbd0ac0ce88f05e6050d1956658c778c0c4eb1c6677b16741b687"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "cda9b4765dfcbd0ac0ce88f05e6050d1956658c778c0c4eb1c6677b16741b687"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-timeline-features--clip-sidebar-end": {
+          "native": {
+            "hashes": [
+              "0d01533c3a7873a27889d0f895129768bc14e866b165857a57832ae0541d5af2"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "0d01533c3a7873a27889d0f895129768bc14e866b165857a57832ae0541d5af2"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "components-treeview-features--async-error": {
+          "native": {
+            "hashes": [
+              "81b91321db257e3a3896e6edc21f1c9eb7cccad43e17c5b81afac42b7de19cfd"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "81b91321db257e3a3896e6edc21f1c9eb7cccad43e17c5b81afac42b7de19cfd"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "deprecated-components-filteredsearch--default": {
+          "native": {
+            "hashes": [
+              "7f34b44d4a1eb11dc886e619489e0b7ae21bed0fa0a8857b0fd9b6174c9ec3c6"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "7f34b44d4a1eb11dc886e619489e0b7ae21bed0fa0a8857b0fd9b6174c9ec3c6"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "experimental-components-actionbar-examples--action-bar-with-menu-trigger": {
+          "native": {
+            "hashes": [
+              "c75e3c594ef6caedc728f5930eb93208903a38f7aa6ffa14f53b56da0bbbb5a2"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "c75e3c594ef6caedc728f5930eb93208903a38f7aa6ffa14f53b56da0bbbb5a2"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        },
+        "experimental-components-datatable-features--with-sortable-groups": {
+          "native": {
+            "hashes": [
+              "c0ffcf06c9e9ad2534813632ee0d75581cedad0625867d4438fbe15b3b952f7f"
+            ],
+            "errors": 0,
+            "timeouts": 3
+          },
+          "freeze": {
+            "hashes": [
+              "16598ab2f656a16d071dc52a0381ae25fb3433450ad90d9414eaf93e456f94b3"
+            ],
+            "errors": 0,
+            "timeouts": 3
+          }
+        },
+        "experimental-components-scrollableregion--playground": {
+          "native": {
+            "hashes": [
+              "008b685652ebf96bb68950b6ef283c21dc5d59665acce13861e98381393302fa"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          },
+          "freeze": {
+            "hashes": [
+              "008b685652ebf96bb68950b6ef283c21dc5d59665acce13861e98381393302fa"
+            ],
+            "errors": 0,
+            "timeouts": 0
+          }
+        }
+      }
+    }
+  }
+}
