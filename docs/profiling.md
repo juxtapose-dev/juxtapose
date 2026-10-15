@@ -3,8 +3,8 @@
 Use the existing React Storybook with an opt-in performance collection. Normal
 example builds keep their original stories. The collection has eight workloads
 (forms, tables, cards, typography, SVG charts, local images, nested DOM, and
-async local data), each at 12, 72, and 288 items. Desktop, mobile, and dark
-captures produce 72 capture keys from 24 stories. The nested workload adds six
+async local data), each at 12, 72, and 288 items. Desktop light/dark (1280 × 800), mobile light/dark (390 × 844), and
+tablet light (768 × 1024) produce 120 capture keys from 24 stories. The nested workload adds six
 children per item to expose structure-extraction scaling.
 
 No story uses random data, clocks, remote resources, or intentionally variable
@@ -40,7 +40,7 @@ and teardown; `RunReport.durationMs` covers the orchestration interval.
 This benchmark exercises the green capture path, not changed-image diff cost,
 daemon reuse, or the recovery path unless a fixture actually needs recovery.
 
-## Measurement on October 15, 2026
+## Initial three-configuration measurement on October 15, 2026
 
 Capture implementation: `90284d4` (the code released in 0.19.0). Chrome
 151.0.7922.34, encoder 8.18.3, Node 26.11.1, macOS arm64, Apple M5 Pro,
@@ -103,3 +103,25 @@ this profile measures no cache-hit rate and cannot quantify that benefit.
 
 Raw local evidence for this measurement:
 `/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-controlled-profile-liaPlZ/`.
+
+## Expanded five-configuration verification
+
+Added tablet light (768 × 1024) and dark mobile (390 × 844), increasing the
+collection to 120 captures per run. Five measured passes per renderer mode
+produced **1,200 exact baseline matches**, with zero retries or failures; both
+excluded warm-ups also matched all 120 captures.
+
+| Mode   | Median process wall time | Range across five runs | Median run time |
+| ------ | -----------------------: | ---------------------: | --------------: |
+| Shared |                   6.06 s |            5.78–7.28 s |          5.77 s |
+| Fresh  |                   8.37 s |            7.87–8.81 s |          8.15 s |
+
+The larger matrix preserves the same leading costs: screenshot capture
+(3.73 summed worker seconds/run), paint waiting (2.49), rendering (2.10),
+navigation (2.08), structure (2.05), and encoding (1.86). These are independent
+measurements on a shared machine; do not attribute the difference from the
+initial batch solely to adding viewports.
+
+Build SHA-256: `fd74a15c6ad7fd7b8788a0ba3b8ce759a3cb85f33bc8ce6b4546468c1ddaaf17`.
+Raw evidence:
+`/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-controlled-profile-3DOzah/`.

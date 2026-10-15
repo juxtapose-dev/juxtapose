@@ -10,6 +10,8 @@ export default {
       variants: {
         mobile: { viewport: { width: 390, height: 844 } },
         dark: { colorScheme: 'dark' },
+        tablet: { viewport: { width: 768, height: 1024 } },
+        'mobile-dark': { extends: 'mobile', colorScheme: 'dark' },
       },
     },
   },
