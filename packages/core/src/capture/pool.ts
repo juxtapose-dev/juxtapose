@@ -11,7 +11,7 @@ import { SendTimeoutError, TargetClosedError } from '../browser/cdp.js';
 import { PageCrashedError, TimeoutError, type Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
 import type { Snapshot, StoryManifest, Viewport } from '../types.js';
-import { captureStory, type CaptureDeps } from './capture.js';
+import { captureStory, HttpCaptureError, type CaptureDeps } from './capture.js';
 import type { SettleLayer } from './settle-options.js';
 
 /**
@@ -133,6 +133,7 @@ export async function* capturePool(
   // Set once the browser itself is gone: every story not yet taken fails with
   // it, without touching a page, so a dead browser reads as one failure.
   let died: BrowserDiedError | null = null;
+  let hostFailure: HttpCaptureError | undefined;
 
   const open = async (): Promise<{ context: BrowserContext; page: Page }> => {
     // No Retina: it quadruples buffer size for no diff signal. deviceScaleFactor
@@ -181,6 +182,17 @@ export async function* capturePool(
         if (i >= work.length) break;
         const story = work[i]!; // i < work.length, checked above
 
+        if (hostFailure) {
+          push({
+            story,
+            error: new Error(
+              `capture not attempted: host unavailable after HTTP ${hostFailure.status}; rerun after the host recovers`,
+            ),
+            durationMs: 0,
+          });
+          opts.onProgress?.(++done, work.length, story.storyId);
+          continue;
+        }
         if (died || !session) {
           push({ story, error: died ?? new BrowserDiedError(), durationMs: 0 });
           opts.onProgress?.(++done, work.length, story.storyId);
@@ -206,6 +218,13 @@ export async function* capturePool(
               : { story, skipped: true, durationMs },
           );
         } catch (err) {
+          // A rate-limited/unavailable workbench needs time to recover. Stop
+          // scheduling more requests rather than amplifying it with retries.
+          if (
+            err instanceof HttpCaptureError &&
+            (err.status === 429 || err.status === 503)
+          )
+            hostFailure ??= err;
           // One bad story must never kill a run of 700. Report it as a failure
           // for this story and keep the worker going.
           push({

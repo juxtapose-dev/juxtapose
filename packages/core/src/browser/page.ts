@@ -95,7 +95,7 @@ export interface Page {
    */
   send<T = unknown>(method: string, params?: object): Promise<T>;
   /** HTTP status of each main-document response; returns the unsubscribe. */
-  onMainResponse(handler: (status: number) => void): () => void;
+  onMainResponse(handler: (status: number, retryAfter?: string) => void): () => void;
   /**
    * Subscribe to a CDP event on this page's session; returns the
    * unsubscribe. Optional so a Page implemented outside core still
@@ -514,7 +514,7 @@ export class CdpPage implements Page {
     return off;
   }
 
-  onMainResponse(handler: (status: number) => void): () => void {
+  onMainResponse(handler: (status: number, retryAfter?: string) => void): () => void {
     if (this.closed) return () => {};
     const off = this.connection.on(
       'Network.responseReceived',
@@ -527,7 +527,12 @@ export class CdpPage implements Page {
           r.frameId === this.targetId &&
           r.response.url !== FRESH_RENDERER_URL
         )
-          handler(r.response.status);
+          handler(
+            r.response.status,
+            Object.entries(r.response.headers ?? {}).find(
+              ([name]) => name.toLowerCase() === 'retry-after',
+            )?.[1],
+          );
       },
       this.sessionId,
     );

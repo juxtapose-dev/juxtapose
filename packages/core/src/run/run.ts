@@ -24,6 +24,7 @@ import type {
   StructureSnapshot,
   Viewport,
 } from '../types.js';
+import { HttpCaptureError } from '../capture/capture.js';
 import { capturePool } from '../capture/pool.js';
 import {
   hashImage,
@@ -184,6 +185,12 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     }
 
     if (outcome.error || !outcome.snapshot) {
+      if (outcome.error instanceof HttpCaptureError && outcome.error.image)
+        await opts.onArtifact?.({
+          storyId: outcome.story.storyId,
+          status: 'fail',
+          current: outcome.error.image,
+        });
       results.push({
         storyId: outcome.story.storyId,
         ...variantOf(outcome.story),
