@@ -279,10 +279,11 @@ The type is `JuxtaposeParameters`, exported by `@juxtapose/storybook` and
 `Meta` and `StoryObj`. It targets `storybook/internal/csf`, which Storybook 9
 and 10 also export, but it hasn't been checked against them yet.
 
-Captures are reproducible: juxtapose freezes animations, the clock, random
-sources and animated images (see [Clock, random and animated images](#clock-random-and-animated-images)),
-waits for the page to finish its work (see [Settle](#settle)), and pins
-rendering to settings that don't vary by machine.
+To reduce capture noise, juxtapose freezes animations and animated images,
+waits for the page to finish its work (see [Settle](#settle)), and uses controlled
+rendering settings. Clock and random freezing are opt-in
+(see [Clock, random and animated images](#clock-random-and-animated-images)).
+These controls do not guarantee identical rendering across machines.
 
 ### Shadow DOM
 
