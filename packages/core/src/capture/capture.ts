@@ -33,7 +33,7 @@ import { checkSettle, resolveSettle, type SettleLayer } from './settle-options.j
 import { applyNetworkPolicy, checkNetwork } from './network-policy.js';
 import { resolveNetwork, liveNetworkDiffers } from './network-rules.js';
 import { layerCapture, layerNetwork } from './layers.js';
-import { captureStructure } from './structure.js';
+import { captureStructure, type StructureCaptureTimings } from './structure.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 2000;
@@ -519,10 +519,15 @@ async function captureStoryDocument(
   const effective = params.viewport ?? effectiveViewport;
   phase('structure capture');
   const tStructure = performance.now();
-  const structure =
-    deps.structure !== false && process.env.JUXTAPOSE_NO_STRUCTURE !== '1'
-      ? await captureStructure(page, effective, params.mask ?? [])
+  const structureEnabled =
+    deps.structure !== false && process.env.JUXTAPOSE_NO_STRUCTURE !== '1';
+  const structureTimings: StructureCaptureTimings | undefined =
+    structureEnabled && process.env.JUX_STRUCTURE_PROFILE === '1'
+      ? { mark: 0, snapshot: 0, verify: 0, normalize: 0, cleanup: 0 }
       : undefined;
+  const structure = structureEnabled
+    ? await captureStructure(page, effective, params.mask ?? [], structureTimings)
+    : undefined;
   const structureMs = performance.now() - tStructure;
 
   // A selector matching nothing is not an error — a story that conditionally
@@ -576,6 +581,7 @@ async function captureStoryDocument(
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     timings,
+    ...(structureTimings ? { structureTimings } : {}),
     ...(structure ? { structure } : {}),
     ...(rendererReused ? { rendererReused: true } : {}),
     ...(flagged?.status === 'timeout'

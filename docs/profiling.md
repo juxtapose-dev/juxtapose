@@ -40,6 +40,32 @@ and teardown; `RunReport.durationMs` covers the orchestration interval.
 This benchmark exercises the green capture path, not changed-image diff cost,
 daemon reuse, or the recovery path unless a fixture actually needs recovery.
 
+## Structure extraction diagnostics
+
+Set `JUX_STRUCTURE_PROFILE=1` when running `jux` or the controlled profiling
+script to include `structureTimings` on each captured result in the JSON report:
+
+```sh
+JUX_STRUCTURE_PROFILE=1 node scripts/profile-storybook.mjs examples/storybook/storybook-profile 5
+```
+
+The optional fields are milliseconds: `mark` applies structure mask markers;
+`snapshot` waits for `DOMSnapshot.captureSnapshot`, including Chrome work,
+protocol transfer and response parsing; `verify` checks that masks remain intact;
+`normalize` converts the received snapshot into structure elements and hashes
+that structure; `cleanup` removes the temporary mask markers. These durations
+are measured inside the existing `timings.structure` interval, not additional
+phases to add to capture time. Minor overhead can make their sum differ from
+that enclosing interval. Fields for stages that did not run remain zero.
+
+The diagnostic field is absent by default and when structure capture is
+disabled. If structure capture fails, its recorded partial timings can still
+help identify the attempted stage. Raw reports preserve these details; the
+standard profiling summary continues to aggregate the enclosing structure
+phase. As with other per-capture timings, overlapping workers mean these are
+not additive wall-clock savings. Compare instrumented runs with the same
+setting and retain an uninstrumented control when measuring small effects.
+
 ## Initial three-configuration measurement on October 15, 2026
 
 Capture implementation: `90284d4` (the code released in 0.19.0). Chrome

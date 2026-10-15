@@ -1,4 +1,6 @@
 import type { Viewport } from './browser/types.js';
+import type { StructureCaptureTimings } from './capture/structure.js';
+export type { StructureCaptureTimings } from './capture/structure.js';
 // Core data model. Deliberately free of any platform (Storybook/Ladle) types —
 // adapters map their world onto these.
 
@@ -158,6 +160,9 @@ export interface Snapshot {
   durationMs: number;
   /** Where `durationMs` went. */
   timings?: CaptureTimings;
+  /** Optional diagnostic breakdown within timings.structure, in milliseconds.
+   *  Recorded only with JUX_STRUCTURE_PROFILE=1; not additional capture time. */
+  structureTimings?: StructureCaptureTimings;
   /** Visible elements and their styles, from the same frame as `image`.
    *  Absent when structure capture failed or was disabled — it explains a
    *  failure, it never decides one. */
@@ -436,6 +441,9 @@ export interface DiffResult {
   /** Per-phase split of `durationMs`; absent on reports written before it
    *  existed, on skips, and on a capture that threw. */
   timings?: CaptureTimings;
+  /** Optional diagnostic breakdown within timings.structure, in milliseconds.
+   *  Recorded only with JUX_STRUCTURE_PROFILE=1; not additional capture time. */
+  structureTimings?: StructureCaptureTimings;
 }
 
 /** Why two captures of one story differ. Ordered as the classifier checks
