@@ -5,6 +5,79 @@
 This page lists what jux measured on three public Storybooks, how jux keeps
 those captures stable, what still varies, and how to repeat the measurements.
 
+## Focused text-rendering investigation
+
+For Linux text noise, use the field-test workflow's `text_probe: true` with one
+story ID (for example `textfield--empty`), `passes: 20`, and one renderer mode.
+The workflow reuses the cached pinned static build. The probe keeps one browser
+alive, creates a context per repetition, and captures the normal settled story
+followed by a second screenshot of the same page. It does not approve baselines,
+apply visual tolerance, or retry a mismatch.
+
+Locally, after building the packages:
+
+```sh
+node scripts/probe-text-rendering.mjs /path/to/storybook-static textfield--empty 20 /tmp/text-probe fresh
+```
+
+Each repetition saves the original PNG, encoded image, two subsequent
+screenshots, exact changed-pixel counts and bounds,
+computed font and text geometry through open shadow roots, loaded font status,
+and CDP's actual platform-font usage. This supports offline analysis without
+another capture run. The second screenshot distinguishes cross-navigation
+variation from variation on an already rendered page.
+
+Measurements follow both screenshots to avoid changing the first capture's
+timing. Consequently they are diagnostic clues, not an atomic record of either
+image; closed shadow roots and iframe geometry are not included. If a small
+subset does not reproduce the noise, restore the original predecessor story or
+capture load before treating it as stable. Success means the probe completed,
+not that all pixels matched. Use the full suites only after a hypothesis survives
+this focused loop.
+
+`text_experiment: sweep` batches four diagnostic interventions into the same
+runner allocation: normal capture, raw CDP capture without screenshot preparation,
+an extra paint barrier, and caret hiding before an extra paint barrier. Locally,
+set `JUX_TEXT_EXPERIMENT` to `baseline`, `raw`, `paint`, or `caret-paint`.
+These are investigation controls, not supported capture policies; the raw control
+requires an unscrolled 1280×800 story with no masks. No production behavior changes.
+`text_experiment: warm-sweep` compares normal capture with `delay` (100 ms),
+`warm-pixel` (a preliminary 1×1 screenshot), and `warm-full` (a preliminary full
+screenshot). These controls distinguish elapsed time from screenshot side effects;
+they are not proposed defaults.
+
+The first [20-repeat Linux probe](https://github.com/juxtapose-dev/juxtapose/actions/runs/38785584994)
+took 13 seconds of capture time (about 45 seconds for the runner job with cached
+builds). `textfield--empty` produced three initial hashes, but all 20 second
+screenshots had identical decoded pixels. Geometry and actual Adobe Clean font
+usage matched across repetitions. The first-to-second differences were confined
+to the placeholder's bounds, 261–400 pixels. This motivates separating first-frame
+paint/preparation from encoding; it does not yet establish the cause or a fix.
+
+Follow-up probes ruled out PNG-to-WebP encoding (zero decoded-pixel changes in
+20 pairs). Skipping screenshot preparation still varied; an extra paint barrier
+reduced but did not eliminate the differences. A 100 ms delay and a preliminary
+1×1 screenshot each stabilized 20/20, motivating inspection of time-dependent
+styles rather than adding either workaround to the capture path.
+
+The cause in this reproduction was Spectrum's `input::placeholder` color
+transition. The freeze sheet selected elements, `::before`, and `::after`, but
+transition properties do not inherit onto `::placeholder`. Adding its selector
+produced [20/20 identical initial Linux captures](https://github.com/juxtapose-dev/juxtapose/actions/runs/38787490741),
+all matching the second and third screenshots, with no delay or preliminary
+capture. Real-browser regression tests fail with the old rule and pass with the
+fix in both light and open shadow DOM; `animations: 'play'` remains effective.
+This establishes this placeholder-transition cause, not a universal explanation
+for all text or antialias differences.
+
+The [five-pass, ten-story Linux follow-up](https://github.com/juxtapose-dev/juxtapose/actions/runs/38787795691)
+had no capture errors. Fresh mode varied on one story (`textfield--types`), cache
+pulse on one (`textfield--sized`), and shared mode on six. The earlier matching
+renderer sweep varied on eight, five, and eight respectively. These are small
+samples from different runner allocations, not a precise rate comparison. They
+show why the targeted fix does not replace existing renderer recovery or justify
+claiming that all remaining noise is solved.
+
 ## What was tested
 
 You can repeat every run on this page. Each Storybook was built from source
