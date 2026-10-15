@@ -1,5 +1,12 @@
 # @juxtapose/core
 
+## 0.18.4
+
+### Patch Changes
+
+- 1dda4b6: Faster structure snapshots and structural diffs on large pages, with byte-identical output. Normalizing Primer's 110k-node TreeView story is about 3x faster. Four quadratic paths in the structural diff and flake analysis are now linear: inherited-style lookups, ordering removed elements, keyed alignment of large flat lists, and selector uniqueness counts.
+- 1dda4b6: Avoid repeated class-permutation scans, index structural fallback matching, and memoize follower geometry ancestors while preserving output order.
+
 ## 0.18.3
 
 ### Patch Changes
