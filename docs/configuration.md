@@ -61,7 +61,46 @@ loaded.
 
 `storyTimeout` (ms, whole number from 1000, default 60000) is the budget for capturing one story, navigation through encode. It is a floor under settle: a story's effective budget is the larger of `storyTimeout` and its settle timeout plus `delay` plus 15 s, so a slow story still yields a flagged capture instead of an error. A story that uses all of it fails once with an error naming the step it was stuck in, its page is discarded and replaced, and the run continues. A page whose main thread is busy (a very large DOM, a runaway script) otherwise stalls each browser call for 30 s in turn. The failed story records its real `durationMs`.
 
-### Renderer settings
+### Visual equivalence
+
+SHA-256 remains the default verdict and artifact identity. To accept small color
+and antialias differences after a hash mismatch, opt in:
+
+```json
+{
+  "comparison": { "mode": "pixelmatch", "threshold": 0.05 },
+  "stories": {
+    "critical-icon--*": { "comparison": { "mode": "exact" } }
+  }
+}
+```
+
+`comparison` is supported in project config, per-story parameters, variants, and
+`stories` overrides. A story policy replaces the project policy. `mode` is
+required; `threshold` defaults to `0.05` and must be between 0 and 1. This is a
+perceived color-distance threshold, **not a percentage of allowed pixels**.
+Pixelmatch excludes likely antialiasing differences and must count **zero**
+remaining differing pixels. There is no `maxDiffPixels` allowance.
+
+Exact matches still skip decoding and baseline-image reads. On a mismatch,
+visual equivalence requires the approved baseline image, verified against its
+manifest hash, valid ancestry, and matching dimensions. Missing/corrupt images
+cannot produce a tolerant pass. The result's `hash` stays the current SHA-256;
+`comparison` records the baseline hash, threshold, antialias setting, and raw
+changed-pixel count. CLI, HTML, PR comments, handoffs, and the addon distinguish
+these passes from exact matches. The approved baseline is never automatically
+replaced. Fresh approval and renderer recovery still require exact hashes.
+
+The legacy top-level `threshold` and `minDiffPercent` tune the reported diff in
+exact mode; they do not enable visual equivalence or loosen its zero-pixel rule.
+
+Tolerance can hide real low-contrast changes. Use exact mode for captures where
+those changes matter. The initial 0.05 policy filtered 43 of 44 saved Linux noise
+pairs and detected six deliberate browser mutations: a changed digit, missing
+icon, removed one-pixel border, one-pixel shift, font-weight change, and text color
+`#222` to `#333`. This is bounded validation, not a guarantee for every UI.
+
+## Renderer settings
 
 ```json
 {
@@ -73,7 +112,8 @@ loaded.
 `renderer.shared` (default `true`) controls whether cold captures reuse a
 Chrome renderer process. Baseline mismatches retry with a cache pulse, then
 fall back to a fresh renderer if necessary. Recovery passes only when its
-byte-exact hash matches the approved baseline. No visual tolerance is used.
+byte-exact hash matches the approved baseline. Renderer recovery itself uses no
+visual tolerance; the separate comparison policy below can accept a first capture.
 Set `shared: false` to use a fresh renderer from the start.
 
 `renderer.clearResourceCache` (default `false`) clears Blink's in-memory
@@ -201,7 +241,7 @@ Per-story options go through the platform's own parameter mechanism
 | `waitForSelector`              | wait for async content juxtapose can't detect       |
 | `delay`                        | fixed extra wait; last resort                       |
 | `settle`                       | how long to wait for the page to finish (see below) |
-| `threshold` / `minDiffPercent` | tune the _reported_ diff; the hash still decides    |
+| `threshold` / `minDiffPercent` | tune the _reported_ diff in exact mode              |
 | `captureTimeout`               | max ms to wait for render-ready (default 2000)      |
 | `mask`                         | paint over selectors before the shutter (see below) |
 | `liveCapture: false`           | exclude from watch-mode recapture (see below)       |
@@ -517,7 +557,7 @@ Read the `pending` list, then do one of the following:
 ## Content that changes every run
 
 A clock, a random avatar, a generated id — under an exact hash these are
-permanently red, and no threshold rescues them. Stub the date, seed the random
+red in exact mode; visual tolerance is not a reliable workaround for changing content. Stub the date, seed the random
 source, pin the fixture. That keeps full pixel coverage.
 
 When the nondeterminism isn't yours to control, `mask` covers it:
@@ -678,7 +718,7 @@ Projects commit hashes and metadata, never snapshot images.
 | `juxtapose.manifest.json` | baseline images (`.webp`), wherever they are        |
 
 `juxtapose.manifest.json` is one committed file, like a lockfile. Per story it
-holds the approved hash, which alone decides pass/fail, and (for the default
+holds the approved hash used for exact identity and comparison, and (for the default
 store) the approved structure, one element per line, so an approval is a
 reviewable diff and CI can name the elements that changed with no image. Stories
 are sorted by id and nothing in it depends on the machine or the clock, so an

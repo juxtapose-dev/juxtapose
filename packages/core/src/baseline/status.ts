@@ -1,9 +1,6 @@
-// Pass/fail authority.
-//
-// A story passes if its captured bytes hash to the same value the manifest
-// recorded at approval time. Byte-exact — there is no threshold to hide behind,
-// which is why capture determinism gets the attention it does elsewhere in this
-// package.
+// Exact baseline identity and ancestry. The run orchestrator may accept a hash
+// mismatch under an explicit Pixelmatch policy; this module stays exact.
+// Approval and artifact storage always use these exact hashes.
 //
 // This module MUST NOT write to disk. It is called once per story per run and
 // is the hot path on a green run.

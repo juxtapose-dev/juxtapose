@@ -1,8 +1,8 @@
 // Pixel diff — the COLD path.
 //
 // This only runs for stories that already failed the hash check in
-// baseline/status.ts. It decides nothing; it exists to turn "these bytes
-// differ" into something a reviewer or an agent can act on.
+// baseline/status.ts. It explains mismatches and supplies the pixel count for
+// the explicit visual-equivalence policy in run/run.ts.
 //
 // Consequence worth keeping in mind while optimizing: on a green run this
 // module never executes. Effort spent here pays off only in proportion to how
@@ -18,6 +18,8 @@ const DEFAULT_MIN_DIFF_PERCENT = 0;
 
 export interface DiffOutput {
   mismatchPixels: number;
+  /** Exact differing pixels before perceptual/antialias filtering. */
+  rawMismatchPixels?: number;
   mismatchPercent: number;
   changedRegions: ChangedRegion[];
   /** WebP overlay marking changed pixels. Absent when nothing changed. */
@@ -61,6 +63,16 @@ export async function diffImages(
   }
 
   const { width, height } = b.info;
+  let rawMismatchPixels = 0;
+  for (let i = 0; i < a.data.length; i += 4) {
+    if (
+      a.data[i] !== b.data[i] ||
+      a.data[i + 1] !== b.data[i + 1] ||
+      a.data[i + 2] !== b.data[i + 2] ||
+      a.data[i + 3] !== b.data[i + 3]
+    )
+      rawMismatchPixels++;
+  }
   const diff = Buffer.alloc(width * height * 4);
   const mismatchPixels = pixelmatch(a.data, b.data, diff, width, height, {
     threshold,
@@ -71,6 +83,7 @@ export async function diffImages(
   if (mismatchPixels === 0 || mismatchPercent < minDiffPercent) {
     return {
       mismatchPixels,
+      rawMismatchPixels,
       mismatchPercent,
       changedRegions: [],
       dimensionMismatch: false,
@@ -86,6 +99,7 @@ export async function diffImages(
 
   return {
     mismatchPixels,
+    rawMismatchPixels,
     mismatchPercent,
     changedRegions: computeChangedRegions(diff, width, height),
     diffImage,

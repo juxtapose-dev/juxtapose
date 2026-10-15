@@ -142,6 +142,8 @@ export interface CaptureTimings {
 }
 
 export interface Snapshot {
+  /** Effective live per-story comparison policy, if declared. */
+  comparison?: StoryParams['comparison'];
   /** Effective renderer settings used for this capture. */
   renderer?: Required<NonNullable<StoryParams['renderer']>>;
   storyId: string;
@@ -347,6 +349,15 @@ export interface StructuralVerdict {
 export type DiffStatus = 'pass' | 'fail' | 'new' | 'stale' | 'skip';
 
 export interface DiffResult {
+  /** Present only when an opt-in policy accepted different exact hashes.
+   * The approved baseline is unchanged. Absent on exact passes. */
+  comparison?: {
+    method: 'pixelmatch';
+    threshold: number;
+    includeAA: false;
+    baselineHash: string;
+    rawMismatchPixels: number;
+  };
   /** Evidence from bounded cache-pulse and fresh-renderer retries, independent of recheck. */
   rendererRetry?: {
     outcome: 'resolved' | 'mismatch' | 'unconfirmed' | 'cap';

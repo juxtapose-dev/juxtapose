@@ -298,6 +298,7 @@ export class RunDirSource implements ReviewSource {
       status: result.status,
       ...(result.unstable ? { unstable: result.unstable } : {}),
       ...(result.rendererRetry ? { rendererRetry: result.rendererRetry } : {}),
+      ...(result.comparison ? { comparison: result.comparison } : {}),
       mismatchPercent: result.mismatchPercent,
       mismatchPixels: result.mismatchPixels,
       changedRegions: result.changedRegions,

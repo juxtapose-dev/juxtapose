@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   buildComment,
   describeRendererRetries,
+  describeVisualEquivalence,
   describeCause,
   gitIsCommit,
   prepareCause,
@@ -469,6 +470,8 @@ async function emit(
     return;
   }
 
+  const equivalence = describeVisualEquivalence(report.results);
+  if (equivalence) io.out(`${equivalence}\n`);
   const retry = describeRendererRetries(report.results);
   if (retry) io.out(`${retry}\n`);
   const s = report.summary;

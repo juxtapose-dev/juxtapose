@@ -5,13 +5,16 @@ full design; this file covers what will bite you if you don't know it.
 
 ## The one invariant everything rests on
 
-**Pass/fail is a byte-exact hash.** A story passes if `sha256(webp)` equals the
-hash recorded in `juxtapose.manifest.json`. There is no threshold, no
-tolerance, no "5% is probably fine".
+**Exact SHA-256 comparison is the default and the fast path.** An explicit
+`comparison: { mode: "pixelmatch", threshold: 0.05 }` may accept a hash mismatch
+only when the approved image is available and hash-verified, its ancestry is
+valid, dimensions match, and Pixelmatch counts zero pixels after color and
+antialias filtering. There is no global pixel-count allowance. Such a pass
+records `comparison` evidence and never changes the approved baseline.
 
-The consequence is the thing to internalize: **any nondeterminism in capture is
-a failed build**, not a small mismatch percentage someone can wave through. A
-single pixel of antialiasing jitter on one rounded corner turns a suite red.
+Approval and renderer recovery still require exact fresh/baseline hashes.
+Tolerance is an opt-in verdict policy, not proof that a change is rendering noise.
+Preserve the exact hashes and report which passes used visual equivalence.
 
 This is why `packages/core/src/capture/` is disproportionately large and fussy
 relative to what it does. Every line in the settle pipeline is there because
@@ -20,8 +23,8 @@ assume it is load-bearing and find out what it was protecting against.
 
 The upside, and the reason the trade is worth it: a green run is nearly free.
 Hash the bytes, compare, done — no decode, no diff, no baseline fetch. The
-pixel diff in `diff/` is a **cold path** that only runs to explain a story that
-already failed. Optimizing it helps only in proportion to how broken things
+pixel diff in `diff/` is a **cold path** that runs after a hash mismatch,
+for an explanation or an opt-in visual-equivalence verdict. Optimizing it helps only in proportion to how broken things
 already are.
 
 ## Determinism failures found the hard way
@@ -198,7 +201,7 @@ should ship; merging to main without a changeset publishes nothing.
 
 Projects that use jux commit hashes and metadata, never images:
 `juxtapose.config.json` and `juxtapose.manifest.json`. The manifest is a
-lockfile: per story it holds the approved hash (which alone decides pass/fail)
+lockfile: per story it holds the approved hash (the exact artifact identity)
 and the approved structure (so CI can name the elements that changed), sorted
 and machine-independent so an approval is a small reviewable diff. Never
 hand-merge it; take either side and re-run `jux approve`. `.juxtapose/` is

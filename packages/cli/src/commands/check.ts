@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   describeRendererRetries,
+  describeVisualEquivalence,
   encodeStoryId,
   hashImage,
   parseRunReport,
@@ -68,6 +69,8 @@ export async function checkCommand(
   }
 
   if (!ctx.json) {
+    const equivalence = describeVisualEquivalence(report.results);
+    if (equivalence) io.out(`${equivalence}\n`);
     const retries = describeRendererRetries(report.results);
     if (retries) io.out(`${retries}\n`);
   }
@@ -92,11 +95,18 @@ export async function checkCommand(
                 })),
             }
           : {}),
+        ...(report.results.some((r) => r.comparison)
+          ? {
+              visualEquivalence: report.results
+                .filter((r) => r.comparison)
+                .map((r) => ({ storyId: r.storyId, hash: r.hash, ...r.comparison })),
+            }
+          : {}),
         runId: report.runId,
       }) + '\n',
     );
   } else if (blocking.length === 0) {
-    io.out('jux: all stories approved\n');
+    io.out('jux: all stories passed or approved\n');
   } else {
     io.out(
       `jux: ${blocking.length} ${blocking.length === 1 ? 'story needs' : 'stories need'} review\n`,

@@ -1,3 +1,4 @@
+import { describeVisualEquivalence } from './comparison.js';
 import { describeRendererRetries } from './renderer-retry.js';
 // A single self-contained report.html.
 //
@@ -58,6 +59,7 @@ ${
         .join('\n')
 }
 
+${describeVisualEquivalence(report.results) ? `<pre>${escapeHtml(describeVisualEquivalence(report.results))}</pre>` : ''}
 ${describeRendererRetries(report.results) ? `<pre>${escapeHtml(describeRendererRetries(report.results))}</pre>` : ''}
 <script>${SCRIPT}</script>
 `;

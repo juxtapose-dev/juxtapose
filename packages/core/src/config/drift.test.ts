@@ -16,6 +16,13 @@ import './validate.js'; // registers the formats Value.Check needs
 /** Configs at the edges of every option: a valid value and the invalid ones
  *  the runtime or the schema refuses. */
 const CORPUS: unknown[] = [
+  { comparison: { mode: 'pixelmatch', threshold: 0.05 } },
+  { comparison: { mode: 'exact' } },
+  { comparison: { mode: 'other' } },
+  { comparison: { mode: 'pixelmatch', threshold: -1 } },
+  { comparison: { mode: 'pixelmatch', threshold: 2 } },
+  { comparison: { mode: 'pixelmatch', maxDiffPixels: 10 } },
+  { variants: { mobile: { comparison: { mode: 'other' } } } },
   { storyTimeout: 999 },
   { storyTimeout: 1.5 },
   { storyTimeout: 2147483648 },

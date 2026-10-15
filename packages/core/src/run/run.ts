@@ -1,10 +1,10 @@
+import { resolveComparison } from '../diff/comparison.js';
 import { resolveRenderer } from '../capture/renderer.js';
 // Orchestrate a run: enumerate → select → capture → judge → report.
 //
-// The ordering reflects the cost model. Hashing is cheap and decides pass/fail,
-// so it runs for every story. Decoding and diffing are expensive and explain
-// nothing about a passing story, so they run only for stories that already
-// failed. On a green run this function never decodes a single image.
+// Hashing is the cheap exact fast path. Only mismatches decode baseline pixels,
+// for explanation or an explicit visual-equivalence verdict. Exact passes never
+// read or decode a baseline image.
 
 import type { RecheckMode } from '../config/schema.js';
 import { DEFAULT_RECHECK } from '../config/schema.js';
@@ -120,6 +120,8 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const recheck = effectiveRecheck(opts.recheck, opts.config);
   // Validate before opening the pool, including legacy/new conflicts.
   resolveRenderer(opts.config);
+  resolveComparison(opts.config?.comparison);
+  for (const story of opts.stories) resolveComparison(undefined, story.params.comparison);
   const results: DiffResult[] = [];
   const renderers = new Set<string>();
   const history = new Map<
@@ -313,7 +315,14 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
             : 'fresh retry produced no snapshot');
         continue;
       }
-      const fresh = await judge(outcome.snapshot, outcome.story, manifest, opts, p);
+      const fresh = await judge(
+        outcome.snapshot,
+        outcome.story,
+        manifest,
+        opts,
+        p,
+        false,
+      );
       const resolved = fresh.status === 'pass';
       fresh.rendererRetry = {
         ...evidence,
@@ -501,6 +510,7 @@ async function judge(
   manifest: Awaited<ReturnType<BaselineStore['readManifest']>>,
   opts: RunOptions,
   p: Phases,
+  allowEquivalence = true,
 ): Promise<DiffResult> {
   const baselineStatus = resolveStatus(
     story.storyId,
@@ -580,15 +590,63 @@ async function judge(
     };
   }
 
+  const comparison = resolveComparison(
+    opts.config?.comparison,
+    snapshot.comparison ?? story.params.comparison,
+  );
+  const equivalentMode = allowEquivalence && comparison?.mode === 'pixelmatch';
+  const comparisonThreshold = comparison?.threshold ?? 0.05;
+  // Never accept pixels from an image that is not the approved hash. Cache
+  // corruption or a stale store pointer must not turn a mismatch into a pass.
+  if (equivalentMode && hashImage(baseline) !== manifest.baselines[story.storyId]?.hash) {
+    await opts.onArtifact?.({
+      storyId: story.storyId,
+      status: 'fail',
+      current: snapshot.image,
+      structure: snapshot.structure,
+    });
+    return { ...base, error: 'baseline image does not match its approved hash' };
+  }
+
   // Counted as well as timed: under a byte-exact hash the number of diffs is
   // how broken the run was, and it is the figure that explains a slow one.
   p.count('diff');
   const diff = await p.time('diff', () =>
     diffImages(baseline, snapshot.image, {
-      threshold: resolveThreshold(story.params, opts.config),
-      minDiffPercent: resolveMinDiffPercent(story.params, opts.config),
+      threshold: equivalentMode
+        ? comparisonThreshold
+        : resolveThreshold(story.params, opts.config),
+      minDiffPercent: equivalentMode
+        ? 0
+        : resolveMinDiffPercent(story.params, opts.config),
     }),
   );
+
+  if (
+    equivalentMode &&
+    !diff.dimensionMismatch &&
+    diff.mismatchPixels === 0 &&
+    (!opts.ancestry ||
+      opts.ancestry.isAncestor(manifest.baselines[story.storyId]!.commit))
+  ) {
+    await opts.onArtifact?.({
+      storyId: story.storyId,
+      status: 'pass',
+      current: snapshot.image,
+      structure: snapshot.structure,
+    });
+    return {
+      ...base,
+      status: 'pass',
+      comparison: {
+        method: 'pixelmatch',
+        threshold: comparisonThreshold,
+        includeAA: false,
+        baselineHash: manifest.baselines[story.storyId]!.hash,
+        rawMismatchPixels: diff.rawMismatchPixels ?? 0,
+      },
+    };
+  }
 
   await opts.onArtifact?.({
     storyId: story.storyId,

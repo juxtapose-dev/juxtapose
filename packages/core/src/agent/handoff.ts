@@ -1,3 +1,4 @@
+import { describeVisualEquivalence } from '../report/comparison.js';
 import { describeRendererRetries } from '../report/renderer-retry.js';
 // Turn a failing story into a prompt an agent can act on.
 //
@@ -38,6 +39,7 @@ export interface HandoffPayload {
   /** The run's stability verdict; see DiffResult.unstable. */
   unstable?: { hashes: string[]; unconfirmed?: string };
   rendererRetry?: import('../types.js').DiffResult['rendererRetry'];
+  comparison?: import('../types.js').DiffResult['comparison'];
   /** Why the two captures differed and what to change; see DiffResult.flake. */
   flake?: Flake;
   /** The flake group this story belongs to, when it has one. */
@@ -131,6 +133,16 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   lines.push(`# Visual change: ${p.storyTitle}`);
   lines.push('');
   lines.push(`Story \`${p.storyId}\` is **${p.status}**.`);
+  if (p.comparison)
+    lines.push(
+      describeVisualEquivalence([
+        {
+          storyId: p.storyId,
+          status: p.status,
+          comparison: p.comparison,
+        } as import('../types.js').DiffResult,
+      ]),
+    );
   if (p.rendererRetry)
     lines.push(
       describeRendererRetries([
