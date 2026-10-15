@@ -74,7 +74,8 @@ describe.skipIf(!chrome)('capture timings in Chrome', { timeout: 30_000 }, () =>
         // durationMs is Date.now() wall-clock to the ms, timings are 0.1 ms.
         expect(Math.abs(sum - s.durationMs)).toBeLessThan(5);
         expect(t!.screenshot).toBeGreaterThan(0);
-        expect(t!.encode).toBeGreaterThan(0);
+        // Native WebP needs only metadata canonicalization; that can round
+        // down to 0 at the report's 0.1 ms precision (checked above).
       }
       expect(snaps[0]!.timings!.freshRenderer).toBe(0);
       expect(snaps[1]!.timings!.freshRenderer).toBeGreaterThan(0);
