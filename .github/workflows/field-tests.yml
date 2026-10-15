@@ -20,6 +20,10 @@ on:
         description: 'Story ids to capture, comma-separated (empty = all). Setting this skips the gate: it is an investigation run.'
         type: string
         default: ''
+      text_probe:
+        description: 'Collect paired screenshots and shadow-DOM/font evidence for exactly one story (investigation only)'
+        type: boolean
+        default: false
       renderer:
         description: Renderer policy (sweep compares shared, fresh, and cache pulse)
         type: choice
@@ -189,9 +193,20 @@ jobs:
           PASSES: ${{ inputs.passes || '2' }}
           WORKERS: ${{ inputs.concurrency || 'configured' }}
           RENDERER: ${{ inputs.renderer || 'configured' }}
+          TEXT_PROBE: ${{ inputs.text_probe || 'false' }}
         run: |
           mkdir -p "$OUT_DIR"
           case "$PASSES" in '' | *[!0-9]*) echo "passes must be a number" >&2; exit 2 ;; esac
+          if [ "$TEXT_PROBE" = true ]; then
+            case "$STORIES" in ''|*,*) echo "text_probe requires exactly one story" >&2; exit 2 ;; esac
+            case "$RENDERER" in
+              configured) RENDERER=fresh ;;
+              fresh|shared|pulse) ;;
+              *) echo "text_probe requires a single renderer mode" >&2; exit 2 ;;
+            esac
+            node scripts/probe-text-rendering.mjs "$SB_CACHE" "$STORIES" "$PASSES" "$OUT_DIR" "$RENDERER"
+            exit 0
+          fi
           args=()
           if [ -n "$STORIES" ]; then args+=(--stories "$STORIES"); fi
           case "$WORKERS" in

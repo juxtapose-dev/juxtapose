@@ -1,0 +1,236 @@
+#!/usr/bin/env node
+/* global document, getComputedStyle, devicePixelRatio */
+// Investigation only: keep a browser alive and collect paired captures of one
+// story. Observe layout/fonts AFTER both screenshots so measurement cannot
+// alter the first capture. No baselines, retries, or tolerant verdicts.
+import { mkdirSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+import { Browser } from '../packages/core/dist/browser/browser.js';
+import { resolveChrome } from '../packages/core/dist/browser/resolve.js';
+import { captureStory } from '../packages/core/dist/capture/capture.js';
+import { StorybookPlatform } from '../packages/adapter-storybook/dist/index.js';
+import { serveStatic } from '../packages/cli/dist/serve-static.js';
+
+const [buildDir, storyId, countArg = '20', outputArg, mode = 'fresh'] =
+  process.argv.slice(2);
+const count = Number(countArg);
+if (
+  !buildDir ||
+  !storyId ||
+  !Number.isInteger(count) ||
+  count < 2 ||
+  count > 200 ||
+  !['fresh', 'shared', 'pulse'].includes(mode)
+) {
+  throw new Error(
+    'Usage: node scripts/probe-text-rendering.mjs BUILD STORY [2..200 repeats] [output] [fresh|shared|pulse]',
+  );
+}
+const out = outputArg
+  ? path.resolve(outputArg)
+  : mkdtempSync(path.join(os.tmpdir(), 'jux-text-probe-'));
+mkdirSync(out, { recursive: true });
+process.env.JUX_STATE_DIR ??= mkdtempSync(path.join(os.tmpdir(), 'jux-text-state-'));
+const require = createRequire(new URL('../packages/core/package.json', import.meta.url));
+const sharp = require('sharp');
+const digest = (value) => createHash('sha256').update(value).digest('hex');
+const save = (name, value) =>
+  writeFileSync(path.join(out, name), JSON.stringify(value, null, 2));
+const chrome = resolveChrome();
+if (!chrome) throw new Error('Install the pinned browser first');
+const platform = new StorybookPlatform();
+const story = (
+  await platform.enumerate({
+    buildDir: path.resolve(buildDir),
+    projectRoot: process.cwd(),
+  })
+).find((s) => s.storyId === storyId);
+if (!story) throw new Error(`Story not found: ${storyId}`);
+const viewport = { width: 1280, height: 800 };
+const server = await serveStatic(path.resolve(buildDir));
+let browser;
+const rows = [];
+let reference;
+let layoutReference;
+async function pixels(image) {
+  return sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+}
+function delta(a, b) {
+  if (a.info.width !== b.info.width || a.info.height !== b.info.height)
+    return { dimensionsChanged: true };
+  let changed = 0,
+    maxChannelDelta = 0;
+  let left = a.info.width,
+    top = a.info.height,
+    right = -1,
+    bottom = -1;
+  for (let i = 0; i < a.data.length; i += 4) {
+    let different = false;
+    for (let c = 0; c < 4; c++) {
+      const d = Math.abs(a.data[i + c] - b.data[i + c]);
+      different ||= d !== 0;
+      maxChannelDelta = Math.max(maxChannelDelta, d);
+    }
+    if (different) {
+      changed++;
+      const x = (i / 4) % a.info.width,
+        y = Math.floor(i / 4 / a.info.width);
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  return {
+    changedPixels: changed,
+    percent: (100 * changed) / (a.info.width * a.info.height),
+    maxChannelDelta,
+    bounds: changed ? { left, top, right, bottom } : null,
+  };
+}
+try {
+  browser = await Browser.launch({ executablePath: chrome.path });
+  save('environment.json', {
+    platform: os.platform(),
+    release: os.release(),
+    arch: os.arch(),
+    node: process.version,
+    chrome,
+    sharp: sharp.versions,
+    viewport,
+    mode,
+    storyId,
+    count,
+    note: 'Fresh context per repetition; one persistent browser. Measurements follow both screenshots. Open shadow roots covered; closed roots and iframe contents are not covered by geometry.',
+  });
+  for (let pass = 1; pass <= count; pass++) {
+    const start = performance.now();
+    const context = await browser.newContext({ viewport });
+    try {
+      const page = await context.newPage();
+      const snap = await captureStory(
+        page,
+        story,
+        {
+          platform,
+          baseUrl: server.url,
+          forceFreshRenderer: mode === 'fresh',
+          forceResourceCache: mode === 'pulse',
+          renderer: { shared: mode !== 'fresh' },
+        },
+        viewport,
+      );
+      if (!snap) throw new Error('Story was skipped');
+      const second = await page.screenshot();
+      writeFileSync(path.join(out, `${pass}-capture.webp`), snap.image);
+      writeFileSync(path.join(out, `${pass}-repeat.png`), second);
+      const observation = await page.evaluate(() => {
+        const rect = (r) => [r.x, r.y, r.width, r.height];
+        const elements = [];
+        const walk = (root, prefix) => {
+          for (const [index, el] of Array.from(root.children ?? []).entries()) {
+            if (el.matches('script,style,link,meta,title')) continue;
+            const key = `${prefix}/${el.localName}[${index}]`;
+            const css = getComputedStyle(el);
+            const text = Array.from(el.childNodes).filter(
+              (n) => n.nodeType === 3 && n.textContent.trim(),
+            );
+            if (
+              (text.length || el.matches('input,textarea')) &&
+              el.getClientRects().length
+            ) {
+              elements.push({
+                key,
+                text: text.map((n) => n.textContent),
+                value: el.value,
+                bounds: rect(el.getBoundingClientRect()),
+                font: css.font,
+                family: css.fontFamily,
+                weight: css.fontWeight,
+                size: css.fontSize,
+                lineHeight: css.lineHeight,
+                letterSpacing: css.letterSpacing,
+                color: css.color,
+                transform: css.transform,
+                ranges: text.map((n) => {
+                  const r = document.createRange();
+                  r.selectNodeContents(n);
+                  return Array.from(r.getClientRects(), rect);
+                }),
+              });
+            }
+            if (el.shadowRoot) walk(el.shadowRoot, `${key}#shadow`);
+            walk(el, key);
+          }
+        };
+        walk(document.documentElement, 'html');
+        return {
+          fontsStatus: document.fonts.status,
+          fonts: Array.from(document.fonts, (f) => ({
+            family: f.family,
+            style: f.style,
+            weight: f.weight,
+            status: f.status,
+          })),
+          elements,
+          dpr: devicePixelRatio,
+        };
+      });
+      // CDP's actual font usage is stronger evidence than computed font-family.
+      await page.send('DOM.enable');
+      await page.send('CSS.enable');
+      const { nodes } = await page.send('DOM.getFlattenedDocument', {
+        depth: -1,
+        pierce: true,
+      });
+      const fontUsage = [];
+      const ids = new Set(
+        nodes
+          .filter((n) => n.nodeType === 3 && n.nodeValue.trim())
+          .map((n) => n.parentId),
+      );
+      for (const nodeId of ids) {
+        if (!nodeId) continue;
+        const node = nodes.find((n) => n.nodeId === nodeId);
+        if (['SCRIPT', 'STYLE', 'TITLE'].includes(node?.nodeName)) continue;
+        try {
+          const result = await page.send('CSS.getPlatformFontsForNode', { nodeId });
+          fontUsage.push({
+            nodeName: node?.nodeName,
+            attributes: node?.attributes,
+            ...result,
+          });
+        } catch (error) {
+          fontUsage.push({ error: String(error) });
+        }
+      }
+      save(`${pass}-observation.json`, { ...observation, fontUsage });
+      const firstPixels = await pixels(snap.image),
+        secondPixels = await pixels(second);
+      reference ??= firstPixels;
+      const layoutHash = digest(JSON.stringify(observation));
+      layoutReference ??= layoutHash;
+      const row = {
+        pass,
+        hash: digest(snap.image),
+        layoutHash,
+        layoutMatchesFirst: layoutHash === layoutReference,
+        versusFirst: delta(reference, firstPixels),
+        samePageRepeat: delta(firstPixels, secondPixels),
+        elapsedMs: Math.round(performance.now() - start),
+      };
+      rows.push(row);
+      console.log(JSON.stringify(row));
+      save('results.json', rows);
+    } finally {
+      await context.close();
+    }
+  }
+} finally {
+  await browser?.close();
+  await server.close();
+}
+console.log(`Evidence: ${out}`);

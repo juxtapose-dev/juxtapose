@@ -7,6 +7,35 @@ those captures stable, what still varies, and how to repeat the measurements.
 
 ## What was tested
 
+### Focused text-rendering investigation
+
+For Linux text noise, use the field-test workflow's `text_probe: true` with one
+story ID (for example `textfield--empty`), `passes: 20`, and one renderer mode.
+The workflow reuses the cached pinned static build. The probe keeps one browser
+alive, creates a context per repetition, and captures the normal settled story
+followed by a second screenshot of the same page. It does not approve baselines,
+apply visual tolerance, or retry a mismatch.
+
+Locally, after building the packages:
+
+```sh
+node scripts/probe-text-rendering.mjs /path/to/storybook-static textfield--empty 20 /tmp/text-probe fresh
+```
+
+Each repetition saves both images, exact changed-pixel counts and bounds,
+computed font and text geometry through open shadow roots, loaded font status,
+and CDP's actual platform-font usage. This supports offline analysis without
+another capture run. The second screenshot distinguishes cross-navigation
+variation from variation on an already rendered page.
+
+Measurements follow both screenshots to avoid changing the first capture's
+timing. Consequently they are diagnostic clues, not an atomic record of either
+image; closed shadow roots and iframe geometry are not included. If a small
+subset does not reproduce the noise, restore the original predecessor story or
+capture load before treating it as stable. Success means the probe completed,
+not that all pixels matched. Use the full suites only after a hypothesis survives
+this focused loop.
+
 You can repeat every run on this page. Each Storybook was built from source
 and served locally by jux through [`buildDir`](configuration.md#capture-a-built-or-deployed-storybook),
 so the runs never contacted the public sites.
