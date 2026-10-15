@@ -60,6 +60,11 @@ approximate elapsed-time control, not paired captures of an identical browser
 state. Style reads may force style/layout work, and therefore can hide a race;
 the observation arm must be interpreted alongside the untouched baseline.
 
+`text_experiment: transition-check` interleaves baseline, finishing exposed
+running `CSSTransition` objects, and inspecting the same objects without
+finishing them. `passes` is per arm. It records the transition properties and
+timing; this is a diagnostic intervention, not the production freeze policy.
+
 The first [20-repeat Linux probe](https://github.com/juxtapose-dev/juxtapose/actions/runs/38785584994)
 took 13 seconds of capture time (about 45 seconds for the runner job with cached
 builds). `textfield--empty` produced three initial hashes, but all 20 second
@@ -145,6 +150,23 @@ animation scan. Regression tests explicitly start a long transition before
 applying the production stylesheet in light and open shadow DOM; both fail with
 the old rule and pass with the fix, checking computed state and rendered pixels.
 The existing `animations: 'play'` tests still pass.
+
+The [exposed-transition control](https://github.com/juxtapose-dev/juxtapose/actions/runs/38801161115)
+found four border-color transitions per affected input. Across 100 captures per
+arm, baseline differed 4 times, finishing exposed transitions differed 5 times,
+and inspection alone differed 3 times. Finishing removed the border changes but
+left 564–729 changed pixels (maximum channel delta 1–4). Thus scanning and
+finishing exposed animation objects alone is insufficient; the stylesheet must
+also cover placeholder pseudo-elements. These counts are small samples, not
+estimates of a performance or flake-rate regression.
+
+With the stylesheet fix, the [three-worker Linux verification](https://github.com/juxtapose-dev/juxtapose/actions/runs/38801637168)
+produced 200/200 identical initial captures of grows-only and 200/200 of quiet.
+Every second/third screenshot also matched, encoding deltas were zero, and each
+story had one recorded layout/style hash. Local Storybook (18 stories ×3) and
+Ladle (16 stories ×3) were byte-identical; all 14 shadow-DOM tests, build,
+typecheck, and full Linux CI passed. This verifies these reproductions, not all
+possible sources of renderer-history or application nondeterminism.
 
 ## What was tested
 
