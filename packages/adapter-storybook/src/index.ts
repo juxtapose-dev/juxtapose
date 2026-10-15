@@ -268,22 +268,29 @@ export class StorybookPlatform implements Platform {
   }
 
   /**
-   * Every story's `parameters.juxtapose`, read once from the preview before
-   * capture: index.json never carries it, so this is what lets a story's own
-   * `variants` expand and its `skip` or `viewport` apply from the first
-   * frame. `extract()` after `cacheAllCSFFiles()` is the preview's own
-   * whole-store export (Chromatic reads the same); verified on Storybook 8.6
-   * and 10.6. ~60 ms on the example's 17 stories.
+   * Per-story loading prepares inherited parameters without rendering or
+   * importing unrelated CSF files. Whole-store extraction remains cheaper
+   * for full runs and supports previews without the per-story API.
    */
-  async discoverParams(page: Page, baseUrl: string): Promise<Map<string, StoryParams>> {
+  async discoverParams(
+    page: Page,
+    baseUrl: string,
+    storyIds?: readonly string[],
+  ): Promise<Map<string, StoryParams>> {
+    if (storyIds?.length === 0) return new Map();
     await page.goto(this.previewUrl(baseUrl));
-    const extracted = await page.evaluate(async () => {
+    const extracted = await page.evaluate(async (ids) => {
+      type Entry = { parameters?: { juxtapose?: unknown } };
+      type LoadStory = (o: { storyId: string }) => Promise<Entry>;
       const w = window as unknown as {
         __STORYBOOK_PREVIEW__?: {
-          storyStoreValue?: { cacheAllCSFFiles?: () => Promise<void> };
-          extract?: (o: {
-            includeDocsOnly: boolean;
-          }) => Promise<Record<string, { parameters?: { juxtapose?: unknown } }>>;
+          storyStoreValue?: {
+            cacheAllCSFFiles?: () => Promise<void>;
+            loadStory?: LoadStory;
+            storyIndex?: { entries: Record<string, { type?: string }> };
+          };
+          loadStory?: LoadStory;
+          extract?: (o: { includeDocsOnly: boolean }) => Promise<Record<string, Entry>>;
         };
       };
       // The preview initializes asynchronously after load: wait for its store.
@@ -292,10 +299,33 @@ export class StorybookPlatform implements Platform {
         await new Promise((r) => setTimeout(r, 25));
       }
       const preview = w.__STORYBOOK_PREVIEW__;
-      if (!preview?.storyStoreValue || typeof preview.extract !== 'function')
-        throw new Error('no Storybook preview store on the page');
-      await preview.storyStoreValue.cacheAllCSFFiles?.();
-      const all = await preview.extract({ includeDocsOnly: false });
+      const store = preview?.storyStoreValue;
+      if (!preview || !store) throw new Error('no Storybook preview store on the page');
+
+      const selected = ids === undefined ? undefined : new Set(ids);
+      const entries = store.storyIndex?.entries;
+      const fullSelection =
+        selected &&
+        entries &&
+        Object.entries(entries)
+          .filter(([, entry]) => entry.type !== 'docs')
+          .every(([id]) => selected.has(id));
+      const loadStory =
+        typeof preview.loadStory === 'function'
+          ? preview.loadStory.bind(preview)
+          : typeof store.loadStory === 'function'
+            ? store.loadStory.bind(store)
+            : undefined;
+      let all: Record<string, Entry>;
+      if (selected && !fullSelection && loadStory) {
+        all = {};
+        for (const storyId of selected) all[storyId] = await loadStory({ storyId });
+      } else {
+        if (typeof preview.extract !== 'function')
+          throw new Error('no Storybook preview store on the page');
+        await store.cacheAllCSFFiles?.();
+        all = await preview.extract({ includeDocsOnly: false });
+      }
       const out: Record<string, unknown> = {};
       for (const [id, entry] of Object.entries(all)) {
         const params = entry?.parameters?.juxtapose;
@@ -303,7 +333,7 @@ export class StorybookPlatform implements Platform {
           out[id] = params;
       }
       return out;
-    });
+    }, storyIds);
     return new Map(Object.entries(extracted as Record<string, StoryParams>));
   }
 
@@ -313,7 +343,10 @@ export class StorybookPlatform implements Platform {
    * any module they import, so an edited story's parameters change it. A dev
    * server (`origin`) is never cached: its stories change under it.
    */
-  async discoveryKey(target: EnumerateTarget): Promise<string | undefined> {
+  async discoveryKey(
+    target: EnumerateTarget,
+    storyIds?: readonly string[],
+  ): Promise<string | undefined> {
     if (target.origin || !target.buildDir) return undefined;
     const hash = createHash('sha256');
     for (const name of ['index.json', 'iframe.html']) {
@@ -322,6 +355,13 @@ export class StorybookPlatform implements Platform {
         .update('\0')
         .update(await readFile(path.join(target.buildDir, name)));
     }
+    // Version and selection keep older whole-store caches and partial results
+    // from being mistaken for a different discovery request.
+    hash
+      .update('\0discovery-v2\0')
+      .update(
+        JSON.stringify(storyIds === undefined ? null : [...new Set(storyIds)].sort()),
+      );
     return hash.digest('hex');
   }
 

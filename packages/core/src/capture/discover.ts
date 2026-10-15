@@ -25,6 +25,8 @@ const DISCOVER_TIMEOUT_MS = 30_000;
 
 export interface PrepareOptions {
   platform: Platform;
+  /** Base story IDs to discover; omitted requests the whole store. */
+  storyIds?: readonly string[];
   browser: Browser;
   baseUrl: string;
   viewport: Viewport;
@@ -87,7 +89,7 @@ async function discoverLive(
     const page = await context.newPage();
     const timeoutMs = opts.timeoutMs ?? DISCOVER_TIMEOUT_MS;
     found = await Promise.race([
-      discover(page, opts.baseUrl),
+      discover(page, opts.baseUrl, opts.storyIds),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error(`no answer within ${timeoutMs} ms`)),
@@ -116,7 +118,7 @@ async function cacheKey(
 ): Promise<string | undefined> {
   if (!opts.cache || !opts.platform.discoveryKey) return undefined;
   try {
-    const key = await opts.platform.discoveryKey(opts.cache.target);
+    const key = await opts.platform.discoveryKey(opts.cache.target, opts.storyIds);
     if (key === undefined) return undefined;
     return createHash('sha256')
       .update(`${CACHE_SCHEMA}\0${opts.platform.name}\0${key}`)

@@ -92,7 +92,7 @@ export interface Platform {
   readLiveParams?(page: Page, storyId: string): Promise<StoryParams | undefined>;
 
   /**
-   * Read every story's params from the live preview once, before capture.
+   * Read selected stories' params from the live preview once, before capture.
    *
    * Optional, for platforms whose static index drops per-story config.
    * Storybook's index.json carries no `parameters.juxtapose`, so without this
@@ -102,16 +102,26 @@ export interface Platform {
    * preview wins) and expands variants from that. Keyed by story id; a story
    * missing from the map keeps its enumerated params.
    *
+   * Omitted storyIds requests the whole store. A supplied selection must also
+   * be included in discoveryKey so a partial result cannot satisfy a full run.
+   *
    * May throw: core warns and carries on with the enumerated params.
    */
-  discoverParams?(page: Page, baseUrl: string): Promise<Map<string, StoryParams>>;
+  discoverParams?(
+    page: Page,
+    baseUrl: string,
+    storyIds?: readonly string[],
+  ): Promise<Map<string, StoryParams>>;
 
   /**
    * A fingerprint of everything `discoverParams` would read, so core can
    * reuse the last result for an unchanged build. Undefined (or absent)
    * means don't cache — a dev server, whose stories change under it.
    */
-  discoveryKey?(target: EnumerateTarget): Promise<string | undefined>;
+  discoveryKey?(
+    target: EnumerateTarget,
+    storyIds?: readonly string[],
+  ): Promise<string | undefined>;
 
   /** Directories whose contents invalidate every story when changed
    *  (`.storybook`, `.ladle`). Project-relative. */
