@@ -50,6 +50,16 @@ requires an unscrolled 1280×800 story with no masks. No production behavior cha
 screenshot). These controls distinguish elapsed time from screenshot side effects;
 they are not proposed defaults.
 
+`text_experiment: timing` interleaves four diagnostic arms: baseline, extra paint,
+a timer delay using the latest completed extra-paint duration (33 ms before the
+first sample), and a pre-capture style/layout/animation observation. `passes` is
+**per arm**, so 100 means 400 captures. Assignments rotate within blocks across
+the same worker pool. Results record each arm, actual intervention duration, the
+delay target, and whether the before/after observations agree. This is an
+approximate elapsed-time control, not paired captures of an identical browser
+state. Style reads may force style/layout work, and therefore can hide a race;
+the observation arm must be interpreted alongside the untouched baseline.
+
 The first [20-repeat Linux probe](https://github.com/juxtapose-dev/juxtapose/actions/runs/38785584994)
 took 13 seconds of capture time (about 45 seconds for the runner job with cached
 builds). `textfield--empty` produced three initial hashes, but all 20 second
@@ -117,6 +127,24 @@ root cause or a production fix: arms ran sequentially, observed frequency varied
 between allocations, and adding a barrier also adds elapsed time. A focused
 follow-up should compare paint versus a matched delay and observe pre-capture
 styles in a separate diagnostic arm before adding any global capture overhead.
+
+The [interleaved timing experiment](https://github.com/juxtapose-dev/juxtapose/actions/runs/38800391783)
+ran 100 captures per arm. Initial-image deviations were baseline 3, extra paint
+0, matched delay 1, and pre-capture observation 1. Median intervention costs
+were 18.2 ms for paint, 18.5 ms for delay, and 8.5 ms for observation. Six
+pre-capture observations found active 130 ms input transitions and intermediate
+border/placeholder colors even though computed transition duration was already
+`0s`. One of those observations accompanied a differing screenshot. Fonts were
+loaded and geometry unchanged; after capture, the transitions had ended.
+
+A minimal real-Chrome fixture confirmed the mechanism: changing duration to
+zero does not stop an already-started transition, but setting
+`transition-property: none` removes it and immediately exposes the final style.
+The freeze stylesheet now applies that declaration, without an extra wait or
+animation scan. Regression tests explicitly start a long transition before
+applying the production stylesheet in light and open shadow DOM; both fail with
+the old rule and pass with the fix, checking computed state and rendered pixels.
+The existing `animations: 'play'` tests still pass.
 
 ## What was tested
 

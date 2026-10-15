@@ -15,6 +15,7 @@ import { Browser } from '../browser/browser.js';
 import { chromeForTests } from '../browser/__tests__/helpers.js';
 import type { Snapshot, StoryParams } from '../types.js';
 import { snapPages } from './snap.js';
+import { FREEZE_ANIMATIONS_CSS } from './settle.js';
 
 const chrome = chromeForTests();
 let server: Server;
@@ -235,6 +236,54 @@ async function placeholderColors(image: Buffer) {
 }
 
 describe.skipIf(!chrome)('open shadow roots in Chrome', { timeout: 30_000 }, () => {
+  it.each([false, true])(
+    'stops an already-started transition (shadow=%s)',
+    async (shadow) => {
+      const context = await browser.newContext({ viewport: { width: 200, height: 140 } });
+      try {
+        const page = await context.newPage();
+        await page.goto(`${base}/static`);
+        const result = await page.evaluate(
+          async ({ shadow, css }) => {
+            document.body.innerHTML = '';
+            const host = document.createElement('div');
+            document.body.append(host);
+            const root = shadow ? host.attachShadow({ mode: 'open' }) : host;
+            const box = document.createElement('div');
+            box.style.cssText =
+              'width:80px;height:80px;background:black;transition:background-color 60s linear';
+            root.append(box);
+            getComputedStyle(box).backgroundColor;
+            box.style.backgroundColor = 'white';
+            const started = box.getAnimations();
+            await Promise.all(started.map((animation) => animation.ready));
+            const before = {
+              count: started.length,
+              color: getComputedStyle(box).backgroundColor,
+            };
+            const style = document.createElement('style');
+            style.textContent = css;
+            root.append(style);
+            const color = getComputedStyle(box).backgroundColor;
+            return { before, color, running: box.getAnimations().length };
+          },
+          { shadow, css: FREEZE_ANIMATIONS_CSS },
+        );
+        expect(result.before.count).toBeGreaterThan(0);
+        expect(result.before.color).not.toBe('rgb(255, 255, 255)');
+        expect(result.color).toBe('rgb(255, 255, 255)');
+        expect(result.running).toBe(0);
+        const pixel = await sharp(await page.screenshot())
+          .extract({ left: 30, top: 30, width: 1, height: 1 })
+          .removeAlpha()
+          .raw()
+          .toBuffer();
+        expect([...pixel]).toEqual([255, 255, 255]);
+      } finally {
+        await context.close();
+      }
+    },
+  );
   it.each(['placeholder', 'placeholder-shadow'])(
     'freezes placeholder color transitions (%s), retaining the play opt-out',
     async (name) => {
