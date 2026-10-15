@@ -111,6 +111,13 @@ try {
     const context = await browser.newContext({ viewport });
     try {
       const page = await context.newPage();
+      const screenshot = page.screenshot.bind(page);
+      let originalPng;
+      page.screenshot = async (options) => {
+        const image = await screenshot(options);
+        originalPng ??= image;
+        return image;
+      };
       const snap = await captureStory(
         page,
         story,
@@ -124,9 +131,12 @@ try {
         viewport,
       );
       if (!snap) throw new Error('Story was skipped');
+      writeFileSync(path.join(out, `${pass}-original.png`), originalPng);
       const second = await page.screenshot();
+      const third = await page.screenshot();
       writeFileSync(path.join(out, `${pass}-capture.webp`), snap.image);
       writeFileSync(path.join(out, `${pass}-repeat.png`), second);
+      writeFileSync(path.join(out, `${pass}-third.png`), third);
       const observation = await page.evaluate(() => {
         const rect = (r) => [r.x, r.y, r.width, r.height];
         const elements = [];
@@ -210,6 +220,7 @@ try {
       save(`${pass}-observation.json`, { ...observation, fontUsage });
       const firstPixels = await pixels(snap.image),
         secondPixels = await pixels(second);
+      const originalPixels = await pixels(originalPng);
       reference ??= firstPixels;
       const layoutHash = digest(JSON.stringify(observation));
       layoutReference ??= layoutHash;
@@ -219,7 +230,9 @@ try {
         layoutHash,
         layoutMatchesFirst: layoutHash === layoutReference,
         versusFirst: delta(reference, firstPixels),
+        encodingDelta: delta(originalPixels, firstPixels),
         samePageRepeat: delta(firstPixels, secondPixels),
+        secondToThird: delta(secondPixels, await pixels(third)),
         elapsedMs: Math.round(performance.now() - start),
       };
       rows.push(row);
