@@ -30,6 +30,7 @@ on:
         options:
           [
             baseline,
+            timing,
             raw,
             paint,
             caret-paint,
@@ -227,7 +228,7 @@ jobs:
               *) echo "text_probe requires a single renderer mode" >&2; exit 2 ;;
             esac
             case "$TEXT_EXPERIMENT" in
-              baseline|raw|paint|caret-paint|delay|warm-pixel|warm-full) experiments=("$TEXT_EXPERIMENT") ;;
+              baseline|timing|raw|paint|caret-paint|delay|warm-pixel|warm-full) experiments=("$TEXT_EXPERIMENT") ;;
               sweep) experiments=(baseline raw paint caret-paint) ;;
               warm-sweep) experiments=(baseline delay warm-pixel warm-full) ;;
               *) echo "invalid text experiment" >&2; exit 2 ;;

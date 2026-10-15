@@ -24,6 +24,7 @@ const experiment = process.env.JUX_TEXT_EXPERIMENT ?? 'baseline';
 if (
   ![
     'baseline',
+    'timing',
     'raw',
     'paint',
     'caret-paint',
@@ -107,6 +108,90 @@ function delta(a, b) {
     bounds: changed ? { left, top, right, bottom } : null,
   };
 }
+function observePage() {
+  const rect = (r) => [r.x, r.y, r.width, r.height];
+  const elements = [];
+  const animations = [];
+  const styles = (css) =>
+    Object.fromEntries(
+      [
+        'color',
+        'backgroundColor',
+        'borderTopColor',
+        'borderTopWidth',
+        'opacity',
+        'transitionProperty',
+        'transitionDuration',
+        'transitionDelay',
+        'animationName',
+        'animationDuration',
+        'transform',
+        'filter',
+        'willChange',
+      ].map((key) => [key, css[key]]),
+    );
+  const walk = (root, prefix) => {
+    if (root.getAnimations) {
+      for (const animation of root.getAnimations()) {
+        animations.push({
+          root: prefix,
+          playState: animation.playState,
+          currentTime: animation.currentTime,
+          timing: animation.effect?.getComputedTiming(),
+          target: animation.effect?.target?.localName,
+        });
+      }
+    }
+    for (const [index, el] of Array.from(root.children ?? []).entries()) {
+      if (el.matches('script,style,link,meta,title')) continue;
+      const key = `${prefix}/${el.localName}[${index}]`;
+      const css = getComputedStyle(el);
+      const text = Array.from(el.childNodes).filter(
+        (n) => n.nodeType === 3 && n.textContent.trim(),
+      );
+      if ((text.length || el.matches('input,textarea')) && el.getClientRects().length) {
+        elements.push({
+          key,
+          text: text.map((n) => n.textContent),
+          value: el.value,
+          bounds: rect(el.getBoundingClientRect()),
+          font: css.font,
+          family: css.fontFamily,
+          weight: css.fontWeight,
+          size: css.fontSize,
+          lineHeight: css.lineHeight,
+          letterSpacing: css.letterSpacing,
+          color: css.color,
+          styles: styles(css),
+          placeholder: el.matches('input,textarea')
+            ? styles(getComputedStyle(el, '::placeholder'))
+            : undefined,
+          transform: css.transform,
+          ranges: text.map((n) => {
+            const r = document.createRange();
+            r.selectNodeContents(n);
+            return Array.from(r.getClientRects(), rect);
+          }),
+        });
+      }
+      if (el.shadowRoot) walk(el.shadowRoot, `${key}#shadow`);
+      walk(el, key);
+    }
+  };
+  walk(document.documentElement, 'html');
+  return {
+    fontsStatus: document.fonts.status,
+    fonts: Array.from(document.fonts, (f) => ({
+      family: f.family,
+      style: f.style,
+      weight: f.weight,
+      status: f.status,
+    })),
+    elements,
+    animations,
+    dpr: devicePixelRatio,
+  };
+}
 try {
   browser = await Browser.launch({ executablePath: chrome.path });
   save('environment.json', {
@@ -121,13 +206,26 @@ try {
     experiment,
     storyId,
     count,
+    countMeaning: experiment === 'timing' ? 'per arm (four arms)' : 'total',
     workers,
     note: 'Fresh context per repetition; one persistent browser. Measurements follow all three screenshots. Reference is first completed capture, not necessarily pass 1. Open shadow roots covered; closed roots and iframe contents are not covered by geometry.',
   });
   let nextPass = 1;
+  let lastPaintMs = 33;
+  const arms =
+    experiment === 'timing'
+      ? ['baseline', 'paint', 'delay-matched', 'observe']
+      : [experiment];
+  const total = count * arms.length;
   async function runWorker() {
-    while (nextPass <= count) {
+    while (nextPass <= total) {
       const pass = nextPass++;
+      // Rotate assignments across workers and blocks; all arms share the runner.
+      const block = Math.floor((pass - 1) / arms.length);
+      const arm = arms[(((pass - 1) % arms.length) + block) % arms.length];
+      let interventionMs = 0;
+      let delayTargetMs;
+      let beforeObservation;
       const start = performance.now();
       const context = await browser.newContext({ viewport });
       try {
@@ -136,22 +234,30 @@ try {
         let originalPng;
         page.screenshot = async (options) => {
           if (!originalPng) {
-            if (experiment === 'delay')
-              await new Promise((resolve) => setTimeout(resolve, 100));
-            if (experiment === 'warm-pixel' || experiment === 'warm-full') {
+            const interventionStart = performance.now();
+            if (arm === 'delay-matched') {
+              delayTargetMs = lastPaintMs;
+              await new Promise((resolve) => setTimeout(resolve, delayTargetMs));
+            }
+            if (arm === 'observe') {
+              beforeObservation = await page.evaluate(observePage);
+              save(`${pass}-before.json`, beforeObservation);
+            }
+            if (arm === 'delay') await new Promise((resolve) => setTimeout(resolve, 100));
+            if (arm === 'warm-pixel' || arm === 'warm-full') {
               await page.send('Page.captureScreenshot', {
                 format: 'png',
                 captureBeyondViewport: false,
                 clip: {
                   x: 0,
                   y: 0,
-                  width: experiment === 'warm-pixel' ? 1 : viewport.width,
-                  height: experiment === 'warm-pixel' ? 1 : viewport.height,
+                  width: arm === 'warm-pixel' ? 1 : viewport.width,
+                  height: arm === 'warm-pixel' ? 1 : viewport.height,
                   scale: 1,
                 },
               });
             }
-            if (experiment === 'raw') {
+            if (arm === 'raw') {
               if (options?.mask?.length)
                 throw new Error('Raw experiment does not support masks');
               const { data } = await page.send('Page.captureScreenshot', {
@@ -168,7 +274,7 @@ try {
               originalPng = Buffer.from(data, 'base64');
               return originalPng;
             }
-            if (experiment === 'caret-paint') {
+            if (arm === 'caret-paint') {
               await page.evaluate(() => {
                 const visit = (root) => {
                   for (const el of root.querySelectorAll('*')) {
@@ -180,8 +286,11 @@ try {
                 visit(document);
               });
             }
-            if (experiment === 'paint' || experiment === 'caret-paint')
+            if (arm === 'paint' || arm === 'caret-paint') {
               await waitForPaint(page);
+              lastPaintMs = performance.now() - interventionStart;
+            }
+            interventionMs = performance.now() - interventionStart;
           }
           const image = await screenshot(options);
           originalPng ??= image;
@@ -206,93 +315,7 @@ try {
         writeFileSync(path.join(out, `${pass}-capture.webp`), snap.image);
         writeFileSync(path.join(out, `${pass}-repeat.png`), second);
         writeFileSync(path.join(out, `${pass}-third.png`), third);
-        const observation = await page.evaluate(() => {
-          const rect = (r) => [r.x, r.y, r.width, r.height];
-          const elements = [];
-          const animations = [];
-          const styles = (css) =>
-            Object.fromEntries(
-              [
-                'color',
-                'backgroundColor',
-                'borderTopColor',
-                'borderTopWidth',
-                'opacity',
-                'transitionProperty',
-                'transitionDuration',
-                'transitionDelay',
-                'animationName',
-                'animationDuration',
-                'transform',
-                'filter',
-                'willChange',
-              ].map((key) => [key, css[key]]),
-            );
-          const walk = (root, prefix) => {
-            if (root.getAnimations) {
-              for (const animation of root.getAnimations()) {
-                animations.push({
-                  root: prefix,
-                  playState: animation.playState,
-                  currentTime: animation.currentTime,
-                  timing: animation.effect?.getComputedTiming(),
-                  target: animation.effect?.target?.localName,
-                });
-              }
-            }
-            for (const [index, el] of Array.from(root.children ?? []).entries()) {
-              if (el.matches('script,style,link,meta,title')) continue;
-              const key = `${prefix}/${el.localName}[${index}]`;
-              const css = getComputedStyle(el);
-              const text = Array.from(el.childNodes).filter(
-                (n) => n.nodeType === 3 && n.textContent.trim(),
-              );
-              if (
-                (text.length || el.matches('input,textarea')) &&
-                el.getClientRects().length
-              ) {
-                elements.push({
-                  key,
-                  text: text.map((n) => n.textContent),
-                  value: el.value,
-                  bounds: rect(el.getBoundingClientRect()),
-                  font: css.font,
-                  family: css.fontFamily,
-                  weight: css.fontWeight,
-                  size: css.fontSize,
-                  lineHeight: css.lineHeight,
-                  letterSpacing: css.letterSpacing,
-                  color: css.color,
-                  styles: styles(css),
-                  placeholder: el.matches('input,textarea')
-                    ? styles(getComputedStyle(el, '::placeholder'))
-                    : undefined,
-                  transform: css.transform,
-                  ranges: text.map((n) => {
-                    const r = document.createRange();
-                    r.selectNodeContents(n);
-                    return Array.from(r.getClientRects(), rect);
-                  }),
-                });
-              }
-              if (el.shadowRoot) walk(el.shadowRoot, `${key}#shadow`);
-              walk(el, key);
-            }
-          };
-          walk(document.documentElement, 'html');
-          return {
-            fontsStatus: document.fonts.status,
-            fonts: Array.from(document.fonts, (f) => ({
-              family: f.family,
-              style: f.style,
-              weight: f.weight,
-              status: f.status,
-            })),
-            elements,
-            animations,
-            dpr: devicePixelRatio,
-          };
-        });
+        const observation = await page.evaluate(observePage);
         // CDP's actual font usage is stronger evidence than computed font-family.
         await page.send('DOM.enable');
         await page.send('CSS.enable');
@@ -330,6 +353,12 @@ try {
         layoutReference ??= layoutHash;
         const row = {
           pass,
+          arm,
+          interventionMs,
+          delayTargetMs,
+          beforeMatchesAfter: beforeObservation
+            ? JSON.stringify(beforeObservation) === JSON.stringify(observation)
+            : undefined,
           hash: digest(snap.image),
           layoutHash,
           layoutMatchesFirst: layoutHash === layoutReference,
