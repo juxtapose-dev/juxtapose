@@ -1,5 +1,18 @@
 # @juxtapose/storybook
 
+## 0.10.0
+
+### Minor Changes
+
+- 25261d6: Add opt-in `comparison: { mode: "pixelmatch", threshold: 0.05 }` at project, story, variant, and override level. Exact SHA-256 matches remain the fast path and default. Hash mismatches can pass only with a verified baseline image, valid ancestry, equal dimensions, and zero pixels remaining after Pixelmatch color/antialias filtering. Reports identify visual-equivalence passes and preserve both exact hashes; approved baselines, fresh approval, and exact renderer recovery are unchanged.
+
+### Patch Changes
+
+- Updated dependencies [25261d6]
+  - @juxtapose/core@0.20.0
+  - @juxtapose/server@0.8.0
+  - @juxtapose/adapter-storybook@0.4.18
+
 ## 0.9.7
 
 ### Patch Changes
