@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TimeoutError, type Page } from '@juxtapose/core';
 import { StorybookPlatform } from './index.js';
 
@@ -33,5 +33,28 @@ describe('StorybookPlatform.settle', () => {
       timeoutMs: 1,
     };
     await expect(platform.settle(timingOutPage(), ctx)).resolves.toBeUndefined();
+  });
+});
+
+describe('hosted index failures', () => {
+  it.each([429, 503])('reports HTTP %i rather than a missing build', async (status) => {
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response('unavailable', {
+          status,
+          headers: { 'Retry-After': '30' },
+        }),
+    );
+    try {
+      await expect(
+        new StorybookPlatform().enumerate({
+          origin: 'https://example.test/',
+          projectRoot: '/tmp',
+        }),
+      ).rejects.toThrow(`HTTP ${status} (Retry-After: 30)`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

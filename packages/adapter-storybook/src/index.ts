@@ -402,9 +402,26 @@ async function readIndex(buildDir: string): Promise<StorybookIndex | null> {
 }
 
 async function fetchIndex(origin: string): Promise<StorybookIndex | null> {
+  const url = new URL('index.json', withSlash(origin));
+  let res: Response;
   try {
-    const res = await fetch(new URL('index.json', withSlash(origin)));
-    if (!res.ok) return null;
+    res = await fetch(url);
+  } catch (err) {
+    throw new Error(
+      `[storybook] could not fetch ${url}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const retryAfter = res.headers.get('retry-after');
+    throw new Error(
+      `[storybook] ${url} returned HTTP ${res.status}` +
+        (retryAfter ? ` (Retry-After: ${retryAfter})` : '') +
+        '; check the host and rerun after it recovers',
+    );
+  }
+  try {
     const parsed: unknown = await res.json();
     return isStorybookIndex(parsed) ? parsed : null;
   } catch {

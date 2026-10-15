@@ -112,11 +112,60 @@ const warmPages = new WeakMap<Page, string>();
 /** Each page's own renderer history, when the caller passes no shared set. */
 const pageRenderers = new WeakMap<Page, Set<string>>();
 
+/** A failed document is evidence of a load failure, never baseline pixels. */
+export class HttpCaptureError extends Error {
+  image?: Buffer;
+  constructor(
+    readonly status: number,
+    readonly retryAfter?: string,
+  ) {
+    super(
+      `capture failed: main document returned HTTP ${status}` +
+        (retryAfter ? ` (Retry-After: ${retryAfter})` : '') +
+        '; check the host and rerun after it recovers',
+    );
+    this.name = 'HttpCaptureError';
+  }
+}
+
 export async function captureStory(
   page: Page,
   story: StoryManifest,
   deps: CaptureDeps,
   viewport: Viewport,
+): Promise<Snapshot | null> {
+  let failure: HttpCaptureError | undefined;
+  const off = page.onMainResponse((status, retryAfter) => {
+    failure = status >= 400 ? new HttpCaptureError(status, retryAfter) : undefined;
+  });
+  const checkResponse = () => {
+    if (failure) throw failure;
+  };
+  try {
+    return await captureStoryDocument(page, story, deps, viewport, checkResponse);
+  } catch (err) {
+    if (failure) {
+      // Keep a reviewable error document, but never return a Snapshot/hash that
+      // comparison or approval could treat as a successfully captured story.
+      failure.image = await page
+        .screenshot()
+        .then((png) => sharp(png).webp({ lossless: true, effort: 0 }).toBuffer())
+        .catch(() => undefined);
+      warmPages.delete(page);
+      throw failure;
+    }
+    throw err;
+  } finally {
+    off();
+  }
+}
+
+async function captureStoryDocument(
+  page: Page,
+  story: StoryManifest,
+  deps: CaptureDeps,
+  viewport: Viewport,
+  checkResponse: () => void,
   // Returns null when the story declares `skip` in its live params — see below.
 ): Promise<Snapshot | null> {
   const started = Date.now();
@@ -274,6 +323,7 @@ export async function captureStory(
     styleInjected.delete(page);
     warmPages.set(page, deps.baseUrl);
   }
+  checkResponse();
   acc.navigate = performance.now() - tNav;
   // The hop above asks for a new renderer; Chrome decides. Once the browser
   // holds its renderer-process limit, the next navigation reuses a process
@@ -474,6 +524,7 @@ export async function captureStory(
 
   // A selector matching nothing is not an error — a story that conditionally
   // renders the element shouldn't fail on the branch where it's absent.
+  checkResponse();
   phase('screenshot');
   const tShot = performance.now();
   const png = await page.screenshot(params.mask?.length ? { mask: params.mask } : {});
