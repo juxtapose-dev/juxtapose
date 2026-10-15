@@ -262,3 +262,9 @@ on the same runner and stores separate results in `workers-1/`, `workers-2/`, an
 keeps the suite's existing setting. Locally, pass `--concurrency 1` (or 2/3) to
 `scripts/field-test.mjs`. A story subset skips the tolerance gate, so inspect the
 reported differences rather than interpreting a green workflow as determinism.
+
+The workflow's `renderer` input accepts `shared`, `fresh`, `pulse`, or `sweep`.
+The sweep runs those policies sequentially and separates artifacts by renderer;
+`pulse` enables resource-cache clearing on shared renderers. The local harness
+accepts `--renderer shared|fresh|pulse`. These investigation runs compare raw
+capture hashes, not the bounded recovery rate against an approved manifest.

@@ -46,9 +46,14 @@ const positional = [];
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
   if (
-    ['--storybook', '--json', '--report-dir', '--stories', '--concurrency'].includes(
-      argv[i],
-    )
+    [
+      '--storybook',
+      '--json',
+      '--report-dir',
+      '--stories',
+      '--concurrency',
+      '--renderer',
+    ].includes(argv[i])
   )
     flags[argv[i]] = argv[++i];
   else positional.push(argv[i]);
@@ -73,6 +78,11 @@ if (
   (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 3)
 ) {
   console.error('--concurrency must be 1, 2, or 3');
+  process.exit(2);
+}
+const renderer = flags['--renderer'];
+if (renderer !== undefined && !['shared', 'fresh', 'pulse'].includes(renderer)) {
+  console.error('--renderer must be shared, fresh, or pulse');
   process.exit(2);
 }
 const gate = flags['--storybook']
@@ -100,6 +110,14 @@ writeFileSync(
   path.join(project, 'juxtapose.config.json'),
   JSON.stringify({
     platform: 'storybook',
+    ...(renderer
+      ? {
+          renderer: {
+            shared: renderer !== 'fresh',
+            clearResourceCache: renderer === 'pulse',
+          },
+        }
+      : {}),
     buildDir,
     ...((concurrency ?? gate?.concurrency)
       ? { concurrency: concurrency ?? gate.concurrency }

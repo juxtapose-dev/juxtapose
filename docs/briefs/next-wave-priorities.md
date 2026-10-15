@@ -158,3 +158,11 @@ those stories were deterministic (subset runs skip the gate). Saved structures
 were identical across the differing captures, but Spectrum uses shadow DOM and
 the structures do not establish complete coverage; this does not prove a raster
 root cause. A same-runner 1/2/3-worker sweep is the next control.
+
+The [same-runner concurrency sweep](https://github.com/juxtapose-dev/juxtapose/actions/runs/38766868795)
+completed five passes at each setting: 6/10 stories varied at one worker, 8/10 at
+two, and 4/10 at three. No captures errored. These small samples do not establish
+a rate ordering, but they rule out reducing concurrency as a sufficient fix in
+this reproduction. Text-field empty differed by one RGB level at 261 pixels;
+field-label standard differed at 1,877 pixels by at most four levels. This is a
+rasterization clue, not proof of its cause. Renderer-policy controls are next.

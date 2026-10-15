@@ -20,6 +20,11 @@ on:
         description: 'Story ids to capture, comma-separated (empty = all). Setting this skips the gate: it is an investigation run.'
         type: string
         default: ''
+      renderer:
+        description: Renderer policy (sweep compares shared, fresh, and cache pulse)
+        type: choice
+        options: [configured, shared, fresh, pulse, sweep]
+        default: configured
       concurrency:
         description: Capture workers (sweep runs 1, 2, 3 sequentially on the same runner)
         type: choice
@@ -183,6 +188,7 @@ jobs:
           STORIES: ${{ inputs.stories }}
           PASSES: ${{ inputs.passes || '2' }}
           WORKERS: ${{ inputs.concurrency || 'configured' }}
+          RENDERER: ${{ inputs.renderer || 'configured' }}
         run: |
           mkdir -p "$OUT_DIR"
           case "$PASSES" in '' | *[!0-9]*) echo "passes must be a number" >&2; exit 2 ;; esac
@@ -194,16 +200,29 @@ jobs:
             sweep) workers=(1 2 3) ;;
             *) echo "invalid concurrency" >&2; exit 2 ;;
           esac
+          case "$RENDERER" in
+            configured|shared|fresh|pulse) renderers=("$RENDERER") ;;
+            sweep) renderers=(shared fresh pulse) ;;
+            *) echo "invalid renderer" >&2; exit 2 ;;
+          esac
+          for renderer in "${renderers[@]}"; do
           for worker in "${workers[@]}"; do
             dest="$OUT_DIR"
+            renderer_args=()
+            if [ "$renderer" != configured ]; then
+              dest="$dest/renderer-$renderer"
+              renderer_args=(--renderer "$renderer")
+            fi
             capture_args=()
             if [ "$worker" != configured ]; then
-              dest="$OUT_DIR/workers-$worker"
+              dest="$dest/workers-$worker"
               mkdir -p "$dest"
               capture_args=(--concurrency "$worker")
             fi
+            mkdir -p "$dest"
             node scripts/field-test.mjs "$SB_CACHE" "$PASSES" --storybook "${{ matrix.name }}" \
-              "${args[@]}" "${capture_args[@]}" --json "$dest/result.json" --report-dir "$dest"
+              "${args[@]}" "${capture_args[@]}" "${renderer_args[@]}" --json "$dest/result.json" --report-dir "$dest"
+          done
           done
           echo "cache-hit=${{ steps.sb.outputs.cache-hit || 'false' }}" >> "$GITHUB_STEP_SUMMARY"
 
