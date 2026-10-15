@@ -1,3 +1,4 @@
+import { resolveComparison } from '../diff/comparison.js';
 import { resolveRenderer } from './renderer.js';
 // Capture one story. The ordering here is load-bearing — see settle.ts for why
 // each step exists. Because pass/fail is a byte-exact hash, every source of
@@ -178,6 +179,7 @@ async function captureStoryDocument(
   // Copied, not aliased: live params get merged in below, and mutating the
   // manifest entry would leak one story's config into the next run.
   const params: StoryParams = { ...story.params };
+  resolveComparison(undefined, params.comparison);
   const renderer = resolveRenderer(
     deps,
     params.renderer,
@@ -372,6 +374,7 @@ async function captureStoryDocument(
   const live = await deps.platform.readLiveParams?.(page, id);
   if (live) {
     Object.assign(params, mergeLiveParams(story, live));
+    resolveComparison(undefined, params.comparison);
     const liveRenderer = resolveRenderer(
       deps,
       params.renderer,
@@ -569,6 +572,7 @@ async function captureStoryDocument(
     // region area as a fraction of it.
     viewport: effective,
     renderer,
+    ...(params.comparison ? { comparison: params.comparison } : {}),
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     timings,

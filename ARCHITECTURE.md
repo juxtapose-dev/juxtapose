@@ -200,30 +200,29 @@ interface BaselineStore {
 The `BaselineManifest` is committed in every case. It, not the image, defines
 "approved".
 
-## Pass/fail is a hash, not a threshold
+## Exact identity and optional visual equivalence
 
-**A story passes if `sha256(webp) === manifest[storyId].hash`.** Byte-exact.
-The pixel diff does not decide anything — it runs _only after_ a hash mismatch,
-purely to produce artifacts a reviewer (or agent) can act on: mismatch percent,
-changed regions, diff overlay.
+SHA-256 remains the artifact identity and exact comparison fast path. Matching
+hashes need no baseline image lookup, decode, or pixel comparison. Exact mode
+is the default. Capture determinism remains important: filtering a difference
+is not evidence that it was harmless noise.
 
-**Any nondeterminism in capture is a hard failure.** There is no threshold to
-hide behind. That is why
-the settle pipeline above is so elaborate, and why animation freezing and font
-waiting are on by default rather than opt-in. Every flake is a failed build.
-
-The upside is that a green run costs almost nothing: hash the WebP, compare,
-done. No decode, no diff, no baseline fetch. Diffing is a cold path that only
-runs for stories that already failed.
+The opt-in `comparison.mode: "pixelmatch"` policy can accept a hash mismatch
+when the approved image is available and its bytes match the manifest hash,
+the baseline commit has valid ancestry, dimensions match, and Pixelmatch counts
+zero remaining differing pixels. It uses `comparison.threshold` (default 0.05)
+and `includeAA: false`, with no pixel-count allowance. The result records both
+hashes, the applied threshold, and the raw changed-pixel count. A pass does not
+update the manifest. Approval and renderer recovery remain exact.
 
 Status resolution, in order:
 
-| condition                                  | status  |
-| ------------------------------------------ | ------- |
-| no manifest entry                          | `new`   |
-| `hash` differs                             | `fail`  |
-| baseline commit is not an ancestor of HEAD | `stale` |
-| otherwise                                  | `pass`  |
+| condition                                  | status                                                   |
+| ------------------------------------------ | -------------------------------------------------------- |
+| no manifest entry                          | `new`                                                    |
+| `hash` differs                             | `fail`, unless explicit visual-equivalence policy passes |
+| baseline commit is not an ancestor of HEAD | `stale`                                                  |
+| otherwise                                  | `pass`                                                   |
 
 `stale` matters: a baseline approved on a branch that never merged is not a
 valid baseline for HEAD. Detecting it needs a `git merge-base --is-ancestor`
@@ -239,8 +238,9 @@ extraction → WebP encode. Thresholds resolve per story: story params override
 project config override the default of 0.1. `minDiffPercent` suppresses
 sub-pixel AA noise in the _reported_ percentage.
 
-Note these thresholds tune what gets _reported_, not what passes — the hash
-already decided that. They exist so a reviewer can tell "one word changed" from
+The legacy top-level thresholds tune the report only. The separate explicit
+`comparison` policy determines whether a hash mismatch can pass; its zero-pixel
+requirement cannot be relaxed with `minDiffPercent`. They exist so a reviewer can tell "one word changed" from
 "the whole layout moved".
 
 ## Agent loop

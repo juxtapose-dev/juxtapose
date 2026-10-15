@@ -20,13 +20,14 @@ style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure expla
   characters of JSON that names the change, so the agent acts on facts instead
   of describing a screenshot. It opens pixels only when the structure can't
   explain them.
-- **A red build means the UI changed.** Pass or fail is the sha256 of a lossless
-  capture compared with the approved baseline, with no threshold. Capture is
-  deterministic, so there are no flaky reds to wave through.
+- **Choose exact or visual comparison.** Exact SHA-256 comparison is the default.
+  An opt-in [Pixelmatch policy](docs/configuration.md#visual-equivalence) can filter
+  small color and antialias differences, with every tolerance-based pass reported
+  explicitly. Approved baselines stay unchanged.
 - **Failures explain themselves.** Each failure names the element and the
   property, groups stories that share one change, and with `--since` lists the
   changed files inside that story's imports.
-- **Green runs are fast.** A passing story costs a hash comparison. `jux run`
+- **Green runs are fast.** An exact match costs a hash comparison. `jux run`
   captures only the stories your change can reach, and a warm browser skips
   the launch on every run after the first.
 - **Baselines live in your repo.** Approving a change is a diff in the pull

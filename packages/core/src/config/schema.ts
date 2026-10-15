@@ -349,7 +349,26 @@ export const RendererSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const ComparisonSchema = Type.Object(
+  {
+    mode: StringEnum(['exact', 'pixelmatch'] as const, {
+      description:
+        'Exact SHA-256 comparison (default), or opt-in Pixelmatch visual equivalence after a hash mismatch.',
+    }),
+    threshold: Type.Optional(
+      Type.Number({
+        minimum: 0,
+        maximum: 1,
+        description:
+          'Pixelmatch perceived color-distance tolerance. Default 0.05. Ignored in exact mode. Antialias differences are excluded; every remaining differing pixel fails.',
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const captureOptions = {
+  comparison: ComparisonSchema,
   renderer: RendererSchema,
   skip: withText(Type.Boolean({ description: 'Never capture this story.' }), {
     type: 'skip must be true or false, got {got}',
@@ -396,7 +415,7 @@ const captureOptions = {
       minimum: 0,
       maximum: 1,
       description:
-        'pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.',
+        'pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff in exact mode; comparison.threshold controls visual equivalence.',
     }),
     { type: 'threshold must be a number from 0 to 1, got {got}' },
   ),
@@ -405,7 +424,7 @@ const captureOptions = {
       minimum: 0,
       maximum: 100,
       description:
-        'Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.',
+        'Mismatch percentage below which diff highlighting is suppressed, 0 to 100. Default 0. Reporting only; never changes pass/fail.',
     }),
     { type: 'minDiffPercent must be a percentage from 0 to 100, got {got}' },
   ),
@@ -494,6 +513,7 @@ export const VariantsSchema = variantsMap(VariantSchema, VARIANTS_DESCRIPTION);
 /** What the runtime checks in a variant: what it checked before #178. The
  *  rest of VariantSchema is the editor's (see the header). */
 export const VariantRuntimeSchema = Type.Object({
+  comparison: Type.Optional(ComparisonSchema),
   skip: Type.Optional(
     withText(Type.Never(), {
       type: "variant '{name}' sets 'skip'; set the variant to false instead",
@@ -577,6 +597,7 @@ const settleScalar = <T extends TSchema>(schema: T, type: string) =>
 
 /** The project options the runtime checks, in the order it checks them. */
 const projectChecked = {
+  comparison: ComparisonSchema,
   renderer: RendererSchema,
   freshRenderer: settleScalar(
     Type.Boolean({

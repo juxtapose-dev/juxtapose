@@ -438,6 +438,12 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                     Loupe
                   </Button>
                 </>
+              ) : result.comparison ? (
+                <Note>
+                  Visually equivalent under Pixelmatch threshold{' '}
+                  {result.comparison.threshold}; exact hashes differ. Approved baseline
+                  unchanged.
+                </Note>
               ) : (
                 <StatusNote status={result.status} />
               )}

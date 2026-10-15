@@ -1,3 +1,4 @@
+import { describeVisualEquivalence } from './comparison.js';
 import { describeRendererRetries } from './renderer-retry.js';
 // Build the PR comment body.
 //
@@ -72,6 +73,8 @@ export function buildComment({
 }: CommentOptions): string {
   const needsReview = blocking(report);
   const lines: string[] = [COMMENT_MARKER, ''];
+  const equivalence = describeVisualEquivalence(report.results);
+  if (equivalence) lines.push('```text', equivalence, '```', '');
 
   if (needsReview.length === 0) {
     lines.push(`### Visual tests passed`, '', passingBody(report));

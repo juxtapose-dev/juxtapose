@@ -43,6 +43,29 @@
             "description": "Per-story capture options: `parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle.",
             "type": "object",
             "properties": {
+              "comparison": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "description": "Exact SHA-256 comparison (default), or opt-in Pixelmatch visual equivalence after a hash mismatch.",
+                    "type": "string",
+                    "enum": [
+                      "exact",
+                      "pixelmatch"
+                    ]
+                  },
+                  "threshold": {
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Pixelmatch perceived color-distance tolerance. Default 0.05. Ignored in exact mode. Antialias differences are excluded; every remaining differing pixel fails.",
+                    "type": "number"
+                  }
+                }
+              },
               "renderer": {
                 "additionalProperties": false,
                 "type": "object",
@@ -220,13 +243,13 @@
               "threshold": {
                 "minimum": 0,
                 "maximum": 1,
-                "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+                "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff in exact mode; comparison.threshold controls visual equivalence.",
                 "type": "number"
               },
               "minDiffPercent": {
                 "minimum": 0,
                 "maximum": 100,
-                "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+                "description": "Mismatch percentage below which diff highlighting is suppressed, 0 to 100. Default 0. Reporting only; never changes pass/fail.",
                 "type": "number"
               },
               "viewport": {
@@ -314,6 +337,29 @@
                           "captureAfterPlay": {
                             "description": "Screenshot after the story's play function, not at first render.",
                             "type": "boolean"
+                          },
+                          "comparison": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "required": [
+                              "mode"
+                            ],
+                            "properties": {
+                              "mode": {
+                                "description": "Exact SHA-256 comparison (default), or opt-in Pixelmatch visual equivalence after a hash mismatch.",
+                                "type": "string",
+                                "enum": [
+                                  "exact",
+                                  "pixelmatch"
+                                ]
+                              },
+                              "threshold": {
+                                "minimum": 0,
+                                "maximum": 1,
+                                "description": "Pixelmatch perceived color-distance tolerance. Default 0.05. Ignored in exact mode. Antialias differences are excluded; every remaining differing pixel fails.",
+                                "type": "number"
+                              }
+                            }
                           },
                           "renderer": {
                             "additionalProperties": false,
@@ -488,13 +534,13 @@
                           "threshold": {
                             "minimum": 0,
                             "maximum": 1,
-                            "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+                            "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff in exact mode; comparison.threshold controls visual equivalence.",
                             "type": "number"
                           },
                           "minDiffPercent": {
                             "minimum": 0,
                             "maximum": 100,
-                            "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+                            "description": "Mismatch percentage below which diff highlighting is suppressed, 0 to 100. Default 0. Reporting only; never changes pass/fail.",
                             "type": "number"
                           },
                           "colorScheme": {
@@ -573,6 +619,29 @@
                       "captureAfterPlay": {
                         "description": "Screenshot after the story's play function, not at first render.",
                         "type": "boolean"
+                      },
+                      "comparison": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": [
+                          "mode"
+                        ],
+                        "properties": {
+                          "mode": {
+                            "description": "Exact SHA-256 comparison (default), or opt-in Pixelmatch visual equivalence after a hash mismatch.",
+                            "type": "string",
+                            "enum": [
+                              "exact",
+                              "pixelmatch"
+                            ]
+                          },
+                          "threshold": {
+                            "minimum": 0,
+                            "maximum": 1,
+                            "description": "Pixelmatch perceived color-distance tolerance. Default 0.05. Ignored in exact mode. Antialias differences are excluded; every remaining differing pixel fails.",
+                            "type": "number"
+                          }
+                        }
                       },
                       "renderer": {
                         "additionalProperties": false,
@@ -747,13 +816,13 @@
                       "threshold": {
                         "minimum": 0,
                         "maximum": 1,
-                        "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+                        "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff in exact mode; comparison.threshold controls visual equivalence.",
                         "type": "number"
                       },
                       "minDiffPercent": {
                         "minimum": 0,
                         "maximum": 100,
-                        "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+                        "description": "Mismatch percentage below which diff highlighting is suppressed, 0 to 100. Default 0. Reporting only; never changes pass/fail.",
                         "type": "number"
                       },
                       "colorScheme": {
@@ -793,6 +862,29 @@
     "warmSwitch": {
       "description": "Switch stories in place instead of navigating. ~4x faster, but doesn't reproduce cold-load pixels exactly, so a story's verdict can depend on queue order. Default false.",
       "type": "boolean"
+    },
+    "comparison": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "description": "Exact SHA-256 comparison (default), or opt-in Pixelmatch visual equivalence after a hash mismatch.",
+          "type": "string",
+          "enum": [
+            "exact",
+            "pixelmatch"
+          ]
+        },
+        "threshold": {
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Pixelmatch perceived color-distance tolerance. Default 0.05. Ignored in exact mode. Antialias differences are excluded; every remaining differing pixel fails.",
+          "type": "number"
+        }
+      }
     },
     "renderer": {
       "additionalProperties": false,
@@ -967,6 +1059,29 @@
           "description": "Options for the stories this glob matches, with the meaning they have in `parameters.juxtapose`. Layered over the story's own.",
           "type": "object",
           "properties": {
+            "comparison": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "description": "Exact SHA-256 comparison (default), or opt-in Pixelmatch visual equivalence after a hash mismatch.",
+                  "type": "string",
+                  "enum": [
+                    "exact",
+                    "pixelmatch"
+                  ]
+                },
+                "threshold": {
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Pixelmatch perceived color-distance tolerance. Default 0.05. Ignored in exact mode. Antialias differences are excluded; every remaining differing pixel fails.",
+                  "type": "number"
+                }
+              }
+            },
             "renderer": {
               "additionalProperties": false,
               "type": "object",
@@ -1144,13 +1259,13 @@
             "threshold": {
               "minimum": 0,
               "maximum": 1,
-              "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+              "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff in exact mode; comparison.threshold controls visual equivalence.",
               "type": "number"
             },
             "minDiffPercent": {
               "minimum": 0,
               "maximum": 100,
-              "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+              "description": "Mismatch percentage below which diff highlighting is suppressed, 0 to 100. Default 0. Reporting only; never changes pass/fail.",
               "type": "number"
             }
           }
@@ -1190,13 +1305,13 @@
     "threshold": {
       "minimum": 0,
       "maximum": 1,
-      "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+      "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff in exact mode; comparison.threshold controls visual equivalence.",
       "type": "number"
     },
     "minDiffPercent": {
       "minimum": 0,
       "maximum": 100,
-      "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+      "description": "Mismatch percentage below which diff highlighting is suppressed, 0 to 100. Default 0. Reporting only; never changes pass/fail.",
       "type": "number"
     },
     "variants": {
@@ -1247,6 +1362,29 @@
                 "captureAfterPlay": {
                   "description": "Screenshot after the story's play function, not at first render.",
                   "type": "boolean"
+                },
+                "comparison": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "mode"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "description": "Exact SHA-256 comparison (default), or opt-in Pixelmatch visual equivalence after a hash mismatch.",
+                      "type": "string",
+                      "enum": [
+                        "exact",
+                        "pixelmatch"
+                      ]
+                    },
+                    "threshold": {
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Pixelmatch perceived color-distance tolerance. Default 0.05. Ignored in exact mode. Antialias differences are excluded; every remaining differing pixel fails.",
+                      "type": "number"
+                    }
+                  }
                 },
                 "renderer": {
                   "additionalProperties": false,
@@ -1421,13 +1559,13 @@
                 "threshold": {
                   "minimum": 0,
                   "maximum": 1,
-                  "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff; the hash still decides.",
+                  "description": "pixelmatch colour-distance threshold, 0 to 1. Default 0.1. Tunes the reported diff in exact mode; comparison.threshold controls visual equivalence.",
                   "type": "number"
                 },
                 "minDiffPercent": {
                   "minimum": 0,
                   "maximum": 100,
-                  "description": "Mismatch percentage below which a diff still passes, 0 to 100. Default 0. Tunes the reported diff; the hash still decides.",
+                  "description": "Mismatch percentage below which diff highlighting is suppressed, 0 to 100. Default 0. Reporting only; never changes pass/fail.",
                   "type": "number"
                 },
                 "colorScheme": {

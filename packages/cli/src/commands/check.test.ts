@@ -106,3 +106,33 @@ test('a passing fresh retry stays visible to JSON and text consumers', async () 
   expect(text.stdout()).toContain('1 stories passed only after a fresh retry.');
   expect(text.stdout()).toContain('"shared": false');
 });
+
+test('a visual-equivalence pass retains its policy and distinct hashes in check output', async () => {
+  const { captureIo } = await import('../io.js');
+  const current = Buffer.from('current');
+  const approved = Buffer.from('approved');
+  const root = await project(current, approved);
+  const comparison = {
+    method: 'pixelmatch',
+    version: '6.0.0',
+    threshold: 0.05,
+    includeAA: false,
+    baselineHash: hashImage(approved),
+    rawMismatchPixels: 100,
+  };
+  await writeFile(
+    path.join(root, '.juxtapose/runs/r1/report.json'),
+    JSON.stringify({
+      runId: 'r1',
+      results: [{ storyId: STORY, status: 'pass', hash: hashImage(current), comparison }],
+    }),
+  );
+  const io = captureIo();
+  expect(await checkCommand({ project: root, json: true }, { io })).toBe(0);
+  expect(JSON.parse(io.stdout()).visualEquivalence).toEqual([
+    { storyId: STORY, hash: hashImage(current), ...comparison },
+  ]);
+  const text = captureIo();
+  await checkCommand({ project: root }, { io: text });
+  expect(text.stdout()).toContain('passed by visual equivalence, not exact hash');
+});

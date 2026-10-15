@@ -334,3 +334,5 @@ export {
 } from './report/github.js';
 
 export { describeRendererRetries } from './report/renderer-retry.js';
+
+export { describeVisualEquivalence } from './report/comparison.js';
