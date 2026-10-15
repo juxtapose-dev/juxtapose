@@ -176,6 +176,28 @@ const HEADLESS_ARGS = [
   '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
 ];
 
+/**
+ * V8 flags for every renderer. These change speed, not pixels.
+ *
+ * - `--no-opt` turns off TurboFan. Each cold capture loads the workbench's
+ *   bundle once in a fresh renderer (issue #153) and throws the process away,
+ *   so optimising compiles are work no later call ever profits from.
+ *   Measured on the GitHub runner, 200 Spectrum stories at concurrency 3,
+ *   three repeats: 85.7 s to 80.9 s wall (-5.6%), 200 of 200 hashes
+ *   identical to a run without it in every repeat. JIT tiers decide how fast
+ *   script runs, not what it computes, so layout and raster see the same
+ *   inputs. Also byte-identical on a loaded Mac: the examples and the
+ *   150-story Chakra and 138-story Primer samples, two passes each.
+ *
+ * - Maglev stays on. In Chrome 151's V8 `--no-opt` leaves it running
+ *   (`--trace-opt` still shows MAGLEV compiles), and adding `--no-maglev`
+ *   was hash-identical but no faster on those samples, while a hot loop ran
+ *   4x slower with it, so a story heavy in script would pay.
+ */
+export const V8_FLAGS: readonly string[] = ['--no-opt'];
+
+const JS_FLAGS = '--js-flags=';
+
 /** The full command line, in Playwright's order so the spike's evidence transfers. */
 export function chromeArgs(opts: {
   userDataDir: string;
@@ -188,12 +210,21 @@ export function chromeArgs(opts: {
     headless: opts.headless,
     args: opts.args,
   });
+  // Chrome keeps only the last --js-flags, so a caller's V8 flags join ours
+  // in one switch rather than silently replacing them.
+  const v8 = [...V8_FLAGS];
+  const rest = args.filter((a) => {
+    if (!a.startsWith(JS_FLAGS)) return true;
+    v8.push(a.slice(JS_FLAGS.length));
+    return false;
+  });
   return [
     ...PARITY_CHROMIUM_ARGS,
     '--enable-unsafe-swiftshader',
     ...(headless ? HEADLESS_ARGS : []),
     '--no-sandbox',
-    ...args,
+    ...rest,
+    JS_FLAGS + v8.join(' '),
     `--user-data-dir=${opts.userDataDir}`,
     (opts.env ?? process.env).JUX_CDP_JSON === '1'
       ? '--remote-debugging-pipe'

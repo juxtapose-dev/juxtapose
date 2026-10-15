@@ -4,6 +4,7 @@ import {
   deterministicLaunchOptions,
   DETERMINISTIC_CHROMIUM_ARGS,
   PARITY_CHROMIUM_ARGS,
+  V8_FLAGS,
 } from './flags.js';
 import { SPIKE_ARGS } from './__fixtures__/spike-args.js';
 
@@ -84,17 +85,35 @@ describe('chromeArgs', () => {
     expect(args.indexOf('--foo')).toBeGreaterThan(
       args.indexOf('--renderer-process-limit=1000'),
     );
-    expect(args.slice(-3)).toEqual([
+    expect(args.slice(-4)).toEqual([
+      '--js-flags=--no-opt',
       '--user-data-dir=/u',
       '--remote-debugging-pipe=cbor',
       '--no-startup-window',
     ]);
-    expect(args).toHaveLength(58 + 1);
+    expect(args).toHaveLength(59 + 1);
+  });
+
+  it('turns off TurboFan in every renderer', () => {
+    // Each cold capture runs the bundle once in a fresh renderer, so
+    // optimising compiles are wasted: -5.6% wall on 200 Spectrum stories,
+    // every hash unchanged.
+    expect(V8_FLAGS).toContain('--no-opt');
+    expect(chromeArgs({ userDataDir: '/u' })).toContain('--js-flags=--no-opt');
+  });
+
+  it("merges a caller's --js-flags into the one switch Chrome keeps", () => {
+    // Chrome honours only the last --js-flags; a second switch would drop ours.
+    const args = chromeArgs({ userDataDir: '/u', args: ['--js-flags=--foo', '--bar'] });
+    expect(args.filter((a) => a.startsWith('--js-flags='))).toEqual([
+      `--js-flags=${[...V8_FLAGS, '--foo'].join(' ')}`,
+    ]);
+    expect(args).toContain('--bar');
   });
 });
 
 describe('chromeArgs byte parity', () => {
-  it('equals the spike-proven 56-arg list exactly, in content and order, plus two deliberate additions', () => {
+  it('equals the spike-proven 56-arg list exactly, in content and order, plus three deliberate additions', () => {
     // Fixture generated from the spike's args.mjs (launchArgs('/U', 'pipe')).
     // Any drift in flags or order fails here before it can fail a baseline.
     // The one deliberate addition is --disable-partial-raster (issue #120):
@@ -102,15 +121,18 @@ describe('chromeArgs byte parity', () => {
     // clipped re-raster from showing, and the examples captured
     // byte-identical with it. The other is --renderer-process-limit (issue
     // #153): it decides only whether a navigation may reuse a renderer, and
-    // the examples captured byte-identical with it too.
-    const added = ['--disable-partial-raster', '--renderer-process-limit=1000'];
+    // the examples captured byte-identical with it too. V8 tiering was also
+    // hash-identical on the tested examples and component-suite samples.
+    const added = [
+      '--disable-partial-raster',
+      '--renderer-process-limit=1000',
+      `--js-flags=${V8_FLAGS.join(' ')}`,
+    ];
     const args = chromeArgs({ userDataDir: '/U', env: {} });
     expect(
-      args
-        .filter((a) => !added.includes(a))
-        .map((a) =>
-          a === '--remote-debugging-pipe=cbor' ? '--remote-debugging-pipe' : a,
-        ),
+      args.filter((a) => !added.includes(a)).map((a) =>
+        a === '--remote-debugging-pipe=cbor' ? '--remote-debugging-pipe' : a,
+      ),
     ).toEqual(SPIKE_ARGS);
     expect(args.indexOf('--disable-partial-raster')).toBe(
       args.indexOf('--force-color-profile=srgb', PARITY_CHROMIUM_ARGS.length) + 1,
