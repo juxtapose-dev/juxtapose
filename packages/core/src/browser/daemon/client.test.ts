@@ -113,6 +113,8 @@ describe('daemon key', () => {
       const base = { executablePath: bin, env: {} };
       const k = daemonKeyFor(base, 'jux-a');
       expect(daemonKeyFor(base, 'jux-a')).toBe(k);
+      expect(daemonKeyFor({ ...base, env: { JUX_CDP_JSON: '1' } }, 'jux-a')).not.toBe(k);
+      expect(daemonKeyFor({ ...base, env: { JUX_CDP_JSON: '0' } }, 'jux-a')).toBe(k);
       // Extra args and a different jux version or supervisor build: new socket.
       expect(
         daemonKeyFor({ ...base, args: ['--user-agent=jux-arg-probe'] }, 'jux-a'),
@@ -382,6 +384,26 @@ describe.skipIf(!chrome)('connectWarmBrowser', () => {
       expect(warm).toBe(false);
       expect(browser.isConnected()).toBe(true);
       await browser.close();
+    }));
+
+  it('preserves an explicit JSON transport override on private fallback', () =>
+    withCache(async (cache) => {
+      const { browser, warm } = await connectWarmBrowser({
+        executablePath: chrome!.path,
+        stateDir: cache,
+        env: { ...process.env, JUX_CDP_JSON: '1', JUX_NO_DAEMON: '1' },
+        args: ['--enable-automation'],
+      });
+      try {
+        expect(warm).toBe(false);
+        const ctx = await browser.newContext({ viewport: { width: 100, height: 100 } });
+        const page = await ctx.newPage();
+        const { arguments: args } = await page.send('Browser.getBrowserCommandLine');
+        expect(args).toContain('--remote-debugging-pipe');
+        expect(args).not.toContain('--remote-debugging-pipe=cbor');
+      } finally {
+        await browser.close();
+      }
     }));
 
   it('waits past the connect budget while a live holder has the lock', () =>

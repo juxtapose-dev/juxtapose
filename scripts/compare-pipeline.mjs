@@ -198,7 +198,7 @@ async function capture(name, label, reference = false, measured = false) {
     path.join(out, `${name}-${label}.log`),
     (result.stdout ?? '') +
       (result.stderr ?? '') +
-      (result.code ? `\nExit: ${result.code}\n` : ''),
+      (result instanceof Error ? `\nProcess error: ${result.message}\n` : ''),
   );
   const added = (existsSync(runs) ? readdirSync(runs) : []).filter(
     (d) => !previous.has(d) && existsSync(path.join(runs, d, 'report.json')),
@@ -216,7 +216,8 @@ async function capture(name, label, reference = false, measured = false) {
     loadBefore,
     loadAfter: os.loadavg(),
     runDir,
-    exitCode: result.code ?? 0,
+    exitCode: result instanceof Error ? (result.code ?? null) : 0,
+    signal: result.signal ?? null,
     report,
   };
   samples.push(sample);
@@ -242,8 +243,11 @@ async function capture(name, label, reference = false, measured = false) {
         expectedHash: arm.reference?.[r.storyId],
       });
   }
-  if (!reference && result.code)
-    failures.push({ arm: name, label, error: `CLI exit ${result.code}` });
+  if (
+    result instanceof Error &&
+    (!reference || result.signal || result.killed || result.code !== 1)
+  )
+    failures.push({ arm: name, label, error: result.message });
   console.log(
     `${name}-${label}: ${Math.round(wallMs)}ms ${JSON.stringify(report.summary)}`,
   );

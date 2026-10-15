@@ -7,10 +7,13 @@
 
 import type net from 'node:net';
 import { StringDecoder } from 'node:string_decoder';
+import { CborFramer, decodeCbor, encodeCbor } from './cbor.js';
 
 export interface Transport {
   send(message: string): void;
   onMessage: ((message: string) => void) | null;
+  /** Binary Chrome pipes bypass JSON text; socket clients retain the JSON protocol. */
+  onObject?: ((message: unknown) => void) | null;
   onClose: ((reason?: string) => void) | null;
   close(): void;
 }
@@ -67,11 +70,16 @@ export class NullFramer {
 /** Framing, close-once and callback plumbing shared by both transports. */
 export abstract class FramedTransport implements Transport {
   onMessage: ((message: string) => void) | null = null;
+  onObject: ((message: unknown) => void) | null = null;
   onClose: ((reason?: string) => void) | null = null;
   private readonly framer = new NullFramer();
   private closed = false;
 
-  protected abstract write(data: string): void;
+  protected abstract write(data: string | Buffer): void;
+
+  protected encode(message: string): string | Buffer {
+    return message + '\0';
+  }
   protected abstract destroy(): void;
 
   protected feed(chunk: Buffer | string): void {
@@ -84,7 +92,7 @@ export abstract class FramedTransport implements Transport {
   // (drain) itself before it forwards large payloads.
   send(message: string): void {
     if (this.closed) return;
-    this.write(message + '\0');
+    this.write(this.encode(message));
   }
 
   close(): void {
@@ -111,13 +119,41 @@ export class PipeTransport extends FramedTransport {
     writable.on('error', (e: Error) => this.emitClose(e.message));
   }
   private readonly onData = (chunk: Buffer): void => this.feed(chunk);
-  protected write(data: string): void {
+  protected write(data: string | Buffer): void {
     this.writable.write(data);
   }
   protected destroy(): void {
     // The process owns the fds (launch.ts closes them with the process); we
     // only stop listening so a closed transport delivers nothing more.
     this.readable.removeListener('data', this.onData);
+  }
+}
+
+/** Chrome's CRDTP pipe avoids its renderer JSON encoding and browser re-parsing.
+ *  Only the private Chrome pipe changes; daemon client sockets remain JSON. */
+export class BinaryPipeTransport extends PipeTransport {
+  private readonly binaryFramer = new CborFramer();
+
+  protected override encode(message: string): Buffer {
+    // Outgoing CDP commands are small. Preserve sendRaw's JSON contract for
+    // the daemon proxy; large incoming responses never take this text detour.
+    return encodeCbor(JSON.parse(message) as unknown);
+  }
+
+  protected override feed(chunk: Buffer | string): void {
+    try {
+      if (typeof chunk === 'string') throw new Error('binary pipe received text');
+      this.binaryFramer.push(chunk, (frame) => {
+        const value = decodeCbor(frame);
+        if (!this.onObject) throw new Error('binary pipe has no message handler');
+        this.onObject(value);
+      });
+    } catch (error) {
+      this.emitClose(
+        `invalid binary CDP frame: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      this.destroy();
+    }
   }
 }
 
@@ -129,7 +165,7 @@ export class SocketTransport extends FramedTransport {
     socket.on('close', () => this.emitClose('socket closed'));
     socket.on('error', (e) => this.emitClose(e.message));
   }
-  protected write(data: string): void {
+  protected write(data: string | Buffer): void {
     this.socket.write(data);
   }
   protected destroy(): void {

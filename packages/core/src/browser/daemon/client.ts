@@ -276,7 +276,11 @@ export function daemonKeyFor(
     binary,
     binaryId: binaryIdentity(binary),
     version: CHROME_VERSION,
-    args: chromeArgs({ userDataDir: PROFILE_PLACEHOLDER, args: opts.args }),
+    args: chromeArgs({
+      userDataDir: PROFILE_PLACEHOLDER,
+      args: opts.args,
+      env: opts.env ?? process.env,
+    }),
     env: opts.env ?? process.env,
     jux,
   });
@@ -686,6 +690,7 @@ async function privateLaunch(
     browser: await Browser.launch({
       executablePath: opts.executablePath,
       args: opts.args,
+      env: opts.env,
     }),
     warm: false,
   };

@@ -17,7 +17,7 @@ import { chromeArgs } from './flags.js';
 import { CdpConnection } from './cdp.js';
 import { errnoCode, errorMessage } from './guards.js';
 import { ensurePrivateDir } from './private-dir.js';
-import { PipeTransport } from './transport.js';
+import { BinaryPipeTransport, PipeTransport } from './transport.js';
 
 export type SpawnFn = typeof nodeSpawn;
 
@@ -160,18 +160,25 @@ export async function launchChrome(opts: {
   args?: string[];
   headless?: boolean;
   spawn?: SpawnFn;
+  env?: NodeJS.ProcessEnv;
   /** Test seam: how long to wait for Browser.getVersion before giving up. */
   handshakeTimeoutMs?: number;
 }): Promise<LaunchedChrome> {
   const spawn = opts.spawn ?? nodeSpawn;
   const userDataDir = await createProfileDir();
-  const args = chromeArgs({ userDataDir, args: opts.args, headless: opts.headless });
+  const args = chromeArgs({
+    userDataDir,
+    args: opts.args,
+    headless: opts.headless,
+    env: opts.env,
+  });
   let proc: ChildProcess;
   try {
     proc = spawn(opts.executablePath, args, {
       // stdin/stdout ignored, stderr kept for the "missing shared library"
       // message on Linux, 3 = Chrome reads, 4 = Chrome writes.
       stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
+      env: opts.env,
     });
   } catch (error) {
     await rm(userDataDir, { recursive: true, force: true });
@@ -206,7 +213,18 @@ export async function launchChrome(opts: {
   const [, , , toChrome, fromChrome] = proc.stdio;
   if (!(toChrome instanceof Writable) || !(fromChrome instanceof Readable))
     throw new Error('jux: the browser process has no CDP pipe on fds 3 and 4');
-  const transport = new PipeTransport(toChrome, fromChrome);
+  // Select from the actual launch command line so framing cannot disagree
+  // with Chrome (including the internal JSON comparison/escape hatch).
+  const binaryPipe =
+    args
+      .filter(
+        (arg) =>
+          arg === '--remote-debugging-pipe' || arg.startsWith('--remote-debugging-pipe='),
+      )
+      .at(-1) === '--remote-debugging-pipe=cbor';
+  const transport = binaryPipe
+    ? new BinaryPipeTransport(toChrome, fromChrome)
+    : new PipeTransport(toChrome, fromChrome);
   const connection = new CdpConnection(transport);
   void exited.then(() => transport.close());
 

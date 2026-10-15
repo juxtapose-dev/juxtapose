@@ -64,7 +64,7 @@ describe('deterministicLaunchOptions', () => {
 
 describe('chromeArgs', () => {
   it('carries playwright-core 1.62.0 switches verbatim, then ours, then the caller', () => {
-    const args = chromeArgs({ userDataDir: '/u', args: ['--foo'] });
+    const args = chromeArgs({ userDataDir: '/u', args: ['--foo'], env: {} });
     // The byte-identity spike ran with exactly this set (pre-flight: 56/56
     // identical, same order); a feature flag that changes raster output would
     // break every baseline, so the list is pinned.
@@ -86,7 +86,7 @@ describe('chromeArgs', () => {
     );
     expect(args.slice(-3)).toEqual([
       '--user-data-dir=/u',
-      '--remote-debugging-pipe',
+      '--remote-debugging-pipe=cbor',
       '--no-startup-window',
     ]);
     expect(args).toHaveLength(58 + 1);
@@ -104,11 +104,26 @@ describe('chromeArgs byte parity', () => {
     // #153): it decides only whether a navigation may reuse a renderer, and
     // the examples captured byte-identical with it too.
     const added = ['--disable-partial-raster', '--renderer-process-limit=1000'];
-    const args = chromeArgs({ userDataDir: '/U' });
-    expect(args.filter((a) => !added.includes(a))).toEqual(SPIKE_ARGS);
+    const args = chromeArgs({ userDataDir: '/U', env: {} });
+    expect(
+      args
+        .filter((a) => !added.includes(a))
+        .map((a) =>
+          a === '--remote-debugging-pipe=cbor' ? '--remote-debugging-pipe' : a,
+        ),
+    ).toEqual(SPIKE_ARGS);
     expect(args.indexOf('--disable-partial-raster')).toBe(
       args.indexOf('--force-color-profile=srgb', PARITY_CHROMIUM_ARGS.length) + 1,
     );
     expect(SPIKE_ARGS).toHaveLength(56);
   });
+});
+
+it('selects the JSON escape hatch from the explicit launch environment', () => {
+  expect(chromeArgs({ userDataDir: '/U', env: {} })).toContain(
+    '--remote-debugging-pipe=cbor',
+  );
+  expect(chromeArgs({ userDataDir: '/U', env: { JUX_CDP_JSON: '1' } })).toContain(
+    '--remote-debugging-pipe',
+  );
 });
