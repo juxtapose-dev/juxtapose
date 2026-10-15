@@ -19,7 +19,17 @@ const [buildDir, storyId, countArg = '20', outputArg, mode = 'fresh'] =
   process.argv.slice(2);
 const count = Number(countArg);
 const experiment = process.env.JUX_TEXT_EXPERIMENT ?? 'baseline';
-if (!['baseline', 'raw', 'paint', 'caret-paint'].includes(experiment))
+if (
+  ![
+    'baseline',
+    'raw',
+    'paint',
+    'caret-paint',
+    'delay',
+    'warm-pixel',
+    'warm-full',
+  ].includes(experiment)
+)
   throw new Error('Unknown text probe experiment');
 if (
   !buildDir ||
@@ -120,6 +130,21 @@ try {
       let originalPng;
       page.screenshot = async (options) => {
         if (!originalPng) {
+          if (experiment === 'delay')
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          if (experiment === 'warm-pixel' || experiment === 'warm-full') {
+            await page.send('Page.captureScreenshot', {
+              format: 'png',
+              captureBeyondViewport: false,
+              clip: {
+                x: 0,
+                y: 0,
+                width: experiment === 'warm-pixel' ? 1 : viewport.width,
+                height: experiment === 'warm-pixel' ? 1 : viewport.height,
+                scale: 1,
+              },
+            });
+          }
           if (experiment === 'raw') {
             if (options?.mask?.length)
               throw new Error('Raw experiment does not support masks');

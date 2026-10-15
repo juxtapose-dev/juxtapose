@@ -27,7 +27,18 @@ on:
       text_experiment:
         description: 'Text probe intervention (sweep runs all four sequentially)'
         type: choice
-        options: [baseline, raw, paint, caret-paint, sweep]
+        options:
+          [
+            baseline,
+            raw,
+            paint,
+            caret-paint,
+            delay,
+            warm-pixel,
+            warm-full,
+            sweep,
+            warm-sweep,
+          ]
         default: baseline
       renderer:
         description: Renderer policy (sweep compares shared, fresh, and cache pulse)
@@ -211,8 +222,9 @@ jobs:
               *) echo "text_probe requires a single renderer mode" >&2; exit 2 ;;
             esac
             case "$TEXT_EXPERIMENT" in
-              baseline|raw|paint|caret-paint) experiments=("$TEXT_EXPERIMENT") ;;
+              baseline|raw|paint|caret-paint|delay|warm-pixel|warm-full) experiments=("$TEXT_EXPERIMENT") ;;
               sweep) experiments=(baseline raw paint caret-paint) ;;
+              warm-sweep) experiments=(baseline delay warm-pixel warm-full) ;;
               *) echo "invalid text experiment" >&2; exit 2 ;;
             esac
             for experiment in "${experiments[@]}"; do
