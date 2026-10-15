@@ -81,6 +81,7 @@ jobs:
 
       - name: Profile five passes per renderer mode
         id: profile
+        shell: bash
         env:
           BASELINE_REF: ${{ inputs.baseline_ref }}
         run: |
