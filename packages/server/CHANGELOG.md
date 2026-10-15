@@ -1,5 +1,16 @@
 # @juxtapose/server
 
+## 0.7.10
+
+### Patch Changes
+
+- 9461f93: Add project and per-story `renderer: { shared, clearResourceCache }` settings. Shared rendering is the default. Baseline mismatches receive bounded cache-pulse retries followed by fresh retries, with retry evidence and per-story pinning instructions in reports. Proactive cache clearing is optional. Reports identify which recovery matched the baseline.
+
+  Approval now confirms every selected capture on a fresh renderer, including with `--allow-unstable`, and requires the reviewed hash to match. Initial baselines also use fresh renderers.
+
+- Updated dependencies [9461f93]
+  - @juxtapose/core@0.19.0
+
 ## 0.7.9
 
 ### Patch Changes
