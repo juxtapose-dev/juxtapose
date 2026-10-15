@@ -21,7 +21,7 @@ on:
         type: string
         default: ''
       text_probe:
-        description: 'Collect paired screenshots and shadow-DOM/font evidence for exactly one story (investigation only)'
+        description: 'Collect paired screenshots and shadow-DOM/font evidence for selected stories (investigation only)'
         type: boolean
         default: false
       text_experiment:
@@ -30,6 +30,8 @@ on:
         options:
           [
             baseline,
+            timing,
+            transition-check,
             raw,
             paint,
             caret-paint,
@@ -210,25 +212,32 @@ jobs:
           WORKERS: ${{ inputs.concurrency || 'configured' }}
           RENDERER: ${{ inputs.renderer || 'configured' }}
           TEXT_PROBE: ${{ inputs.text_probe || 'false' }}
+          JUX_TEXT_WORKERS: ${{ inputs.concurrency == 'configured' && '1' || inputs.concurrency || '1' }}
           TEXT_EXPERIMENT: ${{ inputs.text_experiment || 'baseline' }}
         run: |
           mkdir -p "$OUT_DIR"
           case "$PASSES" in '' | *[!0-9]*) echo "passes must be a number" >&2; exit 2 ;; esac
           if [ "$TEXT_PROBE" = true ]; then
-            case "$STORIES" in ''|*,*) echo "text_probe requires exactly one story" >&2; exit 2 ;; esac
+            case "$STORIES" in '') echo "text_probe requires story ids" >&2; exit 2 ;; esac
+            IFS=, read -ra probe_stories <<< "$STORIES"
+            for story in "${probe_stories[@]}"; do
+              if [[ ! "$story" =~ ^[a-zA-Z0-9_-]+$ ]]; then echo "invalid probe story id" >&2; exit 2; fi
+            done
             case "$RENDERER" in
               configured) RENDERER=fresh ;;
               fresh|shared|pulse) ;;
               *) echo "text_probe requires a single renderer mode" >&2; exit 2 ;;
             esac
             case "$TEXT_EXPERIMENT" in
-              baseline|raw|paint|caret-paint|delay|warm-pixel|warm-full) experiments=("$TEXT_EXPERIMENT") ;;
+              baseline|timing|transition-check|raw|paint|caret-paint|delay|warm-pixel|warm-full) experiments=("$TEXT_EXPERIMENT") ;;
               sweep) experiments=(baseline raw paint caret-paint) ;;
               warm-sweep) experiments=(baseline delay warm-pixel warm-full) ;;
               *) echo "invalid text experiment" >&2; exit 2 ;;
             esac
+            for story in "${probe_stories[@]}"; do
             for experiment in "${experiments[@]}"; do
-              JUX_TEXT_EXPERIMENT="$experiment" node scripts/probe-text-rendering.mjs "$SB_CACHE" "$STORIES" "$PASSES" "$OUT_DIR/$experiment" "$RENDERER"
+              JUX_TEXT_EXPERIMENT="$experiment" node scripts/probe-text-rendering.mjs "$SB_CACHE" "$story" "$PASSES" "$OUT_DIR/$story/$experiment" "$RENDERER"
+            done
             done
             exit 0
           fi

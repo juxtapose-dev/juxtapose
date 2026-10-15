@@ -7,27 +7,31 @@ those captures stable, what still varies, and how to repeat the measurements.
 
 ## Focused text-rendering investigation
 
-For Linux text noise, use the field-test workflow's `text_probe: true` with one
-story ID (for example `textfield--empty`), `passes: 20`, and one renderer mode.
+For Linux text noise, use the field-test workflow's `text_probe: true` with comma-separated
+story IDs (for example `textfield--empty`), `passes: 20`, and one renderer mode.
+Set `concurrency` to 1, 2, or 3 (default 1); sweep is not supported for this probe.
+Stories run sequentially, with concurrent captures within each story. Artifacts
+live under `<story-id>/<experiment>/`.
 The workflow reuses the cached pinned static build. The probe keeps one browser
 alive, creates a context per repetition, and captures the normal settled story
-followed by a second screenshot of the same page. It does not approve baselines,
+followed by two additional screenshots of the same page. It does not approve baselines,
 apply visual tolerance, or retry a mismatch.
 
 Locally, after building the packages:
 
 ```sh
-node scripts/probe-text-rendering.mjs /path/to/storybook-static textfield--empty 20 /tmp/text-probe fresh
+JUX_TEXT_WORKERS=3 node scripts/probe-text-rendering.mjs /path/to/storybook-static textfield--empty 20 /tmp/text-probe fresh
 ```
 
 Each repetition saves the original PNG, encoded image, two subsequent
 screenshots, exact changed-pixel counts and bounds,
 computed font and text geometry through open shadow roots, loaded font status,
-and CDP's actual platform-font usage. This supports offline analysis without
+CDP's actual platform-font usage, computed border/placeholder styles, and active
+animations. This supports offline analysis without
 another capture run. The second screenshot distinguishes cross-navigation
 variation from variation on an already rendered page.
 
-Measurements follow both screenshots to avoid changing the first capture's
+Measurements follow all three screenshots to avoid changing the first capture's
 timing. Consequently they are diagnostic clues, not an atomic record of either
 image; closed shadow roots and iframe geometry are not included. If a small
 subset does not reproduce the noise, restore the original predecessor story or
@@ -45,6 +49,21 @@ requires an unscrolled 1280×800 story with no masks. No production behavior cha
 `warm-pixel` (a preliminary 1×1 screenshot), and `warm-full` (a preliminary full
 screenshot). These controls distinguish elapsed time from screenshot side effects;
 they are not proposed defaults.
+
+`text_experiment: timing` interleaves four diagnostic arms: baseline, extra paint,
+a timer delay using the latest completed extra-paint duration (33 ms before the
+first sample), and a pre-capture style/layout/animation observation. `passes` is
+**per arm**, so 100 means 400 captures. Assignments rotate within blocks across
+the same worker pool. Results record each arm, actual intervention duration, the
+delay target, and whether the before/after observations agree. This is an
+approximate elapsed-time control, not paired captures of an identical browser
+state. Style reads may force style/layout work, and therefore can hide a race;
+the observation arm must be interpreted alongside the untouched baseline.
+
+`text_experiment: transition-check` interleaves baseline, finishing exposed
+running `CSSTransition` objects, and inspecting the same objects without
+finishing them. `passes` is per arm. It records the transition properties and
+timing; this is a diagnostic intervention, not the production freeze policy.
 
 The first [20-repeat Linux probe](https://github.com/juxtapose-dev/juxtapose/actions/runs/38785584994)
 took 13 seconds of capture time (about 45 seconds for the runner job with cached
@@ -77,6 +96,77 @@ renderer sweep varied on eight, five, and eight respectively. These are small
 samples from different runner allocations, not a precise rate comparison. They
 show why the targeted fix does not replace existing renderer recovery or justify
 claiming that all remaining noise is solved.
+
+A subsequent focused run found `textfield--types` ([fresh, 40 captures](https://github.com/juxtapose-dev/juxtapose/actions/runs/38792993666))
+and `textfield--sized` ([pulse, 40 captures](https://github.com/juxtapose-dev/juxtapose/actions/runs/38793098586))
+exactly stable in isolation, including consecutive screenshots, geometry, and
+PNG-to-WebP pixels. A [ten-story, ten-pass fresh-renderer sweep](https://github.com/juxtapose-dev/juxtapose/actions/runs/38793312505)
+at 1, 2, and 3 workers produced identical initial hashes across all 300 captures
+and no errors. The separate fresh-renderer confirmation pass differed twice:
+`textfield--grows-only` at 2 workers (pass 3) and `textfield--quiet` at 3 workers
+(pass 6). Confirmation is a second capture pass, not an immediate same-page
+screenshot. This narrows the next reproduction to concurrent captures; it does
+not prove that load causes the failures or that single-worker capture is immune.
+
+The [three-worker probe, 100 captures per story](https://github.com/juxtapose-dev/juxtapose/actions/runs/38794768086)
+reproduced nine initial-image deviations on `textfield--grows-only` (four hashes)
+and one on `textfield--quiet` (two hashes), with fresh renderers. One grows-only
+hash exactly matched the earlier confirmation failure. All second and third
+screenshots matched the stable image. Grows-only changed 1,104–1,369 pixels
+(maximum channel delta 2–30); quiet changed 1,035 pixels (maximum delta 12).
+PNG-to-WebP encoding changed zero pixels. Recorded layout/styles were identical
+within each story, with no animations remaining at observation time. Because
+observation follows the screenshots, this does not exclude an earlier transition.
+The border itself changed (one sample: gray 114 to 144), so this is not solely
+text-edge antialiasing. No unrelated predecessor story or shared renderer is
+required to reproduce these failures.
+
+A [same-runner intervention sweep](https://github.com/juxtapose-dev/juxtapose/actions/runs/38795095557)
+then ran 100 grows-only captures per arm at three workers. Normal capture varied
+once (maximum channel delta 2), raw CDP capture varied once (delta 12), an extra
+paint barrier varied zero times, and caret hiding plus an extra barrier varied
+zero times. Every second/third screenshot was stable and every encoding delta
+was zero. Screenshot preparation is therefore not necessary to trigger this
+reproduction. The extra barrier is a promising timing control, not proof of a
+root cause or a production fix: arms ran sequentially, observed frequency varied
+between allocations, and adding a barrier also adds elapsed time. A focused
+follow-up should compare paint versus a matched delay and observe pre-capture
+styles in a separate diagnostic arm before adding any global capture overhead.
+
+The [interleaved timing experiment](https://github.com/juxtapose-dev/juxtapose/actions/runs/38800391783)
+ran 100 captures per arm. Initial-image deviations were baseline 3, extra paint
+0, matched delay 1, and pre-capture observation 1. Median intervention costs
+were 18.2 ms for paint, 18.5 ms for delay, and 8.5 ms for observation. Six
+pre-capture observations found active 130 ms input transitions and intermediate
+border/placeholder colors even though computed transition duration was already
+`0s`. One of those observations accompanied a differing screenshot. Fonts were
+loaded and geometry unchanged; after capture, the transitions had ended.
+
+A minimal real-Chrome fixture confirmed the mechanism: changing duration to
+zero does not stop an already-started transition, but setting
+`transition-property: none` removes it and immediately exposes the final style.
+The freeze stylesheet now applies that declaration, without an extra wait or
+animation scan. Regression tests explicitly start a long transition before
+applying the production stylesheet in light and open shadow DOM; both fail with
+the old rule and pass with the fix, checking computed state and rendered pixels.
+The existing `animations: 'play'` tests still pass.
+
+The [exposed-transition control](https://github.com/juxtapose-dev/juxtapose/actions/runs/38801161115)
+found four border-color transitions per affected input. Across 100 captures per
+arm, baseline differed 4 times, finishing exposed transitions differed 5 times,
+and inspection alone differed 3 times. Finishing removed the border changes but
+left 564–729 changed pixels (maximum channel delta 1–4). Thus scanning and
+finishing exposed animation objects alone is insufficient; the stylesheet must
+also cover placeholder pseudo-elements. These counts are small samples, not
+estimates of a performance or flake-rate regression.
+
+With the stylesheet fix, the [three-worker Linux verification](https://github.com/juxtapose-dev/juxtapose/actions/runs/38801637168)
+produced 200/200 identical initial captures of grows-only and 200/200 of quiet.
+Every second/third screenshot also matched, encoding deltas were zero, and each
+story had one recorded layout/style hash. Local Storybook (18 stories ×3) and
+Ladle (16 stories ×3) were byte-identical; all 14 shadow-DOM tests, build,
+typecheck, and full Linux CI passed. This verifies these reproductions, not all
+possible sources of renderer-history or application nondeterminism.
 
 ## What was tested
 

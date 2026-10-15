@@ -23,6 +23,9 @@ import type { Page } from '../browser/page.js';
  * Injected as a <style> in the document, which does not reach into shadow
  * roots; the idle init script (idle.ts) adopts the same rules into every
  * open one as a constructed sheet (issue #152). Closed roots stay unfrozen.
+ * Zero duration prevents new transitions but leaves already-started ones
+ * running. Removing transition-property cancels those at their final style
+ * without another paint barrier (Spectrum Linux textfield color transitions).
  * Placeholder transitions need their own selector: transition properties do
  * not inherit from the input. Spectrum animates its placeholder color.
  */
@@ -31,6 +34,7 @@ export const FREEZE_ANIMATIONS_CSS = `
   animation-duration: 0s !important;
   animation-delay: 0s !important;
   animation-iteration-count: 1 !important;
+  transition-property: none !important;
   transition-duration: 0s !important;
   transition-delay: 0s !important;
   caret-color: transparent !important;
