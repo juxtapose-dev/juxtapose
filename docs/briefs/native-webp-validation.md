@@ -76,13 +76,36 @@ zero errors: `number-field-sizes--l` (two passes), `field-label--standard` (one)
 and `picker--custom` (one). Field-label variation fell from 14 distinct hashes
 to two; its residual includes the disabled control's background, border, and
 text. Number-field variation is 242 border pixels, not text. The picker outlier
-shows a translucent/opening menu with underlying content visible (304,932 changed
+shows a partly transparent menu with underlying content visible (304,932 changed
 pixels). These require separate investigation and do not establish encoder
 regressions or equal stability.
 
 Reports/images: `/tmp/jux-webp-spectrum-pEYdxG`; log:
 `/tmp/jux-webp-placeholder-spectrum20.log`. The draft remains gated on residual
 classification and parity. Native encoding has not been merged or released.
+
+## Bounded residual instrumentation
+
+Ten passes of the three residual stories and five passes of the full 50-story
+selection were instrumented without adding sleeps or extra screenshots. All
+280 captures were exact within their respective runs. Post-first-capture
+`getAnimations()` across open roots found no active animations. The 15 target
+observations in the full-selection run had zero-duration input border and
+placeholder transitions with the freeze sheet present. Passive CDP animation
+events reported only Storybook's zero-duration `sb-rotate360`, then cancellation;
+no border, placeholder, or opacity transitions were observed.
+
+This did not reproduce or explain the rare residuals. Instrumentation may
+perturb timing, and post-capture styles do not establish earlier compositor
+state. Do not claim those residuals are animations or that the instrumented
+pass proves parity. Investigation stopped at this bounded check; PR #241 stays
+draft with unclassified outliers.
+
+Artifacts: `/tmp/jux-native-residual-after.jsonl`,
+`/tmp/jux-native-residual-events.jsonl`, and full-selection reports/images under
+`/tmp/jux-webp-spectrum-94e0On`. The placeholder regression test now asserts the
+rendered pure-blue endpoint rather than exact glyph identity across separate
+renders, following PR #239's Linux correction (`eaf6f1a`).
 
 ## Checks
 
