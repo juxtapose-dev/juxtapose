@@ -45,7 +45,11 @@ const flags = {};
 const positional = [];
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
-  if (['--storybook', '--json', '--report-dir', '--stories'].includes(argv[i]))
+  if (
+    ['--storybook', '--json', '--report-dir', '--stories', '--concurrency'].includes(
+      argv[i],
+    )
+  )
     flags[argv[i]] = argv[++i];
   else positional.push(argv[i]);
 }
@@ -62,6 +66,15 @@ const storyIds = (flags['--stories'] ?? '')
   .map((id) => id.trim())
   .filter(Boolean);
 const investigate = storyIds.length > 0;
+const concurrency =
+  flags['--concurrency'] === undefined ? undefined : Number(flags['--concurrency']);
+if (
+  concurrency !== undefined &&
+  (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 3)
+) {
+  console.error('--concurrency must be 1, 2, or 3');
+  process.exit(2);
+}
 const gate = flags['--storybook']
   ? JSON.parse(
       readFileSync(path.resolve(import.meta.dirname, 'field-tests.config.json'), 'utf8'),
@@ -88,7 +101,9 @@ writeFileSync(
   JSON.stringify({
     platform: 'storybook',
     buildDir,
-    ...(gate?.concurrency ? { concurrency: gate.concurrency } : {}),
+    ...((concurrency ?? gate?.concurrency)
+      ? { concurrency: concurrency ?? gate.concurrency }
+      : {}),
   }),
 );
 const MAX_IMAGE_BYTES = 200 * 1024 * 1024;

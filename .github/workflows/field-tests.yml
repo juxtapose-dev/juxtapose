@@ -20,6 +20,11 @@ on:
         description: 'Story ids to capture, comma-separated (empty = all). Setting this skips the gate: it is an investigation run.'
         type: string
         default: ''
+      concurrency:
+        description: Capture workers (sweep runs 1, 2, 3 sequentially on the same runner)
+        type: choice
+        options: [configured, '1', '2', '3', sweep]
+        default: configured
       passes:
         description: Capture passes
         type: string
@@ -177,13 +182,29 @@ jobs:
         env:
           STORIES: ${{ inputs.stories }}
           PASSES: ${{ inputs.passes || '2' }}
+          WORKERS: ${{ inputs.concurrency || 'configured' }}
         run: |
           mkdir -p "$OUT_DIR"
           case "$PASSES" in '' | *[!0-9]*) echo "passes must be a number" >&2; exit 2 ;; esac
           args=()
           if [ -n "$STORIES" ]; then args+=(--stories "$STORIES"); fi
-          node scripts/field-test.mjs "$SB_CACHE" "$PASSES" --storybook "${{ matrix.name }}" \
-            "${args[@]}" --json "$OUT_DIR/result.json" --report-dir "$OUT_DIR"
+          case "$WORKERS" in
+            configured) workers=(configured) ;;
+            1|2|3) workers=("$WORKERS") ;;
+            sweep) workers=(1 2 3) ;;
+            *) echo "invalid concurrency" >&2; exit 2 ;;
+          esac
+          for worker in "${workers[@]}"; do
+            dest="$OUT_DIR"
+            capture_args=()
+            if [ "$worker" != configured ]; then
+              dest="$OUT_DIR/workers-$worker"
+              mkdir -p "$dest"
+              capture_args=(--concurrency "$worker")
+            fi
+            node scripts/field-test.mjs "$SB_CACHE" "$PASSES" --storybook "${{ matrix.name }}" \
+              "${args[@]}" "${capture_args[@]}" --json "$dest/result.json" --report-dir "$dest"
+          done
           echo "cache-hit=${{ steps.sb.outputs.cache-hit || 'false' }}" >> "$GITHUB_STEP_SUMMARY"
 
       # field-out holds result.json, the report.json files and images/ (the
