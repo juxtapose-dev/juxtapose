@@ -1,5 +1,12 @@
 # @juxtapose/adapter-ladle
 
+## 0.3.20
+
+### Patch Changes
+
+- Updated dependencies [af4e714]
+  - @juxtapose/core@0.19.1
+
 ## 0.3.19
 
 ### Patch Changes
