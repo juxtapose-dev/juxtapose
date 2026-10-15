@@ -64,13 +64,34 @@ rerunning the broader gate. PNG control reports/images:
 `/tmp/jux-webp-spectrum-zoZZwj`; continuation log:
 `/tmp/jux-webp-control50-rest.log`.
 
+## Placeholder-transition follow-up
+
+Cherry-picked the fix from PR #239 (`fdef3f0`): freeze `::placeholder` transitions
+in addition to elements and their before/after pseudo-elements. The focused
+encoder/shadow-root tests passed 16/16; the three previously varying text IDs
+were exact across 10 passes each.
+
+A repeated native 50-story × 20-pass gate still had three varying stories and
+zero errors: `number-field-sizes--l` (two passes), `field-label--standard` (one),
+and `picker--custom` (one). Field-label variation fell from 14 distinct hashes
+to two; its residual includes the disabled control's background, border, and
+text. Number-field variation is 242 border pixels, not text. The picker outlier
+shows a translucent/opening menu with underlying content visible (304,932 changed
+pixels). These require separate investigation and do not establish encoder
+regressions or equal stability.
+
+Reports/images: `/tmp/jux-webp-spectrum-pEYdxG`; log:
+`/tmp/jux-webp-placeholder-spectrum20.log`. The draft remains gated on residual
+classification and parity. Native encoding has not been merged or released.
+
 ## Checks
 
 Build, typecheck, lint, and diff checks pass. The final impacted browser/unit
 batch passed 108 tests; the actual-Pixelmatch visual regression tests passed
 another eight. Run mocks preserve the actual encoder classification while
-mocking only browser environment discovery. Full-suite Linux CI is required
-before merge.
+mocking only browser environment discovery. The initial native head passed the full Linux CI workflow
+`38787300823`, including tests and all determinism jobs. The placeholder follow-up
+requires CI on its final head before merge.
 
 ## Migration
 
