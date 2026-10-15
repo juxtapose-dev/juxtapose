@@ -74,7 +74,7 @@ loaded.
 Chrome renderer process. Set it to `true` to opt into reuse with a bounded
 fresh-renderer retry for baseline mismatches. A fresh retry passes only when
 its byte-exact hash matches the approved baseline. No visual tolerance is used.
-The default remains fresh until three-suite verification is complete.
+The default remains fresh until three-suite verification passes.
 
 `renderer.clearResourceCache` (default `false`) clears Blink's in-memory
 resource cache immediately before a reused-renderer navigation. It retains

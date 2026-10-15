@@ -336,7 +336,7 @@ export const RendererSchema = Type.Object(
     shared: Type.Optional(
       Type.Boolean({
         description:
-          'Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification is complete.',
+          'Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.',
       }),
     ),
     clearResourceCache: Type.Optional(

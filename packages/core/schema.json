@@ -48,7 +48,7 @@
                 "type": "object",
                 "properties": {
                   "shared": {
-                    "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification is complete.",
+                    "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
                     "type": "boolean"
                   },
                   "clearResourceCache": {
@@ -320,7 +320,7 @@
                             "type": "object",
                             "properties": {
                               "shared": {
-                                "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification is complete.",
+                                "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
                                 "type": "boolean"
                               },
                               "clearResourceCache": {
@@ -579,7 +579,7 @@
                         "type": "object",
                         "properties": {
                           "shared": {
-                            "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification is complete.",
+                            "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
                             "type": "boolean"
                           },
                           "clearResourceCache": {
@@ -799,7 +799,7 @@
       "type": "object",
       "properties": {
         "shared": {
-          "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification is complete.",
+          "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
           "type": "boolean"
         },
         "clearResourceCache": {
@@ -972,7 +972,7 @@
               "type": "object",
               "properties": {
                 "shared": {
-                  "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification is complete.",
+                  "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
                   "type": "boolean"
                 },
                 "clearResourceCache": {
@@ -1253,7 +1253,7 @@
                   "type": "object",
                   "properties": {
                     "shared": {
-                      "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification is complete.",
+                      "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
                       "type": "boolean"
                     },
                     "clearResourceCache": {

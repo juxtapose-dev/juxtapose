@@ -1,8 +1,9 @@
 # Renderer reuse with a fresh retry
 
-Status: stage 2 implementation in progress; renderer configuration approved by Jer.
+Status: implemented; sharing remains opt-in. The default-change gate failed.
 Scope: [handoff](../briefs/codex-renderer-reuse-handoff.md), PR #231.
-Result metadata names and quoted report text below remain **temporary**.
+The renderer configuration was approved by Jer. Validation results are recorded
+on [PR #231](https://github.com/juxtapose-dev/juxtapose/pull/231).
 
 ## Capture policy
 
@@ -55,7 +56,7 @@ a successful shared-renderer capture with an existing, non-stale baseline whose
 hash differs. New, stale, skipped, errored, and explicitly fresh captures do
 not receive history retries. Baseline image availability is irrelevant.
 
-Proposed cap: `ceil(0.10 * N)`, where N is selected non-skipped capture keys
+Retry cap: `ceil(0.10 * N)`, where N is selected non-skipped capture keys
 (variants count separately; exclude live skips). Sort candidates by code-unit
 capture-key order before selecting the capped subset so pool completion order
 cannot choose which failures receive retries. Attempt each selected key once;
@@ -89,13 +90,13 @@ not another history retry and cannot turn a baseline mismatch into a pass.
 
 ## Results, reporting, and approval
 
-Propose optional `DiffResult.rendererRetry` with `outcome` (`resolved`,
+Use optional `DiffResult.rendererRetry` with `outcome` (`resolved`,
 `mismatch`, `unconfirmed`, or `cap`), `initialRenderer` (the resolved renderer settings), `initialHash`, and optional
 `freshHash`/`reason`. Absence means no retry was needed. Derive resolved counts
 from these results; status stays within the existing status enum. Carry this
 evidence through JSON, CLI, HTML, PR comments, handoff, MCP, and review UI.
 
-Temporary report footer: “N stories passed only after a fresh retry.” Follow
+Report footer: “N stories passed only after a fresh retry.” Follow
 with sorted capture keys and a copyable config entry for each:
 `"stories": { "card--default": { "renderer": { "shared": false } } }`.
 Also report attempted retries, the cap, and failures left without a retry.
@@ -111,7 +112,6 @@ but cannot waive fresh capture or approve bytes different from the selected
 hash. Audit shared approval entry points so they cannot promote reuse bytes
 through an alternate path.
 
-Renderer configuration names are agreed; result metadata and report wording
-remain proposals. Stage 2 was authorized by Jer on 2026-10-15.
+Renderer configuration, result metadata, and report wording are implemented. Stage 2 was authorized by Jer on 2026-10-15.
 Stage 3 verifies hash equality on Spectrum, Chakra, and Primer plus both
 determinism modes; stage 4 alone changes the default. Implementation and verification results must be recorded before release.
