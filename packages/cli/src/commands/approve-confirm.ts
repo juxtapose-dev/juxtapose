@@ -1,7 +1,5 @@
-// The confirming capture `jux approve` takes for stories the run did not
-// recheck (#195). It sets the same stage the run does (enumerate, discover
-// variants, serve the build, launch a browser) and captures just those
-// stories once more.
+// Prepare the selected stories and confirm their reviewed hashes on fresh
+// renderers before approval, including stories already rechecked by the run.
 
 import path from 'node:path';
 import {

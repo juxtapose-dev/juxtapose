@@ -83,6 +83,7 @@ pulse can reduce history effects, but does not replace the fresh retry.
 
 Both fields also work in Storybook's `parameters.juxtapose.renderer`, Ladle's
 `meta.juxtapose.renderer`, named variants, and project `stories` glob overrides.
+`shared: false` also overrides warm switching for that capture.
 Fields merge individually: overriding `shared` preserves the inherited cache
 setting. Existing precedence applies: project defaults, story, variant, then
 matching config overrides. Live renderer settings discovered after rendering

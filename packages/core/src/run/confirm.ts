@@ -1,8 +1,6 @@
-// The confirming capture `jux approve` takes for a story the run did not
-// recheck (#195). A run with `recheck` "off", or "new" for a failing story,
-// captured it once, so it is not yet known to be stable; approving it would
-// rest on one capture. This captures it again and compares hashes, the same
-// fail-closed rule the run's own recheck applies.
+// Approval always captures fresh, even if the run already rechecked. A
+// reused renderer can reproduce history-dependent pixels twice; only a fresh
+// match establishes that the reviewed bytes are suitable for a baseline.
 
 import { hashImage } from '../baseline/status.js';
 import { capturePool } from '../capture/pool.js';

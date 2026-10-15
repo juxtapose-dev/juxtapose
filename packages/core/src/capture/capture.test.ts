@@ -215,6 +215,13 @@ describe('captureStory cache pulse on a reused renderer', () => {
     expect(events).toEqual(['show:first', 'show:second']);
   });
 
+  it('an explicit fresh renderer setting overrides warm switching', async () => {
+    const { capture, events } = setup({ renderer: { shared: false }, warmSwitch: true });
+    await capture('first');
+    await capture('second');
+    expect(events).toEqual(['show:first', 'show:second']);
+  });
+
   it('does not pulse on the first capture on a page', async () => {
     const { capture, events } = setup({
       renderer: { shared: true, clearResourceCache: true },

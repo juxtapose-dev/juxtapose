@@ -809,11 +809,11 @@
       }
     },
     "freshRenderer": {
-      "description": "Start each cold capture after a page's first in a new renderer process, so a story's hash doesn't depend on the story captured before it. Default true; false trades that for speed (about 220 ms per Storybook story).",
+      "description": "Legacy inverse of renderer.shared: true uses fresh renderers, false opts into sharing with bounded fresh retries for baseline mismatches. Prefer renderer.shared. Conflicting explicit project values are rejected.",
       "type": "boolean"
     },
     "recheck": {
-      "description": "Which stories the run captures a second time, so approve can tell a stable capture from a flaky one. \"changed\" (default): new and failing stories. \"new\": new stories only. \"off\": none; `jux approve` takes the confirming capture instead. Passing stories are never captured twice. The `--recheck` flag overrides it.",
+      "description": "Which stories the run captures a second time, so approve can tell a stable capture from a flaky one. \"changed\" (default): new and failing stories. \"new\": new stories only. \"off\": none; `jux approve` takes the confirming capture instead. Stories that pass their first capture need no recheck. Fresh history retries run independently of this setting. Approval always confirms fresh. The `--recheck` flag overrides it.",
       "type": "string",
       "enum": [
         "changed",

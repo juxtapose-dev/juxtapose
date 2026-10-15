@@ -173,6 +173,7 @@ export async function captureStory(
   const schemeChanged = pageColorScheme.has(page) && pageColorScheme.get(page) !== scheme;
   const warm =
     deps.warmSwitch === true &&
+    (params.renderer?.shared ?? deps.renderer?.shared) !== false &&
     !deps.forceFreshRenderer &&
     warmPages.get(page) === deps.baseUrl &&
     !schemeChanged &&
