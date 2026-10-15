@@ -66,12 +66,14 @@ export interface CaptureDeps {
   warmSwitch?: boolean;
   /**
    * Start every cold capture after a page's first in a new renderer process
-   * (issue #153). Default true; false keeps the renderer, faster but the
+   * (issue #153). Omitted means sharing; false keeps the renderer, faster but the
    * previous story can change this one's pixels. See below.
    */
   freshRenderer?: boolean;
   renderer?: StoryParams['renderer'];
   forceFreshRenderer?: boolean;
+  /** Recovery capture: pulse even when a story explicitly disables proactive clearing. */
+  forceResourceCache?: boolean;
   /** Guard live-policy recapture against changing declarations. */
   rendererRecaptured?: boolean;
   /**
@@ -127,7 +129,12 @@ export async function captureStory(
   // Copied, not aliased: live params get merged in below, and mutating the
   // manifest entry would leak one story's config into the next run.
   const params: StoryParams = { ...story.params };
-  const renderer = resolveRenderer(deps, params.renderer, deps.forceFreshRenderer);
+  const renderer = resolveRenderer(
+    deps,
+    params.renderer,
+    deps.forceFreshRenderer,
+    deps.forceResourceCache,
+  );
   const effectiveViewport = params.viewport ?? viewport;
   const timeoutMs = params.captureTimeout ?? DEFAULT_CAPTURE_TIMEOUT_MS;
   // Every platform call gets the platform's own id; the variant capture key
@@ -233,7 +240,12 @@ export async function captureStory(
   // new mismatches. It keeps the HTTP cache (~2% over plain reuse, against
   // ~9% for disabling the cache through the whole capture). Blanking alone and
   // pulsing after settle did not help.
-  if (!warm && previous !== undefined && renderer.shared && renderer.clearResourceCache) {
+  if (
+    !warm &&
+    (previous !== undefined || deps.forceResourceCache) &&
+    renderer.shared &&
+    renderer.clearResourceCache
+  ) {
     await page.send('Network.setCacheDisabled', { cacheDisabled: true });
     await page.send('Network.setCacheDisabled', { cacheDisabled: false });
   }
@@ -310,7 +322,12 @@ export async function captureStory(
   const live = await deps.platform.readLiveParams?.(page, id);
   if (live) {
     Object.assign(params, mergeLiveParams(story, live));
-    const liveRenderer = resolveRenderer(deps, params.renderer, deps.forceFreshRenderer);
+    const liveRenderer = resolveRenderer(
+      deps,
+      params.renderer,
+      deps.forceFreshRenderer,
+      deps.forceResourceCache,
+    );
     if (
       liveRenderer.shared !== renderer.shared ||
       liveRenderer.clearResourceCache !== renderer.clearResourceCache

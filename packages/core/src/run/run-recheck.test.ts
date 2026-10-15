@@ -71,7 +71,7 @@ async function run(opts: { recheck?: RecheckMode; config?: ProjectConfig } = {})
     runId: 'r',
     branch: 'b',
     commitSha: 'c',
-    ...(opts.config ? { config: opts.config } : {}),
+    config: { renderer: { shared: false }, ...opts.config },
     ...(opts.recheck ? { recheck: opts.recheck } : {}),
     readFirstCapture: async () => {
       readFirst++;

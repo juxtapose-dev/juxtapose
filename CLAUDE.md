@@ -56,7 +56,7 @@ navigations, about:blank included, so the story a page showed before changed
 this one's pixels. Primer's PageLayout heading was 0.11 px wider after a story
 that measured canvas text at 32.0167px; Spectrum's card cover edge changed after
 a button group. A memory-pressure purge cleared neither. That is why
-`freshRenderer` (default on) sends each cold capture through a `data:` URL so
+`renderer.shared: false` sends each cold capture through a `data:` URL so
 the story lands in a new renderer process. Chrome only grants that below its
 renderer-process limit: concurrency 8 at `--renderer-process-limit=8` reused
 the old process on 56 of 56 captures, at 9 on none, and the default limit is
@@ -210,3 +210,9 @@ legacy layout. The `examples/` directories commit nothing at all: antialiasing
 differs across machines and Chromium versions, so committed baselines there
 would be red for everyone but the author.
 red for everyone but the author.
+
+Shared renderer recovery defaults on: a baseline mismatch retries with a
+resource-cache pulse, then a fresh renderer. Each recovery must match the exact
+baseline hash. Cache-pulse success is an operational signal, not proof of a
+cache root cause: retry workers use new contexts and timing can also differ.
+Initial baselines and approval always force fresh renderers.

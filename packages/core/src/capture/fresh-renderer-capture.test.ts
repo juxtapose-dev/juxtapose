@@ -59,6 +59,7 @@ async function snap(...paths: string[]): Promise<Buffer[]> {
   const { pages } = await snapPages({
     urls: paths.map((p) => `${base}${p}`),
     browser,
+    freshRenderer: true,
     viewport: { width: 480, height: 64 },
   });
   return pages.map((p) => {
@@ -178,7 +179,7 @@ describe.skipIf(!chrome)(
     // in. Checked on the page's own renderer, not just that some process was
     // born. Before #153: the same process every time.
     it('starts every story after the first in a new renderer process', async () => {
-      const after = await capturesOnOnePage({});
+      const after = await capturesOnOnePage({ freshRenderer: true });
       const isolates = new Set(after.map((c) => c.isolate));
       expect(isolates.size).toBe(after.length);
       for (const c of after) {
@@ -204,7 +205,7 @@ describe.skipIf(!chrome)(
         args: ['--renderer-process-limit=1'],
       });
       try {
-        const after = await capturesOnOnePage({}, capped);
+        const after = await capturesOnOnePage({ freshRenderer: true }, capped);
         for (const c of after) {
           expect(c.isolate).toBe(c.previous);
           expect(c.reused).toBe(true);
@@ -229,6 +230,7 @@ describe.skipIf(!chrome)(
         const reused: boolean[] = [];
         for await (const out of capturePool(stories, {
           browser: capped,
+          freshRenderer: true,
           platform,
           baseUrl: base,
           concurrency: 2,

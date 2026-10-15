@@ -44,7 +44,7 @@ export interface SnapPagesOptions {
   projectSettle?: SettleLayer;
   /** Per-URL budget, ms; the config's `storyTimeout`. See DEFAULT_STORY_TIMEOUT_MS. */
   storyTimeoutMs?: number;
-  /** A new renderer per URL after the first; default true. See CaptureDeps. */
+  /** Legacy inverse of renderer.shared; omitted means sharing. See CaptureDeps. */
   freshRenderer?: boolean;
   renderer?: StoryParams['renderer'];
   /** Acquired by the caller (acquireBrowser); not closed here. */

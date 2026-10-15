@@ -72,10 +72,12 @@ export interface PoolOptions {
   /** Reuse warm pages and switch stories in place. Faster, but does not
    *  currently reproduce cold-load pixels exactly — see CaptureDeps. */
   warmSwitch?: boolean;
-  /** A new renderer per cold capture; default true. See CaptureDeps. */
+  /** Legacy inverse of renderer.shared; omitted means sharing. See CaptureDeps. */
   freshRenderer?: boolean;
   renderer?: CaptureDeps['renderer'];
   forceFreshRenderer?: boolean;
+  /** Recovery capture: pulse even when a story explicitly disables proactive clearing. */
+  forceResourceCache?: boolean;
   renderers?: Set<string>;
   /** Non-fatal notices from capture, e.g. an ignored live variant override. */
   onWarning?: (message: string) => void;
@@ -165,6 +167,7 @@ export async function* capturePool(
       warmSwitch: opts.warmSwitch,
       renderer: opts.renderer,
       forceFreshRenderer: opts.forceFreshRenderer,
+      forceResourceCache: opts.forceResourceCache,
       ...(opts.freshRenderer !== undefined ? { freshRenderer: opts.freshRenderer } : {}),
       ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
       ...(opts.settleLayers ? { settleLayers: opts.settleLayers } : {}),

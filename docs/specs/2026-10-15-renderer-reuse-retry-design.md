@@ -1,6 +1,10 @@
 # Renderer reuse with a fresh retry
 
-Status: implemented; sharing remains opt-in. The default-change gate failed.
+Status: shared rendering defaults on, with cache-pulse then fresh recovery.
+Jer explicitly changed the rollout decision after the first field comparison.
+The original strict parity comparison failed; this is not a claim that its
+21/6/2 hash differences were all caused by renderer reuse. Fresh-only runs
+also varied.
 Scope: [handoff](../briefs/codex-renderer-reuse-handoff.md), PR #231.
 The renderer configuration was approved by Jer. Validation results are recorded
 on [PR #231](https://github.com/juxtapose-dev/juxtapose/pull/231).
@@ -26,7 +30,7 @@ Resolve before navigation; live-only values discovered after render must
 trigger a recapture with the resolved policy before judgment, never silently
 affect only the next story.
 
-`shared: true` reuses the renderer and enables fresh retry on baseline
+`shared: true` reuses the renderer and enables cache-pulse then fresh retry on baseline
 mismatch. `shared: false` uses the existing renderer hop and isolate check.
 `clearResourceCache: true` performs this branch's
 `Network.setCacheDisabled` true/false pair before a reused-renderer navigation,
@@ -35,10 +39,10 @@ Ignore cache clearing when `shared` is false. Forced fresh retry and approval
 set `shared: false` and disable `warmSwitch`, overriding story settings.
 Keep warm switching opt-in; it is outside the reuse rollout.
 
-Default `shared` to false until stage 4, then true only after stage 3 passes.
+Default `shared` to true.
 Default `clearResourceCache` to false. Map explicit legacy
 `freshRenderer: false` to `shared: true` and true to false; reject conflicting
-project settings. An omitted legacy key follows the current stage's default.
+project settings. An omitted legacy key uses sharing.
 
 Stage 2 must add the object to `config/schema.ts` so generated `ProjectConfig`
 and story parameter types, runtime validation, and story/variant overrides
@@ -59,12 +63,15 @@ not receive history retries. Baseline image availability is irrelevant.
 Retry cap: `ceil(0.10 * N)`, where N is selected non-skipped capture keys
 (variants count separately; exclude live skips). Sort candidates by code-unit
 capture-key order before selecting the capped subset so pool completion order
-cannot choose which failures receive retries. Attempt each selected key once;
-errors consume budget. Excess candidates retain normal failure/recheck
+cannot choose which failures receive retries. Attempt each selected key with a pulse, then fresh if needed;
+errors consume budget. Skip the pulse tier if the first capture already pulsed. Excess candidates retain normal failure/recheck
 behavior. Report cap exhaustion; a capped run can remain red even when an
 uncapped fresh run would pass.
 
-Force fresh, cold captures in the retry pool. Share renderer-isolate tracking
+First retry with a cold navigation and a forced cache pulse, including the
+first navigation of a new retry worker. Do not overwrite artifacts for an
+unsuccessful pulse. An exact baseline match resolves the story; otherwise
+force fresh, cold captures in the fallback pool. Share renderer-isolate tracking
 across the first, retry, and recheck pools; a `renderer-reused` retry is
 unconfirmed, not evidence of a fresh result. Compare its byte-exact hash with
 the manifest before comparing it with the first capture:
@@ -92,7 +99,8 @@ not another history retry and cannot turn a baseline mismatch into a pass.
 
 Use optional `DiffResult.rendererRetry` with `outcome` (`resolved`,
 `mismatch`, `unconfirmed`, or `cap`), `initialRenderer` (the resolved renderer settings), `initialHash`, and optional
-`freshHash`/`reason`. Absence means no retry was needed. Derive resolved counts
+`cachePulseHash`/`cachePulseError`, `resolvedBy` (`cache-pulse` or `fresh`),
+and `freshHash`/`reason`. Absence means no retry was needed. Derive resolved counts
 from these results; status stays within the existing status enum. Carry this
 evidence through JSON, CLI, HTML, PR comments, handoff, MCP, and review UI.
 
@@ -100,7 +108,9 @@ Report footer: “N stories passed only after a fresh retry.” Follow
 with sorted capture keys and a copyable config entry for each:
 `"stories": { "card--default": { "renderer": { "shared": false } } }`.
 Also report attempted retries, the cap, and failures left without a retry.
-Recommend fresh; a resolved retry does not establish that pulse would work.
+For pulse-resolved stories, recommend `renderer: { shared: true, clearResourceCache: true }`.
+Report pulse and fresh recovery counts separately. These are observed recovery
+results, not causal proof; retry workers also change context and timing.
 
 `jux approve` must freshly capture every selected story, including already
 rechecked results and `--allow-unstable`. Use `approve-confirm.ts` and `run/confirm.ts` to confirm fresh hashes; retain
@@ -113,5 +123,7 @@ hash. Audit shared approval entry points so they cannot promote reuse bytes
 through an alternate path.
 
 Renderer configuration, result metadata, and report wording are implemented. Stage 2 was authorized by Jer on 2026-10-15.
-Stage 3 verifies hash equality on Spectrum, Chakra, and Primer plus both
-determinism modes; stage 4 alone changes the default. Implementation and verification results must be recorded before release.
+The original stage-3 strict comparison is retained as evidence. Jer then
+authorized shared by default with recovery. Verify the revised recovery on all
+three suites and both determinism modes before release; record remaining
+failures rather than treating them as successful recovery.

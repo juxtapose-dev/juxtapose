@@ -2,9 +2,18 @@ import { expect, test } from 'vitest';
 import { resolveRenderer } from './renderer.js';
 import { expandVariants, mergeLiveParams } from './variants.js';
 
-test('fresh default, legacy mapping and forced approval/retry override', () => {
-  expect(resolveRenderer()).toEqual({ shared: false, clearResourceCache: false });
+test('shared default, legacy mapping and forced approval/retry override', () => {
+  expect(resolveRenderer()).toEqual({ shared: true, clearResourceCache: false });
   expect(resolveRenderer({ freshRenderer: false }).shared).toBe(true);
+  expect(resolveRenderer({ freshRenderer: true }).shared).toBe(false);
+  expect(resolveRenderer({}, { clearResourceCache: false }, false, true)).toEqual({
+    shared: true,
+    clearResourceCache: true,
+  });
+  expect(resolveRenderer({}, { shared: false }, false, true)).toEqual({
+    shared: false,
+    clearResourceCache: false,
+  });
   expect(
     resolveRenderer({ renderer: { shared: true } }, { clearResourceCache: true }),
   ).toEqual({ shared: true, clearResourceCache: true });

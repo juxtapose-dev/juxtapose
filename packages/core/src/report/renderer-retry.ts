@@ -9,17 +9,29 @@ export function describeRendererRetries(results: readonly DiffResult[]): string 
     .filter((r) => r.rendererRetry?.outcome === 'resolved')
     .sort((a, b) => compareCodeUnits(a.storyId, b.storyId));
   const capped = retries.filter((r) => r.rendererRetry?.outcome === 'cap').length;
+  const pulsed = resolved.filter(
+    (r) => r.rendererRetry?.resolvedBy === 'cache-pulse',
+  ).length;
   const lines = [
-    `${resolved.length} stories passed only after a fresh retry.`,
-    `${retries.length - capped} fresh retries; ${capped} failures left without a retry because the limit was reached.`,
+    `${resolved.length - pulsed} stories passed only after a fresh retry.`,
+    `${pulsed} stories passed after a cache-pulse retry.`,
+    `${retries.length - capped} stories retried; ${capped} failures left without a retry because the limit was reached.`,
   ];
   if (resolved.length) {
     lines.push(
-      'To use a fresh renderer for these stories, add:',
+      'To apply the successful recovery before capturing these stories, add:',
       JSON.stringify(
         {
           stories: Object.fromEntries(
-            resolved.map((r) => [r.storyId, { renderer: { shared: false } }]),
+            resolved.map((r) => [
+              r.storyId,
+              {
+                renderer:
+                  r.rendererRetry?.resolvedBy === 'cache-pulse'
+                    ? { shared: true, clearResourceCache: true }
+                    : { shared: false },
+              },
+            ]),
           ),
         },
         null,
