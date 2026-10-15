@@ -353,6 +353,7 @@ export interface DiffResult {
    * The approved baseline is unchanged. Absent on exact passes. */
   comparison?: {
     method: 'pixelmatch';
+    version: '6.0.0';
     threshold: number;
     includeAA: false;
     baselineHash: string;

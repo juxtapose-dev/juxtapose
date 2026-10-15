@@ -640,6 +640,7 @@ async function judge(
       status: 'pass',
       comparison: {
         method: 'pixelmatch',
+        version: '6.0.0',
         threshold: comparisonThreshold,
         includeAA: false,
         baselineHash: manifest.baselines[story.storyId]!.hash,

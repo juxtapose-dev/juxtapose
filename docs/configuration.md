@@ -86,7 +86,7 @@ Exact matches still skip decoding and baseline-image reads. On a mismatch,
 visual equivalence requires the approved baseline image, verified against its
 manifest hash, valid ancestry, and matching dimensions. Missing/corrupt images
 cannot produce a tolerant pass. The result's `hash` stays the current SHA-256;
-`comparison` records the baseline hash, threshold, antialias setting, and raw
+`comparison` records the baseline hash, pinned Pixelmatch version (6.0.0), threshold, antialias setting, and raw
 changed-pixel count. CLI, HTML, PR comments, handoffs, and the addon distinguish
 these passes from exact matches. The approved baseline is never automatically
 replaced. Fresh approval and renderer recovery still require exact hashes.

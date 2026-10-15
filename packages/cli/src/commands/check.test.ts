@@ -114,6 +114,7 @@ test('a visual-equivalence pass retains its policy and distinct hashes in check 
   const root = await project(current, approved);
   const comparison = {
     method: 'pixelmatch',
+    version: '6.0.0',
     threshold: 0.05,
     includeAA: false,
     baselineHash: hashImage(approved),

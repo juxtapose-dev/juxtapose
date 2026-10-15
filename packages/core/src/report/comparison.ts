@@ -8,7 +8,7 @@ export function describeVisualEquivalence(results: readonly DiffResult[]): strin
     `${equivalent.length} capture(s) passed by visual equivalence, not exact hash. Approved baselines are unchanged.`,
     ...equivalent.map(
       (r) =>
-        `${r.storyId}: Pixelmatch threshold ${r.comparison!.threshold}, antialias filtering; ${r.comparison!.rawMismatchPixels} exact pixel differences, 0 after filtering.`,
+        `${r.storyId}: Pixelmatch ${r.comparison!.version} threshold ${r.comparison!.threshold}, antialias filtering; ${r.comparison!.rawMismatchPixels} exact pixel differences, 0 after filtering.`,
     ),
   ].join('\n');
 }

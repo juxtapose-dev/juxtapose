@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeAll, expect, test, vi } from 'vitest';
 import sharp from 'sharp';
 import { runCapture } from './run.js';
@@ -128,12 +129,17 @@ test('opt-in equivalence records both hashes and filtering evidence without chan
   expect(result.hash).toBe(hashImage(noise));
   expect(result.comparison).toEqual({
     method: 'pixelmatch',
+    version: '6.0.0',
     threshold: 0.05,
     includeAA: false,
     baselineHash: hashImage(baseline),
     rawMismatchPixels: 1,
   });
   expect(describeVisualEquivalence([result])).toContain('not exact hash');
+  expect(result.comparison?.version).toBe(
+    JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
+      .dependencies.pixelmatch,
+  );
   expect(result.rendererRetry).toBeUndefined();
 });
 test('a single remaining pixel fails despite minDiffPercent', async () => {
