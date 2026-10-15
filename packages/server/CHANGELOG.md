@@ -1,5 +1,12 @@
 # @juxtapose/server
 
+## 0.8.2
+
+### Patch Changes
+
+- Updated dependencies [41f0c65]
+  - @juxtapose/core@0.20.2
+
 ## 0.8.1
 
 ### Patch Changes
