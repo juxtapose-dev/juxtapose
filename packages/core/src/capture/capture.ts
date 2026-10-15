@@ -216,6 +216,19 @@ export async function captureStory(
     await page.goto('about:blank');
     warmPages.delete(page);
   }
+  // Same renderer reused (freshRenderer off): evict Blink's in-memory resource
+  // cache so the previous story's image state cannot reach this one's pixels.
+  // Disabling and re-enabling the cache right before the navigation made
+  // Spectrum's card--default and color-slider--image match their cold hashes
+  // after another story at history depths 0, 1 and 3 (3 of 3 repeats), and
+  // fixed 4 of the 5 history-sensitive stories in a 146-story sweep with no
+  // new mismatches. It keeps the HTTP cache (~2% over plain reuse, against
+  // ~9% for disabling the cache through the whole capture). Blanking alone and
+  // pulsing after settle did not help.
+  if (!warm && previous !== undefined && deps.freshRenderer === false) {
+    await page.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await page.send('Network.setCacheDisabled', { cacheDisabled: false });
+  }
   pageCapture.set(page, { key: story.storyId, base: id });
   // Before any request of this story: the policy is read from the layers
   // known now (live params arrive after render, too late to block anything).
