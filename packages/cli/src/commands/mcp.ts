@@ -304,7 +304,7 @@ export const TOOLS: Tool[] = [
         allowUnstable: {
           type: 'boolean',
           description:
-            'Approve stories the run captured twice with different results, and skip the confirming capture for stories the run did not recheck. Off by default: an unstable story is refused and listed in `failed`; fix it (mask, `stories` override, freshRenderer) instead unless the user insists.',
+            'Allow an earlier instability verdict. Approval still captures every selected story on a fresh renderer and requires its hash to match the reviewed run. Off by default: unstable stories are refused and listed in `failed`; fix them with masks or story overrides.',
         },
       },
       required: ['stories'],

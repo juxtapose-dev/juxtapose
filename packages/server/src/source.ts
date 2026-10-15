@@ -1,10 +1,11 @@
 // A ReviewSource backed by run artifacts on disk plus a live capture pool.
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import {
   approveCapture,
+  confirmCaptures,
   UnstableCaptureError,
   compareCodeUnits,
   expandVariants,
@@ -16,6 +17,7 @@ import {
   acquireBrowser,
   type Browser,
   encodeStoryId,
+  encodeStructure,
   hashImage,
   resolveAffectedFromPaths,
   runCapture,
@@ -295,6 +297,7 @@ export class RunDirSource implements ReviewSource {
       storyTitle: story ? `${story.title} — ${story.name}` : storyId,
       status: result.status,
       ...(result.unstable ? { unstable: result.unstable } : {}),
+      ...(result.rendererRetry ? { rendererRetry: result.rendererRetry } : {}),
       mismatchPercent: result.mismatchPercent,
       mismatchPixels: result.mismatchPixels,
       changedRegions: result.changedRegions,
@@ -345,18 +348,32 @@ export class RunDirSource implements ReviewSource {
     const task = this.approvalQueue.then(async () => {
       const report = await this.loadReport();
       const result = report?.results.find((r) => r.storyId === storyId);
-      // The run captured it once (recheck "off", or "new" for a failing
-      // story). `jux approve` takes the confirming capture; this path has no
-      // browser of its own, so it refuses rather than baseline one capture.
-      if (result?.unrechecked && !allowUnstable)
-        throw new UnstableCaptureError(storyId, {
-          hashes: result.hash ? [result.hash] : [],
-          unconfirmed: `the run captured it once (recheck ${report?.recheck ?? 'off'}); run \`jux approve\` to confirm it`,
-        });
-      if (result?.unstable && !allowUnstable)
+      const stories = (await this.loadStories()).filter((s) => s.storyId === storyId);
+      if (!result?.hash || !stories.length)
+        throw new Error(`no reviewed capture for ${storyId}`);
+      const [confirmation] = await confirmCaptures({
+        browser: await this.ensureBrowser(),
+        platform: this.opts.platform,
+        baseUrl: this.opts.baseUrl,
+        config: this.opts.config,
+        stories,
+        hashes: new Map([[storyId, result.hash]]),
+        env: report?.env,
+      });
+      if (!confirmation || confirmation.unstable)
+        throw new UnstableCaptureError(
+          storyId,
+          confirmation?.unstable ?? {
+            hashes: [result.hash],
+            unconfirmed: 'no fresh confirming capture was taken',
+          },
+        );
+      if (result.unstable && !result.unrechecked && !allowUnstable)
         throw new UnstableCaptureError(storyId, result.unstable);
       const image = await this.readImage('current', storyId);
       if (!image) throw new Error(`no capture for ${storyId} in the last run`);
+      if (hashImage(image) !== result.hash)
+        throw new Error('capture image differs from the reviewed run hash; run again');
       const { structureError } = await approveCapture(
         this.opts.store,
         storyId,
@@ -425,6 +442,10 @@ export class RunDirSource implements ReviewSource {
           const safe = encodeStoryId(a.storyId);
           await writeFile(path.join(images, `${safe}-current.webp`), a.current);
           if (a.diff) await writeFile(path.join(images, `${safe}-diff.webp`), a.diff);
+          else await rm(path.join(images, `${safe}-diff.webp`), { force: true });
+          const structureFile = path.join(images, `${safe}-current.structure.json.gz`);
+          if (a.structure) await writeFile(structureFile, encodeStructure(a.structure));
+          else await rm(structureFile, { force: true });
         },
       });
 

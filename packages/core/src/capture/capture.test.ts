@@ -1,6 +1,7 @@
 // packages/core/src/capture/capture.test.ts
-import { describe, it, expect } from 'vitest';
-import { captureStory } from './capture.js';
+import { beforeAll, describe, it, expect } from 'vitest';
+import sharp from 'sharp';
+import { captureStory, type CaptureDeps } from './capture.js';
 import type { Page } from '../browser/page.js';
 import type { Platform } from '../platform.js';
 import type { StoryManifest, StoryParams } from '../types.js';
@@ -92,6 +93,161 @@ describe('captureStory', () => {
       ),
     ).rejects.toThrow(/not a CSS selector/);
     expect(page.calls).toEqual([]);
+  });
+});
+
+describe('captureStory cache pulse on a reused renderer', () => {
+  let png: Buffer;
+  beforeAll(async () => {
+    png = await sharp({
+      create: { width: 1, height: 1, channels: 3, background: 'white' },
+    })
+      .png()
+      .toBuffer();
+  });
+
+  it('recaptures when live renderer settings change, before taking a screenshot', async () => {
+    const page = recordingPage();
+    let screenshots = 0;
+    page.screenshot = async () => {
+      screenshots++;
+      return png;
+    };
+    let reads = 0;
+    const result = await captureStory(
+      page,
+      story({}),
+      {
+        platform: {
+          ...platform,
+          readLiveParams: async () => {
+            reads++;
+            return { renderer: { shared: false } };
+          },
+        },
+        baseUrl: 'x',
+        structure: false,
+        renderer: { shared: true },
+      },
+      { width: 1, height: 1 },
+    );
+    expect(reads).toBe(2);
+    expect(screenshots).toBe(1);
+    expect(result?.renderer?.shared).toBe(false);
+  });
+
+  it('forced fresh capture ignores a live request to share the renderer', async () => {
+    const page = recordingPage();
+    page.screenshot = async () => png;
+    let reads = 0;
+    const result = await captureStory(
+      page,
+      story({}),
+      {
+        platform: {
+          ...platform,
+          readLiveParams: async () => {
+            reads++;
+            return { renderer: { shared: true, clearResourceCache: true } };
+          },
+        },
+        baseUrl: 'x',
+        structure: false,
+        forceFreshRenderer: true,
+      },
+      { width: 1, height: 1 },
+    );
+    expect(reads).toBe(1);
+    expect(result?.renderer).toEqual({ shared: false, clearResourceCache: false });
+  });
+
+  function setup(
+    options: Pick<CaptureDeps, 'freshRenderer' | 'warmSwitch' | 'renderer'>,
+  ) {
+    const page = recordingPage();
+    const events: unknown[] = [];
+    page.screenshot = async () => png;
+    page.send = (async (method: string, params?: object) => {
+      if (method === 'Network.setCacheDisabled') events.push(params);
+      return {};
+    }) as Page['send'];
+    const p: Platform = {
+      ...platform,
+      showStory: async (page, id) => {
+        events.push(`show:${id}`);
+        await platform.showStory(page, id, 'x');
+      },
+      switchStory: async (_page, id) => {
+        events.push(`switch:${id}`);
+        return true;
+      },
+    };
+    const capture = async (id: string) => {
+      const result = await captureStory(
+        page,
+        { ...story({}), storyId: id },
+        { platform: p, baseUrl: 'x', structure: false, ...options },
+        { width: 1, height: 1 },
+      );
+      expect(result).not.toBeNull();
+    };
+    return { capture, events };
+  }
+
+  it('pulses exactly true then false before showing the second cold story', async () => {
+    const { capture, events } = setup({
+      renderer: { shared: true, clearResourceCache: true },
+    });
+    await capture('first');
+    events.length = 0;
+    await capture('second');
+    expect(events).toEqual([
+      { cacheDisabled: true },
+      { cacheDisabled: false },
+      'show:second',
+    ]);
+  });
+
+  it('does not pulse for shared rendering unless explicitly enabled', async () => {
+    const { capture, events } = setup({ renderer: { shared: true } });
+    await capture('first');
+    await capture('second');
+    expect(events).toEqual(['show:first', 'show:second']);
+  });
+
+  it('an explicit fresh renderer setting overrides warm switching', async () => {
+    const { capture, events } = setup({ renderer: { shared: false }, warmSwitch: true });
+    await capture('first');
+    await capture('second');
+    expect(events).toEqual(['show:first', 'show:second']);
+  });
+
+  it('does not pulse on the first capture on a page', async () => {
+    const { capture, events } = setup({
+      renderer: { shared: true, clearResourceCache: true },
+    });
+    await capture('first');
+    expect(events).toEqual(['show:first']);
+  });
+
+  it.each([undefined, true])(
+    'does not pulse with freshRenderer %s, including on a second capture',
+    async (freshRenderer) => {
+      const { capture, events } = setup({ freshRenderer });
+      await capture('first');
+      await capture('second');
+      expect(events).toEqual(['show:first', 'show:second']);
+    },
+  );
+
+  it('does not pulse when the second story takes the warm-switch path', async () => {
+    const { capture, events } = setup({
+      renderer: { shared: true, clearResourceCache: true },
+      warmSwitch: true,
+    });
+    await capture('first');
+    await capture('second');
+    expect(events).toEqual(['show:first', 'switch:second']);
   });
 });
 

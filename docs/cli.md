@@ -314,7 +314,10 @@ Approval stays safe in every mode. A story the run didn't capture twice has
 captures it again first, which needs the same build or origin as `jux run` and
 launches a browser, and approves it only if the two hashes match. A story that
 comes out different is refused as unstable, and one that can't be captured
-again is refused as unconfirmed. `--allow-unstable` skips the extra capture.
+again is refused as unconfirmed. Every selected story, including one already
+rechecked, is confirmed on a fresh renderer. `--allow-unstable` can waive an
+earlier instability verdict, but cannot skip this capture or approve a hash
+different from the reviewed run.
 The confirming capture uses the project config, not the settle flags you
 passed to `jux run`, and it needs the same browser and operating system as the
 run: otherwise it refuses the story and tells you to run again. Render flags that only
@@ -330,8 +333,8 @@ so an older `jux approve`, review server or Storybook panel, which only read
 `unstable`, refuse it instead of baselining one capture. The current
 `jux approve` keys on `unrechecked` and confirms the story. `report.json` has
 `recheck: "off"`, and `jux run` prints a line saying so. The Storybook panel's
-approve button refuses an `unrechecked` story; use `jux approve`.
-`jux init` always rechecks.
+approve button also confirms on a fresh renderer.
+`jux init` always uses fresh renderers and rechecks.
 
 `jux approve`, `jux init`, the MCP `approve` tool and the Storybook panel all
 refuse an unstable story, name it, and approve the rest. The CLI exits 1; the

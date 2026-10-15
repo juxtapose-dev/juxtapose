@@ -1,3 +1,6 @@
+import { runCapture } from '../run/run.js';
+import { hashImage } from '../baseline/status.js';
+import type { BaselineStore } from '../types.js';
 // Issue #153 against a real Chrome. A renderer process keeps font and raster
 // state across navigations, so a story's pixels depended on which story the
 // same page showed before it. Primer React's PageLayout heading moved 0.11 px
@@ -127,6 +130,46 @@ describe.skipIf(!chrome)(
       const [alone] = await snap('/heading');
       const [, after] = await snap('/measure', '/heading');
       expect(after!.equals(alone!)).toBe(true);
+    });
+
+    it('shared capture after a canvas-measuring story finishes with the fresh baseline hash', async () => {
+      const [baseline] = await snap('/heading');
+      const platform = createUrlPlatform([
+        { id: 'measure', url: `${base}/measure` },
+        { id: 'heading', url: `${base}/heading` },
+      ]);
+      const stories = await platform.enumerate({ projectRoot: process.cwd() });
+      const hash = hashImage(baseline!);
+      const store = {
+        readManifest: async () => ({
+          version: 1,
+          baselines: {
+            heading: { hash, commit: 'c', approvedBy: 'u', approvedAt: 'a' },
+          },
+        }),
+        get: async () => baseline!,
+      } as unknown as BaselineStore;
+      const report = await runCapture({
+        browser,
+        platform,
+        stories,
+        store,
+        baseUrl: base,
+        config: {
+          renderer: { shared: true },
+          concurrency: 1,
+          viewport: { width: 480, height: 64 },
+        },
+        recheck: 'off',
+        totalCount: 2,
+        runId: 'r',
+        branch: 'b',
+        commitSha: 'c',
+      });
+      const heading = report.results.find((r) => r.storyId === 'heading')!;
+      expect(heading.status).toBe('pass');
+      expect(heading.hash).toBe(hash);
+      if (heading.rendererRetry) expect(heading.rendererRetry.outcome).toBe('resolved');
     });
 
     // The platform-independent half, and the guard on Linux CI: the pixel

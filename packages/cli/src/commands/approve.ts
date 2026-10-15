@@ -7,11 +7,11 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   approveCapture,
+  hashImage,
   ManifestConflictError,
   UnstableCaptureError,
   encodeStoryId,
   parseRunReport,
-  type Confirmation,
   type DiffResult,
 } from '@juxtapose/core';
 import { resolveContext, gitSha, type CommonFlags } from '../context.js';
@@ -78,28 +78,21 @@ export async function approveCommand(
     return 0;
   }
 
+  // A conflicted manifest must fail before spending time on captures.
+  await ctx.store.readManifest();
   const commit = gitSha(ctx.projectRoot);
   const approvedBy = process.env.JUXTAPOSE_USER ?? process.env.USER ?? 'unknown';
   const approvedAt = new Date().toISOString();
-  // From the run, not from here: approving never launches a browser.
+  // The fresh confirmation must match these reviewed bytes and environment.
   const env = report.env;
-  // A story the run captured once (recheck "off", or "new" for a failing
-  // story) is not yet known to be stable. Capture it again here, so approving
-  // always rests on two identical captures; --allow-unstable skips that.
-  const confirmations = flags['allow-unstable']
-    ? new Map<string, Confirmation>()
-    : await confirmForApprove(
-        ctx,
-        new Map(
-          candidates.flatMap((r) =>
-            r.unrechecked && r.hash ? [[r.storyId, r.hash] as const] : [],
-          ),
-        ),
-        report.env,
-        flags,
-        session,
-        io,
-      );
+  const confirmations = await confirmForApprove(
+    ctx,
+    new Map(candidates.flatMap((r) => (r.hash ? [[r.storyId, r.hash] as const] : []))),
+    report.env,
+    flags,
+    session,
+    io,
+  );
   const approved: string[] = [];
   const failed: { storyId: string; reason: string; unstable?: true }[] = [];
 
@@ -110,16 +103,16 @@ export async function approveCommand(
     // approvers; here it is judged by the confirming capture alone, and one
     // with no confirmation (it had no hash, or nothing ran) fails closed.
     const confirmation = confirmations.get(result.storyId);
-    const unstable = result.unrechecked
-      ? (confirmation?.unstable ??
-        (confirmation
-          ? undefined
-          : {
-              hashes: result.hash ? [result.hash] : [],
-              unconfirmed: 'no confirming capture was taken',
-            }))
-      : result.unstable;
-    if (unstable && !flags['allow-unstable']) {
+    const freshFailure =
+      confirmation?.unstable ??
+      (!confirmation
+        ? {
+            hashes: result.hash ? [result.hash] : [],
+            unconfirmed: 'no fresh confirming capture was taken',
+          }
+        : undefined);
+    const unstable = freshFailure ?? (result.unrechecked ? undefined : result.unstable);
+    if (unstable && (freshFailure || !flags['allow-unstable'])) {
       failed.push({
         storyId: result.storyId,
         reason: new UnstableCaptureError(result.storyId, unstable, {
@@ -139,6 +132,13 @@ export async function approveCommand(
       image = await readFile(imagePath);
     } catch {
       failed.push({ storyId: result.storyId, reason: 'capture image missing from run' });
+      continue;
+    }
+    if (hashImage(image) !== result.hash) {
+      failed.push({
+        storyId: result.storyId,
+        reason: 'capture image differs from the reviewed run hash; run again',
+      });
       continue;
     }
     try {

@@ -1,3 +1,4 @@
+import { describeRendererRetries } from '../report/renderer-retry.js';
 // Turn a failing story into a prompt an agent can act on.
 //
 // The central bet, inherited from the original tool and worth restating:
@@ -36,6 +37,7 @@ export interface HandoffPayload {
   status: DiffStatus;
   /** The run's stability verdict; see DiffResult.unstable. */
   unstable?: { hashes: string[]; unconfirmed?: string };
+  rendererRetry?: import('../types.js').DiffResult['rendererRetry'];
   /** Why the two captures differed and what to change; see DiffResult.flake. */
   flake?: Flake;
   /** The flake group this story belongs to, when it has one. */
@@ -129,6 +131,15 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   lines.push(`# Visual change: ${p.storyTitle}`);
   lines.push('');
   lines.push(`Story \`${p.storyId}\` is **${p.status}**.`);
+  if (p.rendererRetry)
+    lines.push(
+      describeRendererRetries([
+        {
+          storyId: p.storyId,
+          rendererRetry: p.rendererRetry,
+        } as import('../types.js').DiffResult,
+      ]),
+    );
   if (p.unstable?.unconfirmed?.startsWith(NOT_RECHECKED)) {
     lines.push(
       '',

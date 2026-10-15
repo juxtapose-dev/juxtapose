@@ -78,3 +78,31 @@ test('a missing capture blocks rather than clearing', async () => {
   await rm(path.join(root, '.juxtapose/runs/r1/images'), { recursive: true });
   expect(await checkCommand({ project: root, json: true })).toBe(1);
 });
+
+test('a passing fresh retry stays visible to JSON and text consumers', async () => {
+  const { captureIo } = await import('../io.js');
+  const same = Buffer.from('identical pixels');
+  const root = await project(same, same);
+  const rendererRetry = {
+    outcome: 'resolved',
+    initialRenderer: { shared: true, clearResourceCache: false },
+    initialHash: 'history',
+    freshHash: hashImage(same),
+  };
+  await writeFile(
+    path.join(root, '.juxtapose/runs/r1/report.json'),
+    JSON.stringify({
+      runId: 'r1',
+      results: [{ storyId: STORY, status: 'pass', rendererRetry }],
+    }),
+  );
+  const io = captureIo();
+  expect(await checkCommand({ project: root, json: true }, { io })).toBe(0);
+  expect(JSON.parse(io.stdout()).rendererRetries).toEqual([
+    { storyId: STORY, status: 'pass', ...rendererRetry },
+  ]);
+  const text = captureIo();
+  await checkCommand({ project: root }, { io: text });
+  expect(text.stdout()).toContain('1 stories passed only after a fresh retry.');
+  expect(text.stdout()).toContain('"shared": false');
+});

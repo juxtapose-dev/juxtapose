@@ -1,7 +1,5 @@
-// The confirming capture `jux approve` takes for stories the run did not
-// recheck (#195). It sets the same stage the run does (enumerate, discover
-// variants, serve the build, launch a browser) and captures just those
-// stories once more.
+// Prepare the selected stories and confirm their reviewed hashes on fresh
+// renderers before approval, including stories already rechecked by the run.
 
 import path from 'node:path';
 import {
@@ -39,7 +37,7 @@ export async function confirmForApprove(
   if (hashes.size === 0) return new Map();
   if (!ctx.json)
     io.err(
-      `jux: ${hashes.size} ${hashes.size === 1 ? 'story was' : 'stories were'} not captured twice in the run; capturing ${hashes.size === 1 ? 'it' : 'them'} again before approving\n`,
+      `jux: capturing ${hashes.size} ${hashes.size === 1 ? 'story' : 'stories'} on fresh renderers before approving\n`,
     );
   const needsServer = !ctx.origin && ctx.platform.name !== 'urls';
   let server: Awaited<ReturnType<typeof serveStatic>> | null = null;

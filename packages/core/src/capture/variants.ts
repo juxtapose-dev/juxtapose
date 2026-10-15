@@ -116,7 +116,17 @@ export function expandVariants(
           // Base params, then the extends chain, then the variant itself;
           // the config override goes over all three.
           withNetwork(
-            withSettle({ ...baseParams, ...layer }, baseParams.settle, layer.settle),
+            withSettle(
+              {
+                ...baseParams,
+                ...layer,
+                ...(baseParams.renderer || layer.renderer
+                  ? { renderer: { ...baseParams.renderer, ...layer.renderer } }
+                  : {}),
+              },
+              baseParams.settle,
+              layer.settle,
+            ),
             baseParams.network,
             layer.network,
           ),
@@ -205,7 +215,12 @@ function resolveChain(
     );
     const settle = mergeSettle(layer.settle, spec.settle);
     const network = mergeNetwork(layer.network, spec.network);
+    const renderer =
+      layer.renderer || spec.renderer
+        ? { ...layer.renderer, ...spec.renderer }
+        : undefined;
     Object.assign(layer, spec);
+    if (renderer) layer.renderer = renderer;
     if (settle) layer.settle = settle;
     if (network) layer.network = network;
   }
@@ -258,6 +273,12 @@ export function mergeLiveParams(
   if (!live) return params;
   const { variants: _v, colorScheme: _c, ...settings } = live;
   Object.assign(params, settings, story.variantParams ?? {});
+  if (story.params.renderer || settings.renderer || story.variantParams?.renderer)
+    params.renderer = {
+      ...story.params.renderer,
+      ...settings.renderer,
+      ...story.variantParams?.renderer,
+    };
   const variantSettle = story.variantParams?.settle;
   const variantNetwork = story.variantParams?.network;
   const settled = variantSettle

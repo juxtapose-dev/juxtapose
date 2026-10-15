@@ -332,3 +332,5 @@ export {
   postComment,
   type GitHubContext,
 } from './report/github.js';
+
+export { describeRendererRetries } from './report/renderer-retry.js';

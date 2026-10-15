@@ -1,3 +1,4 @@
+import { describeRendererRetries } from './renderer-retry.js';
 // A single self-contained report.html.
 //
 // The constraint that shapes everything here: it must work opened from
@@ -57,6 +58,7 @@ ${
         .join('\n')
 }
 
+${describeRendererRetries(report.results) ? `<pre>${escapeHtml(describeRendererRetries(report.results))}</pre>` : ''}
 <script>${SCRIPT}</script>
 `;
 }

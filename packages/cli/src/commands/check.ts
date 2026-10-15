@@ -5,7 +5,12 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { encodeStoryId, hashImage, parseRunReport } from '@juxtapose/core';
+import {
+  describeRendererRetries,
+  encodeStoryId,
+  hashImage,
+  parseRunReport,
+} from '@juxtapose/core';
 import { resolveContext, type CommonFlags } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
@@ -62,6 +67,10 @@ export async function checkCommand(
     blocking.push(r);
   }
 
+  if (!ctx.json) {
+    const retries = describeRendererRetries(report.results);
+    if (retries) io.out(`${retries}\n`);
+  }
   if (ctx.json) {
     io.out(
       JSON.stringify({
@@ -69,8 +78,20 @@ export async function checkCommand(
         blocking: blocking.map((r) => ({
           storyId: r.storyId,
           status: r.status,
+          ...(r.rendererRetry ? { rendererRetry: r.rendererRetry } : {}),
           ...(r.unstable && !r.unrechecked ? { unstable: true } : {}),
         })),
+        ...(report.results.some((r) => r.rendererRetry)
+          ? {
+              rendererRetries: report.results
+                .filter((r) => r.rendererRetry)
+                .map((r) => ({
+                  storyId: r.storyId,
+                  status: r.status,
+                  ...r.rendererRetry,
+                })),
+            }
+          : {}),
         runId: report.runId,
       }) + '\n',
     );

@@ -1,3 +1,4 @@
+import { resolveRenderer } from '../capture/renderer.js';
 // Orchestrate a run: enumerate → select → capture → judge → report.
 //
 // The ordering reflects the cost model. Hashing is cheap and decides pass/fail,
@@ -89,6 +90,8 @@ export interface RunOptions {
   /** Per-call recheck mode (`--recheck`, the MCP argument), over the config's
    *  `recheck`; "changed" when neither is set. */
   recheck?: RecheckMode;
+  /** Baseline creation overrides all renderer settings. */
+  forceFreshRenderer?: boolean;
 }
 
 /** The mode a run uses: the call over the project config over the default. */
@@ -114,7 +117,14 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   const p = opts.phases ?? phases();
   const manifest = await p.time('baselines', () => opts.store.readManifest());
   const recheck = effectiveRecheck(opts.recheck, opts.config);
+  // Validate before opening the pool, including legacy/new conflicts.
+  resolveRenderer(opts.config);
   const results: DiffResult[] = [];
+  const renderers = new Set<string>();
+  const history = new Map<
+    string,
+    { result: DiffResult; renderer: ReturnType<typeof resolveRenderer> }
+  >();
   const firstPassWarnings = new Set<string>();
   const toConfirm = new Map<string, DiffResult>();
   // What the recheck needs of a first capture besides its image and structure,
@@ -123,6 +133,8 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
 
   const poolOptions = (onProgress: RunOptions['onProgress']) => ({
     ...poolSettings(opts, viewport),
+    renderers,
+    forceFreshRenderer: opts.forceFreshRenderer,
     onProgress,
     ...(opts.onWarning
       ? {
@@ -188,6 +200,11 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
 
     const result = await judge(outcome.snapshot, outcome.story, manifest, opts, p);
     results.push(result);
+    const renderer =
+      outcome.snapshot.renderer ??
+      resolveRenderer(opts.config, outcome.story.params.renderer);
+    if (result.status === 'fail' && result.hash && renderer.shared)
+      history.set(result.storyId, { result, renderer });
     const covered =
       recheck !== 'off' &&
       (result.status === 'new' || (result.status === 'fail' && recheck === 'changed'));
@@ -215,6 +232,82 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     }
   }
 
+  // Select after the first pool closes: shuffled completion order must not
+  // decide which stories receive the bounded retry budget.
+  const retryLimit = Math.ceil(0.1 * results.filter((r) => r.status !== 'skip').length);
+  const candidates = [...history.keys()].sort(compareCodeUnits);
+  const retryIds = new Set(candidates.slice(0, retryLimit));
+  for (const id of candidates) {
+    const { result, renderer } = history.get(id)!;
+    result.rendererRetry = {
+      outcome: retryIds.has(id) ? 'unconfirmed' : 'cap',
+      initialRenderer: renderer,
+      initialHash: result.hash!,
+      reason: retryIds.has(id)
+        ? 'fresh retry did not complete'
+        : 'fresh retry limit reached',
+    };
+  }
+  if (retryIds.size) {
+    const resultIndexes = new Map(
+      results.map((result, index) => [result.storyId, index]),
+    );
+    const again = opts.stories.filter((story) => retryIds.has(story.storyId));
+    for await (const outcome of capturePool(again, {
+      ...poolOptions(undefined),
+      forceFreshRenderer: true,
+      warmSwitch: false,
+    })) {
+      const first = history.get(outcome.story.storyId)!.result;
+      const evidence = first.rendererRetry!;
+      if (!outcome.snapshot || outcome.snapshot.rendererReused) {
+        evidence.reason =
+          outcome.error?.message ??
+          (outcome.snapshot?.rendererReused
+            ? 'fresh retry reused a renderer'
+            : 'fresh retry produced no snapshot');
+        continue;
+      }
+      const fresh = await judge(outcome.snapshot, outcome.story, manifest, opts, p);
+      const resolved = fresh.status === 'pass';
+      fresh.rendererRetry = {
+        outcome: resolved ? 'resolved' : 'mismatch',
+        initialRenderer: evidence.initialRenderer,
+        initialHash: evidence.initialHash,
+        freshHash: fresh.hash,
+      };
+      fresh.durationMs = (first.durationMs ?? 0) + (fresh.durationMs ?? 0);
+      results[resultIndexes.get(first.storyId)!] = fresh;
+      toConfirm.delete(first.storyId);
+      firstNotes.delete(first.storyId);
+      if (!resolved) {
+        if (recheck === 'changed') {
+          toConfirm.set(fresh.storyId, fresh);
+          const { settle, flags } = flakeCapture(outcome.snapshot);
+          firstNotes.set(fresh.storyId, { settle, flags });
+        } else {
+          fresh.unrechecked = true;
+          fresh.unstable = {
+            hashes: [fresh.hash!],
+            unconfirmed: `${NOT_RECHECKED} (recheck ${recheck})`,
+          };
+        }
+      }
+    }
+    // A failed or aborted fresh retry cannot become approvable because a
+    // separate stability capture happened to reproduce the shared image.
+    for (const id of retryIds) {
+      const first = history.get(id)!.result;
+      if (results[resultIndexes.get(id)!] === first) {
+        toConfirm.delete(id);
+        first.unstable = {
+          hashes: [first.hash!],
+          unconfirmed: first.rendererRetry!.reason,
+        };
+      }
+    }
+  }
+
   // Approval turns a capture into a baseline, so a flaky one is only caught
   // for free here, while the browser is open. Only stories that could be
   // approved are captured again (new and changed ones); a passing story
@@ -239,13 +332,15 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     let rechecked = 0;
     for await (const outcome of capturePool(again, {
       ...poolOptions(undefined),
+      forceFreshRenderer: true,
+      warmSwitch: false,
       onProgress: (_d, _t, id) => opts.onRecheck?.(++rechecked, again.length, id),
       ...(warnOnce ? { onWarning: warnOnce } : {}),
     })) {
       const first = toConfirm.get(outcome.story.storyId);
       if (!first) continue;
       unseen.delete(first.storyId);
-      if (!outcome.snapshot) {
+      if (!outcome.snapshot || outcome.snapshot.rendererReused) {
         first.unstable = {
           hashes: [first.hash!],
           unconfirmed: outcome.error?.message ?? 'recheck capture produced no snapshot',
@@ -328,6 +423,7 @@ export function poolSettings(
     baseUrl: opts.baseUrl,
     concurrency: opts.config?.concurrency,
     warmSwitch: opts.config?.warmSwitch,
+    renderer: opts.config?.renderer,
     ...(opts.config?.freshRenderer !== undefined
       ? { freshRenderer: opts.config.freshRenderer }
       : {}),

@@ -1,3 +1,4 @@
+import { resolveRenderer } from './renderer.js';
 // Capture one story. The ordering here is load-bearing — see settle.ts for why
 // each step exists. Because pass/fail is a byte-exact hash, every source of
 // nondeterminism left in this path becomes a false failure somewhere.
@@ -69,6 +70,10 @@ export interface CaptureDeps {
    * previous story can change this one's pixels. See below.
    */
   freshRenderer?: boolean;
+  renderer?: StoryParams['renderer'];
+  forceFreshRenderer?: boolean;
+  /** Guard live-policy recapture against changing declarations. */
+  rendererRecaptured?: boolean;
   /**
    * The renderer processes that hosted a capture in this run, by their
    * inspector isolate id (random 64-bit per process). The pool shares one
@@ -122,6 +127,7 @@ export async function captureStory(
   // Copied, not aliased: live params get merged in below, and mutating the
   // manifest entry would leak one story's config into the next run.
   const params: StoryParams = { ...story.params };
+  const renderer = resolveRenderer(deps, params.renderer, deps.forceFreshRenderer);
   const effectiveViewport = params.viewport ?? viewport;
   const timeoutMs = params.captureTimeout ?? DEFAULT_CAPTURE_TIMEOUT_MS;
   // Every platform call gets the platform's own id; the variant capture key
@@ -167,6 +173,8 @@ export async function captureStory(
   const schemeChanged = pageColorScheme.has(page) && pageColorScheme.get(page) !== scheme;
   const warm =
     deps.warmSwitch === true &&
+    (params.renderer?.shared ?? deps.renderer?.shared) !== false &&
+    !deps.forceFreshRenderer &&
     warmPages.get(page) === deps.baseUrl &&
     !schemeChanged &&
     !sameStoryOtherCapture &&
@@ -207,7 +215,7 @@ export async function captureStory(
   //
   // With freshRenderer off the page keeps its renderer and is only blanked
   // for those same-URL cases, as before #153.
-  if (!warm && previous !== undefined && deps.freshRenderer !== false) {
+  if (!warm && (previous !== undefined || deps.forceFreshRenderer) && !renderer.shared) {
     const tFresh = performance.now();
     await page.goto(FRESH_RENDERER_URL);
     acc.freshRenderer = performance.now() - tFresh;
@@ -215,6 +223,19 @@ export async function captureStory(
   } else if ((schemeChanged || sameStoryOtherCapture) && warmPages.has(page)) {
     await page.goto('about:blank');
     warmPages.delete(page);
+  }
+  // Same renderer reused (freshRenderer off): evict Blink's in-memory resource
+  // cache so the previous story's image state cannot reach this one's pixels.
+  // Disabling and re-enabling the cache right before the navigation made
+  // Spectrum's card--default and color-slider--image match their cold hashes
+  // after another story at history depths 0, 1 and 3 (3 of 3 repeats), and
+  // fixed 4 of the 5 history-sensitive stories in a 146-story sweep with no
+  // new mismatches. It keeps the HTTP cache (~2% over plain reuse, against
+  // ~9% for disabling the cache through the whole capture). Blanking alone and
+  // pulsing after settle did not help.
+  if (!warm && previous !== undefined && renderer.shared && renderer.clearResourceCache) {
+    await page.send('Network.setCacheDisabled', { cacheDisabled: true });
+    await page.send('Network.setCacheDisabled', { cacheDisabled: false });
   }
   pageCapture.set(page, { key: story.storyId, base: id });
   // Before any request of this story: the policy is read from the layers
@@ -251,10 +272,8 @@ export async function captureStory(
   // the result says so: the isolate id is random per renderer process and
   // matched the CPU-identified pid on 87 of 87 captures, reused or not, for
   // about 0.2 ms a capture.
-  const rendererReused =
-    !switched && deps.freshRenderer !== false
-      ? await rendererSeenBefore(page, deps.renderers)
-      : false;
+  const seenRenderer = await rendererSeenBefore(page, deps.renderers);
+  const rendererReused = !switched && !renderer.shared && seenRenderer;
 
   // Freeze BEFORE the story renders, not after.
   //
@@ -291,6 +310,21 @@ export async function captureStory(
   const live = await deps.platform.readLiveParams?.(page, id);
   if (live) {
     Object.assign(params, mergeLiveParams(story, live));
+    const liveRenderer = resolveRenderer(deps, params.renderer, deps.forceFreshRenderer);
+    if (
+      liveRenderer.shared !== renderer.shared ||
+      liveRenderer.clearResourceCache !== renderer.clearResourceCache
+    ) {
+      if (deps.rendererRecaptured)
+        throw new Error('renderer settings changed during live-parameter recapture');
+      const recaptured = await captureStory(
+        page,
+        { ...story, params },
+        { ...deps, warmSwitch: false, rendererRecaptured: true },
+        viewport,
+      );
+      return recaptured ? { ...recaptured, durationMs: Date.now() - started } : null;
+    }
     if (
       live.network !== undefined &&
       deps.settleLayers?.call?.network === undefined &&
@@ -466,6 +500,7 @@ export async function captureStory(
     // so report what we actually captured at — the agent handoff computes
     // region area as a fraction of it.
     viewport: effective,
+    renderer,
     capturedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     timings,

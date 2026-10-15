@@ -5,11 +5,18 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { encodeStoryId } from '@juxtapose/core';
-import { afterEach, expect, test } from 'vitest';
+import { encodeStoryId, hashImage } from '@juxtapose/core';
+import { afterEach, expect, test, vi } from 'vitest';
 import { captureIo } from '../io.js';
 import { approveCommand } from './approve.js';
 import { runCommand } from './run.js';
+
+// Selection tests isolate the fresh confirmation; its capture behavior is
+// exercised in approve-confirm.test.ts and core's real browser tests.
+vi.mock('./approve-confirm.js', () => ({
+  confirmForApprove: async (_ctx: unknown, hashes: Map<string, string>) =>
+    new Map([...hashes.keys()].map((storyId) => [storyId, { storyId }])),
+}));
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -79,7 +86,13 @@ test('approve --story <base id> approves the story and all its variants; a key a
     { storyId: 'home__dark', baseStoryId: 'home', variant: 'dark', status: 'new' },
     { storyId: 'home__mobile', baseStoryId: 'home', variant: 'mobile', status: 'new' },
   ];
-  writeFileSync(path.join(run, 'report.json'), JSON.stringify({ runId: 'r1', results }));
+  writeFileSync(
+    path.join(run, 'report.json'),
+    JSON.stringify({
+      runId: 'r1',
+      results: results.map((r) => ({ ...r, hash: hashImage(Buffer.from(r.storyId!)) })),
+    }),
+  );
   for (const r of results) {
     writeFileSync(
       path.join(run, 'images', `${encodeStoryId(r.storyId)}-current.webp`),
@@ -130,7 +143,13 @@ function runWith(root: string, variants: Array<{ variant: string; status: string
       status: v.status,
     })),
   ];
-  writeFileSync(path.join(run, 'report.json'), JSON.stringify({ runId: 'r1', results }));
+  writeFileSync(
+    path.join(run, 'report.json'),
+    JSON.stringify({
+      runId: 'r1',
+      results: results.map((r) => ({ ...r, hash: hashImage(Buffer.from(r.storyId!)) })),
+    }),
+  );
   for (const r of results) {
     if (r.status === 'skip') continue;
     writeFileSync(
@@ -198,7 +217,16 @@ function runOf(root: string, results: Array<Record<string, string>>) {
   const run = path.join(root, '.juxtapose', 'runs', 'r1');
   rmSync(path.join(root, '.juxtapose', 'runs'), { recursive: true, force: true });
   mkdirSync(path.join(run, 'images'), { recursive: true });
-  writeFileSync(path.join(run, 'report.json'), JSON.stringify({ runId: 'r1', results }));
+  writeFileSync(
+    path.join(run, 'report.json'),
+    JSON.stringify({
+      runId: 'r1',
+      results: results.map((r) => ({
+        ...r,
+        hash: hashImage(Buffer.from(`${r['storyId']}:${r['status']}`)),
+      })),
+    }),
+  );
   for (const r of results) {
     if (r['status'] === 'skip') continue;
     writeFileSync(
@@ -258,7 +286,13 @@ test('approve refuses an unstable story, names it, still approves the rest, exit
     { storyId: 'rand', status: 'new', unstable: { hashes: ['a', 'b'] } },
     { storyId: 'steady', status: 'new' },
   ];
-  writeFileSync(path.join(run, 'report.json'), JSON.stringify({ runId: 'r1', results }));
+  writeFileSync(
+    path.join(run, 'report.json'),
+    JSON.stringify({
+      runId: 'r1',
+      results: results.map((r) => ({ ...r, hash: hashImage(Buffer.from(r.storyId!)) })),
+    }),
+  );
   for (const r of results) {
     writeFileSync(
       path.join(run, 'images', `${encodeStoryId(r.storyId)}-current.webp`),

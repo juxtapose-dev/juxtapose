@@ -201,6 +201,10 @@ export async function snapCommand(
     captured = await snapPages({
       urls,
       browser,
+      renderer:
+        flags['no-fresh-renderer'] === true
+          ? { ...config.renderer, shared: true }
+          : config.renderer,
       ...(config.storyTimeout !== undefined
         ? { storyTimeoutMs: config.storyTimeout }
         : {}),

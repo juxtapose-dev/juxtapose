@@ -43,6 +43,20 @@
             "description": "Per-story capture options: `parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle.",
             "type": "object",
             "properties": {
+              "renderer": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "shared": {
+                    "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
+                    "type": "boolean"
+                  },
+                  "clearResourceCache": {
+                    "description": "Clear Blink resource memory cache before reused-renderer navigation. Default false; ignored when shared is false. HTTP cache is retained.",
+                    "type": "boolean"
+                  }
+                }
+              },
               "skip": {
                 "description": "Never capture this story.",
                 "type": "boolean"
@@ -301,6 +315,20 @@
                             "description": "Screenshot after the story's play function, not at first render.",
                             "type": "boolean"
                           },
+                          "renderer": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "shared": {
+                                "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
+                                "type": "boolean"
+                              },
+                              "clearResourceCache": {
+                                "description": "Clear Blink resource memory cache before reused-renderer navigation. Default false; ignored when shared is false. HTTP cache is retained.",
+                                "type": "boolean"
+                              }
+                            }
+                          },
                           "mask": {
                             "description": "CSS selectors to paint over before the shutter: a solid box over each match's bounding box. For a clock or a random avatar; prefer stubbing the input.",
                             "type": "array",
@@ -546,6 +574,20 @@
                         "description": "Screenshot after the story's play function, not at first render.",
                         "type": "boolean"
                       },
+                      "renderer": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "shared": {
+                            "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
+                            "type": "boolean"
+                          },
+                          "clearResourceCache": {
+                            "description": "Clear Blink resource memory cache before reused-renderer navigation. Default false; ignored when shared is false. HTTP cache is retained.",
+                            "type": "boolean"
+                          }
+                        }
+                      },
                       "mask": {
                         "description": "CSS selectors to paint over before the shutter: a solid box over each match's bounding box. For a clock or a random avatar; prefer stubbing the input.",
                         "type": "array",
@@ -752,12 +794,26 @@
       "description": "Switch stories in place instead of navigating. ~4x faster, but doesn't reproduce cold-load pixels exactly, so a story's verdict can depend on queue order. Default false.",
       "type": "boolean"
     },
+    "renderer": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "shared": {
+          "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
+          "type": "boolean"
+        },
+        "clearResourceCache": {
+          "description": "Clear Blink resource memory cache before reused-renderer navigation. Default false; ignored when shared is false. HTTP cache is retained.",
+          "type": "boolean"
+        }
+      }
+    },
     "freshRenderer": {
-      "description": "Start each cold capture after a page's first in a new renderer process, so a story's hash doesn't depend on the story captured before it. Default true; false trades that for speed (about 220 ms per Storybook story).",
+      "description": "Legacy inverse of renderer.shared: true uses fresh renderers, false opts into sharing with bounded fresh retries for baseline mismatches. Prefer renderer.shared. Conflicting explicit project values are rejected.",
       "type": "boolean"
     },
     "recheck": {
-      "description": "Which stories the run captures a second time, so approve can tell a stable capture from a flaky one. \"changed\" (default): new and failing stories. \"new\": new stories only. \"off\": none; `jux approve` takes the confirming capture instead. Passing stories are never captured twice. The `--recheck` flag overrides it.",
+      "description": "Which stories the run captures a second time, so approve can tell a stable capture from a flaky one. \"changed\" (default): new and failing stories. \"new\": new stories only. \"off\": none; `jux approve` takes the confirming capture instead. Stories that pass their first capture need no recheck. Fresh history retries run independently of this setting. Approval always confirms fresh. The `--recheck` flag overrides it.",
       "type": "string",
       "enum": [
         "changed",
@@ -911,6 +967,20 @@
           "description": "Options for the stories this glob matches, with the meaning they have in `parameters.juxtapose`. Layered over the story's own.",
           "type": "object",
           "properties": {
+            "renderer": {
+              "additionalProperties": false,
+              "type": "object",
+              "properties": {
+                "shared": {
+                  "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
+                  "type": "boolean"
+                },
+                "clearResourceCache": {
+                  "description": "Clear Blink resource memory cache before reused-renderer navigation. Default false; ignored when shared is false. HTTP cache is retained.",
+                  "type": "boolean"
+                }
+              }
+            },
             "skip": {
               "description": "Never capture this story.",
               "type": "boolean"
@@ -1177,6 +1247,20 @@
                 "captureAfterPlay": {
                   "description": "Screenshot after the story's play function, not at first render.",
                   "type": "boolean"
+                },
+                "renderer": {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "shared": {
+                      "description": "Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.",
+                      "type": "boolean"
+                    },
+                    "clearResourceCache": {
+                      "description": "Clear Blink resource memory cache before reused-renderer navigation. Default false; ignored when shared is false. HTTP cache is retained.",
+                      "type": "boolean"
+                    }
+                  }
                 },
                 "mask": {
                   "description": "CSS selectors to paint over before the shutter: a solid box over each match's bounding box. For a clock or a random avatar; prefer stubbing the input.",

@@ -10,8 +10,13 @@ let seen: string[] = [];
 let outcome: (id: string) => 'same' | 'differs' | 'error' = () => 'same';
 
 vi.mock('../capture/pool.js', () => ({
-  capturePool: (stories: StoryManifest[]) =>
+  capturePool: (
+    stories: StoryManifest[],
+    options: { forceFreshRenderer?: boolean; warmSwitch?: boolean },
+  ) =>
     (async function* () {
+      expect(options.forceFreshRenderer).toBe(true);
+      expect(options.warmSwitch).toBe(false);
       for (const story of stories) {
         seen.push(story.storyId);
         const o = outcome(story.storyId);

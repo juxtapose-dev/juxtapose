@@ -381,3 +381,13 @@ reads the config from its `--project` directory once, at startup.
 On a 15-core machine, 8 snaps at once finished in 338 ms with a limit of 8 and
 in 604 ms with a limit of 4, and each capture took about 10% longer. On a
 machine with fewer cores, a higher limit can make captures slower.
+
+### Renderer reuse and approval
+
+The project and per-story `renderer` object accepts `shared` and
+`clearResourceCache` booleans; both default to false. Shared-renderer baseline
+mismatches receive a bounded fresh retry independently of `recheck`. Run and
+check results carry `rendererRetry` evidence, and handoffs explain it. The
+`approve` tool always confirms the selected hash on a fresh renderer, even
+with `allowUnstable`; it cannot approve different bytes. See
+[renderer settings](configuration.md#renderer-settings).

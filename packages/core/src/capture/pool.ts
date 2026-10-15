@@ -74,6 +74,9 @@ export interface PoolOptions {
   warmSwitch?: boolean;
   /** A new renderer per cold capture; default true. See CaptureDeps. */
   freshRenderer?: boolean;
+  renderer?: CaptureDeps['renderer'];
+  forceFreshRenderer?: boolean;
+  renderers?: Set<string>;
   /** Non-fatal notices from capture, e.g. an ignored live variant override. */
   onWarning?: (message: string) => void;
   /** Settle options around each story's own; see CaptureDeps. */
@@ -144,7 +147,7 @@ export async function* capturePool(
   // Every renderer process that hosted a capture in this run, shared across
   // the workers: a story that lands in another page's used renderer is as
   // order-dependent as one that stays in its own (#153).
-  const renderers = new Set<string>();
+  const renderers = opts.renderers ?? new Set<string>();
   let warnedReuse = false;
   const noteReuse = (snapshot: Snapshot) => {
     if (!snapshot.rendererReused || warnedReuse) return;
@@ -160,6 +163,8 @@ export async function* capturePool(
       platform: opts.platform,
       baseUrl: opts.baseUrl,
       warmSwitch: opts.warmSwitch,
+      renderer: opts.renderer,
+      forceFreshRenderer: opts.forceFreshRenderer,
       ...(opts.freshRenderer !== undefined ? { freshRenderer: opts.freshRenderer } : {}),
       ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
       ...(opts.settleLayers ? { settleLayers: opts.settleLayers } : {}),
@@ -184,6 +189,10 @@ export async function* capturePool(
           const snapshot = await budgetedCapture(story.storyId, budgetMs, (hooks) =>
             captureStory(session!.page, story, { ...baseDeps, ...hooks }, opts.viewport),
           );
+          if (opts.forceFreshRenderer && snapshot?.rendererReused)
+            throw new Error(
+              'fresh capture reused a renderer; lower concurrency and run again',
+            );
           // null means the story declared `skip` in params only visible once
           // it had rendered. Report it as skipped, not as a failure.
           const durationMs = Date.now() - started;

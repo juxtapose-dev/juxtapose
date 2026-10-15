@@ -142,7 +142,9 @@ export function flatten(values: StoryParams | Record<string, unknown>): string[]
   const out: string[] = [];
   for (const [key, value] of Object.entries(values)) {
     if (value === undefined || key === 'variants') continue;
-    if (key === 'settle' && typeof value === 'object' && value !== null) {
+    if (key === 'renderer' && typeof value === 'object' && value !== null) {
+      for (const k of Object.keys(value)) out.push(`renderer.${k}`);
+    } else if (key === 'settle' && typeof value === 'object' && value !== null) {
       const s = value as NonNullable<StoryParams['settle']>;
       if (s.timeout !== undefined) out.push('settle.timeout');
       if (s.ready !== undefined) out.push('settle.ready');

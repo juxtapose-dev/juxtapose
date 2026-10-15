@@ -61,17 +61,41 @@ loaded.
 
 `storyTimeout` (ms, whole number from 1000, default 60000) is the budget for capturing one story, navigation through encode. It is a floor under settle: a story's effective budget is the larger of `storyTimeout` and its settle timeout plus `delay` plus 15 s, so a slow story still yields a flagged capture instead of an error. A story that uses all of it fails once with an error naming the step it was stuck in, its page is discarded and replaced, and the run continues. A page whose main thread is busy (a very large DOM, a runaway script) otherwise stalls each browser call for 30 s in turn. The failed story records its real `durationMs`.
 
-`freshRenderer` (default `true`) starts each cold capture after a page's first
-in a new Chrome renderer process. jux reuses one page per worker, and Chrome's
-renderer keeps state across navigations, including about:blank: canvas text
-measurement at a fractional font size, font metrics and raster caches. One
-story could change the next one's pixels. In Primer React, PageLayout's
-pull-request-page heading was 0.11 px wider after a story that measured canvas
-text, and in Spectrum the edge of a card's cover image changed after a button
-group. The queue is shuffled, so such a story's verdict depended on queue
-order. With `freshRenderer` on, a story's hash is independent of the story
-captured before it on the same page. A story whose pixels depend on load or
-timing can still vary from run to run; that is what the settle options are for.
+### Renderer settings
+
+```json
+{
+  "renderer": { "shared": false, "clearResourceCache": false },
+  "stories": { "card--*": { "renderer": { "shared": false } } }
+}
+```
+
+`renderer.shared` (default `false`) controls whether cold captures reuse a
+Chrome renderer process. Set it to `true` to opt into reuse with a bounded
+fresh-renderer retry for baseline mismatches. A fresh retry passes only when
+its byte-exact hash matches the approved baseline. No visual tolerance is used.
+The default remains fresh until three-suite verification passes.
+
+`renderer.clearResourceCache` (default `false`) clears Blink's in-memory
+resource cache immediately before a reused-renderer navigation. It retains
+HTTP cache entries and is ignored when `shared` is false. This optional cache
+pulse can reduce history effects, but does not replace the fresh retry.
+
+Both fields also work in Storybook's `parameters.juxtapose.renderer`, Ladle's
+`meta.juxtapose.renderer`, named variants, and project `stories` glob overrides.
+`shared: false` also overrides warm switching for that capture.
+Fields merge individually: overriding `shared` preserves the inherited cache
+setting. Existing precedence applies: project defaults, story, variant, then
+matching config overrides. Live renderer settings discovered after rendering
+cause a cold recapture before judgment.
+
+`freshRenderer` remains a legacy project option: `true` means `shared: false`,
+`false` means `shared: true`. Conflicting explicit project settings are rejected.
+`--no-fresh-renderer` remains available as a command override.
+
+Reuse can carry canvas text measurements, font metrics, and raster state from
+one story to the next. A fresh renderer avoids this history dependence;
+settling is still necessary for load- and timing-dependent changes.
 
 Chrome decides whether a navigation gets a new process. Once a browser holds
 its renderer-process limit, Chrome reuses a process that already ran a story.
@@ -101,11 +125,21 @@ loaded machine:
 The V8 code cache does not recover the cost, and raising `concurrency` does not
 hide it: the work is CPU-bound.
 
-Set `"freshRenderer": false`, or pass `--no-fresh-renderer` to `jux run` or
-`jux snap`, for speed-critical runs where you accept that a story's pixels can
-depend on the story captured before it. A pass can then disagree with an
-earlier one for a few stories, with no code change behind it. Warm switching
-(`warmSwitch`) never starts a new renderer.
+On `jux run`, retry at most `ceil(10% * selected non-skipped captures)`.
+Variants count as separate captures. Candidates are sorted by capture key so
+completion order does not choose which stories get retried. New, stale,
+skipped, errored, and fresh captures are not candidates. Retry errors consume
+the budget; excess mismatches remain failures. A capped run can therefore
+remain red even if a full fresh run would pass. `jux snap` has no baseline and
+does not perform history retries.
+
+The retry runs even with `recheck: "off"`. A fresh result that still differs
+becomes the current failure; `recheck: "changed"` confirms it with another
+fresh capture. A resolved result passes and records `rendererRetry.outcome:
+"resolved"`; other outcomes are `mismatch`, `unconfirmed`, and `cap`.
+Reports list resolved stories with the exact `renderer.shared: false` override
+to pin them. Warm switching remains separate and opt-in. Retries and approval
+always disable it and force fresh renderers.
 
 `recheck` (default `"changed"`) sets which stories the run captures a second
 time. Approving a flaky capture makes it a permanently red baseline, so `jux run`
@@ -124,15 +158,13 @@ Pass `--recheck <mode>` (or `--no-recheck`, the same as `--recheck off`) to
 `jux run`, or `recheck` to the MCP `run` tool, to override the config for one
 call. `jux config --explain` shows the effective value and where it came from.
 
-A story the run didn't capture twice isn't approved on one capture.
-`report.json` marks it `unrechecked: true`, and `jux approve` captures it again
-and compares the hashes before it writes the baseline. If they match, the story
-is approved. If they differ, `jux approve` refuses the story as unstable, and
-`--allow-unstable` overrides that. With the recheck off, stories carry no
-`unstable` or `flake`, because nothing was compared. `report.json` records the
-mode in `recheck`, and `jux run` prints a line saying the recheck was off, so a
-missing `flake` isn't a mystery. `jux init` always rechecks, whatever the config
-says.
+`jux approve` captures every selected story on a fresh renderer and requires
+its hash to match the reviewed run before writing a baseline, including when
+`--allow-unstable` is set. The flag can waive an earlier instability verdict;
+it cannot waive fresh capture or approve different bytes. Capture errors and
+environment mismatches refuse approval. `jux init` forces fresh captures and
+always rechecks. `unrechecked: true` still marks results without an ordinary
+stability recheck; `rendererRetry` separately records history retry evidence.
 
 Measured on examples/storybook, a first run of 18 captures (all new), with
 concurrency 4, on a shared machine (the run's own time, median of three):

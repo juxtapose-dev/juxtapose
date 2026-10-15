@@ -331,7 +331,26 @@ const NOT_CSS = "'{value}' is not a CSS selector (Playwright-only syntax is refu
 
 /** Story capture options, keyed as in `parameters.juxtapose`. Each is worded
  *  for a `stories` entry, the one place the runtime checks them all. */
+export const RendererSchema = Type.Object(
+  {
+    shared: Type.Optional(
+      Type.Boolean({
+        description:
+          'Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.',
+      }),
+    ),
+    clearResourceCache: Type.Optional(
+      Type.Boolean({
+        description:
+          'Clear Blink resource memory cache before reused-renderer navigation. Default false; ignored when shared is false. HTTP cache is retained.',
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const captureOptions = {
+  renderer: RendererSchema,
   skip: withText(Type.Boolean({ description: 'Never capture this story.' }), {
     type: 'skip must be true or false, got {got}',
   }),
@@ -558,17 +577,18 @@ const settleScalar = <T extends TSchema>(schema: T, type: string) =>
 
 /** The project options the runtime checks, in the order it checks them. */
 const projectChecked = {
+  renderer: RendererSchema,
   freshRenderer: settleScalar(
     Type.Boolean({
       description:
-        "Start each cold capture after a page's first in a new renderer process, so a story's hash doesn't depend on the story captured before it. Default true; false trades that for speed (about 220 ms per Storybook story).",
+        'Legacy inverse of renderer.shared: true uses fresh renderers, false opts into sharing with bounded fresh retries for baseline mismatches. Prefer renderer.shared. Conflicting explicit project values are rejected.',
     }),
     'freshRenderer must be true or false, got {got}',
   ),
   recheck: settleScalar(
     StringEnum(RECHECK_MODES, {
       description:
-        'Which stories the run captures a second time, so approve can tell a stable capture from a flaky one. "changed" (default): new and failing stories. "new": new stories only. "off": none; `jux approve` takes the confirming capture instead. Passing stories are never captured twice. The `--recheck` flag overrides it.',
+        'Which stories the run captures a second time, so approve can tell a stable capture from a flaky one. "changed" (default): new and failing stories. "new": new stories only. "off": none; `jux approve` takes the confirming capture instead. Stories that pass their first capture need no recheck. Fresh history retries run independently of this setting. Approval always confirms fresh. The `--recheck` flag overrides it.',
     }),
     'recheck must be "changed", "new" or "off", got {got}',
   ),

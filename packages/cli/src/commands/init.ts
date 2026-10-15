@@ -195,6 +195,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       // Whatever the config says: a first baseline is where a flake is most
       // likely to be locked in, and init has no later `approve` to confirm it.
       recheck: 'changed',
+      forceFreshRenderer: true,
       ancestry: isGitRepo(ctx.projectRoot)
         ? createAncestryCheck(ctx.projectRoot)
         : alwaysAncestor,

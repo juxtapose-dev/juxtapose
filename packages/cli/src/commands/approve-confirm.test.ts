@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { hashImage } from '@juxtapose/core';
 import type { Browser, ConfirmOptions, Confirmation } from '@juxtapose/core';
 import { captureIo } from '../io.js';
 
@@ -69,7 +70,7 @@ function project(): string {
       results: ids.map((id) => ({
         storyId: id,
         status: 'new',
-        hash: `h-${id}`,
+        hash: hashImage(Buffer.from(id)),
         ...(id === 'twice'
           ? {}
           : {
@@ -105,8 +106,9 @@ test('captures an unrechecked story again and approves it when the hashes match'
   expect(confirmed).toHaveLength(1);
   // Only the stories the run did not recheck; one more capture each.
   expect([...confirmed[0]!.hashes]).toEqual([
-    ['steady', 'h-steady'],
-    ['flaky', 'h-flaky'],
+    ['steady', hashImage(Buffer.from('steady'))],
+    ['flaky', hashImage(Buffer.from('flaky'))],
+    ['twice', hashImage(Buffer.from('twice'))],
   ]);
   expect(r.code).toBe(0);
   expect(r.out.approved.sort()).toEqual(['flaky', 'steady', 'twice']);
@@ -127,18 +129,18 @@ test('fails closed: an unrechecked story with no confirmation is refused', async
   const r = await approve();
   expect(r.out.approved.sort()).toEqual(['steady', 'twice']);
   expect(r.out.failed[0]).toMatchObject({ storyId: 'flaky', unstable: true });
-  expect(r.out.failed[0]!.reason).toMatch(/no confirming capture was taken/);
+  expect(r.out.failed[0]!.reason).toMatch(/no fresh confirming capture was taken/);
 });
 
-test('--allow-unstable approves without the confirming capture', async () => {
+test('--allow-unstable still refuses a differing fresh capture', async () => {
   unstableIds = new Set(['flaky']);
   const r = await approve({ 'allow-unstable': true });
-  expect(confirmed).toHaveLength(0);
-  expect(launched).toBe(0);
-  expect(r.out.approved.sort()).toEqual(['flaky', 'steady', 'twice']);
+  expect(confirmed).toHaveLength(1);
+  expect(launched).toBe(1);
+  expect(r.out.approved.sort()).toEqual(['steady', 'twice']);
 });
 
-test('a run that rechecked everything launches no browser at approve', async () => {
+test('a run that rechecked everything still confirms fresh at approve', async () => {
   const root = project();
   const file = path.join(root, '.juxtapose', 'runs', 'r1', 'report.json');
   const report = JSON.parse(readFileSync(file, 'utf8'));
@@ -154,6 +156,6 @@ test('a run that rechecked everything launches no browser at approve', async () 
     { io, browser: lent },
   );
   expect(code).toBe(0);
-  expect(launched).toBe(0);
-  expect(confirmed).toHaveLength(0);
+  expect(launched).toBe(1);
+  expect(confirmed).toHaveLength(1);
 });

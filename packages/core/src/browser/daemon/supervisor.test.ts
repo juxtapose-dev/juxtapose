@@ -660,8 +660,15 @@ describe.skipIf(!chrome)('supervisor isolation (fix round 1 escapes)', () => {
         // Page-scoped neighbours of the denied methods stay allowed.
         ['Storage.getUsageAndQuota', { origin: 'http://127.0.0.1' }],
         ['Network.getCookies', {}],
+        ['Network.setCacheDisabled', { cacheDisabled: true }],
+        ['Network.setCacheDisabled', { cacheDisabled: false }],
       ] as [string, object][])
         await a.send(method, params, sessionId);
+      // The capture's page-scoped cache pulse passes; clearing the shared
+      // browser cache must still be refused on the very same page session.
+      await expect(a.send('Network.clearBrowserCache', {}, sessionId)).rejects.toThrow(
+        /jux: Network\.clearBrowserCache refused/,
+      );
       a.close();
     }));
 

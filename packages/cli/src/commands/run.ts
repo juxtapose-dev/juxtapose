@@ -4,6 +4,7 @@ import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   buildComment,
+  describeRendererRetries,
   describeCause,
   gitIsCommit,
   prepareCause,
@@ -266,7 +267,11 @@ export async function runCommand(
       totalCount: stories.length,
       config:
         flags['no-fresh-renderer'] === true
-          ? { ...ctx.config, freshRenderer: false }
+          ? {
+              ...ctx.config,
+              freshRenderer: false,
+              renderer: { ...ctx.config.renderer, shared: true },
+            }
           : ctx.config,
       ...(recheck.recheck ? { recheck: recheck.recheck } : {}),
       ...(call.settle || call.network
@@ -442,12 +447,14 @@ async function writeArtifact(runDir: string, a: RunArtifact): Promise<void> {
   const images = path.join(runDir, 'images');
   await writeFile(path.join(images, `${safe}-current.webp`), a.current);
   if (a.diff) await writeFile(path.join(images, `${safe}-diff.webp`), a.diff);
+  else await rm(path.join(images, `${safe}-diff.webp`), { force: true });
   if (a.structure) {
     await writeFile(
       path.join(images, `${safe}-current.structure.json.gz`),
       encodeStructure(a.structure),
     );
-  }
+  } else
+    await rm(path.join(images, `${safe}-current.structure.json.gz`), { force: true });
 }
 
 async function emit(
@@ -462,6 +469,8 @@ async function emit(
     return;
   }
 
+  const retry = describeRendererRetries(report.results);
+  if (retry) io.out(`${retry}\n`);
   const s = report.summary;
   const parts = [
     `${s.pass} pass`,

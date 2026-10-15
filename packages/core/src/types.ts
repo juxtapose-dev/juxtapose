@@ -142,6 +142,8 @@ export interface CaptureTimings {
 }
 
 export interface Snapshot {
+  /** Effective renderer settings used for this capture. */
+  renderer?: Required<NonNullable<StoryParams['renderer']>>;
   storyId: string;
   /** Copied from the StoryManifest: set only on a variant capture. */
   baseStoryId?: string;
@@ -345,6 +347,14 @@ export interface StructuralVerdict {
 export type DiffStatus = 'pass' | 'fail' | 'new' | 'stale' | 'skip';
 
 export interface DiffResult {
+  /** Evidence from the bounded fresh-renderer retry, independent of recheck. */
+  rendererRetry?: {
+    outcome: 'resolved' | 'mismatch' | 'unconfirmed' | 'cap';
+    initialRenderer: Required<NonNullable<StoryParams['renderer']>>;
+    initialHash: string;
+    freshHash?: string;
+    reason?: string;
+  };
   /** The capture key. */
   storyId: string;
   /** Set only on a variant capture, so reports can group without parsing keys. */
