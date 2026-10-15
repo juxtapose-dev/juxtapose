@@ -23,7 +23,8 @@ const SIZE = 40;
 const RED = [255, 0, 0] as const;
 const BLUE = [0, 0, 255] as const;
 
-/** Two solid frames, red then blue, 100 ms each, looping. */
+/** Red for 100 ms, then blue for 10 s, looping. The broad blue window
+ *  makes the playing control independent of screenshot/decoder scheduling. */
 function frames(): Buffer {
   const b = Buffer.alloc(SIZE * SIZE * 2 * 4);
   for (let i = 0; i < SIZE * SIZE * 2; i++) {
@@ -37,11 +38,11 @@ const raw = () => ({
 });
 const gif = () =>
   sharp(frames(), raw())
-    .gif({ loop: 0, delay: [100, 100] })
+    .gif({ loop: 0, delay: [100, 10_000] })
     .toBuffer();
 const webp = () =>
   sharp(frames(), raw())
-    .webp({ lossless: true, loop: 0, delay: [100, 100] })
+    .webp({ lossless: true, loop: 0, delay: [100, 10_000] })
     .toBuffer();
 
 /** sharp writes no APNG, so this builds one: IHDR, acTL, two fcTL frames. */
@@ -75,7 +76,7 @@ function apng(): Buffer {
     b.writeUInt32BE(seq, 0);
     b.writeUInt32BE(SIZE, 4);
     b.writeUInt32BE(SIZE, 8);
-    b.writeUInt16BE(1, 20);
+    b.writeUInt16BE(seq === 0 ? 1 : 100, 20);
     b.writeUInt16BE(10, 22);
     return b;
   };
@@ -212,8 +213,8 @@ async function colours(s: Snapshot): Promise<string> {
 
 describe.skipIf(!chrome)('freeze: animated images', () => {
   it('shows the first frame of GIF, WebP and APNG in img, picture and CSS, whenever captured', async () => {
-    // 0, 150 and 250 ms land on frames 0, 1 and 0 of a playing image; a
-    // frozen one shows frame 0 in all three.
+    // The later captures are past the first frame of a playing image; a
+    // frozen image keeps showing frame zero.
     const shots = [];
     for (const delay of [0, 150, 250]) shots.push(await snap('/images', { delay }));
     for (const s of shots) expect(await colours(s)).toBe('RRRRR');
@@ -226,10 +227,7 @@ describe.skipIf(!chrome)('freeze: animated images', () => {
   });
 
   it('without the launch setting the images play (the control)', async () => {
-    const seen = new Set<string>();
-    for (const delay of [0, 150, 250, 350])
-      seen.add(await colours(await snap('/images', { delay }, playing)));
-    expect(seen.has('BBBBB')).toBe(true);
+    expect(await colours(await snap('/images', { delay: 250 }, playing))).toBe('BBBBB');
   });
 });
 
