@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.20.2
+
+### Patch Changes
+
+- 41f0c65: Stop already-running CSS transitions when freezing animations. Setting duration to zero only prevented new transitions, allowing intermediate border and placeholder colors into captures. The freeze now removes transition properties, reaching the final style without an added delay. The `animations: 'play'` opt-out is unchanged.
+
 ## 0.20.1
 
 ### Patch Changes
