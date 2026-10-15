@@ -13,7 +13,8 @@ vi.mock('../capture/pool.js', () => ({
       }
     })(),
 }));
-vi.mock('../capture/env.js', () => ({
+vi.mock('../capture/env.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../capture/env.js')>()),
   captureEnv: () => ({ browser: 'x', os: 'y', encoder: 'z' }),
 }));
 

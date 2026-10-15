@@ -10,7 +10,7 @@ import type { RecheckMode } from '../config/schema.js';
 import { DEFAULT_RECHECK } from '../config/schema.js';
 import { NOT_RECHECKED } from '../baseline/approve.js';
 import type { Browser } from '../browser/browser.js';
-import { captureEnv } from '../capture/env.js';
+import { captureEnv, encoderChange } from '../capture/env.js';
 import type { Platform } from '../platform.js';
 import type {
   BaselineStore,
@@ -540,6 +540,9 @@ async function judge(
     ...(snapshot.timings ? { timings: snapshot.timings } : {}),
     ...(snapshot.structureTimings ? { structureTimings: snapshot.structureTimings } : {}),
   };
+  const fromEncoder =
+    status === 'fail' ? encoderChange(manifest.baselines[story.storyId]) : undefined;
+  if (fromEncoder !== undefined) base.baselineEncoder = fromEncoder;
 
   // pass / new / stale need no pixel work: there is either nothing to explain
   // or nothing to compare against.
@@ -636,6 +639,7 @@ async function judge(
       current: snapshot.image,
       structure: snapshot.structure,
     });
+    delete base.baselineEncoder;
     return {
       ...base,
       status: 'pass',

@@ -12,7 +12,8 @@ let noise: Buffer;
 let changed: Buffer;
 let current: Buffer;
 let livePolicy: Snapshot['comparison'];
-vi.mock('../capture/env.js', () => ({
+vi.mock('../capture/env.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../capture/env.js')>()),
   captureEnv: () => ({ browser: 'test', os: 'test', encoder: 'test' }),
 }));
 vi.mock('../capture/pool.js', () => ({
@@ -127,6 +128,7 @@ test('opt-in equivalence records both hashes and filtering evidence without chan
   const { result } = await run({ mode: perceptual });
   expect(result.status).toBe('pass');
   expect(result.hash).toBe(hashImage(noise));
+  expect(result.baselineEncoder).toBeUndefined();
   expect(result.comparison).toEqual({
     method: 'pixelmatch',
     version: '6.0.0',

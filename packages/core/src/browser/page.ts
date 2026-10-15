@@ -82,7 +82,11 @@ export interface Page {
    * @internal Core sets it per capture for variants; adapters must not.
    */
   setColorScheme?(scheme: 'light' | 'dark'): Promise<void>;
-  screenshot(opts?: { mask?: string[] }): Promise<Buffer>;
+  /**
+   * PNG by default. `format: 'webp'` is Chrome's lossless WebP (VP8L, with
+   * Chrome's ICC chunk still in it). Core removes that metadata before hashing.
+   */
+  screenshot(opts?: { mask?: string[]; format?: 'png' | 'webp' }): Promise<Buffer>;
   /**
    * Raw CDP on this page's session, for DOMSnapshot.
    * @internal Not part of the adapter API; the protocol surface is Chrome's, not ours.
@@ -707,7 +711,9 @@ export class CdpPage implements Page {
   }
 
   /** Screenshotter.screenshotPage: prepare → fonts.ready → mask → getLayoutMetrics → captureScreenshot → cleanup. */
-  async screenshot(opts: { mask?: string[] } = {}): Promise<Buffer> {
+  async screenshot(
+    opts: { mask?: string[]; format?: 'png' | 'webp' } = {},
+  ): Promise<Buffer> {
     const mask = opts.mask ?? [];
     for (const sel of mask) assertCssSelector(sel);
     await this.evaluate(PREPARE_SCREENSHOT);
@@ -731,7 +737,11 @@ export class CdpPage implements Page {
           scale: visualViewport.scale,
         };
         const { data } = await this.send('Page.captureScreenshot', {
-          format: 'png',
+          // Quality 100 is what makes Chrome's WebP lossless (VP8L): without
+          // it Chrome encodes lossy VP8 at q80, and q99 is lossy too.
+          ...(opts.format === 'webp'
+            ? { format: 'webp' as const, quality: 100 }
+            : { format: 'png' as const }),
           clip,
           captureBeyondViewport: false,
         });

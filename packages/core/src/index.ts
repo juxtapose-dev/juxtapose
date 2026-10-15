@@ -108,6 +108,12 @@ export {
   VARIANT_NAME,
 } from './capture/variants.js';
 export { storyOverrideWarnings } from './capture/story-overrides.js';
+export {
+  CAPTURE_ENCODER,
+  describeEncoder,
+  describeEncoderFailures,
+} from './capture/encoder.js';
+export { encoderChange } from './capture/env.js';
 // Where each capture setting came from: `jux config --explain`.
 export {
   ProvenanceLog,

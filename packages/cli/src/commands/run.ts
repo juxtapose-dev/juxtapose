@@ -35,6 +35,7 @@ import {
   checkProjectSettle,
   DEFAULT_VIEWPORT,
   describeUnstable,
+  describeEncoderFailures,
   describeFlake,
   readRunCapture,
   describeFlakeGroup,
@@ -523,6 +524,11 @@ async function emit(
     );
   }
 
+  // Before the list, which shows 20: after an encoder change every story
+  // fails once, and that has to read as one re-baseline, not N regressions.
+  const encoder = describeEncoderFailures(report.results);
+  if (encoder) io.out(`\n  ${encoder}\n`);
+
   const grouped = new Set((report.flakeGroups ?? []).flatMap((g) => g.storyIds));
   const needsReview = report.results.filter(
     (r) => r.status !== 'pass' && r.status !== 'skip',
@@ -538,7 +544,8 @@ async function emit(
             : r.error
               ? ` ${r.error}`
               : '';
-      io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}${detail}\n`);
+      const prior = r.baselineEncoder !== undefined ? ' (previous encoder)' : '';
+      io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}${detail}${prior}\n`);
       for (const line of explain(r, grouped)) io.out(`         ${line}\n`);
     }
     if (needsReview.length > 20) {

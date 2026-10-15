@@ -13,10 +13,14 @@ import {
   LEGACY_IMAGE_DIR,
   MANIFEST_NAME,
   ManifestConflictError,
+  CAPTURE_ENCODER,
   committedPaths,
+  describeEncoder,
+  encoderChange,
   hasConflictMarkers,
   ignoredPaths,
   shellQuote,
+  type CaptureEnv,
 } from '@juxtapose/core';
 import { checkStorage, loadConfig, type CommonFlags } from '../context.js';
 import { NO_LITERAL_ENV } from '../printed-commands.js';
@@ -31,7 +35,8 @@ export interface DoctorIssue {
     | 'untracked-images'
     | 'missing-ignores'
     | 'committed-paths-ignored'
-    | 'manifest-conflict';
+    | 'manifest-conflict'
+    | 'previous-encoder';
   message: string;
   files?: string[];
   fix: string[];
@@ -99,6 +104,34 @@ function commandsFor(projectRoot: string, cwd: string) {
   };
 }
 
+/** Manifest entries approved with an encoder other than the current one, in
+ *  id order. An unreadable manifest has none: a run reports that (every story
+ *  reads `new`), not doctor. */
+function priorEncoderEntries(file: string): {
+  ids: string[];
+  total: number;
+  from: string[];
+} {
+  const none = { ids: [], total: 0, from: [] };
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    const baselines: unknown = (parsed as { baselines?: unknown } | null)?.baselines;
+    if (typeof baselines !== 'object' || baselines === null) return none;
+    const entries = Object.entries(baselines as Record<string, { env?: CaptureEnv }>);
+    const ids: string[] = [];
+    const from = new Set<string>();
+    for (const [id, entry] of entries) {
+      const was = encoderChange(entry);
+      if (was === undefined) continue;
+      ids.push(id);
+      from.add(describeEncoder(was));
+    }
+    return { ids: ids.sort(), total: entries.length, from: [...from].sort() };
+  } catch {
+    return none;
+  }
+}
+
 export async function findIssues(
   projectRoot: string,
   storage: Parameters<typeof committedPaths>[0],
@@ -123,6 +156,29 @@ export async function findIssues(
   const repoBacked = storage?.kind === 'git' || storage?.kind === 'fs';
   const ignores = ignoredPaths(storage);
   const cmd = commandsFor(projectRoot, cwd);
+
+  // Every store kind: what changed is the hash, not where the image lives.
+  const prior = priorEncoderEntries(manifestFile);
+  if (prior.ids.length > 0) {
+    const n = prior.ids.length;
+    issues.push({
+      code: 'previous-encoder',
+      message:
+        `${n} of ${prior.total} ${plural(prior.total, 'baseline', 'baselines')} in ${MANIFEST_NAME} ` +
+        `${plural(n, 'was', 'were')} approved with a previous encoder (${prior.from.join(', ')}). ` +
+        `Captures are now ${describeEncoder(CAPTURE_ENCODER)}, so ${plural(n, 'its exact hash changes', 'their exact hashes change')} ` +
+        `even when the pixels match. Re-approve after reviewing a run.`,
+      files: prior.ids,
+      fix: [
+        cmd.run('run --all'),
+        cmd.run('approve --all'),
+        cmd.git(`add -- ${shellQuote(MANIFEST_NAME)}`),
+        cmd.git(
+          `commit -m ${shellQuote('Re-approve juxtapose baselines for the new encoder')}`,
+        ),
+      ],
+    });
+  }
   // Only what is missing: re-adding a line the file has is noise to review.
   const missing = await missingIgnores(projectRoot, ignores);
   const ignoreFix = (lines: string[]) =>

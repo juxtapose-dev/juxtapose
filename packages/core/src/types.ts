@@ -134,9 +134,11 @@ export interface CaptureTimings {
   /** The paint barrier: layer re-raster, two rAFs, the moved-since check. */
   paint: number;
   structure: number;
-  /** page.screenshot: the CDP capture, PNG encode and transfer included. */
+  /** page.screenshot: the CDP capture, Chrome's lossless WebP encode and
+   *  transfer included. */
   screenshot: number;
-  /** PNG to lossless WebP in sharp. */
+  /** Dropping the ICC chunk from Chrome's WebP (encoder.ts). Before
+   *  native capture, PNG to lossless WebP in sharp. */
   encode: number;
   /** The remainder: page setup, viewport and scheme, network policy, the
    *  animation freeze, the renderer check. */
@@ -152,7 +154,7 @@ export interface Snapshot {
   /** Copied from the StoryManifest: set only on a variant capture. */
   baseStoryId?: string;
   variant?: string;
-  /** WebP-encoded. PNG is an intermediate, never stored. */
+  /** Lossless WebP, as Chrome encoded it, minus the ICC chunk. */
   image: Buffer;
   viewport: Viewport;
   capturedAt: string;
@@ -426,6 +428,12 @@ export interface DiffResult {
    *  baseline cache): the hash mismatch stands, the pixel diff could not run,
    *  and `structural` is all there is to explain it. */
   baselineImage?: 'unavailable';
+  /** Set on a 'fail' whose baseline was approved with another encoder: its
+   *  entry's `env.encoder` ("8.17.3", the libvips of jux 0.20 and earlier),
+   *  or "unrecorded" for an entry with no `env`. Its hash cannot match
+   *  whatever the pixels are, so the run reports the encoder change and the
+   *  fix (re-approve) rather than a regression. */
+  baselineEncoder?: string;
   /** Tier-0 explanation of a failure. Present only when status is 'fail' and
    *  the current capture produced a structure; never consulted on pass. */
   structural?: StructuralVerdict;
@@ -565,10 +573,12 @@ export interface CaptureEnv {
   browser: string;
   /** `${platform}-${arch}`, e.g. "darwin-arm64". */
   os: string;
-  /** libvips, which encodes the WebP. Measured to move bytes far more readily
-   *  than the browser does: a libvips bump changed all 17 example baseline
-   *  hashes with zero changed pixels, while Chromium 149 -> 151 left 16 of 18
-   *  byte-identical. */
+  /** What encodes the WebP: `CAPTURE_ENCODER` ("chrome-webp-lossless") since
+   *  Chrome encodes it, so its libwebp moves with `browser`. Before that, the
+   *  libvips version sharp encoded with ("8.17.3"). Kept as its own field
+   *  because the encoder moves bytes far more readily than the browser does:
+   *  a libvips bump changed all 17 example baseline hashes with zero changed
+   *  pixels, while Chromium 149 -> 151 left 16 of 18 byte-identical. */
   encoder: string;
 }
 

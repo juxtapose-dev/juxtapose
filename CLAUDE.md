@@ -72,7 +72,14 @@ macOS system font; on Linux its renderer-process tests are the guard.
 **Captures are lossless WebP.** Lossy at q90 perturbs ~7.7% of pixels
 frame-wide. The hash survives that (encoding is deterministic), but the diff
 fills with compression noise and the changed-region map degenerates to the whole
-viewport. For flat UI renders lossless is usually smaller anyway.
+viewport. For flat UI renders lossless is usually smaller anyway. Chrome
+encodes it (`Page.captureScreenshot` with `format: 'webp', quality: 100`; below
+100, 99 included, Chrome returns lossy VP8) and `capture/encoder.ts` drops the
+ICC chunk it embeds, so the bytes describe pixels, not the colour profile.
+`env.encoder` in the manifest records the scheme: a baseline from another
+encoder is reported as "approved with a previous encoder", not as a regression.
+`encoder.test.ts` asserts a capture is one VP8L chunk with no ICCP and decodes
+to the PNG capture's pixels.
 
 **The warm-browser daemon must stay byte-identical to a fresh launch.**
 `check:determinism` runs both ways: the default is a fresh launch per run

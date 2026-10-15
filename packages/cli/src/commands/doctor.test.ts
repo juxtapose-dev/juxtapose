@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { encodeStructure, hashImage } from '@juxtapose/core';
+import { CAPTURE_ENCODER, encodeStructure, hashImage } from '@juxtapose/core';
 import { expect, test } from 'vitest';
 import { captureIo } from '../io.js';
 import { doctorCommand, findIssues, globPathspec } from './doctor.js';
@@ -272,7 +272,9 @@ async function legacyProject(): Promise<{ root: string; manifest: string }> {
   await writeFile(path.join(dir, 'ok.structure.json.gz'), gz);
   await writeFile(path.join(dir, 'moved.webp'), 'now-different');
   await writeFile(path.join(dir, 'moved.structure.json.gz'), gz);
-  const meta = { commit: 'c', approvedBy: 'a', approvedAt: 't' };
+  // Approved with today's encoder, so the only migration here is the sidecars.
+  const env = { browser: '151.0.7922.34', os: 'darwin-arm64', encoder: CAPTURE_ENCODER };
+  const meta = { commit: 'c', approvedBy: 'a', approvedAt: 't', env };
   const manifest =
     JSON.stringify(
       {
@@ -324,6 +326,37 @@ test('doctor --fix folds matching sidecars into the manifest, approving and capt
   expect(after.baselines.moved.structure).toBeUndefined();
   // No run happened and none was needed.
   expect(existsSync(path.join(root, '.juxtapose/runs'))).toBe(false);
+});
+
+// The 0.19 encoder change fails every baseline approved before it once. Doctor
+// names it as one re-baseline, with the old encoder, rather than leaving the
+// next run to look like N regressions.
+test('baselines from a previous encoder are reported with the re-approve steps', async () => {
+  const root = await repo({ '.gitignore': '.juxtapose/\n' });
+  const meta = { commit: 'c', approvedBy: 'a', approvedAt: 't', hash: 'a'.repeat(64) };
+  const env = { browser: '151.0.7922.34', os: 'darwin-arm64' };
+  await writeFile(
+    path.join(root, 'juxtapose.manifest.json'),
+    JSON.stringify({
+      version: 1,
+      baselines: {
+        old: { ...meta, env: { ...env, encoder: '8.17.3' } },
+        bare: meta,
+        now: { ...meta, env: { ...env, encoder: CAPTURE_ENCODER } },
+      },
+    }),
+  );
+  const issue = (await findIssues(root, undefined, root)).find(
+    (i) => i.code === 'previous-encoder',
+  )!;
+  expect(issue.files).toEqual(['bare', 'old']);
+  expect(issue.message).toBe(
+    '2 of 3 baselines in juxtapose.manifest.json were approved with a previous encoder ' +
+      "(an unrecorded encoder, libvips 8.17.3 (sharp)). Captures are now Chrome's lossless WebP, " +
+      'so their exact hashes change even when the pixels match. Re-approve after reviewing a run.',
+  );
+  expect(issue.fix.slice(0, 2)).toEqual(['jux run --all', 'jux approve --all']);
+  expect((await doctor(root)).code).toBe(1);
 });
 
 const CONFLICTED =

@@ -1,18 +1,25 @@
 import type { Browser } from '../browser/browser.js';
 import { expect, test } from 'vitest';
-import { captureEnv, describeEnvChange, sameEnv, type CaptureEnv } from './env.js';
+import {
+  captureEnv,
+  describeEnvChange,
+  encoderChange,
+  sameEnv,
+  type CaptureEnv,
+} from './env.js';
+import { CAPTURE_ENCODER } from './encoder.js';
 
 const base: CaptureEnv = {
   browser: '151.0.7922.34',
   os: 'darwin-arm64',
-  encoder: '8.18.3',
+  encoder: CAPTURE_ENCODER,
 };
 
 test('captureEnv reads the browser version', () => {
   const env = captureEnv({ version: () => '151.0.7922.34' } as Browser);
   expect(env.browser).toBe('151.0.7922.34');
   expect(env.os).toBe(`${process.platform}-${process.arch}`);
-  expect(env.encoder).toMatch(/^\d+\.\d+/);
+  expect(env.encoder).toBe('chrome-webp-lossless');
 });
 
 test('any differing field makes environments unequal', () => {
@@ -32,7 +39,7 @@ test('an unknown environment is never equal', () => {
 
 test('describeEnvChange names only what moved', () => {
   expect(describeEnvChange({ ...base, encoder: '8.16.0' }, base)).toBe(
-    'encoder libvips 8.16.0 -> 8.18.3',
+    "encoder libvips 8.16.0 (sharp) -> Chrome's lossless WebP",
   );
   expect(
     describeEnvChange(
@@ -40,8 +47,17 @@ test('describeEnvChange names only what moved', () => {
       base,
     ),
   ).toBe(
-    'browser 149.0.7827.55 -> 151.0.7922.34, os linux-x64 -> darwin-arm64, encoder libvips 8.16.0 -> 8.18.3',
+    "browser 149.0.7827.55 -> 151.0.7922.34, os linux-x64 -> darwin-arm64, encoder libvips 8.16.0 (sharp) -> Chrome's lossless WebP",
   );
   expect(describeEnvChange(base, base)).toBe('');
   expect(describeEnvChange(undefined, base)).toBe('');
+});
+
+// A baseline approved before Chrome encoded the WebP can never match: the run
+// must say "re-approve", not report every story as a regression.
+test('encoderChange flags entries from another encoder, including unrecorded ones', () => {
+  expect(encoderChange({ env: base })).toBeUndefined();
+  expect(encoderChange({ env: { ...base, encoder: '8.17.3' } })).toBe('8.17.3');
+  expect(encoderChange({})).toBe('unrecorded');
+  expect(encoderChange(undefined)).toBeUndefined();
 });
