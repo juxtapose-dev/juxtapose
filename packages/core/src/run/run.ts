@@ -249,6 +249,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     };
   }
   if (retryIds.size) {
+    const resultIndexes = new Map(
+      results.map((result, index) => [result.storyId, index]),
+    );
     const again = opts.stories.filter((story) => retryIds.has(story.storyId));
     for await (const outcome of capturePool(again, {
       ...poolOptions(undefined),
@@ -274,7 +277,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
         freshHash: fresh.hash,
       };
       fresh.durationMs = (first.durationMs ?? 0) + (fresh.durationMs ?? 0);
-      results[results.indexOf(first)] = fresh;
+      results[resultIndexes.get(first.storyId)!] = fresh;
       toConfirm.delete(first.storyId);
       firstNotes.delete(first.storyId);
       if (!resolved) {
@@ -295,7 +298,7 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     // separate stability capture happened to reproduce the shared image.
     for (const id of retryIds) {
       const first = history.get(id)!.result;
-      if (results.includes(first)) {
+      if (results[resultIndexes.get(id)!] === first) {
         toConfirm.delete(id);
         first.unstable = {
           hashes: [first.hash!],
