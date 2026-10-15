@@ -106,6 +106,61 @@ describe('captureStory cache pulse on a reused renderer', () => {
       .toBuffer();
   });
 
+  it('recaptures when live renderer settings change, before taking a screenshot', async () => {
+    const page = recordingPage();
+    let screenshots = 0;
+    page.screenshot = async () => {
+      screenshots++;
+      return png;
+    };
+    let reads = 0;
+    const result = await captureStory(
+      page,
+      story({}),
+      {
+        platform: {
+          ...platform,
+          readLiveParams: async () => {
+            reads++;
+            return { renderer: { shared: false } };
+          },
+        },
+        baseUrl: 'x',
+        structure: false,
+        renderer: { shared: true },
+      },
+      { width: 1, height: 1 },
+    );
+    expect(reads).toBe(2);
+    expect(screenshots).toBe(1);
+    expect(result?.renderer?.shared).toBe(false);
+  });
+
+  it('forced fresh capture ignores a live request to share the renderer', async () => {
+    const page = recordingPage();
+    page.screenshot = async () => png;
+    let reads = 0;
+    const result = await captureStory(
+      page,
+      story({}),
+      {
+        platform: {
+          ...platform,
+          readLiveParams: async () => {
+            reads++;
+            return { renderer: { shared: true, clearResourceCache: true } };
+          },
+        },
+        baseUrl: 'x',
+        structure: false,
+        forceFreshRenderer: true,
+      },
+      { width: 1, height: 1 },
+    );
+    expect(reads).toBe(1);
+    expect(result?.renderer).toEqual({ shared: false, clearResourceCache: false });
+  });
+
   function setup(
     options: Pick<CaptureDeps, 'freshRenderer' | 'warmSwitch' | 'renderer'>,
   ) {
