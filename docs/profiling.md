@@ -125,3 +125,69 @@ initial batch solely to adding viewports.
 Build SHA-256: `fd74a15c6ad7fd7b8788a0ba3b8ce759a3cb85f33bc8ce6b4546468c1ddaaf17`.
 Raw evidence:
 `/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-controlled-profile-3DOzah/`.
+
+## 0.20.2 profile after the transition-freeze fix
+
+The same 24-story, five-configuration collection was rebuilt and profiled
+with five alternating measured passes per renderer mode, plus a fresh reference
+and two excluded warm-ups. Both platforms produced **1,200 exact measured
+matches**, with zero recovery retries and zero failures. References and warm-ups
+also completed successfully. This measures the green path, not Pixelmatch or
+changed-image reports.
+
+| Platform                       | Shared median (range) | Fresh median (range)  |
+| ------------------------------ | --------------------- | --------------------- |
+| macOS, M5 Pro, 15 logical CPUs | 5.27 s (5.12–5.63)    | 7.31 s (7.19–7.37)    |
+| Linux runner, 4 vCPUs          | 16.19 s (16.08–16.37) | 23.40 s (23.11–24.07) |
+
+The macOS machine was busy (one-minute load 23–52); do not treat its lower
+wall time than an earlier profile as a measured release improvement. The Linux
+batch ran on one GitHub-hosted runner with concurrency 3. Builds are fingerprinted
+separately; platform, Node version, and build differences mean these are not a
+controlled macOS-versus-Linux speed comparison. Shared rendering was about 31%
+faster than fresh in the Linux batch.
+
+Linux shared-mode costs, summed across workers per run (they overlap, so these
+are **not** contributions that can be subtracted directly from wall time):
+
+| Phase                | Median worker seconds/run | Per-capture p50 / p95 |
+| -------------------- | ------------------------- | --------------------- |
+| Screenshot           | 8.98                      | 62.4 / 214.8 ms       |
+| Story rendering      | 7.89                      | 36.1 / 199.3 ms       |
+| Other capture setup  | 6.52                      | 37.0 / 174.5 ms       |
+| Structure extraction | 6.30                      | 25.8 / 163.9 ms       |
+| Navigation           | 5.96                      | 40.6 / 120.7 ms       |
+| Paint barrier        | 4.85                      | 33.0 / 80.7 ms        |
+| WebP encoding        | 3.83                      | 28.6 / 63.5 ms        |
+| Settling             | 1.93                      | 10.7 / 52.4 ms        |
+
+The next investigations, in order:
+
+1. **Screenshot/encoding path.** Together these use 12.81 summed worker seconds,
+   about 28% of measured phase time. The local-image workload has screenshot
+   p50/p95 of 119.5/256.9 ms and encode p50/p95 of 49.1/82.3 ms. Recheck native
+   lossless WebP PR #241 with the transition fix, preserving its exact-pixel and
+   stability gates. The earlier isolated encoder result is not a full-run speedup.
+2. **Structure extraction on large nested DOM.** The nested workload has
+   structure p50/p95 of 116.5/429.7 ms (versus 25.8/163.9 ms overall). Instrument
+   traversal, style/geometry collection, serialization, and CDP transfer before
+   changing collection behavior; retain offscreen/overflow and shadow-DOM
+   semantics. Disabling structure would remove useful diff context.
+3. **Rendering and unclassified setup.** Local images reach a rendering p95 of
+   677.9 ms. The `other` bucket is also large enough to split into subphases before
+   choosing an optimization. Do not assume all of this is tool overhead: the
+   workload includes real SVG/image layout and rendering.
+
+Paint waiting is measurable but load-bearing. The Linux transition fix avoids
+adding another barrier; these timings do not justify removing the existing one.
+Discovery/launch/report overhead outside the run is only about 0.4 s here, so it
+is not the leading target for this collection. A large real Storybook may differ.
+
+Re-run the dispatch-only `profile` workflow on the desired branch. It builds the
+controlled collection once and uploads reports, raw samples, environment/build
+metadata, and summaries. No external Storybook build or installation is needed
+locally. The Linux evidence run is
+[38803580826](https://github.com/juxtapose-dev/juxtapose/actions/runs/38803580826).
+Persisted summaries:
+[Linux](briefs/controlled-profile-0202-linux.json) and
+[macOS](briefs/controlled-profile-0202-macos.json).
