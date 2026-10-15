@@ -253,7 +253,8 @@ describe.skipIf(!chrome)('open shadow roots in Chrome', { timeout: 30_000 }, () 
             box.style.cssText =
               'width:80px;height:80px;background:black;transition:background-color 60s linear';
             root.append(box);
-            getComputedStyle(box).backgroundColor;
+            if (getComputedStyle(box).backgroundColor !== 'rgb(0, 0, 0)')
+              throw new Error('Transition fixture must start at black');
             box.style.backgroundColor = 'white';
             const started = box.getAnimations();
             await Promise.all(started.map((animation) => animation.ready));
