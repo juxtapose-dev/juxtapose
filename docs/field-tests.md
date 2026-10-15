@@ -41,6 +41,10 @@ an extra paint barrier, and caret hiding before an extra paint barrier. Locally,
 set `JUX_TEXT_EXPERIMENT` to `baseline`, `raw`, `paint`, or `caret-paint`.
 These are investigation controls, not supported capture policies; the raw control
 requires an unscrolled 1280×800 story with no masks. No production behavior changes.
+`text_experiment: warm-sweep` compares normal capture with `delay` (100 ms),
+`warm-pixel` (a preliminary 1×1 screenshot), and `warm-full` (a preliminary full
+screenshot). These controls distinguish elapsed time from screenshot side effects;
+they are not proposed defaults.
 
 The first [20-repeat Linux probe](https://github.com/juxtapose-dev/juxtapose/actions/runs/38785584994)
 took 13 seconds of capture time (about 45 seconds for the runner job with cached
@@ -49,6 +53,30 @@ screenshots had identical decoded pixels. Geometry and actual Adobe Clean font
 usage matched across repetitions. The first-to-second differences were confined
 to the placeholder's bounds, 261–400 pixels. This motivates separating first-frame
 paint/preparation from encoding; it does not yet establish the cause or a fix.
+
+Follow-up probes ruled out PNG-to-WebP encoding (zero decoded-pixel changes in
+20 pairs). Skipping screenshot preparation still varied; an extra paint barrier
+reduced but did not eliminate the differences. A 100 ms delay and a preliminary
+1×1 screenshot each stabilized 20/20, motivating inspection of time-dependent
+styles rather than adding either workaround to the capture path.
+
+The cause in this reproduction was Spectrum's `input::placeholder` color
+transition. The freeze sheet selected elements, `::before`, and `::after`, but
+transition properties do not inherit onto `::placeholder`. Adding its selector
+produced [20/20 identical initial Linux captures](https://github.com/juxtapose-dev/juxtapose/actions/runs/38787490741),
+all matching the second and third screenshots, with no delay or preliminary
+capture. Real-browser regression tests fail with the old rule and pass with the
+fix in both light and open shadow DOM; `animations: 'play'` remains effective.
+This establishes this placeholder-transition cause, not a universal explanation
+for all text or antialias differences.
+
+The [five-pass, ten-story Linux follow-up](https://github.com/juxtapose-dev/juxtapose/actions/runs/38787795691)
+had no capture errors. Fresh mode varied on one story (`textfield--types`), cache
+pulse on one (`textfield--sized`), and shared mode on six. The earlier matching
+renderer sweep varied on eight, five, and eight respectively. These are small
+samples from different runner allocations, not a precise rate comparison. They
+show why the targeted fix does not replace existing renderer recovery or justify
+claiming that all remaining noise is solved.
 
 ## What was tested
 

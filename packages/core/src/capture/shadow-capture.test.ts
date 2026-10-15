@@ -46,7 +46,7 @@ const late = (ms: number) =>
 
 const placeholderPage = (shadow: boolean, transition: boolean) => {
   const css =
-    'input::placeholder { color: red; opacity: 1; transition: color 2s linear } input.on::placeholder { color: blue }';
+    'input::placeholder { color: red; opacity: 1; transition: color 60s linear } input.on::placeholder { color: blue }';
   const input = `<input placeholder="Placeholder text" class="${transition ? '' : 'on'}">`;
   return doc(
     (shadow
@@ -219,14 +219,33 @@ const IGNORE_IMG: StoryParams = {
   settle: { network: { ignore: ['/img/*', '/never-image'] } },
 };
 
+// Assert the rendered color endpoint, not cross-navigation glyph raster identity:
+// Linux can rasterize the same glyph edges differently even at the same color.
+async function placeholderColors(image: Buffer) {
+  const data = await sharp(image).removeAlpha().raw().toBuffer();
+  let blue = 0;
+  let otherColor = 0;
+  for (let i = 0; i < data.length; i += 3) {
+    const [r, g, b] = [data[i]!, data[i + 1]!, data[i + 2]!];
+    if (r === g && g === b) continue; // White page and gray native input border.
+    if (r === g && b === 255) blue++;
+    else otherColor++;
+  }
+  return { blue, otherColor };
+}
+
 describe.skipIf(!chrome)('open shadow roots in Chrome', { timeout: 30_000 }, () => {
   it.each(['placeholder', 'placeholder-shadow'])(
     'freezes placeholder color transitions (%s), retaining the play opt-out',
     async (name) => {
       const [still, frozen] = await snap([`/${name}-static`, `/${name}-transition`]);
-      expect(frozen!.image.equals(still!.image)).toBe(true);
+      for (const capture of [still!, frozen!]) {
+        const colors = await placeholderColors(capture.image);
+        expect(colors.blue).toBeGreaterThan(20);
+        expect(colors.otherColor).toBe(0);
+      }
       const [playing] = await snap([`/${name}-transition`], { animations: 'play' });
-      expect(playing!.image.equals(still!.image)).toBe(false);
+      expect((await placeholderColors(playing!.image)).otherColor).toBeGreaterThan(20);
     },
   );
   // On 255fc28 the light-DOM freeze sheet stopped at the shadow boundary:
