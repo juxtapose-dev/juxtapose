@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global document, getComputedStyle, devicePixelRatio */
+/* global document, getComputedStyle, devicePixelRatio, CSSTransition */
 // Investigation only: keep a browser alive and collect paired captures of one
 // story. Observe layout/fonts AFTER all three screenshots so measurement cannot
 // alter the first capture. No baselines, retries, or tolerant verdicts.
@@ -25,6 +25,7 @@ if (
   ![
     'baseline',
     'timing',
+    'transition-check',
     'raw',
     'paint',
     'caret-paint',
@@ -139,6 +140,8 @@ function observePage() {
           currentTime: animation.currentTime,
           timing: animation.effect?.getComputedTiming(),
           target: animation.effect?.target?.localName,
+          kind: animation.constructor.name,
+          property: animation.transitionProperty,
         });
       }
     }
@@ -206,7 +209,9 @@ try {
     experiment,
     storyId,
     count,
-    countMeaning: experiment === 'timing' ? 'per arm (four arms)' : 'total',
+    countMeaning: ['timing', 'transition-check'].includes(experiment)
+      ? 'per arm'
+      : 'total',
     workers,
     note: 'Fresh context per repetition; one persistent browser. Measurements follow all three screenshots. Reference is first completed capture, not necessarily pass 1. Open shadow roots covered; closed roots and iframe contents are not covered by geometry.',
   });
@@ -215,7 +220,9 @@ try {
   const arms =
     experiment === 'timing'
       ? ['baseline', 'paint', 'delay-matched', 'observe']
-      : [experiment];
+      : experiment === 'transition-check'
+        ? ['baseline', 'finish-transitions', 'inspect-transitions']
+        : [experiment];
   const total = count * arms.length;
   async function runWorker() {
     while (nextPass <= total) {
@@ -226,6 +233,7 @@ try {
       let interventionMs = 0;
       let delayTargetMs;
       let beforeObservation;
+      let transitionEvidence;
       const start = performance.now();
       const context = await browser.newContext({ viewport });
       try {
@@ -238,6 +246,32 @@ try {
             if (arm === 'delay-matched') {
               delayTargetMs = lastPaintMs;
               await new Promise((resolve) => setTimeout(resolve, delayTargetMs));
+            }
+            if (arm === 'finish-transitions' || arm === 'inspect-transitions') {
+              transitionEvidence = await page.evaluate((finish) => {
+                const animations = new Set();
+                const visit = (root) => {
+                  for (const animation of root.getAnimations()) animations.add(animation);
+                  for (const el of root.querySelectorAll('*'))
+                    if (el.shadowRoot) visit(el.shadowRoot);
+                };
+                visit(document);
+                const evidence = [];
+                for (const animation of animations) {
+                  if (
+                    !(animation instanceof CSSTransition) ||
+                    animation.playState !== 'running'
+                  )
+                    continue;
+                  evidence.push({
+                    property: animation.transitionProperty,
+                    currentTime: animation.currentTime,
+                    timing: animation.effect.getComputedTiming(),
+                  });
+                  if (finish) animation.finish();
+                }
+                return evidence;
+              }, arm === 'finish-transitions');
             }
             if (arm === 'observe') {
               beforeObservation = await page.evaluate(observePage);
@@ -355,6 +389,7 @@ try {
           pass,
           arm,
           interventionMs,
+          transitionEvidence,
           delayTargetMs,
           beforeMatchesAfter: beforeObservation
             ? JSON.stringify(beforeObservation) === JSON.stringify(observation)
