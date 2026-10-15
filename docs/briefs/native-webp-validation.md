@@ -5,6 +5,48 @@ macOS arm64, pinned Chrome headless shell 151.0.7922.34. Concurrency is three;
 all projects and `JUX_STATE_DIR` locations are temporary. Static builds are
 reused, with one browser workload at a time.
 
+## Rebased transition-fix validation
+
+The branch is now rebased onto main `9bcca71` (CLI/core 0.20.2), including
+PR #243's `transition-property: none` fix for already-running CSS transitions.
+The earlier placeholder-only evidence below remains historical; it does not
+establish the behavior of this rebased version. The freeze stylesheet and its
+regression tests are unchanged from main.
+
+The focused text probe now honors the requested screenshot format, including
+quality 100 for the raw WebP experiment. Originals and repeated screenshots
+retain the correct file extension and use the same format. Its diagnostic pixel
+comparison ignores ICC conversion to compare the pinned-sRGB channel values;
+production image diff/crop behavior is unchanged.
+
+On the rebased version, the same 50-story Spectrum selection passed 20 fresh
+passes: **1,000 captures, all 50 stories byte-stable, zero errors**. Ladle passed
+16 stories × 20 passes: **320 captures, all exact, zero errors**. This clears the
+previous sampled macOS stability gate; it is not a full-Spectrum or Linux claim.
+Reports: `/tmp/jux-webp-spectrum-r7d0Sy` and `/tmp/jux-webp-ladle-MUS1Wg`.
+
+Example Storybook passed 18 stories × 3 fresh-launch runs and 18 × 3 daemon
+runs; every daemon result matched its separate fresh reference. Build, typecheck,
+and lint passed. Focused unit tests passed 111 tests; real-browser encoder,
+shadow/transition, and HTTP failure checks passed another 23 tests. Linux CI on
+the final rebased head remains required.
+
+A fresh 40-pair alternating encoder benchmark measured PNG-plus-Sharp at
+36.81 ms median versus native WebP at 22.76 ms (about 38% lower for this stage).
+Encoding/metadata work was 15.68 ms versus 0.031 ms. Bytes remained 42,902 versus
+40,596. These are isolated stage figures, not end-to-end speedups, and absolute
+times should not be compared with the earlier machine-load conditions.
+Log: `/tmp/jux-native-rebased-speed.jsonl`.
+
+The adapted text probe's two baseline captures were exact, with zero original-
+to-canonical, first-to-second, and second-to-third pixel differences. Both raw
+captures also had zero original-to-canonical differences, proving that the raw
+experiment now supplies valid native WebP. One of those two deliberately
+unprepared raw captures differed by 4,518 pixels from its prepared repeat;
+second/third captures were identical. This smoke check does not claim the raw
+bypass is deterministic or equivalent to the production screenshot path.
+Evidence: `/tmp/jux-native-rebased-probe-{baseline,raw}`.
+
 ## Pixel correctness and performance
 
 The real-browser encoder test checks that Chrome's quality-100 WebP contains

@@ -74,7 +74,12 @@ const rows = [];
 let reference;
 let layoutReference;
 async function pixels(image) {
-  return sharp(image).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  // Compare pinned-sRGB channel values: Chrome WebP carries an ICC profile
+  // that production strips without changing its lossless pixel bitstream.
+  return sharp(image, { ignoreIcc: true })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
 }
 function delta(a, b) {
   if (a.info.width !== b.info.width || a.info.height !== b.info.height)
@@ -239,9 +244,11 @@ try {
       try {
         const page = await context.newPage();
         const screenshot = page.screenshot.bind(page);
-        let originalPng;
+        let originalImage;
+        let originalFormat;
         page.screenshot = async (options) => {
-          if (!originalPng) {
+          if (!originalImage) {
+            originalFormat = options?.format ?? 'png';
             const interventionStart = performance.now();
             if (arm === 'delay-matched') {
               delayTargetMs = lastPaintMs;
@@ -295,7 +302,8 @@ try {
               if (options?.mask?.length)
                 throw new Error('Raw experiment does not support masks');
               const { data } = await page.send('Page.captureScreenshot', {
-                format: 'png',
+                format: originalFormat,
+                ...(originalFormat === 'webp' ? { quality: 100 } : {}),
                 captureBeyondViewport: false,
                 clip: {
                   x: 0,
@@ -305,8 +313,8 @@ try {
                   scale: 1,
                 },
               });
-              originalPng = Buffer.from(data, 'base64');
-              return originalPng;
+              originalImage = Buffer.from(data, 'base64');
+              return originalImage;
             }
             if (arm === 'caret-paint') {
               await page.evaluate(() => {
@@ -327,7 +335,7 @@ try {
             interventionMs = performance.now() - interventionStart;
           }
           const image = await screenshot(options);
-          originalPng ??= image;
+          originalImage ??= image;
           return image;
         };
         const snap = await captureStory(
@@ -343,12 +351,15 @@ try {
           viewport,
         );
         if (!snap) throw new Error('Story was skipped');
-        writeFileSync(path.join(out, `${pass}-original.png`), originalPng);
-        const second = await page.screenshot();
-        const third = await page.screenshot();
+        writeFileSync(
+          path.join(out, `${pass}-original.${originalFormat}`),
+          originalImage,
+        );
+        const second = await page.screenshot({ format: originalFormat });
+        const third = await page.screenshot({ format: originalFormat });
         writeFileSync(path.join(out, `${pass}-capture.webp`), snap.image);
-        writeFileSync(path.join(out, `${pass}-repeat.png`), second);
-        writeFileSync(path.join(out, `${pass}-third.png`), third);
+        writeFileSync(path.join(out, `${pass}-repeat.${originalFormat}`), second);
+        writeFileSync(path.join(out, `${pass}-third.${originalFormat}`), third);
         const observation = await page.evaluate(observePage);
         // CDP's actual font usage is stronger evidence than computed font-family.
         await page.send('DOM.enable');
@@ -381,7 +392,7 @@ try {
         save(`${pass}-observation.json`, { ...observation, fontUsage });
         const firstPixels = await pixels(snap.image),
           secondPixels = await pixels(second);
-        const originalPixels = await pixels(originalPng);
+        const originalPixels = await pixels(originalImage);
         reference ??= firstPixels;
         const layoutHash = digest(JSON.stringify(observation));
         layoutReference ??= layoutHash;
@@ -398,6 +409,7 @@ try {
           layoutHash,
           layoutMatchesFirst: layoutHash === layoutReference,
           versusFirst: delta(reference, firstPixels),
+          screenshotFormat: originalFormat,
           encodingDelta: delta(originalPixels, firstPixels),
           samePageRepeat: delta(firstPixels, secondPixels),
           secondToThird: delta(secondPixels, await pixels(third)),
