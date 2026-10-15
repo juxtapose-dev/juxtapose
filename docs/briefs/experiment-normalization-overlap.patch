@@ -1,0 +1,91 @@
+diff --git a/packages/core/src/capture/capture.ts b/packages/core/src/capture/capture.ts
+index cc0a3b3..498ad88 100644
+--- a/packages/core/src/capture/capture.ts
++++ b/packages/core/src/capture/capture.ts
+@@ -32,7 +32,7 @@ import { checkSettle, resolveSettle, type SettleLayer } from './settle-options.j
+ import { applyNetworkPolicy, checkNetwork } from './network-policy.js';
+ import { resolveNetwork, liveNetworkDiffers } from './network-rules.js';
+ import { layerCapture, layerNetwork } from './layers.js';
+-import { captureStructure, type StructureCaptureTimings } from './structure.js';
++import { prepareStructure, type StructureCaptureTimings } from './structure.js';
+ import { canonicalWebp } from './encoder.js';
+ import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
+ 
+@@ -522,21 +522,28 @@ async function captureStoryDocument(
+     structureEnabled && process.env.JUX_STRUCTURE_PROFILE === '1'
+       ? { mark: 0, snapshot: 0, verify: 0, normalize: 0, cleanup: 0 }
+       : undefined;
+-  const structure = structureEnabled
+-    ? await captureStructure(page, effective, params.mask ?? [], structureTimings)
++  const finishStructure = structureEnabled
++    ? await prepareStructure(page, effective, params.mask ?? [], structureTimings)
+     : undefined;
+-  const structureMs = performance.now() - tStructure;
++  let structureMs = performance.now() - tStructure;
+ 
+   // A selector matching nothing is not an error — a story that conditionally
+   // renders the element shouldn't fail on the branch where it's absent.
+   checkResponse();
+   phase('screenshot');
+   const tShot = performance.now();
+-  const shot = await page.screenshot({
++  const pendingShot = page.screenshot({
+     ...(params.mask?.length ? { mask: params.mask } : {}),
+     format: 'webp',
+   });
+-  const screenshotMs = performance.now() - tShot;
++  // Screenshot setup can run in Chrome while Node normalizes immutable data.
++  const tNormalize = performance.now();
++  const structure = finishStructure?.();
++  const normalizeMs = performance.now() - tNormalize;
++  structureMs += normalizeMs;
++  const shot = await pendingShot;
++  // Attribute Node CPU time to structure once, not to both overlapping phases.
++  const screenshotMs = performance.now() - tShot - normalizeMs;
+ 
+   // LOSSLESS, deliberately, and it is not a size-vs-quality preference.
+   //
+diff --git a/packages/core/src/capture/structure.ts b/packages/core/src/capture/structure.ts
+index 9749d24..df062db 100644
+--- a/packages/core/src/capture/structure.ts
++++ b/packages/core/src/capture/structure.ts
+@@ -756,6 +756,16 @@ export async function captureStructure(
+   mask: readonly string[],
+   timings?: StructureCaptureTimings,
+ ): Promise<StructureSnapshot | undefined> {
++  return (await prepareStructure(page, viewport, mask, timings))?.();
++}
++
++/** Capture and clean up browser state before CPU-only normalization. */
++export async function prepareStructure(
++  page: Page,
++  viewport: Viewport,
++  mask: readonly string[],
++  timings?: StructureCaptureTimings,
++): Promise<(() => StructureSnapshot | undefined) | undefined> {
+   const mark = (sel: string) =>
+     queryAllExpression(
+       sel,
+@@ -852,12 +862,16 @@ export async function captureStructure(
+         v['marked'] >= markedCounts[k]!; // one count was pushed per mask selector
+       if (!intact) return undefined;
+     }
+-    const start = timings ? performance.now() : 0;
+-    try {
+-      return normalizeStructure(raw, viewport);
+-    } finally {
+-      if (timings) timings.normalize = performance.now() - start;
+-    }
++    return () => {
++      const start = timings ? performance.now() : 0;
++      try {
++        return normalizeStructure(raw, viewport);
++      } catch {
++        return undefined;
++      } finally {
++        if (timings) timings.normalize = performance.now() - start;
++      }
++    };
+   } catch {
+     return undefined;
+   } finally {

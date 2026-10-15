@@ -250,3 +250,8 @@ The [final paired accounting](briefs/pipeline-final-accounting.md) compares
 Median whole-run time fell 18.4% on macOS and 19.9% on Linux for the controlled
 120-capture collection. It includes per-phase means, remaining worker-time
 shares, exact image/structure parity and reproducible commands.
+
+The [follow-up experiments](briefs/pipeline-followup.md) measure concurrency
+scaling and two rejected micro-optimizations, with screenshot/setup subphase
+timings. The three-worker benchmark is fixed for comparability; the product
+default remains eight workers.
