@@ -7,20 +7,24 @@ import type { PoolOptions } from '../capture/pool.js';
 let calls: { ids: string[]; options: PoolOptions }[];
 let retry: 'match' | 'mismatch' | 'error' | 'reused' | 'skip';
 let mismatches: string[];
+let pulse: 'match' | 'mismatch' | 'error';
+let proactive: boolean;
 vi.mock('../capture/env.js', () => ({
   captureEnv: () => ({ browser: 'x', os: 'y', encoder: 'z' }),
 }));
 vi.mock('../capture/pool.js', () => ({
   capturePool: (stories: StoryManifest[], options: PoolOptions) =>
     (async function* () {
+      if (!stories.length) return;
       const first = calls.length === 0;
+      const pulsing = options.forceResourceCache === true;
       calls.push({ ids: stories.map((s) => s.storyId), options });
       for (const story of stories.slice().reverse()) {
-        if (!first && retry === 'error') {
+        if (pulsing ? pulse === 'error' : !first && retry === 'error') {
           yield { story, error: new Error('retry failed'), durationMs: 1 };
           continue;
         }
-        if (!first && retry === 'skip') {
+        if (!first && !pulsing && retry === 'skip') {
           yield { story, skipped: true, durationMs: 1 };
           continue;
         }
@@ -28,7 +32,7 @@ vi.mock('../capture/pool.js', () => ({
           ? mismatches.includes(story.storyId)
             ? 'history'
             : 'baseline'
-          : retry === 'mismatch'
+          : (pulsing ? pulse === 'mismatch' : retry === 'mismatch')
             ? 'changed'
             : 'baseline';
         yield {
@@ -39,8 +43,11 @@ vi.mock('../capture/pool.js', () => ({
             image: Buffer.from(body),
             viewport: { width: 1, height: 1 },
             durationMs: 1,
-            renderer: { shared: first, clearResourceCache: false },
-            rendererReused: !first && retry === 'reused',
+            renderer: {
+              shared: first || pulsing,
+              clearResourceCache: pulsing || proactive,
+            },
+            rendererReused: !first && !pulsing && retry === 'reused',
           },
         };
       }
@@ -50,6 +57,8 @@ vi.mock('../capture/pool.js', () => ({
 beforeEach(() => {
   calls = [];
   retry = 'match';
+  pulse = 'mismatch';
+  proactive = false;
   mismatches = ['s00'];
 });
 async function run(recheck: 'changed' | 'new' | 'off' = 'off') {
@@ -107,12 +116,12 @@ test.each(['changed', 'new', 'off'] as const)(
       status: 'pass',
       hash: hashImage(Buffer.from('baseline')),
       rendererRetry: { outcome: 'resolved' },
-      durationMs: 2,
+      durationMs: 3,
     });
     expect(result.unstable).toBeUndefined();
     expect(result.unrechecked).toBeUndefined();
-    expect(calls).toHaveLength(2);
-    expect(calls[1]!.options).toMatchObject({
+    expect(calls).toHaveLength(3);
+    expect(calls[2]!.options).toMatchObject({
       forceFreshRenderer: true,
       warmSwitch: false,
     });
@@ -140,7 +149,7 @@ test.each(['error', 'reused', 'skip'] as const)('fails closed on %s', async (out
     rendererRetry: { outcome: 'unconfirmed' },
   });
   expect(report.results[0]!.unstable?.unconfirmed).toBeTruthy();
-  expect(calls).toHaveLength(2);
+  expect(calls).toHaveLength(3);
 });
 
 test('a fresh mismatch becomes current and is confirmed fresh against fresh', async () => {
@@ -152,7 +161,55 @@ test('a fresh mismatch becomes current and is confirmed fresh against fresh', as
     rendererRetry: { outcome: 'mismatch' },
   });
   expect(report.results[0]!.unstable).toBeUndefined();
-  expect(calls).toHaveLength(3);
-  expect(calls[2]!.options.forceFreshRenderer).toBe(true);
+  expect(calls).toHaveLength(4);
+  expect(calls[3]!.options.forceFreshRenderer).toBe(true);
   expect(artifacts.at(-1)?.current.toString()).toBe('changed');
+});
+
+test('cache pulse resolves a mismatch without a fresh retry and replaces the artifact', async () => {
+  pulse = 'match';
+  const { report, artifacts } = await run();
+  expect(calls).toHaveLength(2);
+  expect(calls[1]!.options).toMatchObject({
+    forceResourceCache: true,
+    warmSwitch: false,
+  });
+  expect(report.results[0]).toMatchObject({
+    status: 'pass',
+    durationMs: 2,
+    rendererRetry: {
+      outcome: 'resolved',
+      resolvedBy: 'cache-pulse',
+      cachePulseHash: hashImage(Buffer.from('baseline')),
+    },
+  });
+  expect(report.results[0]!.unstable).toBeUndefined();
+  expect(artifacts.at(-1)?.current.toString()).toBe('baseline');
+});
+
+test('pulse failure falls back fresh; an unsuccessful pulse never replaces the reviewed artifact', async () => {
+  pulse = 'error';
+  const { report } = await run();
+  expect(report.results[0]).toMatchObject({
+    status: 'pass',
+    rendererRetry: {
+      resolvedBy: 'fresh',
+      cachePulseError: 'retry failed',
+    },
+  });
+  calls = [];
+  pulse = 'mismatch';
+  retry = 'error';
+  const { artifacts } = await run();
+  expect(artifacts.findLast((a) => a.storyId === 's00')?.current.toString()).toBe(
+    'history',
+  );
+});
+
+test('a proactively pulsed mismatch goes straight to fresh', async () => {
+  proactive = true;
+  const { report } = await run();
+  expect(calls).toHaveLength(2);
+  expect(calls[1]!.options.forceFreshRenderer).toBe(true);
+  expect(report.results[0]!.rendererRetry?.resolvedBy).toBe('fresh');
 });

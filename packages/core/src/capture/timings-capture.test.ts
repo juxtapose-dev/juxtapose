@@ -55,7 +55,12 @@ describe.skipIf(!chrome)('capture timings in Chrome', { timeout: 30_000 }, () =>
       for (const k of [0, 1]) {
         const platform = createUrlPlatform([{ id: `t${k}`, url: base }]);
         const [story] = await platform.enumerate({ projectRoot: process.cwd() });
-        const s = await captureStory(page, story!, { platform, baseUrl: base }, viewport);
+        const s = await captureStory(
+          page,
+          story!,
+          { platform, baseUrl: base, renderer: { shared: false } },
+          viewport,
+        );
         snaps.push(s!);
       }
       for (const s of snaps) {

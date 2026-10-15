@@ -385,8 +385,9 @@ machine with fewer cores, a higher limit can make captures slower.
 ### Renderer reuse and approval
 
 The project and per-story `renderer` object accepts `shared` and
-`clearResourceCache` booleans; both default to false. Shared-renderer baseline
-mismatches receive a bounded fresh retry independently of `recheck`. Run and
+`clearResourceCache` booleans; `shared` defaults to true and
+`clearResourceCache` to false. Baseline mismatches receive a bounded cache-pulse
+retry followed by a fresh fallback independently of `recheck`. Run and
 check results carry `rendererRetry` evidence, and handoffs explain it. The
 `approve` tool always confirms the selected hash on a fresh renderer, even
 with `allowUnstable`; it cannot approve different bytes. See

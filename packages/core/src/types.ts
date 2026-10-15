@@ -347,11 +347,15 @@ export interface StructuralVerdict {
 export type DiffStatus = 'pass' | 'fail' | 'new' | 'stale' | 'skip';
 
 export interface DiffResult {
-  /** Evidence from the bounded fresh-renderer retry, independent of recheck. */
+  /** Evidence from bounded cache-pulse and fresh-renderer retries, independent of recheck. */
   rendererRetry?: {
     outcome: 'resolved' | 'mismatch' | 'unconfirmed' | 'cap';
     initialRenderer: Required<NonNullable<StoryParams['renderer']>>;
     initialHash: string;
+    /** Present when cache-pulse recovery produced a capture. */
+    cachePulseHash?: string;
+    cachePulseError?: string;
+    resolvedBy?: 'cache-pulse' | 'fresh';
     freshHash?: string;
     reason?: string;
   };

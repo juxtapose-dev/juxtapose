@@ -252,6 +252,44 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
     const resultIndexes = new Map(
       results.map((result, index) => [result.storyId, index]),
     );
+    // A baseline mismatch is the signal: do not guess from component names or
+    // DOM features. Pulse once, then fall back to an isolated fresh renderer.
+    // A proactive pulse already happened when clearResourceCache was enabled.
+    const pulse = opts.stories.filter(
+      (story) =>
+        retryIds.has(story.storyId) &&
+        !history.get(story.storyId)!.renderer.clearResourceCache,
+    );
+    for await (const outcome of capturePool(pulse, {
+      ...poolOptions(undefined),
+      forceResourceCache: true,
+      warmSwitch: false,
+    })) {
+      const first = history.get(outcome.story.storyId)!.result;
+      const evidence = first.rendererRetry!;
+      if (!outcome.snapshot || outcome.error) {
+        evidence.cachePulseError =
+          outcome.error?.message ?? 'cache pulse produced no snapshot';
+        continue;
+      }
+      evidence.cachePulseHash = hashImage(outcome.snapshot.image);
+      first.durationMs = (first.durationMs ?? 0) + (outcome.snapshot.durationMs ?? 0);
+      // Keep the reviewed artifact intact unless recovery actually passes.
+      if (evidence.cachePulseHash !== manifest.baselines[first.storyId]?.hash) continue;
+      const pulsed = await judge(outcome.snapshot, outcome.story, manifest, opts, p);
+      if (pulsed.status !== 'pass') continue;
+      pulsed.rendererRetry = {
+        ...evidence,
+        outcome: 'resolved',
+        resolvedBy: 'cache-pulse',
+        reason: undefined,
+      };
+      pulsed.durationMs = first.durationMs;
+      results[resultIndexes.get(first.storyId)!] = pulsed;
+      retryIds.delete(first.storyId);
+      toConfirm.delete(first.storyId);
+      firstNotes.delete(first.storyId);
+    }
     const again = opts.stories.filter((story) => retryIds.has(story.storyId));
     for await (const outcome of capturePool(again, {
       ...poolOptions(undefined),
@@ -271,6 +309,9 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       const fresh = await judge(outcome.snapshot, outcome.story, manifest, opts, p);
       const resolved = fresh.status === 'pass';
       fresh.rendererRetry = {
+        ...evidence,
+        reason: undefined,
+        resolvedBy: resolved ? 'fresh' : undefined,
         outcome: resolved ? 'resolved' : 'mismatch',
         initialRenderer: evidence.initialRenderer,
         initialHash: evidence.initialHash,

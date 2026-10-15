@@ -9,6 +9,7 @@ export function resolveRenderer(
   project: Pick<ProjectConfig, 'renderer' | 'freshRenderer'> = {},
   story?: StoryParams['renderer'],
   forceFresh = false,
+  forceResourceCache = false,
 ): RendererSettings {
   if (project.renderer !== undefined)
     validate(RendererSchema, project.renderer, 'renderer');
@@ -23,10 +24,16 @@ export function resolveRenderer(
     );
   }
   const settings = {
-    shared: project.freshRenderer === false,
+    shared: project.freshRenderer !== true,
     clearResourceCache: false,
     ...project.renderer,
     ...story,
   };
-  return forceFresh ? { shared: false, clearResourceCache: false } : settings;
+  return forceFresh
+    ? { shared: false, clearResourceCache: false }
+    : {
+        ...settings,
+        clearResourceCache:
+          (settings.shared && forceResourceCache) || settings.clearResourceCache,
+      };
 }

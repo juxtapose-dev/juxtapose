@@ -19,3 +19,16 @@ test('resolved stories get sorted, copyable exact overrides; cap is visible', ()
   expect(config.stories.a).toEqual({ renderer: { shared: false } });
   expect(describeRendererRetries([])).toBe('');
 });
+
+test('pulse recovery recommends cache clearing while preserving sharing', () => {
+  const text = describeRendererRetries([
+    {
+      storyId: 'card',
+      rendererRetry: { outcome: 'resolved', resolvedBy: 'cache-pulse' },
+    } as DiffResult,
+  ]);
+  expect(text).toContain('1 stories passed after a cache-pulse retry.');
+  expect(JSON.parse(text.slice(text.indexOf('{'))).stories.card).toEqual({
+    renderer: { shared: true, clearResourceCache: true },
+  });
+});

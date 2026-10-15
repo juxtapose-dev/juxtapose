@@ -162,7 +162,10 @@ describe('captureStory cache pulse on a reused renderer', () => {
   });
 
   function setup(
-    options: Pick<CaptureDeps, 'freshRenderer' | 'warmSwitch' | 'renderer'>,
+    options: Pick<
+      CaptureDeps,
+      'freshRenderer' | 'warmSwitch' | 'renderer' | 'forceResourceCache'
+    >,
   ) {
     const page = recordingPage();
     const events: unknown[] = [];
@@ -205,6 +208,19 @@ describe('captureStory cache pulse on a reused renderer', () => {
       { cacheDisabled: true },
       { cacheDisabled: false },
       'show:second',
+    ]);
+  });
+
+  it('recovery pulses before the first navigation even when proactive clearing is disabled', async () => {
+    const { capture, events } = setup({
+      renderer: { shared: true, clearResourceCache: false },
+      forceResourceCache: true,
+    });
+    await capture('first');
+    expect(events).toEqual([
+      { cacheDisabled: true },
+      { cacheDisabled: false },
+      'show:first',
     ]);
   });
 
@@ -291,7 +307,7 @@ describe('captureStory with variants', () => {
     captureStory(
       page,
       s,
-      { platform: p, baseUrl: 'x', structure: false },
+      { platform: p, baseUrl: 'x', structure: false, freshRenderer: true },
       { width: 10, height: 10 },
     ).catch(() => null);
 

@@ -65,21 +65,23 @@ loaded.
 
 ```json
 {
-  "renderer": { "shared": false, "clearResourceCache": false },
+  "renderer": { "shared": true, "clearResourceCache": false },
   "stories": { "card--*": { "renderer": { "shared": false } } }
 }
 ```
 
-`renderer.shared` (default `false`) controls whether cold captures reuse a
-Chrome renderer process. Set it to `true` to opt into reuse with a bounded
-fresh-renderer retry for baseline mismatches. A fresh retry passes only when
-its byte-exact hash matches the approved baseline. No visual tolerance is used.
-The default remains fresh until three-suite verification passes.
+`renderer.shared` (default `true`) controls whether cold captures reuse a
+Chrome renderer process. Baseline mismatches retry with a cache pulse, then
+fall back to a fresh renderer if necessary. Recovery passes only when its
+byte-exact hash matches the approved baseline. No visual tolerance is used.
+Set `shared: false` to use a fresh renderer from the start.
 
 `renderer.clearResourceCache` (default `false`) clears Blink's in-memory
 resource cache immediately before a reused-renderer navigation. It retains
 HTTP cache entries and is ignored when `shared` is false. This optional cache
-pulse can reduce history effects, but does not replace the fresh retry.
+pulse can reduce history effects proactively. Otherwise, a baseline mismatch
+automatically triggers one pulse retry before the fresh fallback. Stories
+that already used a pulse go straight to the fresh fallback.
 
 Both fields also work in Storybook's `parameters.juxtapose.renderer`, Ladle's
 `meta.juxtapose.renderer`, named variants, and project `stories` glob overrides.
@@ -137,9 +139,13 @@ The retry runs even with `recheck: "off"`. A fresh result that still differs
 becomes the current failure; `recheck: "changed"` confirms it with another
 fresh capture. A resolved result passes and records `rendererRetry.outcome:
 "resolved"`; other outcomes are `mismatch`, `unconfirmed`, and `cap`.
-Reports list resolved stories with the exact `renderer.shared: false` override
-to pin them. Warm switching remains separate and opt-in. Retries and approval
-always disable it and force fresh renderers.
+`rendererRetry.resolvedBy` identifies `cache-pulse` or `fresh`, with
+`cachePulseHash` and `freshHash` recording the available evidence. Reports
+suggest `renderer: { shared: true, clearResourceCache: true }` for pulse
+recoveries and `renderer: { shared: false }` for fresh recoveries. A pulse
+recovery is not proof of a cache root cause: retry workers use new contexts
+and timing can also differ. Warm switching remains separate and opt-in.
+Retries disable it; approval always forces a fresh renderer.
 
 `recheck` (default `"changed"`) sets which stories the run captures a second
 time. Approving a flaky capture makes it a permanently red baseline, so `jux run`

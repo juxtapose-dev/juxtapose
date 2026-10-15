@@ -336,7 +336,7 @@ export const RendererSchema = Type.Object(
     shared: Type.Optional(
       Type.Boolean({
         description:
-          'Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification passes.',
+          'Reuse renderer processes between stories. Default true. Baseline mismatches retry with a cache pulse, then a fresh renderer.',
       }),
     ),
     clearResourceCache: Type.Optional(
@@ -581,7 +581,7 @@ const projectChecked = {
   freshRenderer: settleScalar(
     Type.Boolean({
       description:
-        'Legacy inverse of renderer.shared: true uses fresh renderers, false opts into sharing with bounded fresh retries for baseline mismatches. Prefer renderer.shared. Conflicting explicit project values are rejected.',
+        'Legacy inverse of renderer.shared: true uses fresh renderers, false uses sharing with bounded cache-pulse and fresh retries for baseline mismatches. Prefer renderer.shared. Conflicting explicit project values are rejected.',
     }),
     'freshRenderer must be true or false, got {got}',
   ),
