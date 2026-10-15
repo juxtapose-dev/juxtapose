@@ -143,7 +143,7 @@ jobs:
             primer)
               npm ci
               cd packages/react
-              DEPLOY_ENV=production npx storybook build
+              DEPLOY_ENV=production npx storybook build --quiet --disable-telemetry --loglevel error
               ;;
             spectrum)
               # The repo ships its own Yarn release; corepack makes `yarn`

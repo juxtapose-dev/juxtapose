@@ -6,8 +6,8 @@
   "description": "Vue Storybook example — proves the adapter is renderer-agnostic.",
   "scripts": {
     "storybook": "storybook dev -p 6007",
-    "build": "storybook build -o storybook-static",
-    "visual": "storybook build -o storybook-static && jux run --all"
+    "build": "storybook build --quiet --disable-telemetry --loglevel error -o storybook-static",
+    "visual": "storybook build --quiet --disable-telemetry --loglevel error -o storybook-static && jux run --all"
   },
   "dependencies": {
     "vue": "^3.5.13"

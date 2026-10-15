@@ -4,7 +4,7 @@
 comment on every push rather than adding a new one:
 
 ```yaml
-- run: npx storybook build
+- run: npx storybook build --quiet --disable-telemetry --loglevel error
 - run: npx -p @juxtapose/cli jux run --comment --html
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -17,6 +17,8 @@ comment on every push rather than adding a new one:
 ```
 
 The job needs `permissions: pull-requests: write`.
+
+The Storybook flags keep the build output short and turn off telemetry. Errors still print, so a failing build shows its cause.
 
 `--html` writes a self-contained `report.html` into the run directory: every
 image is inlined, so it works opened straight from disk. Uploading it is what
@@ -54,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # the merge-base lookup below needs history
-      - run: npx storybook build
+      - run: npx storybook build --quiet --disable-telemetry --loglevel error
 
       - id: base
         if: github.event_name == 'pull_request'

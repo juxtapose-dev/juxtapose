@@ -6,9 +6,9 @@
   "description": "Storybook example workbench for juxtapose.",
   "scripts": {
     "storybook": "storybook dev -p 6006",
-    "build": "storybook build -o storybook-static",
+    "build": "storybook build --quiet --disable-telemetry --loglevel error -o storybook-static",
     "jux": "jux",
-    "visual": "storybook build -o storybook-static && jux run --all"
+    "visual": "storybook build --quiet --disable-telemetry --loglevel error -o storybook-static && jux run --all"
   },
   "dependencies": {
     "example-components": "workspace:*",
