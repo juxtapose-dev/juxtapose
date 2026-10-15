@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // node scripts/compare-pipeline.mjs BASELINE_CLI CANDIDATE_CLI BUILD [passes=5] [--pixel-parity]
-// JUX_PROFILE_CONCURRENCY=1..8 overrides the default 3 for scaling comparisons.
+// JUX_PROFILE_CONCURRENCY=1..8 overrides the default 3.
+// JUX_PROFILE_CANDIDATE_CONCURRENCY changes only candidate warmup/measured runs;
+// both fresh references retain the baseline concurrency.
 // Requires built CLIs and the controlled 120-capture Storybook. Never installs.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -37,6 +39,15 @@ if (!Number.isInteger(passes) || passes < 3)
 const concurrency = Number(process.env.JUX_PROFILE_CONCURRENCY ?? 3);
 if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8)
   throw new Error('JUX_PROFILE_CONCURRENCY must be an integer from 1 to 8');
+const candidateConcurrency = Number(
+  process.env.JUX_PROFILE_CANDIDATE_CONCURRENCY ?? concurrency,
+);
+if (
+  !Number.isInteger(candidateConcurrency) ||
+  candidateConcurrency < 1 ||
+  candidateConcurrency > 8
+)
+  throw new Error('JUX_PROFILE_CANDIDATE_CONCURRENCY must be an integer from 1 to 8');
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 const cliHashes = [baselineCLI, candidateCLI].map((p) => sha(readFileSync(p)));
 const digest = createHash('sha256');
@@ -140,6 +151,7 @@ const arms = Object.fromEntries(
       {
         cli: [baselineCLI, candidateCLI][i],
         cliHash: cliHashes[i],
+        concurrency: i ? candidateConcurrency : concurrency,
         provenance: provenanceByArm[i],
         project,
         state,
@@ -178,7 +190,7 @@ async function capture(name, label, reference = false, measured = false) {
     JSON.stringify({
       platform: 'storybook',
       buildDir,
-      concurrency,
+      concurrency: reference ? concurrency : arm.concurrency,
       viewport: metadata.viewport,
       renderer: { shared: !reference, clearResourceCache: false },
       recheck: 'off',
