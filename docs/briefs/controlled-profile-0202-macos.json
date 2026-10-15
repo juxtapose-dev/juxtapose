@@ -1,0 +1,1346 @@
+{
+  "metadata": {
+    "commit": "0835371f9bee15883cb4e3c36ccc7a144dbf3f25",
+    "buildDir": "/Users/jer/Code/juxtapose/.claude/worktrees/warm-pulse/examples/storybook/storybook-profile",
+    "buildHash": "f2d22670ae7bba589440ad17d9e34dd15749df4f85aa4e553429baef8f6a5500",
+    "node": "v26.11.1",
+    "platform": "darwin 27.0.0 arm64",
+    "cpu": "Apple M5 Pro",
+    "logicalCpus": 15,
+    "memoryBytes": 25769803776,
+    "concurrency": 3,
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "daemon": false,
+    "passes": 5
+  },
+  "referenceEnvironment": {
+    "browser": "151.0.7922.34",
+    "os": "darwin-arm64",
+    "encoder": "8.18.3"
+  },
+  "modes": {
+    "shared": {
+      "runs": 5,
+      "capturesPerRun": [120, 120, 120, 120, 120],
+      "wallMs": {
+        "median": 5273.957957999999,
+        "p95": 5625.770791999999,
+        "min": 5118.156750000009,
+        "max": 5625.770791999999
+      },
+      "runMs": {
+        "median": 4984,
+        "p95": 5397,
+        "min": 4886,
+        "max": 5397
+      },
+      "outsideRunMs": {
+        "median": 228.77079199999935,
+        "p95": 293.95795799999905,
+        "min": 224.0205829999977,
+        "max": 293.95795799999905
+      },
+      "failures": [],
+      "retries": 0,
+      "phases": {
+        "navigate": {
+          "median": 9.1,
+          "p95": 26.1,
+          "min": 5.9,
+          "max": 111.4
+        },
+        "freshRenderer": {
+          "median": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0
+        },
+        "render": {
+          "median": 11,
+          "p95": 43.8,
+          "min": 0.5,
+          "max": 181.7
+        },
+        "settle": {
+          "median": 6.1,
+          "p95": 15.5,
+          "min": 0.5,
+          "max": 102.5
+        },
+        "paint": {
+          "median": 16.8,
+          "p95": 29.7,
+          "min": 2.7,
+          "max": 145.7
+        },
+        "structure": {
+          "median": 7.2,
+          "p95": 61.2,
+          "min": 1.1,
+          "max": 162
+        },
+        "screenshot": {
+          "median": 21.7,
+          "p95": 78.8,
+          "min": 5.2,
+          "max": 150.7
+        },
+        "encode": {
+          "median": 12,
+          "p95": 26.5,
+          "min": 3.9,
+          "max": 73
+        },
+        "other": {
+          "median": 7,
+          "p95": 47.6,
+          "min": 0.7,
+          "max": 133.8
+        }
+      },
+      "phaseTotalMsPerRun": {
+        "navigate": {
+          "median": 1631.5000000000002,
+          "p95": 1695.4,
+          "min": 1348.5999999999997,
+          "max": 1695.4
+        },
+        "freshRenderer": {
+          "median": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0
+        },
+        "render": {
+          "median": 1998.9000000000003,
+          "p95": 2121.8,
+          "min": 1888.5000000000002,
+          "max": 2121.8
+        },
+        "settle": {
+          "median": 808.5000000000002,
+          "p95": 971.0000000000001,
+          "min": 741.5999999999999,
+          "max": 971.0000000000001
+        },
+        "paint": {
+          "median": 2439.500000000001,
+          "p95": 2510.9999999999995,
+          "min": 2171.100000000001,
+          "max": 2510.9999999999995
+        },
+        "structure": {
+          "median": 1768.6000000000006,
+          "p95": 1779.8999999999999,
+          "min": 1656.0999999999997,
+          "max": 1779.8999999999999
+        },
+        "screenshot": {
+          "median": 3275.8999999999996,
+          "p95": 3918.2,
+          "min": 3169.7000000000016,
+          "max": 3918.2
+        },
+        "encode": {
+          "median": 1542.1000000000006,
+          "p95": 1859.4999999999993,
+          "min": 1476.9999999999995,
+          "max": 1859.4999999999993
+        },
+        "other": {
+          "median": 1450.3999999999992,
+          "p95": 1698.0000000000002,
+          "min": 1246.3999999999994,
+          "max": 1698.0000000000002
+        }
+      },
+      "workloads": {
+        "forms": {
+          "captures": 75,
+          "durationMs": {
+            "median": 110,
+            "p95": 206,
+            "min": 62,
+            "max": 294
+          },
+          "phases": {
+            "navigate": {
+              "median": 8.8,
+              "p95": 35.4,
+              "min": 6.2,
+              "max": 104.4
+            },
+            "freshRenderer": {
+              "median": 0,
+              "p95": 0,
+              "min": 0,
+              "max": 0
+            },
+            "render": {
+              "median": 13.9,
+              "p95": 50.9,
+              "min": 0.7,
+              "max": 104.2
+            },
+            "settle": {
+              "median": 4.2,
+              "p95": 8.6,
+              "min": 0.8,
+              "max": 21.6
+            },
+            "paint": {
+              "median": 17.1,
+              "p95": 27.2,
+              "min": 5.3,
+              "max": 107.8
+            },
+            "structure": {
+              "median": 8.3,
+              "p95": 32.1,
+              "min": 2.1,
+              "max": 122.2
+            },
+            "screenshot": {
+              "median": 20.3,
+              "p95": 37.7,
+              "min": 7.4,
+              "max": 70.7
+            },
+            "encode": {
+              "median": 12.5,
+              "p95": 18.7,
+              "min": 4.8,
+              "max": 44
+            },
+            "other": {
+              "median": 7.6,
+              "p95": 53.3,
+              "min": 0.8,
+              "max": 107.3
+            }
+          }
+        },
+        "tables": {
+          "captures": 75,
+          "durationMs": {
+            "median": 109,
+            "p95": 174,
+            "min": 54,
+            "max": 222
+          },
+          "phases": {
+            "navigate": {
+              "median": 9.1,
+              "p95": 26.9,
+              "min": 6.3,
+              "max": 97.3
+            },
+            "freshRenderer": {
+              "median": 0,
+              "p95": 0,
+              "min": 0,
+              "max": 0
+            },
+            "render": {
+              "median": 10.9,
+              "p95": 35.4,
+              "min": 0.6,
+              "max": 113.2
+            },
+            "settle": {
+              "median": 6.9,
+              "p95": 14.4,
+              "min": 0.6,
+              "max": 98.2
+            },
+            "paint": {
+              "median": 16.8,
+              "p95": 24.7,
+              "min": 4.9,
+              "max": 57.2
+            },
+            "structure": {
+              "median": 8.1,
+              "p95": 31.4,
+              "min": 2.1,
+              "max": 127.1
+            },
+            "screenshot": {
+              "median": 19.6,
+              "p95": 45.1,
+              "min": 7.5,
+              "max": 55.7
+            },
+            "encode": {
+              "median": 11.7,
+              "p95": 16.8,
+              "min": 5.6,
+              "max": 18.3
+            },
+            "other": {
+              "median": 8.5,
+              "p95": 49.9,
+              "min": 1,
+              "max": 76.8
+            }
+          }
+        },
+        "cards": {
+          "captures": 75,
+          "durationMs": {
+            "median": 104,
+            "p95": 173,
+            "min": 69,
+            "max": 229
+          },
+          "phases": {
+            "navigate": {
+              "median": 9.2,
+              "p95": 22.2,
+              "min": 6.9,
+              "max": 66.5
+            },
+            "freshRenderer": {
+              "median": 0,
+              "p95": 0,
+              "min": 0,
+              "max": 0
+            },
+            "render": {
+              "median": 10,
+              "p95": 25.5,
+              "min": 0.5,
+              "max": 99.8
+            },
+            "settle": {
+              "median": 6.1,
+              "p95": 15,
+              "min": 0.5,
+              "max": 16.9
+            },
+            "paint": {
+              "median": 16.9,
+              "p95": 64.4,
+              "min": 6.6,
+              "max": 111
+            },
+            "structure": {
+              "median": 4.4,
+              "p95": 17.6,
+              "min": 1.4,
+              "max": 47.4
+            },
+            "screenshot": {
+              "median": 22.8,
+              "p95": 61.9,
+              "min": 9.2,
+              "max": 83.9
+            },
+            "encode": {
+              "median": 12.8,
+              "p95": 23.7,
+              "min": 4.4,
+              "max": 55.4
+            },
+            "other": {
+              "median": 6,
+              "p95": 31.9,
+              "min": 0.7,
+              "max": 133.8
+            }
+          }
+        },
+        "typography": {
+          "captures": 75,
+          "durationMs": {
+            "median": 119,
+            "p95": 195,
+            "min": 64,
+            "max": 246
+          },
+          "phases": {
+            "navigate": {
+              "median": 9.1,
+              "p95": 38.6,
+              "min": 5.9,
+              "max": 107.8
+            },
+            "freshRenderer": {
+              "median": 0,
+              "p95": 0,
+              "min": 0,
+              "max": 0
+            },
+            "render": {
+              "median": 10.8,
+              "p95": 23.6,
+              "min": 0.6,
+              "max": 37.2
+            },
+            "settle": {
+              "median": 5.8,
+              "p95": 16.9,
+              "min": 0.7,
+              "max": 102.5
+            },
+            "paint": {
+              "median": 16.7,
+              "p95": 26.1,
+              "min": 2.8,
+              "max": 103.3
+            },
+            "structure": {
+              "median": 5.4,
+              "p95": 21.1,
+              "min": 1.5,
+              "max": 50.2
+            },
+            "screenshot": {
+              "median": 26.6,
+              "p95": 77.8,
+              "min": 10.4,
+              "max": 135.5
+            },
+            "encode": {
+              "median": 19,
+              "p95": 25.8,
+              "min": 8.7,
+              "max": 32.6
+            },
+            "other": {
+              "median": 7.8,
+              "p95": 53,
+              "min": 0.8,
+              "max": 117.7
+            }
+          }
+        },
+        "charts": {
+          "captures": 75,
+          "durationMs": {
+            "median": 90,
+            "p95": 163,
+            "min": 64,
+            "max": 190
+          },
+          "phases": {
+            "navigate": {
+              "median": 8.9,
+              "p95": 25.4,
+              "min": 6.6,
+              "max": 30
+            },
+            "freshRenderer": {
+              "median": 0,
+              "p95": 0,
+              "min": 0,
+              "max": 0
+            },
+            "render": {
+              "median": 9.2,
+              "p95": 21.1,
+              "min": 0.5,
+              "max": 27.8
+            },
+            "settle": {
+              "median": 6.9,
+              "p95": 20.2,
+              "min": 1.3,
+              "max": 51.2
+            },
+            "paint": {
+              "median": 16.7,
+              "p95": 46.1,
+              "min": 2.7,
+              "max": 111.2
+            },
+            "structure": {
+              "median": 3.6,
+              "p95": 17.9,
+              "min": 1.1,
+              "max": 105.8
+            },
+            "screenshot": {
+              "median": 14.2,
+              "p95": 66.6,
+              "min": 5.2,
+              "max": 107.2
+            },
+            "encode": {
+              "median": 10.4,
+              "p95": 17.8,
+              "min": 6.3,
+              "max": 22.1
+            },
+            "other": {
+              "median": 6.8,
+              "p95": 31.6,
+              "min": 0.8,
+              "max": 69.7
+            }
+          }
+        },
+        "images": {
+          "captures": 75,
+          "durationMs": {
+            "median": 166,
+            "p95": 340,
+            "min": 65,
+            "max": 374
+          },
+          "phases": {
+            "navigate": {
+              "median": 9.7,
+              "p95": 62.3,
+              "min": 6.2,
+              "max": 111.4
+            },
+            "freshRenderer": {
+              "median": 0,
+              "p95": 0,
+              "min": 0,
+              "max": 0
+            },
+            "render": {
+              "median": 12,
+              "p95": 148.4,
+              "min": 0.6,
+              "max": 181.7
+            },
+            "settle": {
+              "median": 4.8,
+              "p95": 17.9,
+              "min": 0.5,
+              "max": 36.7
+            },
+            "paint": {
+              "median": 16.5,
+              "p95": 30.1,
+              "min": 3.9,
+              "max": 55.1
+            },
+            "structure": {
+              "median": 3.4,
+              "p95": 13.8,
+              "min": 1.2,
+              "max": 23.7
+            },
+            "screenshot": {
+              "median": 55,
+              "p95": 129,
+              "min": 10.9,
+              "max": 150.7
+            },
+            "encode": {
+              "median": 20.7,
+              "p95": 37.7,
+              "min": 5.5,
+              "max": 73
+            },
+            "other": {
+              "median": 8.3,
+              "p95": 62.9,
+              "min": 0.8,
+              "max": 104.9
+            }
+          }
+        },
+        "nested": {
+          "captures": 75,
+          "durationMs": {
+            "median": 134,
+            "p95": 264,
+            "min": 74,
+            "max": 334
+          },
+          "phases": {
+            "navigate": {
+              "median": 9.5,
+              "p95": 19.9,
+              "min": 6.3,
+              "max": 24.8
+            },
+            "freshRenderer": {
+              "median": 0,
+              "p95": 0,
+              "min": 0,
+              "max": 0
+            },
+            "render": {
+              "median": 15.7,
+              "p95": 49.9,
+              "min": 0.6,
+              "max": 141.5
+            },
+            "settle": {
+              "median": 5.3,
+              "p95": 11.1,
+              "min": 0.7,
+              "max": 24.7
+            },
+            "paint": {
+              "median": 17.3,
+              "p95": 56.9,
+              "min": 9.2,
+              "max": 145.7
+            },
+            "structure": {
+              "median": 28.3,
+              "p95": 112.9,
+              "min": 5.2,
+              "max": 162
+            },
+            "screenshot": {
+              "median": 20.2,
+              "p95": 58.7,
+              "min": 9.2,
+              "max": 72.9
+            },
+            "encode": {
+              "median": 12.1,
+              "p95": 16.7,
+              "min": 5.4,
+              "max": 17.4
+            },
+            "other": {
+              "median": 7,
+              "p95": 45.8,
+              "min": 1.1,
+              "max": 81.3
+            }
+          }
+        },
+        "async": {
+          "captures": 75,
+          "durationMs": {
+            "median": 91,
+            "p95": 143,
+            "min": 62,
+            "max": 198
+          },
+          "phases": {
+            "navigate": {
+              "median": 9,
+              "p95": 30.1,
+              "min": 6.7,
+              "max": 55.8
+            },
+            "freshRenderer": {
+              "median": 0,
+              "p95": 0,
+              "min": 0,
+              "max": 0
+            },
+            "render": {
+              "median": 8.3,
+              "p95": 28.1,
+              "min": 0.5,
+              "max": 66.1
+            },
+            "settle": {
+              "median": 7.2,
+              "p95": 17.7,
+              "min": 1.4,
+              "max": 46.4
+            },
+            "paint": {
+              "median": 16.8,
+              "p95": 39.2,
+              "min": 4,
+              "max": 52.1
+            },
+            "structure": {
+              "median": 3.7,
+              "p95": 14.5,
+              "min": 1.2,
+              "max": 47.2
+            },
+            "screenshot": {
+              "median": 16.6,
+              "p95": 37.2,
+              "min": 6.1,
+              "max": 74.9
+            },
+            "encode": {
+              "median": 10,
+              "p95": 14,
+              "min": 3.9,
+              "max": 42.2
+            },
+            "other": {
+              "median": 5.8,
+              "p95": 29,
+              "min": 1,
+              "max": 102.5
+            }
+          }
+        }
+      }
+    },
+    "fresh": {
+      "runs": 5,
+      "capturesPerRun": [120, 120, 120, 120, 120],
+      "wallMs": {
+        "median": 7311.4281249999985,
+        "p95": 7366.593792000003,
+        "min": 7193.390083000006,
+        "max": 7366.593792000003
+      },
+      "runMs": {
+        "median": 7097,
+        "p95": 7141,
+        "min": 6991,
+        "max": 7141
+      },
+      "outsideRunMs": {
+        "median": 208.16554200000246,
+        "p95": 255.54595800000243,
+        "min": 202.3900830000057,
+        "max": 255.54595800000243
+      },
+      "failures": [],
+      "retries": 0,
+      "phases": {
+        "navigate": {
+          "median": 45.3,
+          "p95": 64.5,
+          "min": 23.9,
+          "max": 147.6
+        },
+        "freshRenderer": {
+          "median": 5,
+          "p95": 18.1,
+          "min": 0,
+          "max": 116
+        },
+        "render": {
+          "median": 26.2,
+          "p95": 112.4,
+          "min": 0.6,
+          "max": 177.6
+        },
+        "settle": {
+          "median": 4,
+          "p95": 15.5,
+          "min": 0.6,
+          "max": 107
+        },
+        "paint": {
+          "median": 16.6,
+          "p95": 27.2,
+          "min": 2.1,
+          "max": 113.3
+        },
+        "structure": {
+          "median": 6.5,
+          "p95": 38,
+          "min": 1.2,
+          "max": 141.3
+        },
+        "screenshot": {
+          "median": 19.5,
+          "p95": 72.3,
+          "min": 5.8,
+          "max": 133.7
+        },
+        "encode": {
+          "median": 12,
+          "p95": 25.2,
+          "min": 4.4,
+          "max": 37.6
+        },
+        "other": {
+          "median": 3.7,
+          "p95": 19,
+          "min": 0.9,
+          "max": 105.2
+        }
+      },
+      "phaseTotalMsPerRun": {
+        "navigate": {
+          "median": 5814.099999999996,
+          "p95": 6017.700000000002,
+          "min": 5651.8,
+          "max": 6017.700000000002
+        },
+        "freshRenderer": {
+          "median": 912.3000000000002,
+          "p95": 1055.4000000000005,
+          "min": 827.8000000000002,
+          "max": 1055.4000000000005
+        },
+        "render": {
+          "median": 4222.199999999999,
+          "p95": 4357.200000000001,
+          "min": 4157.6,
+          "max": 4357.200000000001
+        },
+        "settle": {
+          "median": 627.9999999999998,
+          "p95": 806.7999999999998,
+          "min": 586.1999999999998,
+          "max": 806.7999999999998
+        },
+        "paint": {
+          "median": 2175.7999999999984,
+          "p95": 2229.8,
+          "min": 2104.4999999999995,
+          "max": 2229.8
+        },
+        "structure": {
+          "median": 1607.2,
+          "p95": 1688.6000000000004,
+          "min": 1572.4,
+          "max": 1688.6000000000004
+        },
+        "screenshot": {
+          "median": 3094.6999999999994,
+          "p95": 3247.1,
+          "min": 2922.9999999999986,
+          "max": 3247.1
+        },
+        "encode": {
+          "median": 1554.6999999999998,
+          "p95": 1584.5000000000005,
+          "min": 1510.3000000000002,
+          "max": 1584.5000000000005
+        },
+        "other": {
+          "median": 817.1999999999998,
+          "p95": 1042.3,
+          "min": 688.3999999999997,
+          "max": 1042.3
+        }
+      },
+      "workloads": {
+        "forms": {
+          "captures": 75,
+          "durationMs": {
+            "median": 166,
+            "p95": 261,
+            "min": 110,
+            "max": 286
+          },
+          "phases": {
+            "navigate": {
+              "median": 45.4,
+              "p95": 64.5,
+              "min": 39.5,
+              "max": 138.8
+            },
+            "freshRenderer": {
+              "median": 5,
+              "p95": 20.8,
+              "min": 3.7,
+              "max": 100.3
+            },
+            "render": {
+              "median": 28.5,
+              "p95": 54.3,
+              "min": 17.1,
+              "max": 128.8
+            },
+            "settle": {
+              "median": 4.2,
+              "p95": 15.5,
+              "min": 0.7,
+              "max": 60.9
+            },
+            "paint": {
+              "median": 16.6,
+              "p95": 46.8,
+              "min": 5.6,
+              "max": 113.3
+            },
+            "structure": {
+              "median": 8.6,
+              "p95": 30.9,
+              "min": 2,
+              "max": 67.2
+            },
+            "screenshot": {
+              "median": 19.4,
+              "p95": 61.9,
+              "min": 10.5,
+              "max": 80.3
+            },
+            "encode": {
+              "median": 12.2,
+              "p95": 19.3,
+              "min": 4.6,
+              "max": 21.8
+            },
+            "other": {
+              "median": 4,
+              "p95": 58.5,
+              "min": 1.1,
+              "max": 105.2
+            }
+          }
+        },
+        "tables": {
+          "captures": 75,
+          "durationMs": {
+            "median": 151,
+            "p95": 217,
+            "min": 113,
+            "max": 319
+          },
+          "phases": {
+            "navigate": {
+              "median": 45.1,
+              "p95": 59.2,
+              "min": 27.3,
+              "max": 140.8
+            },
+            "freshRenderer": {
+              "median": 5,
+              "p95": 21.4,
+              "min": 0,
+              "max": 26
+            },
+            "render": {
+              "median": 26.5,
+              "p95": 48.9,
+              "min": 16.3,
+              "max": 129.3
+            },
+            "settle": {
+              "median": 3.5,
+              "p95": 8.8,
+              "min": 0.7,
+              "max": 62.4
+            },
+            "paint": {
+              "median": 16.6,
+              "p95": 19.2,
+              "min": 3.7,
+              "max": 58.3
+            },
+            "structure": {
+              "median": 7.6,
+              "p95": 28.3,
+              "min": 2.1,
+              "max": 73.5
+            },
+            "screenshot": {
+              "median": 18,
+              "p95": 55.8,
+              "min": 8.2,
+              "max": 113.9
+            },
+            "encode": {
+              "median": 12.1,
+              "p95": 16.6,
+              "min": 5.4,
+              "max": 18
+            },
+            "other": {
+              "median": 3.5,
+              "p95": 14.3,
+              "min": 1,
+              "max": 19.3
+            }
+          }
+        },
+        "cards": {
+          "captures": 75,
+          "durationMs": {
+            "median": 145,
+            "p95": 208,
+            "min": 108,
+            "max": 240
+          },
+          "phases": {
+            "navigate": {
+              "median": 45.4,
+              "p95": 88,
+              "min": 25.7,
+              "max": 132.3
+            },
+            "freshRenderer": {
+              "median": 4.5,
+              "p95": 12.1,
+              "min": 0,
+              "max": 18.5
+            },
+            "render": {
+              "median": 21.2,
+              "p95": 56.6,
+              "min": 0.6,
+              "max": 112.4
+            },
+            "settle": {
+              "median": 4.1,
+              "p95": 9.4,
+              "min": 0.7,
+              "max": 49.6
+            },
+            "paint": {
+              "median": 16.7,
+              "p95": 26.1,
+              "min": 8.5,
+              "max": 66.4
+            },
+            "structure": {
+              "median": 4.3,
+              "p95": 14.6,
+              "min": 1.4,
+              "max": 62.7
+            },
+            "screenshot": {
+              "median": 20.1,
+              "p95": 35.8,
+              "min": 8.6,
+              "max": 43.2
+            },
+            "encode": {
+              "median": 12.9,
+              "p95": 19.6,
+              "min": 4.6,
+              "max": 21.1
+            },
+            "other": {
+              "median": 3.1,
+              "p95": 12.3,
+              "min": 1.1,
+              "max": 24
+            }
+          }
+        },
+        "typography": {
+          "captures": 75,
+          "durationMs": {
+            "median": 167,
+            "p95": 256,
+            "min": 121,
+            "max": 287
+          },
+          "phases": {
+            "navigate": {
+              "median": 44.7,
+              "p95": 65.2,
+              "min": 23.9,
+              "max": 147.6
+            },
+            "freshRenderer": {
+              "median": 5.7,
+              "p95": 19.9,
+              "min": 0,
+              "max": 62.6
+            },
+            "render": {
+              "median": 31.5,
+              "p95": 42.4,
+              "min": 21.2,
+              "max": 48.4
+            },
+            "settle": {
+              "median": 4.7,
+              "p95": 9.4,
+              "min": 0.6,
+              "max": 17.8
+            },
+            "paint": {
+              "median": 16.5,
+              "p95": 22.9,
+              "min": 4.7,
+              "max": 72.6
+            },
+            "structure": {
+              "median": 4.8,
+              "p95": 19.8,
+              "min": 1.5,
+              "max": 24.8
+            },
+            "screenshot": {
+              "median": 25.7,
+              "p95": 43.3,
+              "min": 10.7,
+              "max": 70.3
+            },
+            "encode": {
+              "median": 19.5,
+              "p95": 26.7,
+              "min": 9.1,
+              "max": 32.7
+            },
+            "other": {
+              "median": 4.3,
+              "p95": 42.1,
+              "min": 0.9,
+              "max": 97.3
+            }
+          }
+        },
+        "charts": {
+          "captures": 75,
+          "durationMs": {
+            "median": 134,
+            "p95": 195,
+            "min": 104,
+            "max": 240
+          },
+          "phases": {
+            "navigate": {
+              "median": 45.3,
+              "p95": 76,
+              "min": 26.2,
+              "max": 126.7
+            },
+            "freshRenderer": {
+              "median": 5.4,
+              "p95": 15.5,
+              "min": 0,
+              "max": 18.7
+            },
+            "render": {
+              "median": 19.3,
+              "p95": 47.1,
+              "min": 1.3,
+              "max": 123.8
+            },
+            "settle": {
+              "median": 4.6,
+              "p95": 12.4,
+              "min": 0.6,
+              "max": 107
+            },
+            "paint": {
+              "median": 16.6,
+              "p95": 24.6,
+              "min": 5.8,
+              "max": 99.3
+            },
+            "structure": {
+              "median": 3.1,
+              "p95": 13.7,
+              "min": 1.2,
+              "max": 23.2
+            },
+            "screenshot": {
+              "median": 13,
+              "p95": 29.6,
+              "min": 5.8,
+              "max": 52.6
+            },
+            "encode": {
+              "median": 10.8,
+              "p95": 18.5,
+              "min": 6.2,
+              "max": 20.2
+            },
+            "other": {
+              "median": 3.9,
+              "p95": 19.7,
+              "min": 1.1,
+              "max": 87.5
+            }
+          }
+        },
+        "images": {
+          "captures": 75,
+          "durationMs": {
+            "median": 236,
+            "p95": 396,
+            "min": 113,
+            "max": 428
+          },
+          "phases": {
+            "navigate": {
+              "median": 44.7,
+              "p95": 57.8,
+              "min": 32.2,
+              "max": 96.1
+            },
+            "freshRenderer": {
+              "median": 4.7,
+              "p95": 17,
+              "min": 0,
+              "max": 56.6
+            },
+            "render": {
+              "median": 38.5,
+              "p95": 165.8,
+              "min": 16.8,
+              "max": 177.6
+            },
+            "settle": {
+              "median": 3.1,
+              "p95": 20.2,
+              "min": 0.7,
+              "max": 62.2
+            },
+            "paint": {
+              "median": 15.1,
+              "p95": 26,
+              "min": 2.8,
+              "max": 53.1
+            },
+            "structure": {
+              "median": 3.3,
+              "p95": 11.1,
+              "min": 1.3,
+              "max": 46.3
+            },
+            "screenshot": {
+              "median": 53.2,
+              "p95": 120.7,
+              "min": 12.5,
+              "max": 133.7
+            },
+            "encode": {
+              "median": 20.4,
+              "p95": 35.7,
+              "min": 6,
+              "max": 37.6
+            },
+            "other": {
+              "median": 3.6,
+              "p95": 13.1,
+              "min": 1,
+              "max": 21.8
+            }
+          }
+        },
+        "nested": {
+          "captures": 75,
+          "durationMs": {
+            "median": 182,
+            "p95": 348,
+            "min": 117,
+            "max": 362
+          },
+          "phases": {
+            "navigate": {
+              "median": 45.9,
+              "p95": 95.4,
+              "min": 23.9,
+              "max": 136.1
+            },
+            "freshRenderer": {
+              "median": 4.9,
+              "p95": 18.5,
+              "min": 0,
+              "max": 69.4
+            },
+            "render": {
+              "median": 30.6,
+              "p95": 104.5,
+              "min": 17.7,
+              "max": 137.5
+            },
+            "settle": {
+              "median": 2.4,
+              "p95": 9.2,
+              "min": 0.7,
+              "max": 14.5
+            },
+            "paint": {
+              "median": 16.8,
+              "p95": 28.7,
+              "min": 2.1,
+              "max": 73.3
+            },
+            "structure": {
+              "median": 27.7,
+              "p95": 119.2,
+              "min": 5.4,
+              "max": 141.3
+            },
+            "screenshot": {
+              "median": 18.1,
+              "p95": 31.4,
+              "min": 8.8,
+              "max": 112
+            },
+            "encode": {
+              "median": 11.9,
+              "p95": 16.8,
+              "min": 5.8,
+              "max": 20
+            },
+            "other": {
+              "median": 4.1,
+              "p95": 17.1,
+              "min": 1,
+              "max": 98.3
+            }
+          }
+        },
+        "async": {
+          "captures": 75,
+          "durationMs": {
+            "median": 138,
+            "p95": 225,
+            "min": 107,
+            "max": 250
+          },
+          "phases": {
+            "navigate": {
+              "median": 45,
+              "p95": 56.6,
+              "min": 26.8,
+              "max": 73.9
+            },
+            "freshRenderer": {
+              "median": 5.1,
+              "p95": 22.7,
+              "min": 0,
+              "max": 116
+            },
+            "render": {
+              "median": 19.6,
+              "p95": 37.9,
+              "min": 13.5,
+              "max": 56.9
+            },
+            "settle": {
+              "median": 4.9,
+              "p95": 12.1,
+              "min": 0.9,
+              "max": 20
+            },
+            "paint": {
+              "median": 16.6,
+              "p95": 54.5,
+              "min": 7.8,
+              "max": 108.8
+            },
+            "structure": {
+              "median": 3.5,
+              "p95": 14.4,
+              "min": 1.2,
+              "max": 20.5
+            },
+            "screenshot": {
+              "median": 18.2,
+              "p95": 33.6,
+              "min": 8.5,
+              "max": 115
+            },
+            "encode": {
+              "median": 9.9,
+              "p95": 12.5,
+              "min": 4.4,
+              "max": 13
+            },
+            "other": {
+              "median": 3.9,
+              "p95": 56.7,
+              "min": 1,
+              "max": 91.2
+            }
+          }
+        }
+      }
+    }
+  },
+  "evidence": {
+    "run": null,
+    "localDirectory": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-controlled-profile-8UL0fi"
+  }
+}

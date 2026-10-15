@@ -1,0 +1,70 @@
+name: profile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profile-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  controlled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Cache Chromium
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/jux
+          key: chrome-headless-shell-151.0.7922.34-${{ runner.os }}
+
+      - name: Install Chromium
+        run: node packages/cli/dist/index.js browser install
+
+      # deb.deps ships beside the binary in the Chrome for Testing zip.
+      # Lines may carry version constraints and `a | b` alternatives, which
+      # `apt-get satisfy` understands (comma-joined). If satisfy rejects a line
+      # (a renamed package, a missing deb.deps), fall back to the README's
+      # Ubuntu 24.04 list.
+      - name: Install Chromium system libraries
+        run: |
+          dir=$(dirname "$(node packages/cli/dist/index.js browser path)")
+          sudo apt-get update
+          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$dir/deb.deps")" ||
+            sudo apt-get install -y --no-install-recommends libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
+
+      - name: Build controlled Storybook
+        run: JUX_PROFILE_STORIES=1 pnpm --filter example-storybook exec storybook build --disable-telemetry -o storybook-profile
+
+      - name: Profile five passes per renderer mode
+        id: profile
+        run: |
+          status=0
+          node scripts/profile-storybook.mjs examples/storybook/storybook-profile 5 | tee "$RUNNER_TEMP/profile.log" || status=$?
+          echo "directory=$(head -n 1 "$RUNNER_TEMP/profile.log")" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Upload profile evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: controlled-profile
+          path: |
+            ${{ steps.profile.outputs.directory }}
+            ${{ runner.temp }}/profile.log
+          retention-days: 14
