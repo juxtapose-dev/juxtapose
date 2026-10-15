@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import type { StructureSnapshot } from '../../types.js';
-import { identityKey, matchElements } from './match.js';
+import { matchElements as referenceMatchElements } from './__tests__/match.reference.js';
+import { greedy, greedyByKey, identityKey, matchElements } from './match.js';
 
 // Real Chromium captures of the corpus page — scripts/capture-diff-fixtures.mjs.
 const fixture = JSON.parse(
@@ -149,6 +150,41 @@ test('a flat parent with thousands of children matches in bounded time', () => {
   expect(ms).toBeLessThan(250);
 });
 
+test('greedyByKey pairs exactly as greedy over key equality', () => {
+  // Deterministic pseudo-random lists over a small key alphabet, so keys
+  // repeat, go missing on one side, and appear out of order.
+  let seed = 7;
+  const rand = (m: number) => (seed = (seed * 1103515245 + 12345) % 2 ** 31) % m;
+  for (let trial = 0; trial < 300; trial++) {
+    const keyA = Array.from({ length: rand(40) }, () => `k${rand(8)}`);
+    const keyB = Array.from({ length: rand(40) }, () => `k${rand(8)}`);
+    const ca = keyA.map((_, i) => i);
+    const cb = keyB.map((_, j) => j);
+    expect(greedyByKey(ca, cb, keyA, keyB)).toEqual(
+      greedy(ca, cb, (i, j) => keyA[i] === keyB[j]),
+    );
+  }
+});
+
+test('greedyByKey on a flat list where no key matches reads each key once', () => {
+  // Every row's name changed, so no identity key survives: greedy compared
+  // all n² = 9M pairs before the tag pass paired them.
+  const n = 3000;
+  let reads = 0;
+  const count = (keys: string[]) =>
+    new Proxy(keys, {
+      get(t, k, r) {
+        if (typeof k === 'string' && /^\d+$/.test(k)) reads++;
+        return Reflect.get(t, k, r) as unknown;
+      },
+    });
+  const keyA = count(Array.from({ length: n }, (_, k) => `li|listitem=row ${k} a`));
+  const keyB = count(Array.from({ length: n }, (_, k) => `li|listitem=row ${k} b`));
+  const idx = Array.from({ length: n }, (_, k) => k);
+  expect(greedyByKey(idx, idx, keyA, keyB)).toEqual([]);
+  expect(reads).toBe(2 * n);
+});
+
 function bestOf3(fn: () => unknown): number {
   fn();
   let best = Infinity;
@@ -159,3 +195,93 @@ function bestOf3(fn: () => unknown): number {
   }
   return best;
 }
+
+test('matchElements preserves reference output for explicit conflicts, duplicates and wildcard ties', () => {
+  const row = snap('noop').elements[0];
+  for (const n of [30, 500, 501, 720]) {
+    for (const mode of ['disjoint', 'ties', 'fallback-ties']) {
+      const make = (side: number): StructureSnapshot => ({
+        ...snap('noop'),
+        elements: Array.from({ length: n }, (_, k) => ({
+          ...row,
+          parent: null,
+          tag: k % 7 === 0 ? 'span' : 'div',
+          id:
+            mode === 'disjoint'
+              ? `${side}-${k}`
+              : k % 3
+                ? `${mode === 'fallback-ties' ? side : ''}id${(k + side) % 9}`
+                : undefined,
+          testId:
+            mode !== 'disjoint' && k % 4
+              ? `${mode === 'fallback-ties' ? side : ''}test${(k + side) % 5}`
+              : undefined,
+          role: 'row',
+          name: `${side}-${k}`,
+        })),
+      });
+      const a = make(0);
+      const b = make(1);
+      expect(JSON.stringify(matchElements(a, b))).toBe(
+        JSON.stringify(referenceMatchElements(a, b)),
+      );
+    }
+  }
+});
+
+test('matchElements routes both large alignment passes through bounded lookups', () => {
+  const n = 1000;
+  for (const explicit of [false, true]) {
+    let reads = 0;
+    const make = (side: number): StructureSnapshot => ({
+      ...snap('noop'),
+      elements: Array.from({ length: n }, (_, k) => ({
+        ...snap('noop').elements[0],
+        parent: null,
+        get tag() {
+          reads++;
+          return 'div';
+        },
+        id: explicit ? `${side}-${k}` : undefined,
+        testId: undefined,
+        role: 'row',
+        name: `${side}-${k}`,
+      })),
+    });
+    const a = make(0);
+    const b = make(1);
+    // Identity comparisons read the arrays made by elements.map(identityKey).
+    // Count those reads too: snapshot reads alone miss the first-pass n² scan.
+    const map = Array.prototype.map;
+    const spy = vi.spyOn(Array.prototype, 'map').mockImplementation(function (
+      this: unknown[],
+      ...args
+    ) {
+      const result = Reflect.apply(map, this, args) as unknown[];
+      if (this !== a.elements && this !== b.elements) return result;
+      return new Proxy(result, {
+        get(target, key, receiver) {
+          if (typeof key === 'string' && /^\d+$/.test(key)) reads++;
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      });
+    });
+    let actual;
+    let reference;
+    let operations;
+    let oldOperations;
+    try {
+      actual = matchElements(a, b);
+      operations = reads;
+      reads = 0;
+      reference = referenceMatchElements(a, b);
+      oldOperations = reads;
+    } finally {
+      spy.mockRestore();
+    }
+    expect(JSON.stringify(actual)).toBe(JSON.stringify(reference));
+    expect(operations).toBeLessThan(30 * n);
+    if (explicit) expect(oldOperations).toBeGreaterThan(n * n);
+    expect(actual.pairs).toHaveLength(explicit ? 0 : n);
+  }
+});

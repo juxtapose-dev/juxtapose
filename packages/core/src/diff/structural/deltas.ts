@@ -10,8 +10,8 @@
 import {
   INHERITED_PROPS,
   STRUCTURE_PROPS,
-  effectiveStyle,
   elementAt,
+  styleReader,
   round,
 } from '../../capture/structure.js';
 import type { Delta, StructureRect, StructureSnapshot } from '../../types.js';
@@ -61,6 +61,7 @@ const ATTRS = ['src', 'role', 'name'] as const;
  *  labels capped at MAX_LABEL, every delta has a fixed worst-case size. */
 const MAX_VALUE = 200;
 const BORDER_COLOR = /^border-(top|right|bottom|left)-color$/;
+type StyleReader = ReturnType<typeof styleReader>;
 
 export function computeFacts(
   a: StructureSnapshot,
@@ -73,6 +74,8 @@ export function computeFacts(
    *  following, so their rects can ride on an ancestor's fact. */
   const byElement = new Map<number, Fact[]>();
   const followers: Array<{ i: number; rects: StructureRect[] }> = [];
+  const styleA = styleReader(a);
+  const styleB = styleReader(b);
 
   // Indices in `match` come from matchElements over these same element
   // arrays, so they are in range by construction. Parent pointers are data
@@ -129,12 +132,19 @@ export function computeFacts(
         // An unstored border colour resolves to currentColor, so a plain
         // `color` change would also report four phantom border-colour deltas
         // on every borderless element. No border, no border-colour fact.
-        if (BORDER_COLOR.test(prop) && borderless(a, i, prop) && borderless(b, j, prop))
+        if (
+          BORDER_COLOR.test(prop) &&
+          borderless(styleA, i, prop) &&
+          borderless(styleB, j, prop)
+        )
           continue;
-        const from = effectiveStyle(a, i, prop);
-        const to = effectiveStyle(b, j, prop);
+        const from = styleA(i, prop);
+        const to = styleB(j, prop);
         if (from === to) continue;
-        if (INHERITED_PROPS.has(prop) && !originatesHere(a, b, i, j, aToB, prop))
+        if (
+          INHERITED_PROPS.has(prop) &&
+          !originatesHere(a, b, i, j, aToB, prop, styleA, styleB)
+        )
           continue;
         facts.push(
           fact({
@@ -170,18 +180,31 @@ export function computeFacts(
       followers.push({ i, rects: [ea.rect, eb.rect] });
   }
 
-  // Nearest baseline ancestor with a geometry fact: the move or resize the
-  // child followed. Walked on the baseline tree, the side `source` indexes.
-  for (const { i, rects } of followers) {
-    for (let k = a.elements[i]!.parent; k !== null; k = elementAt(a, k).parent) {
-      const own = byElement
-        .get(k)
-        ?.find((f) => f.delta.kind === 'moved' || f.delta.kind === 'resized');
-      if (own) {
-        own.rects.push(...rects);
+  // A uniformly moving n-deep chain walked n(n-1)/2 ancestors. Cache
+  // resolved paths (including misses) so attachment visits O(n) ancestors,
+  // while followers still append their rects in the original pair order.
+  const nearestGeometry = new Map<number, Fact | undefined>();
+  const geometryAtOrAbove = (start: number | null): Fact | undefined => {
+    const path: number[] = [];
+    let own: Fact | undefined;
+    let k = start;
+    while (k !== null) {
+      if (nearestGeometry.has(k)) {
+        own = nearestGeometry.get(k);
         break;
       }
+      path.push(k);
+      own = byElement
+        .get(k)
+        ?.find((f) => f.delta.kind === 'moved' || f.delta.kind === 'resized');
+      if (own) break;
+      k = elementAt(a, k).parent;
     }
+    for (const index of path) nearestGeometry.set(index, own);
+    return own;
+  };
+  for (const { i, rects } of followers) {
+    geometryAtOrAbove(a.elements[i]!.parent)?.rects.push(...rects);
   }
 
   for (const j of match.added) {
@@ -196,21 +219,23 @@ export function computeFacts(
   }
 
   // A removed element has no current position; order it after the last
-  // matched element that precedes it on the baseline side.
-  const lastMatchedBefore = (i: number): number => {
-    for (let k = i - 1; k >= 0; k--) {
-      const j = aToB.get(k);
-      if (j !== undefined) return j + 0.5;
-    }
-    return -0.5;
-  };
+  // matched element that precedes it on the baseline side. match.removed is
+  // ascending, so one forward sweep finds each predecessor. A scan back from
+  // each removed element was quadratic: a removed 4999-row list walked 12.5M
+  // baseline indices, and its structural diff took 58-136 ms (11-26 ms now).
+  let scanned = 0;
+  let lastMatchedBefore = -0.5;
   for (const i of match.removed) {
+    for (; scanned < i; scanned++) {
+      const j = aToB.get(scanned);
+      if (j !== undefined) lastMatchedBefore = j + 0.5;
+    }
     const e = a.elements[i]!;
     facts.push({
       delta: { kind: 'removed', el: label(e), rect: e.rect },
       rects: [e.rect],
       abstract: abstractLabel(e),
-      order: lastMatchedBefore(i),
+      order: lastMatchedBefore,
       source: { side: 'baseline', index: i },
     });
   }
@@ -219,8 +244,8 @@ export function computeFacts(
 }
 
 /** That side of `border-<side>-color` has zero width on this element. */
-function borderless(s: StructureSnapshot, i: number, colorProp: string): boolean {
-  return effectiveStyle(s, i, colorProp.replace(/-color$/, '-width')) === '0px';
+function borderless(style: StyleReader, i: number, colorProp: string): boolean {
+  return style(i, colorProp.replace(/-color$/, '-width')) === '0px';
 }
 
 /** An inherited property changed on this element, not merely on an ancestor:
@@ -233,6 +258,8 @@ function originatesHere(
   j: number,
   aToB: Map<number, number>,
   prop: string,
+  styleA: StyleReader,
+  styleB: StyleReader,
 ): boolean {
   const ea = a.elements[i]!; // i, j: a matched pair
   const eb = b.elements[j]!;
@@ -242,7 +269,7 @@ function originatesHere(
   if (pa === null || pb === null) return true;
   // Parents unmatched: nothing above to blame, so report here.
   if (aToB.get(pa) !== pb) return true;
-  return effectiveStyle(a, pa, prop) === effectiveStyle(b, pb, prop);
+  return styleA(pa, prop) === styleB(pb, prop);
 }
 
 /** How the matched parent's box changed; undefined when the parent is the

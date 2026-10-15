@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import { expect, test } from 'vitest';
 import type { StructureElement, StructureSnapshot } from '../types.js';
+import { analyzeFlake as referenceAnalyzeFlake } from './__tests__/analyze.reference.js';
 import { analyzeFlake } from './analyze.js';
 
 const VIEWPORT = { width: 40, height: 40 };
@@ -220,4 +221,37 @@ test('an element known only by its position, or a page still running, gets no wa
   expect(flake.cause).toBe('async-element');
   expect(flake.confidence).toBe('low');
   expect(flake.fix).toBeNull();
+});
+
+test('analyzeFlake shares class counts across permutations and preserves the reference verdict', async () => {
+  const permutations = (items: string[]): string[][] =>
+    items.length === 0
+      ? [[]]
+      : items.flatMap((item, i) =>
+          permutations(items.filter((_, j) => i !== j)).map((rest) => [item, ...rest]),
+        );
+  const classes = permutations(['a', 'b', 'c', 'd', 'e', 'f']);
+  let includes = 0;
+  const rows = classes.map((list, k) =>
+    el({
+      path: `div:nth-of-type(${k + 1})`,
+      classes: new Proxy([...list, list[0]], {
+        get(target, key, receiver) {
+          if (key === 'includes') includes++;
+          return Reflect.get(target, key, receiver) as unknown;
+        },
+      }),
+    }),
+  );
+  const input = {
+    storyId: 's',
+    first: { image: await frame(null), structure: structure(rows, 'a') },
+    second: { image: await frame({ x: 0, y: 0 }), structure: structure([], 'b') },
+  };
+  const actual = await analyzeFlake(input);
+  const operations = includes;
+  expect(JSON.stringify(actual)).toBe(JSON.stringify(await referenceAnalyzeFlake(input)));
+  // The old order-sensitive cache makes 720 scans of 720 candidates.
+  expect(operations).toBeLessThan(10 * rows.length);
+  expect(actual.cause).toBe('async-element');
 });

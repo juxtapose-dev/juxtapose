@@ -23,7 +23,7 @@ import {
   type OneSidedElement,
   type TextChange,
 } from './classify.js';
-import { describeSelector, selectorFor } from './selector.js';
+import { selectorsFor } from './selector.js';
 
 /** One capture of the story: what the run kept of it. */
 export interface FlakeCapture {
@@ -67,11 +67,12 @@ function externalHits(
 ): ExternalHit[] {
   if (!s) return [];
   const out: ExternalHit[] = [];
+  const selectors = selectorsFor(s);
   s.elements.forEach((el, i) => {
     if (!el.external) return;
     const overlap = overlapWith(el.rect, regions);
     if (overlap === 0) return;
-    const selector = selectorFor(s, i);
+    const selector = selectors.selector(i);
     for (const ref of el.external) out.push({ selector, ref, overlap });
   });
   return out;
@@ -97,10 +98,12 @@ export async function analyzeFlake(input: FlakeAnalysisInput): Promise<Flake> {
   const oneSided: OneSidedElement[] = [];
   if (comparable) {
     const match = matchElements(a, b);
+    const selA = selectorsFor(a);
+    const selB = selectorsFor(b);
     for (const f of computeFacts(a, b, match)) {
       if (f.delta.kind !== 'text') continue;
       textChanges.push({
-        selector: selectorFor(a, f.source.index),
+        selector: selA.selector(f.source.index),
         before: clip(f.delta.from),
         after: clip(f.delta.to),
       });
@@ -108,13 +111,13 @@ export async function analyzeFlake(input: FlakeAnalysisInput): Promise<Flake> {
     if (!a.truncated && !b.truncated) {
       for (const i of match.removed)
         oneSided.push({
-          ...describeSelector(a, i),
+          ...selA.describe(i),
           presentIn: 'first',
           area: area(a.elements[i]!.rect),
         });
       for (const j of match.added)
         oneSided.push({
-          ...describeSelector(b, j),
+          ...selB.describe(j),
           presentIn: 'second',
           area: area(b.elements[j]!.rect),
         });
