@@ -106,7 +106,9 @@ describe('captureStory cache pulse on a reused renderer', () => {
       .toBuffer();
   });
 
-  function setup(options: Pick<CaptureDeps, 'freshRenderer' | 'warmSwitch'>) {
+  function setup(
+    options: Pick<CaptureDeps, 'freshRenderer' | 'warmSwitch' | 'renderer'>,
+  ) {
     const page = recordingPage();
     const events: unknown[] = [];
     page.screenshot = async () => png;
@@ -138,7 +140,9 @@ describe('captureStory cache pulse on a reused renderer', () => {
   }
 
   it('pulses exactly true then false before showing the second cold story', async () => {
-    const { capture, events } = setup({ freshRenderer: false });
+    const { capture, events } = setup({
+      renderer: { shared: true, clearResourceCache: true },
+    });
     await capture('first');
     events.length = 0;
     await capture('second');
@@ -149,8 +153,17 @@ describe('captureStory cache pulse on a reused renderer', () => {
     ]);
   });
 
+  it('does not pulse for shared rendering unless explicitly enabled', async () => {
+    const { capture, events } = setup({ renderer: { shared: true } });
+    await capture('first');
+    await capture('second');
+    expect(events).toEqual(['show:first', 'show:second']);
+  });
+
   it('does not pulse on the first capture on a page', async () => {
-    const { capture, events } = setup({ freshRenderer: false });
+    const { capture, events } = setup({
+      renderer: { shared: true, clearResourceCache: true },
+    });
     await capture('first');
     expect(events).toEqual(['show:first']);
   });
@@ -166,7 +179,10 @@ describe('captureStory cache pulse on a reused renderer', () => {
   );
 
   it('does not pulse when the second story takes the warm-switch path', async () => {
-    const { capture, events } = setup({ freshRenderer: false, warmSwitch: true });
+    const { capture, events } = setup({
+      renderer: { shared: true, clearResourceCache: true },
+      warmSwitch: true,
+    });
     await capture('first');
     await capture('second');
     expect(events).toEqual(['show:first', 'switch:second']);

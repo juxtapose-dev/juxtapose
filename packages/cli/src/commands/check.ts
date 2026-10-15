@@ -69,6 +69,7 @@ export async function checkCommand(
         blocking: blocking.map((r) => ({
           storyId: r.storyId,
           status: r.status,
+          ...(r.rendererRetry ? { rendererRetry: r.rendererRetry } : {}),
           ...(r.unstable && !r.unrechecked ? { unstable: true } : {}),
         })),
         runId: report.runId,

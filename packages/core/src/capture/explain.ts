@@ -1,3 +1,4 @@
+import { resolveRenderer } from './renderer.js';
 // `jux config --explain <storyId>` (issue #179): the settings one capture
 // would use, and which layer each came from.
 //
@@ -83,6 +84,8 @@ const ALWAYS = [
   'threshold',
   'minDiffPercent',
   'recheck',
+  'renderer.shared',
+  'renderer.clearResourceCache',
 ];
 
 /** Read by captureStory (or the diff) before live params exist, so live
@@ -115,6 +118,7 @@ const ORDER = [
 
 function projectLayer(c: ProjectConfig): SettleLayer & StoryParams {
   return {
+    ...(c.renderer ? { renderer: c.renderer } : {}),
     ...(c.settle ? { settle: c.settle } : {}),
     ...(c.network ? { network: c.network } : {}),
     ...(c.waitForSelector !== undefined ? { waitForSelector: c.waitForSelector } : {}),
@@ -271,6 +275,18 @@ export function explainCapture(
         break;
       case 'minDiffPercent':
         value = resolveMinDiffPercent(capture.params, config);
+        break;
+      case 'renderer.shared':
+      case 'renderer.clearResourceCache':
+        value = resolveRenderer(config, merged.renderer)[
+          setting === 'renderer.shared' ? 'shared' : 'clearResourceCache'
+        ];
+        if (
+          !post.sources.has(setting) &&
+          setting === 'renderer.shared' &&
+          config.freshRenderer !== undefined
+        )
+          source = [PROJECT];
         break;
       case 'recheck':
         // A run-wide setting: no story or variant layer, so its source is

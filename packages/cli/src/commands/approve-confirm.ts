@@ -39,7 +39,7 @@ export async function confirmForApprove(
   if (hashes.size === 0) return new Map();
   if (!ctx.json)
     io.err(
-      `jux: ${hashes.size} ${hashes.size === 1 ? 'story was' : 'stories were'} not captured twice in the run; capturing ${hashes.size === 1 ? 'it' : 'them'} again before approving\n`,
+      `jux: capturing ${hashes.size} ${hashes.size === 1 ? 'story' : 'stories'} on fresh renderers before approving\n`,
     );
   const needsServer = !ctx.origin && ctx.platform.name !== 'urls';
   let server: Awaited<ReturnType<typeof serveStatic>> | null = null;

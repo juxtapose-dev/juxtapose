@@ -50,13 +50,15 @@ export async function confirmCaptures(opts: ConfirmOptions): Promise<Confirmatio
   }
   const pool = capturePool(opts.stories, {
     ...poolSettings(opts),
+    forceFreshRenderer: true,
+    warmSwitch: false,
     onProgress: opts.onProgress,
   });
   for await (const outcome of pool) {
     const id = outcome.story.storyId;
     const first = opts.hashes.get(id);
     if (first === undefined) continue;
-    if (!outcome.snapshot) {
+    if (!outcome.snapshot || outcome.snapshot.rendererReused) {
       out.set(id, {
         storyId: id,
         unstable: {

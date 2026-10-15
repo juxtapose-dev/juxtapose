@@ -46,6 +46,7 @@ export interface SnapPagesOptions {
   storyTimeoutMs?: number;
   /** A new renderer per URL after the first; default true. See CaptureDeps. */
   freshRenderer?: boolean;
+  renderer?: StoryParams['renderer'];
   /** Acquired by the caller (acquireBrowser); not closed here. */
   browser: Browser;
 }
@@ -108,6 +109,7 @@ export async function snapPages(
               platform,
               baseUrl: url,
               ...hooks,
+              renderer: opts.renderer,
               ...(opts.freshRenderer !== undefined
                 ? { freshRenderer: opts.freshRenderer }
                 : {}),

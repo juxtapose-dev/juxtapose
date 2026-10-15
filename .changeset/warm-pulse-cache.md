@@ -1,5 +1,9 @@
 ---
-'@juxtapose/core': patch
+'@juxtapose/core': minor
+'@juxtapose/cli': minor
+'@juxtapose/server': patch
 ---
 
-With `freshRenderer: false`, disable and re-enable the network cache before each reused-renderer navigation. This evicts Blink's in-memory resource cache and removes most history-dependent pixels (Chakra: 32 stories differed from fresh-renderer captures before, 5 after, 4 of them already flaky between two fresh runs).
+Add project and per-story `renderer: { shared, clearResourceCache }` settings. Shared-renderer baseline mismatches receive bounded fresh retries, with retry evidence and per-story pinning instructions in reports. Cache clearing is optional. Fresh renderers remain the default pending three-suite verification.
+
+Approval now confirms every selected capture on a fresh renderer, including with `--allow-unstable`, and requires the reviewed hash to match. Initial baselines also use fresh renderers.

@@ -1,3 +1,4 @@
+import { describeRendererRetries } from './renderer-retry.js';
 // Build the PR comment body.
 //
 // A pure function, separate from posting it, so the formatting can be tested
@@ -75,6 +76,8 @@ export function buildComment({
   if (needsReview.length === 0) {
     lines.push(`### Visual tests passed`, '', passingBody(report));
     lines.push('', footer(report, artifactUrl));
+    const retry = describeRendererRetries(report.results);
+    if (retry) lines.push('', '```text', retry, '```');
     return lines.join('\n');
   }
 
@@ -121,6 +124,8 @@ export function buildComment({
   lines.push(...guidance(rows, commitPaths, imagesCommitted === true));
   lines.push(footer(report, artifactUrl));
 
+  const retry = describeRendererRetries(report.results);
+  if (retry) lines.push('', '```text', retry, '```');
   return lines.join('\n');
 }
 

@@ -120,8 +120,9 @@ export function applyOverride<T extends StoryParams>(
   override: StoryOverride | undefined,
 ): T {
   if (!override) return params;
-  const { mask, settle, network, ...scalars } = override;
+  const { mask, settle, network, renderer, ...scalars } = override;
   const out: T = { ...params, ...scalars };
+  if (params.renderer || renderer) out.renderer = { ...params.renderer, ...renderer };
   if (params.mask || mask)
     out.mask = [...new Set([...(params.mask ?? []), ...(mask ?? [])])];
   const s = mergeSettle(params.settle, settle);

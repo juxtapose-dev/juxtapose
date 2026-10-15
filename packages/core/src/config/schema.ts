@@ -331,7 +331,26 @@ const NOT_CSS = "'{value}' is not a CSS selector (Playwright-only syntax is refu
 
 /** Story capture options, keyed as in `parameters.juxtapose`. Each is worded
  *  for a `stories` entry, the one place the runtime checks them all. */
+export const RendererSchema = Type.Object(
+  {
+    shared: Type.Optional(
+      Type.Boolean({
+        description:
+          'Reuse renderer processes between stories and retry baseline mismatches fresh. Default false until reuse verification is complete.',
+      }),
+    ),
+    clearResourceCache: Type.Optional(
+      Type.Boolean({
+        description:
+          'Clear Blink resource memory cache before reused-renderer navigation. Default false; ignored when shared is false. HTTP cache is retained.',
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 const captureOptions = {
+  renderer: RendererSchema,
   skip: withText(Type.Boolean({ description: 'Never capture this story.' }), {
     type: 'skip must be true or false, got {got}',
   }),
@@ -558,6 +577,7 @@ const settleScalar = <T extends TSchema>(schema: T, type: string) =>
 
 /** The project options the runtime checks, in the order it checks them. */
 const projectChecked = {
+  renderer: RendererSchema,
   freshRenderer: settleScalar(
     Type.Boolean({
       description:

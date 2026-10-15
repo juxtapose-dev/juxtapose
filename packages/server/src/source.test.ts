@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { RunDirSource, mergeReports, watchTargets } from './source.js';
 import {
   encodeStoryId,
+  hashImage,
   encodeStructure,
   createBaselineStore,
   GitBaselineStore,
@@ -18,6 +19,19 @@ import {
   type StoryManifest,
   type StoryParams,
 } from '@juxtapose/core';
+
+const confirmation = vi.hoisted(() => ({ fails: false }));
+vi.mock('@juxtapose/core', async (original) => ({
+  ...(await original<typeof import('@juxtapose/core')>()),
+  acquireBrowser: async () => ({ isConnected: () => true, close: async () => {} }),
+  confirmCaptures: async ({ stories }: { stories: StoryManifest[] }) =>
+    stories.map((s) => ({
+      storyId: s.storyId,
+      ...(confirmation.fails
+        ? { unstable: { hashes: ['h'], unconfirmed: 'fresh capture failed' } }
+        : {}),
+    })),
+}));
 
 const story = (storyId: string, params: StoryParams = {}): StoryManifest => ({
   storyId,
@@ -78,7 +92,7 @@ describe('RunDirSource.approve', () => {
     const store = createBaselineStore(root, undefined);
     const source = new RunDirSource({
       projectRoot: root,
-      platform: {} as Platform,
+      platform: { enumerate: async () => [story('a--b')] } as unknown as Platform,
       store,
       config: {} as ProjectConfig,
       baseUrl: 'http://127.0.0.1:1',
@@ -86,6 +100,15 @@ describe('RunDirSource.approve', () => {
       branch: 'main',
       commitSha: 'abc',
     });
+    await writeFile(
+      path.join(runDir, 'report.json'),
+      JSON.stringify({
+        runId: 'r',
+        results: [
+          { storyId: 'a--b', status: 'new', hash: hashImage(Buffer.from('img')) },
+        ],
+      }),
+    );
     await source.approve('a--b');
     // The default store commits the sidecar as readable JSON, not gzip.
     expect(JSON.parse((await store.getStructure('a--b'))!.toString()).structureHash).toBe(
@@ -106,7 +129,7 @@ describe('RunDirSource.approve of a story the run captured once', () => {
     const result: DiffResult = {
       storyId: 'a--b',
       status: 'new',
-      hash: 'h',
+      hash: hashImage(Buffer.from('img')),
       unrechecked: true,
       unstable: { hashes: ['h'], unconfirmed: 'not rechecked (recheck off)' },
       mismatchPixels: 0,
@@ -121,7 +144,7 @@ describe('RunDirSource.approve of a story the run captured once', () => {
     const store = createBaselineStore(root, undefined);
     return new RunDirSource({
       projectRoot: root,
-      platform: {} as Platform,
+      platform: { enumerate: async () => [story('a--b')] } as unknown as Platform,
       store,
       config: {} as ProjectConfig,
       baseUrl: 'http://127.0.0.1:1',
@@ -131,10 +154,15 @@ describe('RunDirSource.approve of a story the run captured once', () => {
     });
   }
 
-  it('is refused until `jux approve` confirms it, unless allowUnstable', async () => {
+  it('confirms fresh and refuses errors even with allowUnstable', async () => {
     const source = await setup();
-    await expect(source.approve('a--b')).rejects.toThrow(/captured it once.*jux approve/);
-    await expect(source.approve('a--b', true)).resolves.toBeUndefined();
+    await expect(source.approve('a--b')).resolves.toBeUndefined();
+    confirmation.fails = true;
+    try {
+      await expect(source.approve('a--b', true)).rejects.toThrow(/fresh capture failed/);
+    } finally {
+      confirmation.fails = false;
+    }
   });
 });
 
