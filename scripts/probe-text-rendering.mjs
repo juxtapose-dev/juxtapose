@@ -11,12 +11,16 @@ import path from 'node:path';
 import { Browser } from '../packages/core/dist/browser/browser.js';
 import { resolveChrome } from '../packages/core/dist/browser/resolve.js';
 import { captureStory } from '../packages/core/dist/capture/capture.js';
+import { waitForPaint } from '../packages/core/dist/capture/settle.js';
 import { StorybookPlatform } from '../packages/adapter-storybook/dist/index.js';
 import { serveStatic } from '../packages/cli/dist/serve-static.js';
 
 const [buildDir, storyId, countArg = '20', outputArg, mode = 'fresh'] =
   process.argv.slice(2);
 const count = Number(countArg);
+const experiment = process.env.JUX_TEXT_EXPERIMENT ?? 'baseline';
+if (!['baseline', 'raw', 'paint', 'caret-paint'].includes(experiment))
+  throw new Error('Unknown text probe experiment');
 if (
   !buildDir ||
   !storyId ||
@@ -102,6 +106,7 @@ try {
     sharp: sharp.versions,
     viewport,
     mode,
+    experiment,
     storyId,
     count,
     note: 'Fresh context per repetition; one persistent browser. Measurements follow both screenshots. Open shadow roots covered; closed roots and iframe contents are not covered by geometry.',
@@ -114,6 +119,39 @@ try {
       const screenshot = page.screenshot.bind(page);
       let originalPng;
       page.screenshot = async (options) => {
+        if (!originalPng) {
+          if (experiment === 'raw') {
+            if (options?.mask?.length)
+              throw new Error('Raw experiment does not support masks');
+            const { data } = await page.send('Page.captureScreenshot', {
+              format: 'png',
+              captureBeyondViewport: false,
+              clip: {
+                x: 0,
+                y: 0,
+                width: viewport.width,
+                height: viewport.height,
+                scale: 1,
+              },
+            });
+            originalPng = Buffer.from(data, 'base64');
+            return originalPng;
+          }
+          if (experiment === 'caret-paint') {
+            await page.evaluate(() => {
+              const visit = (root) => {
+                for (const el of root.querySelectorAll('*')) {
+                  if (el.matches('input,textarea,[contenteditable]'))
+                    el.style.setProperty('caret-color', 'transparent', 'important');
+                  if (el.shadowRoot) visit(el.shadowRoot);
+                }
+              };
+              visit(document);
+            });
+          }
+          if (experiment === 'paint' || experiment === 'caret-paint')
+            await waitForPaint(page);
+        }
         const image = await screenshot(options);
         originalPng ??= image;
         return image;

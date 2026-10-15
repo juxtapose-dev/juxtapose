@@ -5,9 +5,7 @@
 This page lists what jux measured on three public Storybooks, how jux keeps
 those captures stable, what still varies, and how to repeat the measurements.
 
-## What was tested
-
-### Focused text-rendering investigation
+## Focused text-rendering investigation
 
 For Linux text noise, use the field-test workflow's `text_probe: true` with one
 story ID (for example `textfield--empty`), `passes: 20`, and one renderer mode.
@@ -22,7 +20,8 @@ Locally, after building the packages:
 node scripts/probe-text-rendering.mjs /path/to/storybook-static textfield--empty 20 /tmp/text-probe fresh
 ```
 
-Each repetition saves both images, exact changed-pixel counts and bounds,
+Each repetition saves the original PNG, encoded image, two subsequent
+screenshots, exact changed-pixel counts and bounds,
 computed font and text geometry through open shadow roots, loaded font status,
 and CDP's actual platform-font usage. This supports offline analysis without
 another capture run. The second screenshot distinguishes cross-navigation
@@ -35,6 +34,23 @@ subset does not reproduce the noise, restore the original predecessor story or
 capture load before treating it as stable. Success means the probe completed,
 not that all pixels matched. Use the full suites only after a hypothesis survives
 this focused loop.
+
+`text_experiment: sweep` batches four diagnostic interventions into the same
+runner allocation: normal capture, raw CDP capture without screenshot preparation,
+an extra paint barrier, and caret hiding before an extra paint barrier. Locally,
+set `JUX_TEXT_EXPERIMENT` to `baseline`, `raw`, `paint`, or `caret-paint`.
+These are investigation controls, not supported capture policies; the raw control
+requires an unscrolled 1280×800 story with no masks. No production behavior changes.
+
+The first [20-repeat Linux probe](https://github.com/juxtapose-dev/juxtapose/actions/runs/38785584994)
+took 13 seconds of capture time (about 45 seconds for the runner job with cached
+builds). `textfield--empty` produced three initial hashes, but all 20 second
+screenshots had identical decoded pixels. Geometry and actual Adobe Clean font
+usage matched across repetitions. The first-to-second differences were confined
+to the placeholder's bounds, 261–400 pixels. This motivates separating first-frame
+paint/preparation from encoding; it does not yet establish the cause or a fix.
+
+## What was tested
 
 You can repeat every run on this page. Each Storybook was built from source
 and served locally by jux through [`buildDir`](configuration.md#capture-a-built-or-deployed-storybook),

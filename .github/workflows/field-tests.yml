@@ -24,6 +24,11 @@ on:
         description: 'Collect paired screenshots and shadow-DOM/font evidence for exactly one story (investigation only)'
         type: boolean
         default: false
+      text_experiment:
+        description: 'Text probe intervention (sweep runs all four sequentially)'
+        type: choice
+        options: [baseline, raw, paint, caret-paint, sweep]
+        default: baseline
       renderer:
         description: Renderer policy (sweep compares shared, fresh, and cache pulse)
         type: choice
@@ -194,6 +199,7 @@ jobs:
           WORKERS: ${{ inputs.concurrency || 'configured' }}
           RENDERER: ${{ inputs.renderer || 'configured' }}
           TEXT_PROBE: ${{ inputs.text_probe || 'false' }}
+          TEXT_EXPERIMENT: ${{ inputs.text_experiment || 'baseline' }}
         run: |
           mkdir -p "$OUT_DIR"
           case "$PASSES" in '' | *[!0-9]*) echo "passes must be a number" >&2; exit 2 ;; esac
@@ -204,7 +210,14 @@ jobs:
               fresh|shared|pulse) ;;
               *) echo "text_probe requires a single renderer mode" >&2; exit 2 ;;
             esac
-            node scripts/probe-text-rendering.mjs "$SB_CACHE" "$STORIES" "$PASSES" "$OUT_DIR" "$RENDERER"
+            case "$TEXT_EXPERIMENT" in
+              baseline|raw|paint|caret-paint) experiments=("$TEXT_EXPERIMENT") ;;
+              sweep) experiments=(baseline raw paint caret-paint) ;;
+              *) echo "invalid text experiment" >&2; exit 2 ;;
+            esac
+            for experiment in "${experiments[@]}"; do
+              JUX_TEXT_EXPERIMENT="$experiment" node scripts/probe-text-rendering.mjs "$SB_CACHE" "$STORIES" "$PASSES" "$OUT_DIR/$experiment" "$RENDERER"
+            done
             exit 0
           fi
           args=()
