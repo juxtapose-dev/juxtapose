@@ -87,7 +87,7 @@ loop. See [Agents](docs/agents.md) for the verdict format and every option.
 
 ```bash
 pnpm add -D @juxtapose/cli
-npx storybook build                         # or: npx ladle build
+npx storybook build --quiet --disable-telemetry --loglevel error  # or: npx ladle build
 npx -p @juxtapose/cli jux browser install   # once, ~100 MB
 npx -p @juxtapose/cli jux init              # writes the config, captures, approves
 git add juxtapose.config.json juxtapose.manifest.json .gitignore
@@ -113,11 +113,13 @@ The `jux` command comes from `@juxtapose/cli`. Without it installed, run it as
 ## In CI
 
 ```yaml
-- run: npx storybook build
+- run: npx storybook build --quiet --disable-telemetry --loglevel error
 - run: npx -p @juxtapose/cli jux run --comment --html
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+The Storybook flags keep the build output short and turn off telemetry. Errors still print, so a failing build shows its cause.
 
 `jux run` fails the job when a story changed, is new, or has a stale baseline,
 and `--comment` posts the results on the pull request. See [CI](docs/ci.md).

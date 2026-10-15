@@ -141,11 +141,11 @@ CLI, `node packages/cli/dist/index.js` from the jux checkout.
    [table above](#what-was-tested), and build its static Storybook with the
    repo's own commands:
 
-   | Storybook               | Build commands                                                                                                                                              |
-   | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | Chakra UI               | `pnpm install --frozen-lockfile`, then `pnpm build:storybook`. The output is `storybook-static/`.                                                           |
-   | Primer React            | `npm ci` at the repo root, then `DEPLOY_ENV=production npx storybook build` in `packages/react`. The output is `packages/react/storybook-static/`.          |
-   | Spectrum Web Components | `yarn install` and `yarn build` at the repo root, then `yarn storybook:build` in `1st-gen`. The output is `1st-gen/projects/documentation/dist/storybook/`. |
+   | Storybook               | Build commands                                                                                                                                                                                  |
+   | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | Chakra UI               | `pnpm install --frozen-lockfile`, then `pnpm build:storybook`. The output is `storybook-static/`.                                                                                               |
+   | Primer React            | `npm ci` at the repo root, then `DEPLOY_ENV=production npx storybook build --quiet --disable-telemetry --loglevel error` in `packages/react`. The output is `packages/react/storybook-static/`. |
+   | Spectrum Web Components | `yarn install` and `yarn build` at the repo root, then `yarn storybook:build` in `1st-gen`. The output is `1st-gen/projects/documentation/dist/storybook/`.                                     |
 
    `DEPLOY_ENV=production` excludes the `*.dev.stories` files, as the deployed
    Primer site does. Spectrum Web Components uses the Yarn release that the
