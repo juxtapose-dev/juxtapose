@@ -2,6 +2,12 @@ name: profile
 
 on:
   workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Optional commit/ref for paired before/after comparison
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -51,11 +57,39 @@ jobs:
       - name: Build controlled Storybook
         run: JUX_PROFILE_STORIES=1 pnpm --filter example-storybook exec storybook build --disable-telemetry -o storybook-profile
 
+      - name: Build paired baseline without reinstalling dependencies
+        if: inputs.baseline_ref != ''
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+        run: |
+          git fetch --depth=1 origin "$BASELINE_REF"
+          git worktree add --detach "$RUNNER_TEMP/jux-baseline" FETCH_HEAD
+          cmp pnpm-lock.yaml "$RUNNER_TEMP/jux-baseline/pnpm-lock.yaml"
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import os, shutil
+          source = Path.cwd()
+          target = Path(os.environ['RUNNER_TEMP']) / 'jux-baseline'
+          (target / 'node_modules').symlink_to(source / 'node_modules', target_is_directory=True)
+          for group in ['packages', 'examples']:
+              for package in (source / group).iterdir():
+                  modules = package / 'node_modules'
+                  if modules.is_dir():
+                      shutil.copytree(modules, target / modules.relative_to(source), symlinks=True)
+          PYCODE
+          pnpm -C "$RUNNER_TEMP/jux-baseline" build
+
       - name: Profile five passes per renderer mode
         id: profile
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref }}
         run: |
           status=0
-          node scripts/profile-storybook.mjs examples/storybook/storybook-profile 5 | tee "$RUNNER_TEMP/profile.log" || status=$?
+          if [ -n "$BASELINE_REF" ]; then
+            node scripts/compare-pipeline.mjs "$RUNNER_TEMP/jux-baseline/packages/cli/dist/index.js" packages/cli/dist/index.js examples/storybook/storybook-profile 5 --pixel-parity | tee "$RUNNER_TEMP/profile.log" || status=$?
+          else
+            node scripts/profile-storybook.mjs examples/storybook/storybook-profile 5 | tee "$RUNNER_TEMP/profile.log" || status=$?
+          fi
           echo "directory=$(head -n 1 "$RUNNER_TEMP/profile.log")" >> "$GITHUB_OUTPUT"
           exit "$status"
 
@@ -67,4 +101,5 @@ jobs:
           path: |
             ${{ steps.profile.outputs.directory }}
             ${{ runner.temp }}/profile.log
+          include-hidden-files: true
           retention-days: 14

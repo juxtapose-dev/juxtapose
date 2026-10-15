@@ -181,6 +181,8 @@ export function chromeArgs(opts: {
   userDataDir: string;
   args?: string[];
   headless?: boolean;
+  /** Used by daemon identity to match the supervisor's launch environment. */
+  env?: NodeJS.ProcessEnv;
 }): string[] {
   const { headless, args } = deterministicLaunchOptions({
     headless: opts.headless,
@@ -193,7 +195,9 @@ export function chromeArgs(opts: {
     '--no-sandbox',
     ...args,
     `--user-data-dir=${opts.userDataDir}`,
-    '--remote-debugging-pipe',
+    (opts.env ?? process.env).JUX_CDP_JSON === '1'
+      ? '--remote-debugging-pipe'
+      : '--remote-debugging-pipe=cbor',
     '--no-startup-window',
   ];
 }

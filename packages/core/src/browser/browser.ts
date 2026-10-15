@@ -96,6 +96,8 @@ export class Browser {
     executablePath: string;
     args?: string[];
     spawn?: SpawnFn;
+    /** Explicit caller environment, also used when selecting the pipe protocol. */
+    env?: NodeJS.ProcessEnv;
   }): Promise<Browser> {
     // Lazy: the launcher is the only module that spawns Chrome, and `jux diff`
     // (which imports core for its pixel code) must never load it. The

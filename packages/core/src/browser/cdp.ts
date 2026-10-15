@@ -146,6 +146,7 @@ export class CdpConnection {
 
   constructor(private readonly transport: Transport) {
     transport.onMessage = (m) => this.dispatch(m);
+    transport.onObject = (m) => this.dispatchValue(m);
     transport.onClose = (reason) => this.handleClose(reason);
   }
 
@@ -318,6 +319,10 @@ export class CdpConnection {
     } catch {
       return; // Chrome never sends non-JSON frames; nothing to do but ignore.
     }
+    this.dispatchValue(parsed);
+  }
+
+  private dispatchValue(parsed: unknown): void {
     // Nor frames that are not a message object. A `null` frame used to throw
     // here, out of the transport's data event. A malformed reply to one of our
     // own sends still answers it, as an error, rather than leaving it to time

@@ -1,5 +1,6 @@
 // packages/core/src/browser/cdp.test.ts
 import { PassThrough } from 'node:stream';
+import { encodeCbor, decodeCbor } from './cbor.js';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   CdpConnection,
@@ -12,6 +13,7 @@ import {
   FrameTooLargeError,
   NullFramer,
   PipeTransport,
+  BinaryPipeTransport,
   type Transport,
 } from './transport.js';
 
@@ -435,5 +437,59 @@ describe('NullFramer', () => {
     expect(() => new NullFramer(8).push('123456789\0', () => {})).toThrow(
       FrameTooLargeError,
     );
+  });
+});
+
+describe('binary Chrome pipe routing', () => {
+  it('routes decoded replies and events without a JSON round trip', async () => {
+    const incoming = new PassThrough();
+    const outgoing = new PassThrough();
+    const transport = new BinaryPipeTransport(outgoing, incoming);
+    const sent: unknown[] = [];
+    outgoing.on('data', (frame: Buffer) => sent.push(decodeCbor(frame)));
+    const connection = new CdpConnection(transport);
+    const errors: unknown[] = [];
+    connection.onError = (error) => errors.push(error);
+    connection.on(
+      'Page.loadEventFired',
+      () => {
+        throw new Error('handler failed');
+      },
+      'S',
+    );
+    const reply = connection.send('Runtime.evaluate', { expression: '42' }, 'S');
+    expect(sent).toEqual([
+      { id: 1, method: 'Runtime.evaluate', params: { expression: '42' }, sessionId: 'S' },
+    ]);
+    const frames = Buffer.concat([
+      encodeCbor({
+        method: 'Page.loadEventFired',
+        params: { timestamp: 1 },
+        sessionId: 'S',
+      }),
+      encodeCbor({
+        id: 1,
+        result: { result: { type: 'number', value: 42 } },
+        sessionId: 'S',
+      }),
+    ]);
+    incoming.write(frames.subarray(0, 3));
+    incoming.write(frames.subarray(3));
+    await expect(reply).resolves.toEqual({ result: { type: 'number', value: 42 } });
+    expect(errors).toHaveLength(1);
+    connection.close();
+  });
+  it('rejects pending work and closes once for a malformed binary envelope', async () => {
+    const incoming = new PassThrough();
+    const transport = new BinaryPipeTransport(new PassThrough(), incoming);
+    const connection = new CdpConnection(transport);
+    const closed = vi.fn();
+    connection.onClose = closed;
+    const reply = connection.send('Browser.getVersion');
+    const rejected = expect(reply).rejects.toBeInstanceOf(TargetClosedError);
+    incoming.write(Buffer.alloc(7));
+    await rejected;
+    connection.close();
+    expect(closed).toHaveBeenCalledTimes(1);
   });
 });

@@ -28,6 +28,7 @@ import {
   type SpawnFn,
 } from './launch.js';
 import { TargetClosedError } from './cdp.js';
+import { CborFramer, decodeCbor, encodeCbor } from './cbor.js';
 import { chromeForTests } from './__tests__/helpers.js';
 
 const chrome = chromeForTests();
@@ -111,12 +112,20 @@ describe('launchChrome with an injected spawn', () => {
   function fakeChild(opts: { diesOn?: NodeJS.Signals[]; answers?: boolean } = {}) {
     const proc = new EventEmitter() as EventEmitter & Record<string, unknown>;
     const fromChrome = new PassThrough();
+    const framer = new CborFramer();
     const toChrome = new Writable({
       write(chunk: Buffer, _enc, cb) {
         if (opts.answers !== false) {
-          for (const raw of chunk.toString().split('\0').filter(Boolean)) {
-            const { id } = JSON.parse(raw) as { id: number };
-            fromChrome.write(JSON.stringify({ id, result: {} }) + '\0');
+          if (chunk[0] === 0xd8) {
+            framer.push(chunk, (frame) => {
+              const { id } = decodeCbor(frame) as { id: number };
+              fromChrome.write(encodeCbor({ id, result: {} }));
+            });
+          } else {
+            for (const raw of chunk.toString().split('\0').filter(Boolean)) {
+              const { id } = JSON.parse(raw) as { id: number };
+              fromChrome.write(JSON.stringify({ id, result: {} }) + '\0');
+            }
           }
         }
         cb();
