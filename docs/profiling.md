@@ -217,3 +217,28 @@ locally. The Linux evidence run is
 Persisted summaries:
 [Linux](briefs/controlled-profile-0202-linux.json) and
 [macOS](briefs/controlled-profile-0202-macos.json).
+
+## Isolate screenshot encoding
+
+```sh
+pnpm build
+JUX_STATE_DIR=$(mktemp -d) node scripts/profile-encoder.mjs
+```
+
+This probe serves one fixed 1280 × 800 frame containing text, cards, and a
+gradient. It takes four warm-up pairs, then 40 pairs in alternating order:
+PNG capture plus Sharp lossless WebP (effort 0), and native Chrome lossless WebP
+plus ICC metadata removal. It reports screenshot, encoding, combined median
+time, and output bytes. Navigation and settling are outside the measurement.
+
+On October 15, 2026, the paired local probe measured:
+
+| Path        | Screenshot median | Encoding median | Combined median |  Bytes |
+| ----------- | ----------------: | --------------: | --------------: | -----: |
+| PNG + Sharp |          14.58 ms |        11.02 ms |        25.61 ms | 42,902 |
+| Native WebP |          16.27 ms |         0.02 ms |        16.29 ms | 40,596 |
+
+That is about 36% less time in this isolated snapshot pipeline, not 36% less
+whole-suite time. Median components need not sum to the median combined value.
+The real-browser encoder test independently checks lossless decoding against
+PNG, including gradients, transparency, text, and masks.

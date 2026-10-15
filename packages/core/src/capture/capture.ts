@@ -146,8 +146,8 @@ export async function captureStory(
       // Keep a reviewable error document, but never return a Snapshot/hash that
       // comparison or approval could treat as a successfully captured story.
       failure.image = await page
-        .screenshot()
-        .then((png) => sharp(png).webp({ lossless: true, effort: 0 }).toBuffer())
+        .screenshot({ format: 'webp' })
+        .then(canonicalWebp)
         .catch(() => undefined);
       warmPages.delete(page);
       throw failure;

@@ -639,6 +639,7 @@ async function judge(
       current: snapshot.image,
       structure: snapshot.structure,
     });
+    delete base.baselineEncoder;
     return {
       ...base,
       status: 'pass',

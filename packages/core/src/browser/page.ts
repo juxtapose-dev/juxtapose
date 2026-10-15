@@ -84,7 +84,7 @@ export interface Page {
   setColorScheme?(scheme: 'light' | 'dark'): Promise<void>;
   /**
    * PNG by default. `format: 'webp'` is Chrome's lossless WebP (VP8L, with
-   * Chrome's ICC chunk still in it), which core hashes.
+   * Chrome's ICC chunk still in it). Core removes that metadata before hashing.
    */
   screenshot(opts?: { mask?: string[]; format?: 'png' | 'webp' }): Promise<Buffer>;
   /**

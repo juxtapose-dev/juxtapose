@@ -7,15 +7,15 @@
 //
 // Chrome wraps the VP8L bitstream as VP8X + ICCP + VP8L. The ICC profile is
 // the frame's colour space, which `--force-color-profile=srgb` pins, but it is
-// still a statement about the machine rather than about the pixels, and a
-// decoder that honours it shifts channels by ±1 (measured on Chrome 156). So
+// redundant for these pinned sRGB pixels. A decoder that honours it shifts
+// channels by ±1 (measured on Chrome 151), so
 // the ICCP chunk is dropped, the VP8X ICC flag cleared and the RIFF size
 // rewritten. The pixels are untouched: the VP8L chunk is copied byte for byte.
 
 /**
  * Recorded as `env.encoder` on every report and approval. A baseline whose
  * entry carries anything else was encoded another way, so its hash cannot
- * match whatever the pixels are; `jux run` and `jux doctor` say so instead of
+ * match even when the pixels match; `jux run` and `jux doctor` say so instead of
  * reporting each story as a regression. Change it whenever the bytes for the
  * same pixels would change.
  */
@@ -43,14 +43,18 @@ export function canonicalWebp(webp: Buffer): Buffer {
     webp.toString('latin1', 8, 12) !== 'WEBP'
   )
     throw new Error('jux: the browser did not return a WebP screenshot');
+  if (webp.readUInt32LE(4) !== webp.length - 8)
+    throw new Error('jux: invalid WebP screenshot length');
   const parts: Buffer[] = [];
   let lossless = 0;
-  for (let o = 12; o < webp.length; ) {
+  for (let o = 12; o < webp.length;) {
     if (o + 8 > webp.length) throw new Error('jux: truncated WebP screenshot');
     const type = webp.toString('latin1', o, o + 4);
     const size = webp.readUInt32LE(o + 4);
     const end = o + 8 + size + (size & 1);
     if (end > webp.length) throw new Error('jux: truncated WebP screenshot');
+    if (type === 'VP8X' && size !== 10)
+      throw new Error('jux: invalid WebP extended header');
     if (type === 'VP8L') lossless++;
     else if (type !== 'VP8X' && type !== 'ICCP')
       // VP8 is lossy; ALPH/ANIM/ANMF would mean the same. Chrome below
@@ -78,7 +82,7 @@ export function canonicalWebp(webp: Buffer): Buffer {
 /** The chunk ids in order, for tests and diagnostics. */
 export function webpChunks(webp: Buffer): string[] {
   const ids: string[] = [];
-  for (let o = 12; o + 8 <= webp.length; ) {
+  for (let o = 12; o + 8 <= webp.length;) {
     ids.push(webp.toString('latin1', o, o + 4).trim());
     const size = webp.readUInt32LE(o + 4);
     o += 8 + size + (size & 1);
@@ -94,26 +98,31 @@ export function webpChunks(webp: Buffer): string[] {
  */
 export function describeEncoderFailures(
   results: readonly {
+    status?: string;
     baselineEncoder?: string;
     mismatchPixels: number;
     baselineImage?: 'unavailable';
     error?: string;
   }[],
 ): string {
-  const hit = results.filter((r) => r.baselineEncoder !== undefined);
+  const hit = results.filter(
+    (r) =>
+      r.baselineEncoder !== undefined && (r.status === undefined || r.status === 'fail'),
+  );
   if (hit.length === 0) return '';
   const from = [...new Set(hit.map((r) => describeEncoder(r.baselineEncoder)))].sort();
   // Only a story whose baseline image was here and diffed can be said to show
   // no change; one known by hash alone says nothing either way.
   const same = hit.filter(
-    (r) => r.baselineImage === undefined && r.error === undefined && r.mismatchPixels === 0,
+    (r) =>
+      r.baselineImage === undefined && r.error === undefined && r.mismatchPixels === 0,
   ).length;
   const n = hit.length;
   return (
     `${n} failing ${n === 1 ? 'story was' : 'stories were'} approved with a previous encoder ` +
     `(${from.join(', ')}). Captures are now ${describeEncoder(CAPTURE_ENCODER)}, so ` +
     `${n === 1 ? 'its hash' : 'their hashes'} changed whether or not a pixel did` +
-    (same > 0 ? ` (${same} of ${n} show no pixel change in the diff)` : '') +
+    (same > 0 ? ` (${same} of ${n} show no counted pixel differences)` : '') +
     `. This is a one-time re-baseline: review the run, then \`jux approve --all\`.`
   );
 }

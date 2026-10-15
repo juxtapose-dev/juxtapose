@@ -9,7 +9,7 @@
 // pixels. The encoder moves bytes far more readily than the browser does, so it
 // earns a field of its own rather than being folded into the browser version.
 //
-// Since 0.19 Chrome encodes the WebP itself, so its libwebp moves with the
+// With native capture Chrome encodes the WebP itself, so its libwebp moves with the
 // browser version and `encoder` names the scheme (CAPTURE_ENCODER) rather
 // than a library version. A baseline approved under the old scheme can never
 // match, and its entry says so: see `encoderChange`.
@@ -53,7 +53,9 @@ export function describeEnvChange(from: CaptureEnv | undefined, to: CaptureEnv):
  * reports it as an encoder change to re-approve, not as a regression. An entry
  * with no `env` predates its recording, which also predates this encoder.
  */
-export function encoderChange(entry: { env?: CaptureEnv } | undefined): string | undefined {
+export function encoderChange(
+  entry: { env?: CaptureEnv } | undefined,
+): string | undefined {
   if (!entry) return undefined;
   const from = entry.env?.encoder;
   return from === CAPTURE_ENCODER ? undefined : (from ?? 'unrecorded');

@@ -353,7 +353,7 @@ test('baselines from a previous encoder are reported with the re-approve steps',
   expect(issue.message).toBe(
     '2 of 3 baselines in juxtapose.manifest.json were approved with a previous encoder ' +
       "(an unrecorded encoder, libvips 8.17.3 (sharp)). Captures are now Chrome's lossless WebP, " +
-      'so they fail once whatever the pixels are. Re-approve after reviewing a run.',
+      'so their exact hashes change even when the pixels match. Re-approve after reviewing a run.',
   );
   expect(issue.fix.slice(0, 2)).toEqual(['jux run --all', 'jux approve --all']);
   expect((await doctor(root)).code).toBe(1);

@@ -97,12 +97,12 @@ describe('captureStory', () => {
 });
 
 describe('captureStory cache pulse on a reused renderer', () => {
-  let png: Buffer;
+  let webp: Buffer;
   beforeAll(async () => {
-    png = await sharp({
+    webp = await sharp({
       create: { width: 1, height: 1, channels: 3, background: 'white' },
     })
-      .png()
+      .webp({ lossless: true })
       .toBuffer();
   });
 
@@ -111,7 +111,7 @@ describe('captureStory cache pulse on a reused renderer', () => {
     let screenshots = 0;
     page.screenshot = async () => {
       screenshots++;
-      return png;
+      return webp;
     };
     let reads = 0;
     const result = await captureStory(
@@ -138,7 +138,7 @@ describe('captureStory cache pulse on a reused renderer', () => {
 
   it('forced fresh capture ignores a live request to share the renderer', async () => {
     const page = recordingPage();
-    page.screenshot = async () => png;
+    page.screenshot = async () => webp;
     let reads = 0;
     const result = await captureStory(
       page,
@@ -169,7 +169,7 @@ describe('captureStory cache pulse on a reused renderer', () => {
   ) {
     const page = recordingPage();
     const events: unknown[] = [];
-    page.screenshot = async () => png;
+    page.screenshot = async () => webp;
     page.send = (async (method: string, params?: object) => {
       if (method === 'Network.setCacheDisabled') events.push(params);
       return {};

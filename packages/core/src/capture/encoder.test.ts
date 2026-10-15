@@ -49,7 +49,17 @@ describe('canonicalWebp', () => {
     expect(() => canonicalWebp(riff([['VP8', Buffer.alloc(10)]]))).toThrow(/VP8 chunk/);
     expect(() => canonicalWebp(riff([['VP8X', vp8x]]))).toThrow(/without a lossless/);
     const ok = riff([['VP8L', Buffer.alloc(10)]]);
-    expect(() => canonicalWebp(ok.subarray(0, ok.length - 3))).toThrow(/truncated/);
+    expect(() => canonicalWebp(ok.subarray(0, ok.length - 3))).toThrow(
+      /length|truncated/,
+    );
+    expect(() =>
+      canonicalWebp(
+        riff([
+          ['VP8X', Buffer.alloc(0)],
+          ['VP8L', Buffer.alloc(10)],
+        ]),
+      ),
+    ).toThrow(/extended header/);
     expect(() => canonicalWebp(Buffer.alloc(0))).toThrow(/did not return a WebP/);
   });
 });
@@ -63,7 +73,7 @@ test('describeEncoderFailures names the old encoder once, and counts the unchang
   expect(describeEncoderFailures([r('8.17.3'), r('8.17.3', 4), r()])).toBe(
     '2 failing stories were approved with a previous encoder (libvips 8.17.3 (sharp)). ' +
       "Captures are now Chrome's lossless WebP, so their hashes changed whether or not a " +
-      'pixel did (1 of 2 show no pixel change in the diff). This is a one-time ' +
+      'pixel did (1 of 2 show no counted pixel differences). This is a one-time ' +
       're-baseline: review the run, then `jux approve --all`.',
   );
 });
@@ -110,7 +120,8 @@ describe.skipIf(!chrome)('a real capture', () => {
     expect(image[20]! & 0x20).toBe(0);
     expect((await sharp(image).metadata()).icc).toBeUndefined();
 
-    // The same frame as PNG, through the same screenshot path and mask.
+    // Sequential captures of this stable page through the same path and mask.
+    // A changing page cannot establish format parity across screenshot calls.
     const context = await browser.newContext({ viewport });
     try {
       const page = await context.newPage();

@@ -61,7 +61,25 @@ loaded.
 
 `storyTimeout` (ms, whole number from 1000, default 60000) is the budget for capturing one story, navigation through encode. It is a floor under settle: a story's effective budget is the larger of `storyTimeout` and its settle timeout plus `delay` plus 15 s, so a slow story still yields a flagged capture instead of an error. A story that uses all of it fails once with an error naming the step it was stuck in, its page is discarded and replaced, and the run continues. A page whose main thread is busy (a very large DOM, a runaway script) otherwise stalls each browser call for 30 s in turn. The failed story records its real `durationMs`.
 
-### Visual equivalence
+### Capture encoder upgrades
+
+Captures use Chrome's lossless WebP encoder, with its ICC color-profile metadata
+removed. The decoded pixels are preserved, but the encoded bytes differ from
+jux 0.20 and earlier, which used PNG capture followed by Sharp encoding.
+Existing exact baselines therefore need a one-time review and re-approval:
+
+```sh
+jux run --all
+jux approve --all
+```
+
+Review the diffs before approving. `jux run` labels affected failures as
+`previous encoder`, and `jux doctor` lists baselines needing migration.
+The manifest's `env.encoder` records `chrome-webp-lossless`; the Chrome version
+is recorded separately. A configured Pixelmatch policy can accept equivalent
+pixels across the encoder change, but leaves the old approved baseline intact.
+
+## Visual equivalence
 
 SHA-256 remains the default verdict and artifact identity. To accept small color
 and antialias differences after a hash mismatch, opt in:

@@ -166,8 +166,8 @@ export async function findIssues(
       message:
         `${n} of ${prior.total} ${plural(prior.total, 'baseline', 'baselines')} in ${MANIFEST_NAME} ` +
         `${plural(n, 'was', 'were')} approved with a previous encoder (${prior.from.join(', ')}). ` +
-        `Captures are now ${describeEncoder(CAPTURE_ENCODER)}, so ${plural(n, 'it fails', 'they fail')} ` +
-        `once whatever the pixels are. Re-approve after reviewing a run.`,
+        `Captures are now ${describeEncoder(CAPTURE_ENCODER)}, so ${plural(n, 'its exact hash changes', 'their exact hashes change')} ` +
+        `even when the pixels match. Re-approve after reviewing a run.`,
       files: prior.ids,
       fix: [
         cmd.run('run --all'),

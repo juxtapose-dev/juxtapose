@@ -16,7 +16,8 @@ vi.mock('../capture/pool.js', () => ({
       for (const story of stories) yield { story, snapshot: current(story.storyId) };
     })(),
 }));
-vi.mock('../capture/env.js', () => ({
+vi.mock('../capture/env.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../capture/env.js')>()),
   captureEnv: () => ({ browser: 'x', os: 'y', encoder: 'z' }),
 }));
 // The pixel diff is the real one from the fixture (the `color` operator

@@ -138,7 +138,7 @@ export interface CaptureTimings {
    *  transfer included. */
   screenshot: number;
   /** Dropping the ICC chunk from Chrome's WebP (encoder.ts). Before
-   *  0.19, PNG to lossless WebP in sharp. */
+   *  native capture, PNG to lossless WebP in sharp. */
   encode: number;
   /** The remainder: page setup, viewport and scheme, network policy, the
    *  animation freeze, the renderer check. */
@@ -429,7 +429,7 @@ export interface DiffResult {
    *  and `structural` is all there is to explain it. */
   baselineImage?: 'unavailable';
   /** Set on a 'fail' whose baseline was approved with another encoder: its
-   *  entry's `env.encoder` ("8.17.3", the libvips of jux 0.18 and earlier),
+   *  entry's `env.encoder` ("8.17.3", the libvips of jux 0.20 and earlier),
    *  or "unrecorded" for an entry with no `env`. Its hash cannot match
    *  whatever the pixels are, so the run reports the encoder change and the
    *  fix (re-approve) rather than a regression. */

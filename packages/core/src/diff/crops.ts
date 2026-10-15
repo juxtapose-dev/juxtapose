@@ -58,8 +58,7 @@ export async function renderCrops(
     const sw = Math.max(1, Math.round(box.width * scale));
     const sh = Math.max(1, Math.round(box.height * scale));
     const side = (img: Buffer) =>
-      // Stored values, as diff.ts compares them: no ICC conversion.
-      sharp(img, { ignoreIcc: true })
+      sharp(img)
         .extract({ left: box.x, top: box.y, width: box.width, height: box.height })
         .resize(sw, sh, { kernel: scale >= 1 ? 'nearest' : 'lanczos3', fit: 'fill' })
         .ensureAlpha()

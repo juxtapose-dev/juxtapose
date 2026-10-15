@@ -9,7 +9,8 @@ let retry: 'match' | 'mismatch' | 'error' | 'reused' | 'skip';
 let mismatches: string[];
 let pulse: 'match' | 'mismatch' | 'error';
 let proactive: boolean;
-vi.mock('../capture/env.js', () => ({
+vi.mock('../capture/env.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../capture/env.js')>()),
   captureEnv: () => ({ browser: 'x', os: 'y', encoder: 'z' }),
 }));
 vi.mock('../capture/pool.js', () => ({
