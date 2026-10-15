@@ -1,5 +1,14 @@
 # @juxtapose/cli
 
+## 0.20.1
+
+### Patch Changes
+
+- Updated dependencies [0751c38]
+  - @juxtapose/core@0.20.1
+  - @juxtapose/adapter-ladle@0.3.22
+  - @juxtapose/adapter-storybook@0.4.19
+
 ## 0.20.0
 
 ### Minor Changes

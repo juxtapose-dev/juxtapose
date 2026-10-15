@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.20.1
+
+### Patch Changes
+
+- 0751c38: Freeze placeholder color transitions along with other CSS animations, including inside open shadow roots. This prevents captures of intermediate placeholder colors while preserving the `animations: 'play'` opt-out.
+
 ## 0.20.0
 
 ### Minor Changes
