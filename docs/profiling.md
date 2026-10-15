@@ -242,3 +242,11 @@ That is about 36% less time in this isolated snapshot pipeline, not 36% less
 whole-suite time. Median components need not sum to the median combined value.
 The real-browser encoder test independently checks lossless decoding against
 PNG, including gradients, transparency, text, and masks.
+
+## Optimized pipeline comparison
+
+The [final paired accounting](briefs/pipeline-final-accounting.md) compares
+0.20.2 with native WebP, binary Chrome transport and batched mask extraction.
+Median whole-run time fell 18.4% on macOS and 19.9% on Linux for the controlled
+120-capture collection. It includes per-phase means, remaining worker-time
+shares, exact image/structure parity and reproducible commands.

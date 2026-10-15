@@ -1,0 +1,14 @@
+{
+  "profileDirectory": "/private/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-vbKEzS",
+  "platform": "darwin 27.0.0 arm64",
+  "method": "Deep strict equality of complete decompressed structure objects against baseline fresh reference; independently verify SHA-256 canonical elements excluding external per production hash contract. No fields excluded from object comparison.",
+  "referenceStories": 120,
+  "measuredRuns": 10,
+  "comparisons": 1200,
+  "counts": {
+    "baseline": 600,
+    "candidate": 600
+  },
+  "failures": [],
+  "passed": true
+}

@@ -78,5 +78,14 @@ large payloads, Unicode, binary values, prototype keys and depth limits. Binary
 routing/launch/daemon identity: 153 focused tests passed, two platform/CI skips.
 Full pre-native-merge suite: 1,827 passed, three skips. Independent review found
 an explicit-environment fallback inconsistency, fixed with a real-command-line
-regression test. Final combined native-WebP/binary transport determinism and
-before/after measurements remain required before merging this change.
+regression test. Combined native-WebP/binary transport validation: 18 Storybook stories × three
+fresh runs, 16 Ladle stories × three runs, and 18 Storybook stories × three
+daemon runs all byte-identical; daemon matches its fresh reference. The JSON
+fallback also passes 18 stories × three runs. The combined full suite passed
+1,832 tests with three skips and one outdated timing assertion: native metadata
+work can round to 0.0 ms. That assertion was corrected and its test passes.
+
+[Final paired accounting](pipeline-final-accounting.md) records five runs per
+arm on macOS and Linux: 18.4% and 19.9% median whole-run improvements, 2,400 exact
+measured image hashes, 240 cross-revision decoded image pairs and 2,400 exact
+structure comparisons, with zero failures or retries.

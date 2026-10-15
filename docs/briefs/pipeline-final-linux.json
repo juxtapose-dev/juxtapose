@@ -1,0 +1,332 @@
+{
+  "metadata": {
+    "buildDir": "/home/runner/work/juxtapose/juxtapose/examples/storybook/storybook-profile",
+    "buildHash": "49c6a868cde64459dc21f7e87bca4b77d30b71509064f5ef81caca9be0829715",
+    "passes": 5,
+    "pixelParityRequested": true,
+    "node": "v24.21.0",
+    "platform": "linux 6.17.0-1022-azure x64",
+    "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+    "logicalCpus": 4,
+    "memoryBytes": 16765378560,
+    "concurrency": 3,
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "daemon": false,
+    "recheck": "off",
+    "arms": {
+      "baseline": {
+        "cli": "/home/runner/work/_temp/jux-baseline/packages/cli/dist/index.js",
+        "cliHash": "f9cf91c2f17f5a50172f7f4c7d52054ba755d374c6e83fdd27042caa5ee1a2ab",
+        "provenance": {
+          "repoRoot": "/home/runner/work/_temp/jux-baseline",
+          "gitHead": "9bcca71412e56c671bbca7f9905dd23a932467f3",
+          "dirty": true,
+          "workingTreeStatus": "?? node_modules\n",
+          "builtPackages": {
+            "core": "80f72ee25e9f3755198d869a886b9f72e58f36a7ec0a9cc50a43ef6d958a321c",
+            "cli": "e67424801dd73a4572641fa3b8ba27b2142f66b99e834defd06a61283586940b",
+            "adapter-storybook": "92952cc811965bf29875a09831c1a82c5e8421b024deb26c7e59faca40308871",
+            "adapter-ladle": "0f33878c23e2191673b5e3d34270ec7e66679bcf2b747b9f9dee0a2413f3103d"
+          },
+          "missingBuiltPackages": [],
+          "builtPackagesHash": "ad2a38820f5699b4aee0dfa017cdf6a54399248b282deda631f0858b058e1fd0",
+          "lockfileHash": "7fc9eddfd27b0deff45731e3523296fa84ee0da7d559ec2394c4331d673444f2"
+        },
+        "project": "/tmp/jux-pipeline-comparison-z0Im4z/baseline",
+        "state": "/tmp/jux-pipeline-comparison-z0Im4z/baseline/state"
+      },
+      "candidate": {
+        "cli": "/home/runner/work/juxtapose/juxtapose/packages/cli/dist/index.js",
+        "cliHash": "f9cf91c2f17f5a50172f7f4c7d52054ba755d374c6e83fdd27042caa5ee1a2ab",
+        "provenance": {
+          "repoRoot": "/home/runner/work/juxtapose/juxtapose",
+          "gitHead": "4d872768047bac585dc67127e03e18fae3c7ebda",
+          "dirty": false,
+          "workingTreeStatus": "",
+          "builtPackages": {
+            "core": "ac67f965459d142f99d4af021dbed43a41bec8e0fb776eb6cbf929ada31f610f",
+            "cli": "51213903d58de1f49f6b54aa96f2c77d02284b82f92ec6ff94faa15c073d69f2",
+            "adapter-storybook": "92952cc811965bf29875a09831c1a82c5e8421b024deb26c7e59faca40308871",
+            "adapter-ladle": "0f33878c23e2191673b5e3d34270ec7e66679bcf2b747b9f9dee0a2413f3103d"
+          },
+          "missingBuiltPackages": [],
+          "builtPackagesHash": "8bf852ac7a2ff761c4fff0668aa848ea949f4136534d450e988175816c5ec3a8",
+          "lockfileHash": "7fc9eddfd27b0deff45731e3523296fa84ee0da7d559ec2394c4331d673444f2"
+        },
+        "project": "/tmp/jux-pipeline-comparison-z0Im4z/candidate",
+        "state": "/tmp/jux-pipeline-comparison-z0Im4z/candidate/state"
+      }
+    }
+  },
+  "failures": [],
+  "arms": {
+    "baseline": {
+      "runs": 5,
+      "captures": 600,
+      "retries": 0,
+      "phaseCaptures": 600,
+      "wallMs": {
+        "mean": 13415.802820000006,
+        "median": 13453.178903000007,
+        "p95": 13817.214031000003,
+        "min": 13062.78092400002,
+        "max": 13817.214031000003
+      },
+      "runMs": {
+        "mean": 13094,
+        "median": 13132,
+        "p95": 13489,
+        "min": 12746,
+        "max": 13489
+      },
+      "outsideRunMs": {
+        "mean": 321.80282000000733,
+        "median": 321.17890300000727,
+        "p95": 330.41514800000004,
+        "min": 312.42509400000563,
+        "max": 330.41514800000004
+      },
+      "phases": {
+        "navigate": {
+          "perCaptureMs": {
+            "mean": 46.88733333333331,
+            "median": 34.3,
+            "p95": 119.1,
+            "min": 15.2,
+            "max": 333.5
+          },
+          "summedWorkerMs": 28132.399999999987,
+          "workerTimePercent": 14.557651765967275
+        },
+        "freshRenderer": {
+          "perCaptureMs": {
+            "mean": 0,
+            "median": 0,
+            "p95": 0,
+            "min": 0,
+            "max": 0
+          },
+          "summedWorkerMs": 0,
+          "workerTimePercent": 0
+        },
+        "render": {
+          "perCaptureMs": {
+            "mean": 45.42533333333331,
+            "median": 25.6,
+            "p95": 142,
+            "min": 0.7,
+            "max": 613.5
+          },
+          "summedWorkerMs": 27255.199999999986,
+          "workerTimePercent": 14.103727744941464
+        },
+        "settle": {
+          "perCaptureMs": {
+            "mean": 16.56716666666666,
+            "median": 11.3,
+            "p95": 46.8,
+            "min": 1,
+            "max": 233.3
+          },
+          "summedWorkerMs": 9940.299999999997,
+          "workerTimePercent": 5.143799528275033
+        },
+        "paint": {
+          "perCaptureMs": {
+            "mean": 36.64033333333337,
+            "median": 32.7,
+            "p95": 62.6,
+            "min": 3.9,
+            "max": 212.6
+          },
+          "summedWorkerMs": 21984.200000000023,
+          "workerTimePercent": 11.376147358681743
+        },
+        "structure": {
+          "perCaptureMs": {
+            "mean": 43.30900000000003,
+            "median": 19.8,
+            "p95": 142.8,
+            "min": 2.7,
+            "max": 551.3
+          },
+          "summedWorkerMs": 25985.40000000002,
+          "workerTimePercent": 13.446645298636678
+        },
+        "screenshot": {
+          "perCaptureMs": {
+            "mean": 64.7753333333334,
+            "median": 50.4,
+            "p95": 206.4,
+            "min": 13.9,
+            "max": 388.1
+          },
+          "summedWorkerMs": 38865.20000000004,
+          "workerTimePercent": 20.1115456702831
+        },
+        "encode": {
+          "perCaptureMs": {
+            "mean": 27.297833333333333,
+            "median": 25.5,
+            "p95": 55.9,
+            "min": 7.7,
+            "max": 74.5
+          },
+          "summedWorkerMs": 16378.699999999999,
+          "workerTimePercent": 8.475473510231915
+        },
+        "other": {
+          "perCaptureMs": {
+            "mean": 41.17800000000001,
+            "median": 26.8,
+            "p95": 129.9,
+            "min": 2,
+            "max": 664.1
+          },
+          "summedWorkerMs": 24706.800000000007,
+          "workerTimePercent": 12.785009122982771
+        }
+      }
+    },
+    "candidate": {
+      "runs": 5,
+      "captures": 600,
+      "retries": 0,
+      "phaseCaptures": 600,
+      "wallMs": {
+        "mean": 10830.444754400003,
+        "median": 10780.992450999998,
+        "p95": 11010.045509000018,
+        "min": 10627.001497999998,
+        "max": 11010.045509000018
+      },
+      "runMs": {
+        "mean": 10507.6,
+        "median": 10450,
+        "p95": 10680,
+        "min": 10315,
+        "max": 10680
+      },
+      "outsideRunMs": {
+        "mean": 322.84475440000244,
+        "median": 321.40952099999413,
+        "p95": 330.99245099999825,
+        "min": 312.0014979999978,
+        "max": 330.99245099999825
+      },
+      "phases": {
+        "navigate": {
+          "perCaptureMs": {
+            "mean": 38.81683333333333,
+            "median": 31.6,
+            "p95": 88.2,
+            "min": 15.8,
+            "max": 122.5
+          },
+          "summedWorkerMs": 23290.099999999995,
+          "workerTimePercent": 14.985689982215412
+        },
+        "freshRenderer": {
+          "perCaptureMs": {
+            "mean": 0,
+            "median": 0,
+            "p95": 0,
+            "min": 0,
+            "max": 0
+          },
+          "summedWorkerMs": 0,
+          "workerTimePercent": 0
+        },
+        "render": {
+          "perCaptureMs": {
+            "mean": 45.870999999999974,
+            "median": 27.2,
+            "p95": 139.7,
+            "min": 0.9,
+            "max": 677.1
+          },
+          "summedWorkerMs": 27522.599999999984,
+          "workerTimePercent": 17.70903307003928
+        },
+        "settle": {
+          "perCaptureMs": {
+            "mean": 15.439333333333337,
+            "median": 11.5,
+            "p95": 46.3,
+            "min": 1.2,
+            "max": 123.1
+          },
+          "summedWorkerMs": 9263.600000000002,
+          "workerTimePercent": 5.960534206347365
+        },
+        "paint": {
+          "perCaptureMs": {
+            "mean": 35.4271666666667,
+            "median": 32.6,
+            "p95": 63.5,
+            "min": 5,
+            "max": 119.9
+          },
+          "summedWorkerMs": 21256.30000000002,
+          "workerTimePercent": 13.67706974074675
+        },
+        "structure": {
+          "perCaptureMs": {
+            "mean": 28.410333333333323,
+            "median": 14.4,
+            "p95": 79.3,
+            "min": 1.9,
+            "max": 248.7
+          },
+          "summedWorkerMs": 17046.199999999993,
+          "workerTimePercent": 10.968139620475666
+        },
+        "screenshot": {
+          "perCaptureMs": {
+            "mean": 57.805499999999995,
+            "median": 52.1,
+            "p95": 110.8,
+            "min": 15.2,
+            "max": 177.5
+          },
+          "summedWorkerMs": 34683.299999999996,
+          "workerTimePercent": 22.316485603761762
+        },
+        "encode": {
+          "perCaptureMs": {
+            "mean": 0.052500000000000255,
+            "median": 0,
+            "p95": 0.1,
+            "min": 0,
+            "max": 0.5
+          },
+          "summedWorkerMs": 31.500000000000153,
+          "workerTimePercent": 0.020268235621134643
+        },
+        "other": {
+          "perCaptureMs": {
+            "mean": 37.203333333333305,
+            "median": 25.7,
+            "p95": 109.2,
+            "min": 1.7,
+            "max": 607.7
+          },
+          "summedWorkerMs": 22321.99999999998,
+          "workerTimePercent": 14.362779540792536
+        }
+      }
+    }
+  },
+  "note": "Phase percentages are fractions of summed worker phase time, not elapsed wall time. Retry results excluded from phase accounting; raw reports retained.",
+  "wallMedianChangePercent": -19.86286268299102,
+  "pixelParity": {
+    "checks": 120,
+    "mismatches": 0,
+    "method": "Sharp raw RGBA, ignoreIcc:true; exact dimensions and channels"
+  },
+  "evidence": "/tmp/jux-final-linux-profile/tmp/jux-pipeline-comparison-z0Im4z",
+  "workflow": "https://github.com/juxtapose-dev/juxtapose/actions/runs/38821835082"
+}

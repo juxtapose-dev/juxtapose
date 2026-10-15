@@ -1,0 +1,14 @@
+{
+  "profileDirectory": "/tmp/jux-final-linux-profile/tmp/jux-pipeline-comparison-z0Im4z",
+  "platform": "linux 6.17.0-1022-azure x64",
+  "method": "Deep strict equality of complete decompressed structure objects against baseline fresh reference; independently verify SHA-256 canonical elements excluding external per production hash contract. No fields excluded from object comparison.",
+  "referenceStories": 120,
+  "measuredRuns": 10,
+  "comparisons": 1200,
+  "counts": {
+    "baseline": 600,
+    "candidate": 600
+  },
+  "failures": [],
+  "passed": true
+}
