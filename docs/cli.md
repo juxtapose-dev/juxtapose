@@ -385,7 +385,7 @@ the line.
 | `settle-timeout`   | A third-party image or frame was still loading at the settle cap.                          | A `network.rules` placeholder for that host and type. Never a block. |
 | `external-image`   | A third-party image or background is where the pixels changed.                             | `network.external.images: "placeholder"`.                            |
 | `embed`            | A third-party iframe is where the pixels changed.                                          | `network.external.frames: "placeholder"`.                            |
-| `order-dependence` | A capture ran in a renderer process an earlier story had used, and `freshRenderer` is off. | `renderer: { shared: false }` (project or per-story).   |
+| `order-dependence` | A capture ran in a renderer process an earlier story had used, and `freshRenderer` is off. | `renderer: { shared: false }` (project or per-story).                |
 | `async-element`    | An element is in only one of the two captures.                                             | `waitForSelector` for that element.                                  |
 | `clock`            | Text that changed holds a time, a date or a duration.                                      | `mask` for that element.                                             |
 | `random-content`   | Other text changed.                                                                        | `mask` for that element (low confidence).                            |
