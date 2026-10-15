@@ -23,9 +23,11 @@ import type { Page } from '../browser/page.js';
  * Injected as a <style> in the document, which does not reach into shadow
  * roots; the idle init script (idle.ts) adopts the same rules into every
  * open one as a constructed sheet (issue #152). Closed roots stay unfrozen.
+ * Placeholder transitions need their own selector: transition properties do
+ * not inherit from the input. Spectrum animates its placeholder color.
  */
 export const FREEZE_ANIMATIONS_CSS = `
-*, *::before, *::after {
+*, *::before, *::after, *::placeholder {
   animation-duration: 0s !important;
   animation-delay: 0s !important;
   animation-iteration-count: 1 !important;

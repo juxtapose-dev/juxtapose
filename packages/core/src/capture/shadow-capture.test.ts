@@ -44,7 +44,28 @@ const doc = (body: string) =>
 const late = (ms: number) =>
   `<script>addEventListener('load', () => setTimeout(() => document.body.append(document.createElement('x-box')), ${ms}));</script>`;
 
+const placeholderPage = (shadow: boolean, transition: boolean) => {
+  const css =
+    'input::placeholder { color: red; opacity: 1; transition: color 2s linear } input.on::placeholder { color: blue }';
+  const input = `<input placeholder="Placeholder text" class="${transition ? '' : 'on'}">`;
+  return doc(
+    (shadow
+      ? host(css, input, 'adopt') + '<x-box></x-box>'
+      : `<style>${css}</style>${input}`) +
+      (transition
+        ? `<script>addEventListener('load', () => setTimeout(() => {
+      const root = ${shadow ? "document.querySelector('x-box').shadowRoot" : 'document'};
+      root.querySelector('input').classList.add('on');
+    }, 30));</script>`
+        : ''),
+  );
+};
+
 const PAGES: Record<string, string> = {
+  '/placeholder-static': placeholderPage(false, false),
+  '/placeholder-transition': placeholderPage(false, true),
+  '/placeholder-shadow-static': placeholderPage(true, false),
+  '/placeholder-shadow-transition': placeholderPage(true, true),
   // Shadow roots in another document, made after the freeze: a sheet
   // constructed in this document can't be adopted there, and the native
   // calls must still succeed (review of #161).
@@ -199,6 +220,15 @@ const IGNORE_IMG: StoryParams = {
 };
 
 describe.skipIf(!chrome)('open shadow roots in Chrome', { timeout: 30_000 }, () => {
+  it.each(['placeholder', 'placeholder-shadow'])(
+    'freezes placeholder color transitions (%s), retaining the play opt-out',
+    async (name) => {
+      const [still, frozen] = await snap([`/${name}-static`, `/${name}-transition`]);
+      expect(frozen!.image.equals(still!.image)).toBe(true);
+      const [playing] = await snap([`/${name}-transition`], { animations: 'play' });
+      expect(playing!.image.equals(still!.image)).toBe(false);
+    },
+  );
   // On 255fc28 the light-DOM freeze sheet stopped at the shadow boundary:
   // every capture caught the spinner at whatever angle it had reached.
   it.each(['/spin', '/spin-adopted', '/fade'])(
