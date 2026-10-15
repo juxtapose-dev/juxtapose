@@ -180,18 +180,31 @@ export function computeFacts(
       followers.push({ i, rects: [ea.rect, eb.rect] });
   }
 
-  // Nearest baseline ancestor with a geometry fact: the move or resize the
-  // child followed. Walked on the baseline tree, the side `source` indexes.
-  for (const { i, rects } of followers) {
-    for (let k = a.elements[i]!.parent; k !== null; k = elementAt(a, k).parent) {
-      const own = byElement
-        .get(k)
-        ?.find((f) => f.delta.kind === 'moved' || f.delta.kind === 'resized');
-      if (own) {
-        own.rects.push(...rects);
+  // A uniformly moving n-deep chain walked n(n-1)/2 ancestors. Cache
+  // resolved paths (including misses) so attachment visits O(n) ancestors,
+  // while followers still append their rects in the original pair order.
+  const nearestGeometry = new Map<number, Fact | undefined>();
+  const geometryAtOrAbove = (start: number | null): Fact | undefined => {
+    const path: number[] = [];
+    let own: Fact | undefined;
+    let k = start;
+    while (k !== null) {
+      if (nearestGeometry.has(k)) {
+        own = nearestGeometry.get(k);
         break;
       }
+      path.push(k);
+      own = byElement
+        .get(k)
+        ?.find((f) => f.delta.kind === 'moved' || f.delta.kind === 'resized');
+      if (own) break;
+      k = elementAt(a, k).parent;
     }
+    for (const index of path) nearestGeometry.set(index, own);
+    return own;
+  };
+  for (const { i, rects } of followers) {
+    geometryAtOrAbove(a.elements[i]!.parent)?.rects.push(...rects);
   }
 
   for (const j of match.added) {

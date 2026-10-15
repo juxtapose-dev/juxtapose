@@ -155,7 +155,9 @@ export function selectorsFor(s: StructureSnapshot): {
   };
   /** How many elements have this tag and every one of `classes`. */
   const withClasses = (tag: string, classes: string[]): number => {
-    const memoKey = `${tag}\n${classes.join('\n')}`; // class names hold no whitespace
+    // Permutations and repeated classes test the same predicate; without this,
+    // n distinct permutations over n candidates still cost n² candidate visits.
+    const memoKey = `${tag}\n${[...new Set(classes)].sort().join('\n')}`;
     const memo = classCounts.get(memoKey);
     if (memo !== undefined) return memo;
     if (!byClass) {

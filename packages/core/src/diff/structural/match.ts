@@ -49,8 +49,12 @@ export function matchElements(a: StructureSnapshot, b: StructureSnapshot): Eleme
     // Never across conflicting explicit identities: `div#row-1` removed and
     // `div#banner` added are two different elements, not one edited one.
     // i and j come from childLists over these same element arrays.
-    const second = align(first.leftA, first.leftB, (i, j) =>
-      sameKind(a.elements[i]!, b.elements[j]!),
+    const second = align(
+      first.leftA,
+      first.leftB,
+      (i, j) => sameKind(a.elements[i]!, b.elements[j]!),
+      undefined,
+      () => greedyByKind(first.leftA, first.leftB, a.elements, b.elements),
     );
     for (const [i, j] of [...first.matched, ...second.matched]) {
       pairs.push([i, j]);
@@ -101,13 +105,16 @@ function align(
   cb: number[],
   same: (i: number, j: number) => boolean,
   keys?: [string[], string[]],
+  indexed?: () => Array<[number, number]>,
 ): Alignment {
   const matched =
     ca.length * cb.length <= LCS_CELL_CAP
       ? lcs(ca, cb, same)
       : keys
         ? greedyByKey(ca, cb, keys[0], keys[1])
-        : greedy(ca, cb, same);
+        : indexed
+          ? indexed()
+          : greedy(ca, cb, same);
   const usedA = new Set(matched.map(([i]) => i));
   const usedB = new Set(matched.map(([, j]) => j));
   return {
@@ -215,6 +222,64 @@ export function greedyByKey(
       const k = list[lo]!; // lo < list.length
       out.push([i, cb[k]!]); // k is a position in cb
       j = k + 1;
+    }
+  }
+  return out;
+}
+
+/** Missing identities are wildcards. Partition by presence, then index every
+ * projection so each query needs four binary searches, O(n log n), instead of
+ * n² comparisons for disjoint IDs. The minimum position preserves greedy ties.
+ */
+function greedyByKind(
+  ca: number[],
+  cb: number[],
+  a: StructureElement[],
+  b: StructureElement[],
+): Array<[number, number]> {
+  const positions = new Map<string, number[]>();
+  const key = (e: StructureElement, presence: number, projection: number) =>
+    JSON.stringify([
+      presence,
+      projection,
+      e.tag,
+      projection & 1 ? e.id : null,
+      projection & 2 ? e.testId : null,
+    ]);
+  const presence = (e: StructureElement) =>
+    (e.id !== undefined ? 1 : 0) | (e.testId !== undefined ? 2 : 0);
+  cb.forEach((j, k) => {
+    const e = b[j]!;
+    const mask = presence(e);
+    for (let projection = 0; projection < 4; projection++) {
+      if ((projection & mask) !== projection) continue;
+      const bucket = key(e, mask, projection);
+      const list = positions.get(bucket);
+      if (list) list.push(k);
+      else positions.set(bucket, [k]);
+    }
+  });
+  const out: Array<[number, number]> = [];
+  let cursor = 0;
+  for (const i of ca) {
+    const e = a[i]!;
+    const mask = presence(e);
+    let next = cb.length;
+    for (let candidateMask = 0; candidateMask < 4; candidateMask++) {
+      const list = positions.get(key(e, candidateMask, mask & candidateMask));
+      if (!list) continue;
+      let lo = 0;
+      let hi = list.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (list[mid]! < cursor) lo = mid + 1;
+        else hi = mid;
+      }
+      if (lo < list.length) next = Math.min(next, list[lo]!);
+    }
+    if (next < cb.length) {
+      out.push([i, cb[next]!]);
+      cursor = next + 1;
     }
   }
   return out;

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { expect, test, vi } from 'vitest';
 import type { Delta, StructureElement, StructureSnapshot } from '../../types.js';
 import { computeCoverage } from './coverage.js';
+import { computeFacts as referenceComputeFacts } from './__tests__/deltas.reference.js';
 import { computeFacts } from './deltas.js';
 import { label } from './label.js';
 import { matchElements } from './match.js';
@@ -338,4 +339,32 @@ test('removed elements find their predecessor in one sweep, not a scan back each
   expect(facts.filter((f) => f.delta.kind === 'removed')).toHaveLength(n);
   expect(facts.every((f) => f.order === 0.5)).toBe(true);
   expect(gets).toBeLessThan(10 * n);
+});
+
+test('deep-chain followers preserve reference fact and rect order with linear ancestor reads', () => {
+  const n = 1000;
+  for (const mixed of [false, true]) {
+    const a = structure(
+      Array.from({ length: n }, (_, k) => node(k === 0 ? null : k - 1, k)),
+    );
+    const b = structure(
+      a.elements.map((e, k) => ({
+        ...e,
+        rect: { ...e.rect, y: e.rect.y + (mixed && k >= 400 ? 20 : 10), w: e.rect.w + 8 },
+        ...(mixed && k === 200 ? { text: 'edited' } : {}),
+      })),
+    );
+    // Reverse pair traversal exercises cached paths before their parents are
+    // followers; fact discovery and attachment order must remain independent.
+    const pairs = a.elements.map((_, i): [number, number] => [i, i]).reverse();
+    const match = { pairs, added: [], removed: [] };
+    const countedA = counted(a);
+    const actual = computeFacts(countedA.s, b, match);
+    const operations = countedA.reads();
+    const old = referenceComputeFacts(a, b, match);
+    expect(JSON.stringify(actual)).toBe(JSON.stringify(old));
+    // The old follower loop alone reads n(n-1)/2 ancestors (~500k).
+    expect(operations).toBeLessThan(120 * n);
+    expect(actual.some((f) => f.rects.length > 500)).toBe(true);
+  }
 });

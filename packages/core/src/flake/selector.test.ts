@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import type { StructureElement, StructureSnapshot } from '../types.js';
+import { selectorsFor as referenceSelectorsFor } from './__tests__/selector.reference.js';
 import { describeSelector, selectorsFor } from './selector.js';
 
 const el = (k: number, extra: Partial<StructureElement> = {}): StructureElement => ({
@@ -50,4 +51,29 @@ test('selectorsFor describes every element of a long list in one pass, as descri
   expect(all[0]).toEqual({ selector: 'main', stable: false });
   // The one-off form agrees.
   for (const i of [0, 1, 4, 6, 8, n]) expect(describeSelector(s, i)).toEqual(all[i]);
+});
+
+test('class permutations and duplicates preserve selector bytes and emitted class order', () => {
+  const rows = [
+    el(1, { classes: ['z', 'a', 'z'] }),
+    el(2, { classes: ['a', 'z'] }),
+    el(3, { tag: 'p', classes: ['z', 'a', 'z'] }),
+    el(4, { classes: ['only', 'first', 'only'] }),
+    el(5, { classes: ['css-abc123', 'only-generated-neighbor'] }),
+  ];
+  const s: StructureSnapshot = {
+    schema: 'juxtapose.structure/v1',
+    viewport: { width: 100, height: 100 },
+    structureHash: '',
+    contentHeight: 100,
+    elements: rows,
+  };
+  const actual = selectorsFor(s);
+  const old = referenceSelectorsFor(s);
+  const output = rows.map((_, i) => actual.describe(i));
+  expect(JSON.stringify(output)).toBe(
+    JSON.stringify(rows.map((_, i) => old.describe(i))),
+  );
+  expect(output[2].selector).toBe('p.z.a.z');
+  expect(output[3].selector).toBe('li.only.first.only');
 });
