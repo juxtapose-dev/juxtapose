@@ -19,6 +19,7 @@ export type {
   StoryManifest,
   Snapshot,
   CaptureTimings,
+  StructureCaptureTimings,
   StructureSnapshot,
   StructureElement,
   StructureRect,

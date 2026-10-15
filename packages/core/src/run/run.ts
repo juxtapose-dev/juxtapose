@@ -538,6 +538,7 @@ async function judge(
     ...(snapshot.settle ? { settle: snapshot.settle } : {}),
     durationMs: snapshot.durationMs,
     ...(snapshot.timings ? { timings: snapshot.timings } : {}),
+    ...(snapshot.structureTimings ? { structureTimings: snapshot.structureTimings } : {}),
   };
 
   // pass / new / stale need no pixel work: there is either nothing to explain

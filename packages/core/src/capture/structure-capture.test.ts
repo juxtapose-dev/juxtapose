@@ -27,14 +27,21 @@ function fakePage(opts: {
   // `})(`, and the evaluate's own arguments are the JSON values after it.
   // Both are parsed from the real expression, so a wrong attribute fails.
   const evaluate = vi.fn(async (expr: string) => {
-    const m = /\}\)\(("(?:[^"\\]|\\.)*")\)((?:, "(?:[^"\\]|\\.)*")*)\)$/.exec(expr);
-    const sel = m ? (JSON.parse(m[1]) as string) : '';
-    const args = m?.[2] ? (JSON.parse(`[${m[2].slice(2)}]`) as unknown[]) : [];
-    calls.push({ sel, args });
-    return opts.evaluateAll ? opts.evaluateAll(sel, calls.length) : true;
+    const batch = expr.startsWith('[');
+    const matches = [
+      ...expr.matchAll(/\}\)\(("(?:[^"\\]|\\.)*")\)((?:, "(?:[^"\\]|\\.)*")*)\)/g),
+    ];
+    const results = [];
+    for (const m of matches) {
+      const sel = JSON.parse(m[1]) as string;
+      const args = m[2] ? (JSON.parse(`[${m[2].slice(2)}]`) as unknown[]) : [];
+      calls.push({ sel, args });
+      results.push(opts.evaluateAll ? await opts.evaluateAll(sel, calls.length) : 0);
+    }
+    return batch ? results : results[0];
   });
   const page = { evaluate, send } as unknown as Page;
-  return { page, calls, send };
+  return { page, calls, send, evaluate };
 }
 
 test('returns a normalized snapshot', async () => {
@@ -61,12 +68,13 @@ test('a CDP failure yields undefined, never a throw', async () => {
 });
 
 test('masks are marked via queryAll, then unmarked by attribute', async () => {
-  const { page, calls } = fakePage({
+  const { page, calls, evaluate } = fakePage({
     // calls 1-2 mark (one match each), 3-4 verify, 5 unmarks
     evaluateAll: async (_sel, call) =>
       call <= 2 ? 1 : call <= 4 ? { total: 1, marked: 1 } : undefined,
   });
   await captureStructure(page, viewport, ['.clock', 'text=Now']);
+  expect(evaluate).toHaveBeenCalledTimes(3);
   const marks = calls.filter((c) => c.args[0] === MASK_ATTR);
   expect(marks.map((c) => c.sel)).toEqual([
     '.clock',
@@ -175,7 +183,15 @@ describe.skipIf(!chrome)('captureStructure on a real page', () => {
     try {
       const page = await ctx.newPage();
       await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
-      const s = await captureStructure(page, { width: 200, height: 100 }, ['.secret']);
+      const timings = { mark: 0, snapshot: 0, verify: 0, normalize: 0, cleanup: 0 };
+      const s = await captureStructure(
+        page,
+        { width: 200, height: 100 },
+        ['.secret', 'div.secret', '.missing'],
+        timings,
+      );
+      expect(Object.values(timings).every((ms) => ms >= 0)).toBe(true);
+      expect(timings.snapshot).toBeGreaterThan(0);
       expect(s).toBeDefined();
       const masked = s!.elements.filter((e) => e.tag === 'masked');
       expect(masked.map((e) => e.rect)).toEqual([
@@ -189,6 +205,23 @@ describe.skipIf(!chrome)('captureStructure on a real page', () => {
         queryAllExpression(`[${MASK_ATTR}]`, 'return els.length;'),
       );
       expect(left).toBe(0);
+    } finally {
+      await ctx.close();
+    }
+  });
+  test('a later invalid selector cleans up earlier marks across shadow roots', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 200, height: 100 } });
+    try {
+      const page = await ctx.newPage();
+      await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+      expect(
+        await captureStructure(page, { width: 200, height: 100 }, ['.secret', '[']),
+      ).toBeUndefined();
+      expect(
+        await page.evaluate<number>(
+          queryAllExpression(`[${MASK_ATTR}]`, 'return els.length;'),
+        ),
+      ).toBe(0);
     } finally {
       await ctx.close();
     }

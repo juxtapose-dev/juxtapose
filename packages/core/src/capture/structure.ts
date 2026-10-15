@@ -726,6 +726,15 @@ export function decodeStructure(b: Buffer): StructureSnapshot {
   return parsed;
 }
 
+/** Diagnostic subphases in milliseconds; snapshot includes CDP transport/parsing. */
+export interface StructureCaptureTimings {
+  mark: number;
+  snapshot: number;
+  verify: number;
+  normalize: number;
+  cleanup: number;
+}
+
 /**
  * Snapshot the page's structure. Never throws: a missing structure costs the
  * agent some explanation, a thrown error would cost the story its capture.
@@ -745,24 +754,21 @@ export async function captureStructure(
   page: Page,
   viewport: Viewport,
   mask: readonly string[],
+  timings?: StructureCaptureTimings,
 ): Promise<StructureSnapshot | undefined> {
   const mark = (sel: string) =>
-    page.evaluate<number>(
-      queryAllExpression(
-        sel,
-        "for (const el of els) el.setAttribute(a0, '1'); return els.length;",
-        MASK_ATTR,
-      ),
+    queryAllExpression(
+      sel,
+      "for (const el of els) el.setAttribute(a0, '1'); return els.length;",
+      MASK_ATTR,
     );
   const verify = (sel: string) =>
     // unknown: checked below rather than assumed; the page's globals are the
     // story's to replace.
-    page.evaluate<unknown>(
-      queryAllExpression(
-        sel,
-        'return { total: els.length, marked: els.filter((e) => e.hasAttribute(a0)).length };',
-        MASK_ATTR,
-      ),
+    queryAllExpression(
+      sel,
+      'return { total: els.length, marked: els.filter((e) => e.hasAttribute(a0)).length };',
+      MASK_ATTR,
     );
   const unmark = () =>
     page
@@ -779,14 +785,39 @@ export async function captureStructure(
   // selector, so an element that lost both its mark and its match would drop
   // out of the re-resolved list and `every` would pass on the survivors
   // (probe c: SECRET-C recorded). Comparing counts closes that.
-  const markedCounts: number[] = [];
+  let markedCounts: number[] = [];
+  const measured = async <T>(
+    key: keyof StructureCaptureTimings,
+    work: () => Promise<T>,
+  ) => {
+    const start = timings ? performance.now() : 0;
+    try {
+      return await work();
+    } finally {
+      if (timings) timings[key] = performance.now() - start;
+    }
+  };
   try {
-    for (const sel of mask) {
-      const n = await mark(sel);
-      markedCounts.push(typeof n === 'number' ? n : 0);
+    // Keep each phase in one browser task. Separate calls add round trips and
+    // let application tasks run between selectors; selector order is unchanged.
+    if (mask.length) {
+      const counts = await measured('mark', () =>
+        page.evaluate<unknown>(`[${mask.map(mark).join(',')}]`),
+      );
+      if (
+        !Array.isArray(counts) ||
+        counts.length !== mask.length ||
+        !counts.every(
+          (n: unknown): n is number =>
+            typeof n === 'number' && Number.isFinite(n) && n >= 0,
+        )
+      ) {
+        throw new Error('Invalid mask counts');
+      }
+      markedCounts = counts;
     }
   } catch {
-    if (mask.length) await unmark();
+    if (mask.length) await measured('cleanup', unmark);
     return undefined;
   }
 
@@ -800,12 +831,19 @@ export async function captureStructure(
     // is Chrome computing 42 styles for every row (0.33 s with `visibility`
     // alone). It also stops a closed <details>'s never-painted menu being laid
     // out and recorded as visible (3 of Primer's 1102 stories).
-    const raw = await page.send('DOMSnapshot.captureSnapshot', {
-      computedStyles: [...STRUCTURE_PROPS, 'visibility'],
-      includePaintOrder: true,
-    });
-    for (const [k, sel] of mask.entries()) {
-      const v = await verify(sel);
+    const raw = await measured('snapshot', () =>
+      page.send('DOMSnapshot.captureSnapshot', {
+        computedStyles: [...STRUCTURE_PROPS, 'visibility'],
+        includePaintOrder: true,
+      }),
+    );
+    const verified = mask.length
+      ? await measured('verify', () =>
+          page.evaluate<unknown>(`[${mask.map(verify).join(',')}]`),
+        )
+      : [];
+    if (!Array.isArray(verified) || verified.length !== mask.length) return undefined;
+    for (const [k, v] of verified.entries()) {
       // Every current match still marked, and none of the marked ones gone.
       const intact =
         isRecord(v) &&
@@ -814,10 +852,15 @@ export async function captureStructure(
         v['marked'] >= markedCounts[k]!; // one count was pushed per mask selector
       if (!intact) return undefined;
     }
-    return normalizeStructure(raw, viewport);
+    const start = timings ? performance.now() : 0;
+    try {
+      return normalizeStructure(raw, viewport);
+    } finally {
+      if (timings) timings.normalize = performance.now() - start;
+    }
   } catch {
     return undefined;
   } finally {
-    if (mask.length) await unmark();
+    if (mask.length) await measured('cleanup', unmark);
   }
 }
