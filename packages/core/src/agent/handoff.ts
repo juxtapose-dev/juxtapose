@@ -373,7 +373,7 @@ function actions(p: HandoffPayload, opts: { approveVerb: string }): string[] {
     ...(p.imagesCommitted
       ? []
       : [
-          '  Commit `juxtapose.manifest.json` only. Never `git add` an image: baseline images stay in the local cache.',
+          '  Commit `juxtapose.manifest.json` and `juxtapose.structures/`. Never `git add` an image: baseline images stay in the local cache.',
         ]),
     '- **Regression** → propose a fix. Do not apply it without confirmation.',
   );
