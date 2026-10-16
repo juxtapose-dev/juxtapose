@@ -532,7 +532,17 @@ async function captureStoryDocument(
   // Structure from the same frame the screenshot is about to take: after the
   // paint barrier, before the shutter, with nothing in between that could
   // mutate the page.
-  const effective = params.viewport ?? effectiveViewport;
+  // Full-document images and DOM bounds share document coordinates. Reset any
+  // story-driven scroll before the paint barrier so fixed/sticky elements agree.
+  if (params.fullPage) {
+    if (!page.fullPageSize)
+      throw new Error('jux: this browser driver does not support full-page capture');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await waitForPaint(page);
+  }
+  const effective = params.fullPage
+    ? await page.fullPageSize!()
+    : (params.viewport ?? effectiveViewport);
   phase('structure capture');
   const tStructure = performance.now();
   const structureEnabled =
@@ -544,6 +554,8 @@ async function captureStoryDocument(
   const structure = structureEnabled
     ? await captureStructure(page, effective, params.mask ?? [], structureTimings)
     : undefined;
+  if (structure && params.fullPage)
+    structure.layoutViewport = params.viewport ?? effectiveViewport;
   if (structure && deps.platform.structureContextIds?.length) {
     structure.contextElementIds = [...deps.platform.structureContextIds];
   }
@@ -557,6 +569,7 @@ async function captureStoryDocument(
   const shot = await page.screenshot({
     ...(params.mask?.length ? { mask: params.mask } : {}),
     format: 'webp',
+    ...(params.fullPage ? { fullPage: true, captureSize: effective } : {}),
   });
   const screenshotMs = performance.now() - tShot;
 
@@ -603,6 +616,7 @@ async function captureStoryDocument(
     // so report what we actually captured at — the agent handoff computes
     // region area as a fraction of it.
     viewport: effective,
+    ...(params.fullPage ? { layoutViewport: params.viewport ?? effectiveViewport } : {}),
     renderer,
     ...(params.comparison ? { comparison: params.comparison } : {}),
     capturedAt: new Date().toISOString(),

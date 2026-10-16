@@ -202,6 +202,11 @@ export const TOOLS: Tool[] = [
           },
           required: ['width', 'height'],
         },
+        fullPage: {
+          type: 'boolean',
+          description:
+            'Capture the full document without changing the layout viewport; default false',
+        },
         waitFor: { type: 'string', description: 'CSS selector to wait for' },
         delay: {
           type: 'integer',
@@ -1053,6 +1058,9 @@ export class McpServer {
         throw new ArgError("'viewport' must be {width, height}");
       viewport = `${v.width}x${v.height}`;
     }
+    if (args.fullPage !== undefined && typeof args.fullPage !== 'boolean')
+      throw new ArgError("'fullPage' must be a boolean");
+    const fullPage = args.fullPage === true;
     const waitFor = str(args, 'waitFor');
     const mask = strings(args, 'mask');
     const settle = settleArg(args);
@@ -1086,6 +1094,7 @@ export class McpServer {
                 ...(as ? { as } : {}),
                 ...(asPrefix ? { 'as-prefix': asPrefix } : {}),
                 ...(viewport ? { viewport } : {}),
+                ...(fullPage ? { 'full-page': true } : {}),
                 ...(waitFor ? { 'wait-for': waitFor } : {}),
                 ...(mask ? { mask } : {}),
                 ...(typeof delay === 'number' ? { delay: String(delay) } : {}),

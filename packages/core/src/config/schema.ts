@@ -434,6 +434,11 @@ export const ComparisonSchema = Type.Object(
 );
 
 const captureOptions = {
+  fullPage: Type.Boolean({
+    description:
+      'Capture the full document without resizing the layout viewport. Default false.',
+  }),
+
   comparison: ComparisonSchema,
   renderer: RendererSchema,
   skip: withText(Type.Boolean({ description: 'Never capture this story.' }), {

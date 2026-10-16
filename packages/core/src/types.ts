@@ -158,7 +158,10 @@ export interface Snapshot {
   variant?: string;
   /** Lossless WebP, as Chrome encoded it, minus the ICC chunk. */
   image: Buffer;
+  /** Captured image bounds, which can exceed the layout viewport for full-page captures. */
   viewport: Viewport;
+  /** Original browser layout viewport, present for full-page captures. */
+  layoutViewport?: Viewport;
   capturedAt: string;
   /** Wall time for this story's capture, ms. */
   durationMs: number;
@@ -227,7 +230,10 @@ export interface StructureSnapshot {
   /** Version 2 includes computed grid-template-columns. Older sidecars omit
    * this field, so comparisons skip that property until both sides have it. */
   styleCaptureVersion?: 2;
+  /** Captured image bounds, which can exceed the layout viewport for full-page captures. */
   viewport: Viewport;
+  /** Original browser layout viewport, present for full-page captures. */
+  layoutViewport?: Viewport;
   /** sha256 of the canonical JSON of `elements`. Equal ⇒ identical structure
    *  and styles, so a pixel difference is render drift. */
   structureHash: string;
@@ -435,6 +441,8 @@ export interface DiffResult {
    *  without re-enumerating stories to recover a per-story viewport override,
    *  which is both slow and wrong when the override exists. */
   viewport?: Viewport;
+  /** Original browser layout viewport for full-page captures. */
+  layoutViewport?: Viewport;
   /** Set when the capture or diff threw. status is 'fail' in that case. */
   error?: string;
   /** Set on a 'fail' whose approved image is not on this machine (not in the

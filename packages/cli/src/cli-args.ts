@@ -66,6 +66,7 @@ export const SPECS: Record<string, Spec> = {
       'project',
       'as',
       'as-prefix',
+      'full-page',
       'viewport',
       'wait-for',
       'delay',

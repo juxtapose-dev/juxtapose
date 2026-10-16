@@ -94,6 +94,7 @@ Settle options (snap, run; over the story's and the config's settle)
                                  applies to every resource type, overriding per-type entries from lower layers
   --network <json>               a config network object for this call: per-type actions and URL rules,
                                  e.g. '{"external":{"images":"placeholder"},"rules":[{"match":"https://ads.*/**","action":"block"}]}'
+  --full-page                    snap: full document, preserving layout viewport
   --delay <ms>                   snap: fixed extra wait after settling; last resort
 `;
 
@@ -203,6 +204,7 @@ async function main(argv: string[]): Promise<number> {
       chrome: { type: 'string' },
       'no-daemon': { type: 'boolean', default: false },
       'no-fresh-renderer': { type: 'boolean', default: false },
+      'full-page': { type: 'boolean', default: false },
       recheck: { type: 'string' },
       'no-recheck': { type: 'boolean', default: false },
       explain: { type: 'string' },
