@@ -5,4 +5,8 @@
 '@juxtapose/storybook': minor
 ---
 
-Freeze the clock, random sources and animated images during capture (#146, #182). A new `freeze` option (`{ clock, random, images }`, images on by default; clock and random opt-in) starts `Date`, `Date.now()`, `Intl.DateTimeFormat` and `Temporal.Now` at 2024-01-01T12:00:00Z, advancing only as timers fire; seeds `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`; and launches Chrome so animated GIF, WebP and APNG images show their first frame. `freeze.clock` takes `false` or another ISO 8601 instant. A story or a `stories` override can set `clock` and `random`; `images` is project-wide. `jux config --explain` shows the effective values. Stories that render a date, a random value or an animated image capture new pixels once and need approving again.
+Freeze animated GIF, WebP and APNG images on their first frame by default (#182). Set `freeze.images: false` to retain playback for a project.
+
+Add opt-in clock and random fixture controls (#146). `freeze.clock: true` starts `Date`, `Date.now()`, `Intl.DateTimeFormat` and `Temporal.Now` at 2024-01-01T12:00:00Z; an ISO 8601 instant selects another starting time. Timer callbacks advance the clock, with a fallback for synchronous clock polling; asynchronous callback order is not controlled. `freeze.random: true` seeds `Math.random`, `crypto.getRandomValues` and `crypto.randomUUID`. Both options default to `false`.
+
+Clock and random settings layer per project, story, variant and `stories` override; animated-image policy is project-wide. Types, JSON schema, configuration docs and `jux config --explain` describe the controls. Enabling a control can change captured pixels and require fresh baseline approval.
