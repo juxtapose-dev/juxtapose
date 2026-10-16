@@ -20,7 +20,9 @@ jux — visual regression testing for component workbenches
 
 Usage
   jux init                       set up juxtapose and capture first baselines
-  jux run [options]              capture affected stories and compare to baselines
+  jux run [selector…] [options]  capture affected stories and compare to baselines
+  jux list [selector…]           list story IDs, titles and variants without capturing
+  jux upload --run <directory>   upload an existing run to hosted review
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
   jux doctor [--fix] [--json]    warn if snapshot images are committed, and print the fix;
@@ -33,7 +35,7 @@ Usage
                                  which layer each came from (config, story, stories glob, variant, CLI)
   jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix, two runs with --runs)
   jux mcp [--project <dir>] [--concurrency <n>]
-                                 MCP server on stdio for coding agents: snap, diff, run, check, handoff, approve
+                                 MCP server on stdio for coding agents: snap, diff, list, run, check, handoff, approve
                                  (--concurrency: snaps at once, 1-16, default half the cores up to 4)
   jux --version                  print installed package versions
 `;
@@ -47,11 +49,23 @@ Common options
   --platform <name>              storybook | ladle | urls (default: autodetect)
   --concurrency <n>              parallel pages (default: 8)
   --allow-unstable               approve: also baseline stories whose two run captures differed
-  --run <dir>                    run directory to read (approve, check, handoff)
+  --run <dir>                    run directory to read (approve, check, handoff, upload)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init, approve: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
+  --upload                      run: upload captured results to hosted review (JUXTAPOSE_TOKEN)
   --no-fresh-renderer            snap, run: reuse each page's renderer between captures (config freshRenderer:
                                  false); faster, but a capture can depend on the one before it
+`;
+
+const SELECTION_HELP = `
+Selection (run, list)
+  <selector>…                    exact story IDs or quoted ID globs: 'charts-*'
+  --story <selector>             repeatable alternative to positional selectors
+                                 base IDs include all variants; variant keys select one capture
+                                 globs: * excludes /, ** includes /, ? matches one non-/ character
+  --dry-run                      run: show selected IDs/titles without capturing or writing a run
+                                 live parameter discovery may open the workbench
+  Example: jux run 'charts-*' tables-basic--default --dry-run
 `;
 
 const RECHECK_HELP = `
@@ -107,7 +121,7 @@ The agent loop, no workbench needed:
   jux snap http://localhost:5173/ http://localhost:5173/settings --as-prefix after && jux diff --prefix before after
 `;
 
-const USAGE = `${HEAD}${COMMON}${SETTLE_HELP}\n${BROWSER_HELP}\n${DIFF_HELP}`;
+const USAGE = `${HEAD}${COMMON}${SELECTION_HELP}${SETTLE_HELP}\n${BROWSER_HELP}\n${DIFF_HELP}`;
 
 /** One command's usage: its lines from the list, then the options it takes. */
 function commandHelp(command: string): string {
@@ -123,6 +137,7 @@ function commandHelp(command: string): string {
   let text = `Usage\n${out.join('\n')}\n`;
   if (command === 'browser') return text + '\n' + BROWSER_HELP;
   text += COMMON;
+  if (command === 'run' || command === 'list') text += SELECTION_HELP;
   if (command === 'run' || command === 'config') text += RECHECK_HELP;
   if (command === 'run' || command === 'snap' || command === 'config')
     text += SETTLE_HELP;
@@ -161,7 +176,9 @@ async function main(argv: string[]): Promise<number> {
       'allow-unstable': { type: 'boolean', default: false },
       comment: { type: 'boolean', default: false },
       html: { type: 'boolean', default: false },
+      upload: { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },
+      'dry-run': { type: 'boolean' },
       run: { type: 'string' },
       as: { type: 'string' },
       'as-prefix': { type: 'string' },
@@ -204,6 +221,8 @@ async function main(argv: string[]): Promise<number> {
   // value `string | boolean`, since `--json=yes` is legal there. Each command
   // declares the flag types the usage documents; this one cast is where that
   // claim is made, instead of one per command.
+  if (command === 'run' || command === 'list')
+    values.story = [...(values.story ?? []), ...positionals];
   const flags = values as never;
 
   switch (command) {
@@ -211,9 +230,17 @@ async function main(argv: string[]): Promise<number> {
       const { initCommand } = await import('./commands/init.js');
       return initCommand(flags);
     }
+    case 'upload': {
+      const { uploadCommand } = await import('./commands/upload.js');
+      return uploadCommand(flags);
+    }
     case 'run': {
       const { runCommand } = await import('./commands/run.js');
       return runCommand(flags);
+    }
+    case 'list': {
+      const { listCommand } = await import('./commands/list.js');
+      return listCommand(flags);
     }
     case 'approve': {
       const { approveCommand } = await import('./commands/approve.js');
@@ -262,6 +289,7 @@ async function main(argv: string[]): Promise<number> {
 const COMMANDS = [
   'init',
   'run',
+  'list',
   'approve',
   'check',
   'handoff',

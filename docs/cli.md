@@ -23,9 +23,45 @@
 | `jux browser start\|stop`            | start or stop the warm browser (see [Warm browser](browser.md#warm-browser))      |
 
 `jux <command> --help` (or `-h`) prints that command's usage and exits 0. An
-unknown option, or a positional a command does not take (`jux run some-id`),
-exits 2 with a one-line message; it is never ignored. Use `jux run --story <id>`
-to run one story. A missing workbench exits 2 with its own message.
+unknown option, or a positional a command does not take, exits 2 with a one-line
+message; it is never ignored. A missing workbench exits 2 with its own message.
+
+## Select specific examples
+
+```sh
+jux list
+jux list 'components-button--*'
+jux run components-button--basic components-button--loading
+jux run 'components-button--*' --dry-run
+jux run 'components-button--*'
+```
+
+`list` shows copyable capture IDs alongside titles and names. Positional selectors
+and repeatable `--story` flags can be combined. They match IDs exactly or through
+quoted globs: `*` matches any characters except `/`, `**` crosses `/`, and `?`
+matches one non-`/` character. Quote globs so your shell does not expand them.
+Selectors are case-sensitive and form a union without duplicate captures.
+A base story match includes its variants; a complete variant key selects only
+that capture. Use `'*__dark-mobile'` to select that variant across stories.
+Every selector must match: a typo exits 2 and never falls back to capturing all.
+
+Explicit selectors take precedence over `--all` and affected-story analysis.
+`run --dry-run` prints the same selection it would capture; `list` selects from
+all available stories by default. Neither takes screenshots nor writes a run,
+config, or baseline manifest. Live parameters can require preview/browser
+initialization, and discovery may populate its local cache.
+
+With `--json`, both return `{schema: "juxtapose.selection/v1", count, captures}`.
+Each capture has `storyId`, `title`, `name`, and `baseStoryId` for a variant.
+Approval still uses exact reviewed IDs; run selection globs do not broaden it.
+
+## Hosted uploads
+
+`jux run --upload` uploads a completed run while retaining its local verdict.
+`jux upload --run <directory>` uploads existing artifacts without recapturing;
+its exit code reports transfer success. Both require a project token through
+`JUXTAPOSE_TOKEN`. See [Hosted uploads](hosted-uploads.md) for setup, JSON output,
+limits, CI association, and retries. Uploading does not approve snapshots.
 
 ## Capture only what a change reaches: `jux run --since`
 

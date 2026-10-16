@@ -20,6 +20,7 @@ import type { SettleFlags } from './settle-flags.js';
 
 export interface CommonFlags extends SettleFlags, RecheckFlags {
   json?: boolean;
+  upload?: boolean;
   project?: string;
   'build-dir'?: string;
   origin?: string;
@@ -31,7 +32,10 @@ export interface CommonFlags extends SettleFlags, RecheckFlags {
   fix?: boolean;
   /** `jux approve --allow-unstable`: baseline stories whose run captures differed. */
   'allow-unstable'?: boolean;
+  /** Capture selectors: exact IDs or ID globs. Approval still uses exact IDs. */
   story?: string[];
+  /** Resolve and print selection without taking screenshots or writing a run. */
+  'dry-run'?: boolean;
   run?: string;
   comment?: boolean;
   html?: boolean;

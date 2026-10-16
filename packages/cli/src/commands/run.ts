@@ -4,6 +4,7 @@ import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   buildComment,
+  hashImage,
   describeRendererRetries,
   describeVisualEquivalence,
   describeCause,
@@ -31,7 +32,8 @@ import {
   configWarnings,
   storyParamWarnings,
   platformStoryId,
-  selectByStoryId,
+  selectStories,
+  discoveryStoryIds,
   VariantConfigError,
   checkProjectSettle,
   DEFAULT_VIEWPORT,
@@ -63,8 +65,12 @@ import {
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
 import { stdio, type Io, type Session } from '../io.js';
+import { printSelection } from '../selection-output.js';
 import { recheckFromFlags } from '../recheck-flags.js';
 import { settleFromFlags } from '../settle-flags.js';
+import { UserError } from '../user-error.js';
+
+import { uploadConfig, uploadRun, uploadMessage } from '../hosted-upload.js';
 
 const MAX_GROUPS_SHOWN = 10;
 
@@ -72,6 +78,7 @@ export async function runCommand(
   flags: CommonFlags,
   { io = stdio, browser: lent, signal }: Session = {},
 ): Promise<number> {
+  const hosted = flags.upload && !flags['dry-run'] ? uploadConfig() : undefined;
   // Checked first: a mistyped ref used to fall through to `git-unavailable`,
   // capture everything, and give every story an unexplained `unknown` cause.
   if (
@@ -93,6 +100,11 @@ export async function runCommand(
     io.err(`${recheck.error}\n`);
     return EXIT.usage;
   }
+  if (
+    hosted &&
+    !/^[a-f0-9]{40}$/i.test(gitSha(path.resolve(flags.project ?? process.cwd())))
+  )
+    throw new UserError('Hosted upload requires a committed Git project.');
   const ctx = await resolveContext(flags);
   try {
     checkProjectSettle(ctx.config);
@@ -106,6 +118,7 @@ export async function runCommand(
     if (!ctx.json) io.err(msg + '\n');
   };
 
+  const uploadBaselines = hosted ? await ctx.store.readManifest() : undefined;
   const p = phases();
 
   const enumerated = await p.time('enumerate', () =>
@@ -161,10 +174,10 @@ export async function runCommand(
     : undefined;
 
   const unknownStories = (captures: StoryManifest[]): string[] =>
-    selectByStoryId(captures, flags.story ?? []).unknown;
+    selectStories(captures, flags.story ?? []).unknown;
   const reportUnknown = (unknown: string[]) => {
     io.err(
-      `jux run: no story or capture with id ${unknown.map((id) => `'${id}'`).join(', ')}\n`,
+      `jux run: no story or capture matching ${unknown.map((id) => `'${id}'`).join(', ')}. Use \`jux list\` to see IDs, and quote globs.\n`,
     );
     return EXIT.usage;
   };
@@ -175,7 +188,16 @@ export async function runCommand(
     if (unknown.length > 0) return reportUnknown(unknown);
   }
 
+  if (flags['dry-run'] && !ctx.platform.discoverParams) {
+    const ids = new Set(affected?.stories.map((s) => s.storyId));
+    const selected = affected
+      ? indexCaptures.filter((s) => ids.has(platformStoryId(s)))
+      : selectStories(indexCaptures, flags.story ?? []).selected;
+    return printSelection(selected, ctx.json, io);
+  }
+
   if (affected && affected.stories.length === 0) {
+    if (flags['dry-run']) return printSelection([], ctx.json, io);
     log(`jux: 0/${indexCaptures.length} captures to take (${affected.reason})`);
     const empty = emptyReport(ctx.projectRoot, indexCaptures.length);
     await emit(ctx.json, empty, ctx.projectRoot, p, io);
@@ -220,13 +242,7 @@ export async function runCommand(
           affected && affected.stories.length < enumerated.length
             ? affected.stories.map((story) => story.storyId)
             : flags.story?.length
-              ? enumerated
-                  .filter((story) =>
-                    flags.story?.some(
-                      (id) => id === story.storyId || id.startsWith(`${story.storyId}__`),
-                    ),
-                  )
-                  .map((story) => story.storyId)
+              ? discoveryStoryIds(enumerated, flags.story)
               : undefined;
         stories = await p.time('discover', () =>
           prepareCaptures(enumerated, {
@@ -271,11 +287,13 @@ export async function runCommand(
         ? `${affected.reason}: ${affected.detail}`
         : affected.reason;
     } else {
-      const { selected, unknown } = selectByStoryId(stories, flags.story ?? []);
+      const { selected, unknown } = selectStories(stories, flags.story ?? []);
       if (unknown.length > 0) return reportUnknown(unknown);
       selection = selected;
       reason = 'requested';
     }
+
+    if (flags['dry-run']) return printSelection(selection, ctx.json, io);
 
     log(`jux: ${selection.length}/${stories.length} captures to take (${reason})`);
 
@@ -316,6 +334,17 @@ export async function runCommand(
       commitSha: gitSha(ctx.projectRoot),
       onArtifact: async (a) => {
         await writeArtifact(runDir, a);
+        if (hosted) {
+          const baseline = await ctx.store.get(a.storyId);
+          if (
+            baseline &&
+            hashImage(baseline) === uploadBaselines?.baselines[a.storyId]?.hash
+          )
+            await writeFile(
+              path.join(runDir, 'images', `${encodeStoryId(a.storyId)}-baseline.webp`),
+              baseline,
+            );
+        }
         // A pass matches the manifest hash, so this capture is the approved
         // image: keep it for the failure that needs it later.
         if (a.status === 'pass') {
@@ -358,6 +387,11 @@ export async function runCommand(
     // The comment links the artifact only when there is one to link.
     if (flags.comment)
       await comment(report, ctx.json, Boolean(flags.html), io, ctx.config.storage);
+
+    if (hosted) {
+      const uploaded = await uploadRun(runDir, hosted);
+      io.err(uploadMessage(uploaded));
+    }
 
     // Anything needing human or agent judgement blocks. `pass` and `skip` do not.
     const blocking = report.summary.fail + report.summary.new + report.summary.stale;
