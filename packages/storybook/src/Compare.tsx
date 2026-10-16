@@ -26,11 +26,17 @@ export interface CompareProps {
   loupe?: boolean;
 }
 
-const Surface = styled.div<{ paired: boolean }>(({ paired }) => ({
-  width: '100%',
-  maxWidth: paired ? 1600 : 800,
-  margin: '0 auto',
-}));
+// A single-image mode uses one side-by-side column's scale so changing modes
+// doesn't enlarge a capture beyond the panel. On narrow panels it needs the
+// whole width to remain readable; query the panel, not the browser viewport.
+const Surface = styled.div<{ paired: boolean; comparing: boolean }>(
+  ({ paired, comparing }) => ({
+    width: comparing && !paired ? 'calc((100% - 12px) / 2)' : '100%',
+    maxWidth: paired ? 1600 : comparing ? 794 : 800,
+    margin: '0 auto',
+    '@container (max-width: 700px)': { width: '100%' },
+  }),
+);
 
 const Frame = styled.div({
   position: 'relative',
@@ -131,11 +137,15 @@ export const Compare: React.FC<CompareProps> = (props) => {
   const retryUrl = (url: string | null) => url && `${url}&retry=${attempt}`;
   return (
     <div
+      style={{ containerType: 'inline-size' }}
       onErrorCapture={(event) => {
         if (event.target instanceof HTMLImageElement) setFailed(true);
       }}
     >
-      <Surface paired={props.mode === 'sxs' && !!props.baselineUrl}>
+      <Surface
+        paired={props.mode === 'sxs' && !!props.baselineUrl}
+        comparing={!!props.baselineUrl}
+      >
         <ComparisonImages
           {...props}
           baselineUrl={retryUrl(props.baselineUrl)}
