@@ -234,6 +234,21 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'list',
+    description:
+      'List available story IDs, titles and variant capture keys. Optional ID globs filter the selection. No screenshots or run report; live parameter discovery may open the preview. Returns juxtapose.selection/v1.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        stories: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Exact IDs or ID globs; unmatched selectors fail',
+        },
+      },
+    },
+  },
+  {
     name: 'run',
     description:
       'Workbench projects (Storybook/Ladle build): capture stories and compare them to approved baselines. Default: stories affected by changes. Returns the `jux run --json` RunReport.',
@@ -241,12 +256,17 @@ export const TOOLS: Tool[] = [
       type: 'object',
       properties: {
         all: { type: 'boolean', description: 'Capture every story' },
+        dryRun: {
+          type: 'boolean',
+          description:
+            'Return resolved capture selection without screenshots or a run report; discovery may open the preview',
+        },
         since: { type: 'string', description: 'Git ref; trace changes since it' },
         stories: {
           type: 'array',
           items: { type: 'string' },
           description:
-            'Story ids: a story id captures it with all its variants, a capture key (id__variant) just that capture',
+            'Story IDs or ID globs (*, **, ?): a base story match includes its variants, a capture key (id__variant) selects just that capture. Unmatched selectors fail.',
         },
         settle: SETTLE,
         network: NETWORK,
@@ -548,6 +568,8 @@ export class McpServer {
         return this.diff(args);
       case 'run':
         return this.run(args);
+      case 'list':
+        return this.run({ ...args, all: true, dryRun: true });
       case 'check':
         return {
           locks: this.readsRun(),
@@ -752,6 +774,7 @@ export class McpServer {
    *  check/handoff/approve reads a half-written run. */
   private run(args: Args): Planned {
     const all = bool(args, 'all');
+    const dryRun = bool(args, 'dryRun');
     const since = str(args, 'since');
     const stories = strings(args, 'stories');
     const settle = settleArg(args);
@@ -766,6 +789,7 @@ export class McpServer {
               {
                 ...this.common(),
                 ...(all ? { all } : {}),
+                ...(dryRun ? { 'dry-run': true } : {}),
                 ...(since ? { since } : {}),
                 ...(stories?.length ? { story: stories } : {}),
                 ...settle,

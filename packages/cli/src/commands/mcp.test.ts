@@ -161,6 +161,7 @@ describe('jux mcp protocol', () => {
     expect(tools.map((t) => t.name)).toEqual([
       'snap',
       'diff',
+      'list',
       'run',
       'check',
       'handoff',
@@ -197,6 +198,40 @@ describe('jux mcp protocol', () => {
     expect((await c.request('tools/call', { name: 'nope' })).error?.code).toBe(-32602);
     expect(await c.close()).toBe(0);
     expectOnlyProtocol(c.lines);
+  });
+
+  test('list and run dryRun share selectors without capturing', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'jux-mcp-list-'));
+    writeFileSync(
+      path.join(root, 'juxtapose.config.json'),
+      JSON.stringify({
+        platform: 'urls',
+        urls: [
+          { id: 'charts-a', url: 'http://127.0.0.1:1/' },
+          { id: 'table-a', url: 'http://127.0.0.1:1/' },
+        ],
+      }),
+    );
+    const c = new Client(root);
+    try {
+      await handshake(c);
+      for (const name of ['list', 'run']) {
+        const result = await c.call(name, {
+          stories: ['charts-*'],
+          ...(name === 'run' ? { dryRun: true } : {}),
+        });
+        expect(result.isError).not.toBe(true);
+        expect(JSON.parse(text(result))).toMatchObject({
+          schema: 'juxtapose.selection/v1',
+          count: 1,
+          captures: [{ storyId: 'charts-a' }],
+        });
+      }
+      expect(existsSync(path.join(root, '.juxtapose', 'runs'))).toBe(false);
+    } finally {
+      await c.close();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('explain returns juxtapose.explain/v1 with the call layer on top, and refuses bad input', async () => {
