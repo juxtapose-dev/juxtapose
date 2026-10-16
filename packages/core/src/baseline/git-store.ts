@@ -14,13 +14,14 @@
 // The cost is repo size. WebP at quality 90 keeps a 1280x800 story around
 // 30-60KB; a 700-story suite is tens of megabytes.
 
+import { readStructureFile, writeStructureFile } from './structure-file.js';
 import { batchManifest } from './manifest-batch.js';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 import type { ApprovalMeta, BaselineManifest, BaselineStore } from '../types.js';
 import { hashImage } from './status.js';
-import { isGzip } from '../capture/structure.js';
+import { decodeStructure, isGzip } from '../capture/structure.js';
 import { MANIFEST_NAME, readManifestFile, writeManifestFile } from './manifest-file.js';
 
 /**
@@ -68,14 +69,48 @@ export class GitBaselineStore implements BaselineStore {
     return this.imagePath(storyId);
   }
 
-  async putStructure(storyId: string, gz: Buffer): Promise<void> {
-    await mkdir(this.imageDir, { recursive: true });
-    // The `.json.gz` name is this layout's contract; approval hands over
-    // readable JSON, so compress it here rather than rename a committed file.
-    await writeFile(this.structurePath(storyId), isGzip(gz) ? gz : compactGzip(gz));
+  async putStructure(storyId: string, bytes: Buffer): Promise<void> {
+    const manifest = await this.readManifest();
+    const entry = manifest.baselines[storyId];
+    // Preserve the standalone legacy sidecar API for callers without an entry.
+    if (!entry) {
+      await mkdir(this.imageDir, { recursive: true });
+      await writeFile(
+        this.structurePath(storyId),
+        isGzip(bytes) ? bytes : compactGzip(bytes),
+      );
+      return;
+    }
+    let snapshot;
+    try {
+      snapshot = decodeStructure(bytes);
+    } catch {
+      // Preserve the legacy store's opaque-sidecar contract for custom callers.
+      await mkdir(this.imageDir, { recursive: true });
+      await writeFile(
+        this.structurePath(storyId),
+        isGzip(bytes) ? bytes : compactGzip(bytes),
+      );
+      return;
+    }
+    const reference = await writeStructureFile(this.opts.projectRoot, storyId, snapshot);
+    const { structure: _oldStructure, ...meta } = entry;
+    manifest.baselines[storyId] = {
+      ...meta,
+      structureHash: snapshot.structureHash,
+      ...reference,
+    };
+    await this.writeManifest(manifest);
   }
 
   async getStructure(storyId: string): Promise<Buffer | null> {
+    const entry = (await this.readManifest()).baselines[storyId];
+    if (entry?.structure)
+      return Buffer.from(
+        JSON.stringify({ ...entry.structure, structureHash: entry.structureHash }),
+      );
+    if (entry?.structureFile)
+      return readStructureFile(this.opts.projectRoot, storyId, entry);
     try {
       return await readFile(this.structurePath(storyId));
     } catch {

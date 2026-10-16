@@ -19,8 +19,9 @@ differently. `jux approve` refuses it (exit 1, story named) until it is made
 deterministic or `--allow-unstable` is passed; see [cli.md](cli.md). Its
 `flake` field names the cause and the config patch to apply.
 
-Approving writes the hash and structure to `juxtapose.manifest.json` and the
-image to a git-ignored cache under `.juxtapose/`. Commit the manifest; never
+Approving writes hashes to `juxtapose.manifest.json`, readable structure evidence
+to `juxtapose.structures/`, and images to a git-ignored cache under `.juxtapose/`.
+Commit the manifest and structure directory; never
 `git add` an image or anything under `.juxtapose/`. `jux doctor` lists any that are tracked and
 prints the `git rm --cached` fix. When a failing story's image is not in the
 cache, its handoff and result say "baseline image not available (not in cache);

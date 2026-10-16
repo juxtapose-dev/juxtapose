@@ -324,7 +324,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
         : 'Commit the hashes so everyone compares against the same thing. Images stay in\nthe local cache and are never committed:',
     );
     say('');
-    say(`  ${gitAddCommand(CONFIG_NAME, ctx.config.storage)}`);
+    say(`  ${gitAddCommand(CONFIG_NAME, ctx.config.storage, ctx.projectRoot)}`);
     say(`  git commit -m "Add juxtapose visual baselines"`);
     say('');
     say('From now on `jux run` captures only what your changes could affect.');

@@ -722,7 +722,7 @@ const UNSAFE_CHARS = String.raw`\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u2
  * manifest. `\` counts as a separator everywhere `/` does, for Windows.
  */
 export const STORAGE_DIR_PATTERN =
-  String.raw`^(?!-)(?![/\\])(?![A-Za-z]:)(?!(?:\.[/\\])*\.{0,2}[/\\]?$)(?!(?:\.[/\\])*juxtapose\.manifest\.json(?:[/\\]|$))(?!(?:.*[/\\])?\.\.(?:[/\\]|$))[^*?\[\]` +
+  String.raw`^(?!-)(?![/\\])(?![A-Za-z]:)(?!(?:\.[/\\])*\.{0,2}[/\\]?$)(?!(?:\.[/\\])*juxtapose\.(?:manifest\.json|structures)(?:[/\\]|$))(?!(?:.*[/\\])?\.\.(?:[/\\]|$))[^*?\[\]` +
   UNSAFE_CHARS +
   String.raw`]+$`;
 

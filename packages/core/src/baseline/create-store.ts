@@ -14,6 +14,7 @@ import {
   tmpDirFor,
 } from './cache-store.js';
 import { GitBaselineStore } from './git-store.js';
+import { STRUCTURE_DIR } from './structure-file.js';
 import { MANIFEST_NAME } from './manifest-file.js';
 
 /** A `storage` setting jux refuses; the CLI reports it as a usage error. */
@@ -85,8 +86,12 @@ export function createBaselineStore(
 export function committedPaths(storage: StorageConfig | undefined): string[] {
   const chosen: StorageConfig = storage ?? { kind: 'cache' };
   return chosen.kind === 'git' || chosen.kind === 'fs'
-    ? [MANIFEST_NAME, safeStorageDir(chosen.dir, chosen.kind) ?? LEGACY_IMAGE_DIR]
-    : [MANIFEST_NAME];
+    ? [
+        MANIFEST_NAME,
+        STRUCTURE_DIR,
+        safeStorageDir(chosen.dir, chosen.kind) ?? LEGACY_IMAGE_DIR,
+      ]
+    : [MANIFEST_NAME, STRUCTURE_DIR];
 }
 
 /**

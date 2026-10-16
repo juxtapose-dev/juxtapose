@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 // Commands init and approve print for a person or agent to paste. The paths in
 // them come from the repo's own config, so each is quoted, and `--` ends the
 // options so a path can never be read as one.
@@ -21,8 +23,15 @@ export const literalPathspec = (p: string): string => shellQuote(`:(literal)${p}
 export const NO_LITERAL_ENV = 'GIT_LITERAL_PATHSPECS=0 ';
 
 /** `git add` for the files an approval produces, after `jux init`. */
-export function gitAddCommand(configName: string, storage: Storage): string {
-  const paths = [configName, ...committedPaths(storage), '.gitignore'];
+export function gitAddCommand(
+  configName: string,
+  storage: Storage,
+  projectRoot = process.cwd(),
+): string {
+  const generated = committedPaths(storage).filter(
+    (p) => p !== 'juxtapose.structures' || existsSync(path.join(projectRoot, p)),
+  );
+  const paths = [configName, ...generated, '.gitignore'];
   return `${NO_LITERAL_ENV}git add -- ${paths.map(literalPathspec).join(' ')}`;
 }
 

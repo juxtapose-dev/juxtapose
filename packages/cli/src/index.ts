@@ -24,7 +24,7 @@ Usage
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
   jux doctor [--fix] [--json]    warn if snapshot images are committed, and print the fix;
-                                 --fix folds legacy structure sidecars into the manifest
+                                 --fix migrates inline/legacy structures to readable JSON files
   jux handoff <storyId>          print an agent prompt for one failing story
   jux snap <url>… [options]      capture pages: pixels + structure, no workbench
   jux browser install|path|status|start|stop  manage the pinned and warm browser (install downloads once, ~100 MB)

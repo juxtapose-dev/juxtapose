@@ -1,3 +1,4 @@
+import { deepStrictEqual } from 'node:assert';
 // Replay a real run without Chrome. Each trial gets a fresh cache/project.
 // node scripts/bench-approval.mjs RUN_DIR OLD_CORE_DIST [REPETITIONS]
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
@@ -50,7 +51,26 @@ for (let trial = 0; trial < Number(repeats); trial++) {
       }),
     );
     if (label === 'before') audit = bytes;
-    else if (!bytes.equals(audit)) throw new Error('manifest parity failed');
+    else {
+      const previous = JSON.parse(audit).baselines;
+      const next = JSON.parse(bytes).baselines;
+      const metadata = (entry) => {
+        const { structure, structureFile, structureFileHash, ...rest } = entry;
+        void structure;
+        void structureFile;
+        void structureFileHash;
+        return rest;
+      };
+      deepStrictEqual(Object.keys(next), Object.keys(previous));
+      for (const [id, entry] of Object.entries(previous)) {
+        deepStrictEqual(metadata(next[id]), metadata(entry));
+        if (entry.structure)
+          deepStrictEqual(current.decodeStructure(await store.getStructure(id)), {
+            ...entry.structure,
+            structureHash: entry.structureHash,
+          });
+      }
+    }
     await rm(root, { recursive: true, force: true });
   }
 }

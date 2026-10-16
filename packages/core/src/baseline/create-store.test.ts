@@ -23,7 +23,10 @@ test('an explicit git or fs kind keeps the repo-backed store', async () => {
 });
 
 test('commit hashes and structure, ignore images, by default', () => {
-  expect(committedPaths(undefined)).toEqual(['juxtapose.manifest.json']);
+  expect(committedPaths(undefined)).toEqual([
+    'juxtapose.manifest.json',
+    'juxtapose.structures',
+  ]);
   // One line: .juxtapose/ holds only machine-local data.
   expect(ignoredPaths(undefined)).toEqual(['.juxtapose/']);
 });
@@ -39,6 +42,7 @@ test('a custom cache dir is what gets ignored', () => {
 test('the opt-in repo layout commits its image dir and ignores only runs', () => {
   expect(committedPaths({ kind: 'git' })).toEqual([
     'juxtapose.manifest.json',
+    'juxtapose.structures',
     '.juxtapose/baselines',
   ]);
   expect(ignoredPaths({ kind: 'git' })).toEqual(['.juxtapose/runs/']);
@@ -56,6 +60,8 @@ test.each([
   '.',
   'juxtapose.manifest.json',
   './juxtapose.manifest.json',
+  'juxtapose.structures',
+  './juxtapose.structures/images',
   // Windows separators count as separators.
   '..\\x',
   'a\\..\\b',

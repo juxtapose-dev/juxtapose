@@ -172,7 +172,9 @@ export async function findIssues(
       fix: [
         cmd.run('run --all'),
         cmd.run('approve --all'),
-        cmd.git(`add -- ${shellQuote(MANIFEST_NAME)}`),
+        cmd.git(
+          `add -- ${shellQuote(MANIFEST_NAME)} ${shellQuote('juxtapose.structures')}`,
+        ),
         cmd.git(
           `commit -m ${shellQuote('Re-approve juxtapose baselines for the new encoder')}`,
         ),
@@ -218,17 +220,20 @@ export async function findIssues(
             code: 'legacy-sidecars',
             message:
               `${sidecars.length} legacy structure ${plural(sidecars.length, 'file is', 'files are')} tracked in ${dir}/. ` +
-              `Structure now lives in ${MANIFEST_NAME}.`,
+              `Structure now lives in readable juxtapose.structures/ files.`,
             files: sidecars,
             fix: [
-              // Folds each sidecar into the manifest where it matches the
+              // Migrates each sidecar where it matches the
               // approved baseline. It captures nothing and approves nothing,
               // so a failing or new story stays that way. Untrack only after.
               cmd.run('doctor --fix'),
               cmd.globGit(`rm --cached -- ${globPathspec(dir, '.structure.json.gz')}`),
-              cmd.git(`add -- ${shellQuote(MANIFEST_NAME)}`),
+              cmd.git(`add -- ${shellQuote(MANIFEST_NAME)}`) +
+                ` && if [ -d ${shellQuote(path.join(projectRoot, 'juxtapose.structures'))} ]; then ` +
+                cmd.git(`add -- ${shellQuote('juxtapose.structures')}`) +
+                '; fi',
               cmd.git(
-                `commit -m ${shellQuote('Move juxtapose structure into the manifest')}`,
+                `commit -m ${shellQuote('Move juxtapose structure into readable JSON files')}`,
               ),
             ],
           });
@@ -288,7 +293,7 @@ export async function doctorCommand(
   if (flags.fix === true && !issues.some((i) => i.code === 'manifest-conflict')) {
     const kind = config.storage?.kind;
     if (kind === 'git' || kind === 'fs' || kind === 's3') {
-      io.err('jux doctor --fix: only the default cache store has structure to fold\n');
+      io.err('jux doctor --fix: structure migration requires the default cache store\n');
     } else {
       const store = new CacheBaselineStore({
         projectRoot,
@@ -296,9 +301,9 @@ export async function doctorCommand(
       });
       const { migrated, skipped } = await store.migrateLegacyStructures();
       io.err(
-        `jux doctor --fix: folded structure into ${migrated} manifest ${plural(migrated, 'entry', 'entries')}` +
+        `jux doctor --fix: migrated ${migrated} ${plural(migrated, 'structure', 'structures')} to readable JSON files` +
           (skipped.length > 0
-            ? `; left ${skipped.length} alone (sidecar does not match the approved baseline): ${skipped.slice(0, SHOWN).join(', ')}\n`
+            ? `; left ${skipped.length} alone (structure unavailable, unwritable, or does not match the approved baseline): ${skipped.slice(0, SHOWN).join(', ')}\n`
             : '\n'),
       );
       issues = await findIssues(projectRoot, config.storage);
@@ -334,7 +339,7 @@ export async function doctorCommand(
           '    images from every clone that pulls it. The run copies each image that matches\n' +
           '    the manifest into your cache, but teammates and CI start with an empty one and\n' +
           '    get structure-only reports until their own run, or a restored CI cache\n' +
-          '    (docs/ci.md), fills it. Structure now lives in the manifest.\n' +
+          '    (docs/ci.md), fills it. Structure now lives in juxtapose.structures/.\n' +
           `    From now on commit ${committedPaths(undefined).map(shellQuote).join(' and ')}.\n`,
       );
     }

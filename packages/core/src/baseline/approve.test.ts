@@ -141,10 +141,10 @@ describe('UnstableCaptureError', () => {
   });
 });
 
-test('the repo-backed store writes the same bytes encodeStructure always did', async () => {
+test('the repo-backed store preserves structure evidence in readable files', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'jux-store-'));
   const store = new GitBaselineStore({ projectRoot: root });
   const image = await runImage(encodeStructure(structure));
   await approveCapture(store, 'a', Buffer.from('img'), meta, image);
-  expect(await store.getStructure('a')).toEqual(encodeStructure(structure));
+  expect(JSON.parse((await store.getStructure('a'))!.toString())).toEqual(structure);
 });

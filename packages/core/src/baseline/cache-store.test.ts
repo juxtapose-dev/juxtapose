@@ -123,14 +123,15 @@ test('legacy layout: an old image that is not the approved one is ignored', asyn
   expect((await store.lookup('a')).kind).toBe('unavailable');
 });
 
-test('structure lives in the manifest entry, not in a file of its own', async () => {
+test('structure lives in a readable referenced file', async () => {
   await store.put('a', image, meta);
   await store.putStructure('a', Buffer.from(JSON.stringify(structure)));
   expect(existsSync(path.join(root, 'juxtapose'))).toBe(false);
   expect(existsSync(path.join(root, '.juxtapose', 'structure'))).toBe(false);
   const entry = (await store.readManifest()).baselines['a']!;
   expect(entry.structureHash).toBe(structure.structureHash);
-  expect(entry.structure?.elements).toHaveLength(2);
+  expect(entry.structure).toBeUndefined();
+  expect(entry.structureFile).toBe('juxtapose.structures/a.json');
   expect(JSON.parse((await store.getStructure('a'))!.toString())).toEqual(structure);
 });
 
@@ -166,7 +167,7 @@ test('cache dir is configurable', async () => {
   expect(existsSync(path.join(root, 'tmp', 'imgs', `${hash}.webp`))).toBe(true);
 });
 
-test('approveCapture puts the structure in the manifest, one element per line', async () => {
+test('approveCapture writes one element per line in the separate structure file', async () => {
   const runDir = await mkdtemp(path.join(tmpdir(), 'jux-run-'));
   const img = path.join(runDir, 'a-current.webp');
   await writeFile(img, 'img');
@@ -176,10 +177,14 @@ test('approveCapture puts the structure in the manifest, one element per line', 
   );
   await approveCapture(store, 'a', Buffer.from('img'), meta, img);
   const text = await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8');
-  expect(JSON.parse(text).baselines.a.structure.elements).toHaveLength(2);
+  const structureText = await readFile(
+    path.join(root, JSON.parse(text).baselines.a.structureFile),
+    'utf8',
+  );
+  expect(JSON.parse(structureText).elements).toHaveLength(2);
   // One element per line is what makes an approval's diff reviewable.
   expect(
-    text.split('\n').filter((l) => l.trimStart().startsWith('{"path"')),
+    structureText.split('\n').filter((l) => /^\s*\{"(path|segment)"/.test(l)),
   ).toHaveLength(structure.elements.length);
   // Additive field, so the version stays 1: an older jux accepts only 1.
   expect(JSON.parse(text).version).toBe(1);
@@ -319,7 +324,7 @@ test('a manifest carrying structure is read by the previous release as the same 
     await approveCapture(store, id, Buffer.from(`img-${id}`), meta, img);
   }
   const text = await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8');
-  expect(text).toContain('"structure"');
+  expect(text).toContain('"structureFile"');
   expect(previousReleaseReads(text)).toEqual({
     a: hashImage(Buffer.from('img-a')),
     b: hashImage(Buffer.from('img-b')),
@@ -348,14 +353,14 @@ async function legacyProject(
   await writeFile(file, JSON.stringify(manifest));
 }
 
-test('migrating legacy sidecars folds structure into the manifest, stays version 1, changes no hash', async () => {
+test('migrating legacy sidecars writes readable structure files, stays version 1, changes no hash', async () => {
   await legacyProject('a', image, { structureHash: structure.structureHash });
   const before = (await store.readManifest()).baselines['a']!;
   expect(await store.migrateLegacyStructures()).toEqual({ migrated: 1, skipped: [] });
   const text = await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8');
   expect(JSON.parse(text).version).toBe(1);
   const after = (await store.readManifest()).baselines['a']!;
-  expect(after.structure).toBeDefined();
+  expect(after.structureFile).toBeDefined();
   expect(after.hash).toBe(before.hash);
   expect(previousReleaseReads(text)).toEqual({ a: hash });
   // Idempotent.
@@ -370,7 +375,7 @@ test('migration matches an entry with no structureHash by the legacy image hash'
     skipped: ['b'],
   });
   const m = await store.readManifest();
-  expect(m.baselines['a']!.structure).toBeDefined();
+  expect(m.baselines['a']!.structureFile).toBeDefined();
   expect(m.baselines['b']!.structure).toBeUndefined();
 });
 

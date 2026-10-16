@@ -3,9 +3,9 @@
 // A project commits hashes and metadata, never pixels:
 //   - `juxtapose.manifest.json`: the per-story hash. This alone decides
 //     pass/fail, so CI needs no image to detect a change.
-//     The same entry carries the approved structure inline, so CI can also say
-//     which elements changed without an image. One committed file, like a
-//     lockfile; it is regenerated on a merge conflict, not hand-merged.
+//     Entries reference readable JSON in `juxtapose.structures/`, so CI can
+//     explain changed elements without baseline images. Old inline structures
+//     remain readable; approval or doctor --fix writes the new layout.
 // Everything under `.juxtapose/` is machine-local and ignored as one line.
 // Images live in a local, git-ignored cache keyed by their own sha256
 // (`<hash>.webp`). Content addressing is what makes this safe to rebuild
@@ -18,6 +18,7 @@
 // story, or a CI job with a cold cache, reports the failure by hash and
 // structure and says the image is unavailable.
 
+import { readStructureFile, writeStructureFile } from './structure-file.js';
 import { batchManifest } from './manifest-batch.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -281,8 +282,14 @@ export class CacheBaselineStore implements BaselineStore {
     if (!entry)
       throw new Error(`no manifest entry for ${storyId} to attach structure to`);
     // In a bulk approval, both updates stay in the scoped manifest until commit.
-    const { structureHash, ...rest } = decodeStructure(structure);
-    manifest.baselines[storyId] = { ...entry, structureHash, structure: rest };
+    const snapshot = decodeStructure(structure);
+    const reference = await writeStructureFile(this.root, storyId, snapshot);
+    const { structure: _oldStructure, ...meta } = entry;
+    manifest.baselines[storyId] = {
+      ...meta,
+      structureHash: snapshot.structureHash,
+      ...reference,
+    };
     await this.writeManifest(manifest);
   }
 
@@ -294,15 +301,25 @@ export class CacheBaselineStore implements BaselineStore {
         JSON.stringify({ ...entry.structure, structureHash: entry.structureHash }),
       );
     }
-    // Old layout: gzip beside the image.
-    return readFile(
+    if (entry?.structureFile) return readStructureFile(this.root, storyId, entry);
+    // Legacy evidence must belong to this baseline, not an earlier approval.
+    const legacy = await readFile(
       path.join(this.legacyDir, `${encodeStoryId(storyId)}.structure.json.gz`),
     ).catch(() => null);
+    if (!legacy || !entry) return legacy;
+    try {
+      const snapshot = decodeStructure(legacy);
+      if (entry.structureHash)
+        return snapshot.structureHash === entry.structureHash ? legacy : null;
+      const image = await readFile(this.legacyImagePath(storyId)).catch(() => null);
+      return image && hashImage(image) === entry.hash ? legacy : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
-   * Fold legacy `.structure.json.gz` sidecars into the manifest, for stories
-   * whose entry has no structure yet. Nothing is captured and nothing is
+   * Move inline and legacy `.structure.json.gz` evidence into readable files. Nothing is captured and nothing is
    * approved: an entry's hash is never touched, so a story that is failing
    * stays failing. A sidecar is taken only when it belongs to the approved
    * baseline: its structureHash equals the entry's, or, for an entry that
@@ -314,7 +331,21 @@ export class CacheBaselineStore implements BaselineStore {
     let migrated = 0;
     const skipped: string[] = [];
     for (const [id, entry] of Object.entries(manifest.baselines)) {
-      if (entry.structure) continue;
+      if (entry.structureFile) continue;
+      if (entry.structure && entry.structureHash) {
+        try {
+          const reference = await writeStructureFile(this.root, id, {
+            ...entry.structure,
+            structureHash: entry.structureHash,
+          });
+          const { structure: _oldStructure, ...meta } = entry;
+          manifest.baselines[id] = { ...meta, ...reference };
+          migrated++;
+        } catch {
+          skipped.push(id);
+        }
+        continue;
+      }
       const gz = await readFile(
         path.join(this.legacyDir, `${encodeStoryId(id)}.structure.json.gz`),
       ).catch(() => null);
@@ -337,9 +368,17 @@ export class CacheBaselineStore implements BaselineStore {
         skipped.push(id);
         continue;
       }
-      const { structureHash, ...rest } = snapshot;
-      manifest.baselines[id] = { ...entry, structureHash, structure: rest };
-      migrated++;
+      try {
+        const reference = await writeStructureFile(this.root, id, snapshot);
+        manifest.baselines[id] = {
+          ...entry,
+          structureHash: snapshot.structureHash,
+          ...reference,
+        };
+        migrated++;
+      } catch {
+        skipped.push(id);
+      }
     }
     if (migrated > 0) await this.writeManifest(manifest);
     return { migrated, skipped };
