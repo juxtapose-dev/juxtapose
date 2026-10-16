@@ -47,6 +47,10 @@ export async function checkStorybookPanel(page, storyId) {
           await new Promise((resolve) => setTimeout(resolve, 3500));
           globalThis.__juxStalePending = false;
         }
+        if (globalThis.__juxBundleDelay)
+          await new Promise((resolve) =>
+            setTimeout(resolve, globalThis.__juxBundleDelay),
+          );
         return new Response(body);
       }
       if (url.endsWith('/progress'))
@@ -244,6 +248,16 @@ export async function checkStorybookPanel(page, storyId) {
     };
   });
   await textAppears(page, 'Latest run failed: Controlled background failure');
+  // A response slower than the 2s polling interval must still be applied.
+  // Previously every next request invalidated the preceding response forever.
+  await page.evaluate(() => {
+    globalThis.__juxBundleDelay = 2400;
+    globalThis.__juxFixture.report.results[0].error = 'Slow server result delivered';
+  });
+  await textAppears(page, 'Slow server result delivered');
+  await page.evaluate(() => {
+    globalThis.__juxBundleDelay = 0;
+  });
   await page.evaluate(() => {
     globalThis.__juxFixture.report = null;
     globalThis.__juxFixture.run = undefined;

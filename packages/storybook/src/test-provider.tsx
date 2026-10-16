@@ -80,6 +80,7 @@ const TestProviderRow: React.FC<{ store: ProviderStore }> = ({ store }) => {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const starting = useRef(false);
+  const settledRun = useRef<string | undefined>(undefined);
 
   const refresh = useCallback(async () => {
     const next = await fetchBundle().catch(() => null);
@@ -132,9 +133,12 @@ const TestProviderRow: React.FC<{ store: ProviderStore }> = ({ store }) => {
         return;
       }
 
-      if (running || progress.run) {
+      if (running || (progress.run && progress.run.id !== settledRun.current)) {
         const next = await refresh();
         if (cancelled) return;
+        // Report fetching hashes approved images; do it once per terminal run,
+        // not on every cheap progress poll. Retry if the bundle was unavailable.
+        if (next) settledRun.current = progress.run?.id;
         setRunning(false);
         setError(
           progress.run?.status === 'failed'

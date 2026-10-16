@@ -99,6 +99,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   const [unfocus, setUnfocus] = useState(false);
   const [loupe, setLoupe] = useState(false);
   const request = useRef(0);
+  const appliedRequest = useRef(0);
   const visible = useRef(active);
   const action = useRef(false);
   const handoffRequest = useRef(0);
@@ -118,11 +119,15 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     const generation = ++request.current;
     try {
       const next = await fetchBundle();
-      if (!visible.current || generation !== request.current) return;
+      // A newer request starting must not invalidate every slow response.
+      // Only a newer response already applied can make this one stale.
+      if (!visible.current || generation <= appliedRequest.current) return;
+      appliedRequest.current = generation;
       setBundle(next);
       setConnectionError(null);
     } catch (err) {
-      if (!visible.current || generation !== request.current) return;
+      if (!visible.current || generation <= appliedRequest.current) return;
+      appliedRequest.current = generation;
       setConnectionError(err instanceof Error ? err.message : String(err));
     }
   }, []);
@@ -138,7 +143,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     }, POLL_MS);
     return () => {
       visible.current = false;
-      request.current++;
+      appliedRequest.current = ++request.current;
       clearInterval(id);
     };
   }, [active, refresh]);
@@ -148,6 +153,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     if (!active || (!progress.running && !bundle?.running)) return;
     let disposed = false;
     let polling = false;
+    let finished = false;
     const tick = async () => {
       if (polling || document.hidden) return;
       polling = true;
@@ -155,7 +161,8 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
       polling = false;
       if (!p || disposed) return;
       setProgress({ done: p.done, total: p.total, running: p.running });
-      if (!p.running) {
+      if (!p.running && !finished) {
+        finished = true;
         void refresh();
       }
     };
