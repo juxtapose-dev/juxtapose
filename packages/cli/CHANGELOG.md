@@ -1,5 +1,20 @@
 # @juxtapose/cli
 
+## 0.22.0
+
+### Minor Changes
+
+- a5ca6bd: Add story listing, positional capture selectors, ID globs, and run dry-run output. CLI and MCP share variant-aware selection; unmatched selectors fail instead of silently broadening the capture. Approval remains explicit and uses exact reviewed IDs.
+
+### Patch Changes
+
+- be525cc: Batch manifest updates during init and bulk approval, avoiding repeated parsing and rewriting for every story. Write manifests through an atomic replacement while retaining the existing readable format and structure evidence.
+- Updated dependencies [a5ca6bd]
+- Updated dependencies [be525cc]
+  - @juxtapose/core@0.22.0
+  - @juxtapose/adapter-ladle@0.3.25
+  - @juxtapose/adapter-storybook@0.4.22
+
 ## 0.21.0
 
 ### Minor Changes
