@@ -19,6 +19,9 @@ const buildDir = path.resolve(process.argv[2] ?? 'examples/storybook/storybook-p
 const passes = Number(process.argv[3] ?? 5);
 if (!Number.isInteger(passes) || passes < 3)
   throw new Error('Use at least 3 measured passes per mode');
+const concurrency = Number(process.env.JUX_PROFILE_CONCURRENCY ?? 3);
+if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8)
+  throw new Error('JUX_PROFILE_CONCURRENCY must be an integer from 1 to 8');
 const root = path.resolve(import.meta.dirname, '..');
 const cli = path.join(root, 'packages/cli/dist/index.js');
 const out = mkdtempSync(path.join(os.tmpdir(), 'jux-controlled-profile-'));
@@ -46,7 +49,7 @@ const metadata = {
   cpu: os.cpus()[0]?.model,
   logicalCpus: os.cpus().length,
   memoryBytes: os.totalmem(),
-  concurrency: 3,
+  concurrency,
   viewport: { width: 1280, height: 800 },
   daemon: false,
   passes,
@@ -60,7 +63,7 @@ async function capture(label, shared, measured) {
     JSON.stringify({
       platform: 'storybook',
       buildDir,
-      concurrency: 3,
+      concurrency,
       viewport: metadata.viewport,
       renderer: { shared, clearResourceCache: false },
       recheck: 'off',
@@ -218,7 +221,7 @@ const lines = [
   '',
   `Build SHA-256: ${metadata.buildHash}`,
   '',
-  'Five measured passes per mode by default, alternating mode order; one fresh reference and one excluded warm-up per mode. New browser per run, concurrency 3, fixed build and local resources. Phase sums are worker time, not elapsed wall time. Recovery captures are excluded from phase distributions because result timings describe only the final capture. No intentional-change/diff workload is included.',
+  'Five measured passes per mode by default, alternating mode order; one fresh reference and one excluded warm-up per mode. New browser per run, concurrency recorded in metadata, fixed build and local resources. Phase sums are worker time, not elapsed wall time. Recovery captures are excluded from phase distributions because result timings describe only the final capture. No intentional-change/diff workload is included.',
   '',
   '| Mode | Captures/run | Wall median (range), s | Run median, s | Failures | Retries |',
   '| --- | --- | --- | --- | --- | --- |',
