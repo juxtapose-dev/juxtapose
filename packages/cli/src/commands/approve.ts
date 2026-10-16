@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   approveCapture,
+  batchApprovals,
   hashImage,
   ManifestConflictError,
   UnstableCaptureError,
@@ -96,76 +97,83 @@ export async function approveCommand(
   const approved: string[] = [];
   const failed: { storyId: string; reason: string; unstable?: true }[] = [];
 
-  for (const result of candidates) {
-    // The run captured this one twice and got two images. Refuse just this
-    // story; the rest of the batch still goes through.
-    // A story the run captured once carries a placeholder `unstable` for older
-    // approvers; here it is judged by the confirming capture alone, and one
-    // with no confirmation (it had no hash, or nothing ran) fails closed.
-    const confirmation = confirmations.get(result.storyId);
-    const freshFailure =
-      confirmation?.unstable ??
-      (!confirmation
-        ? {
-            hashes: result.hash ? [result.hash] : [],
-            unconfirmed: 'no fresh confirming capture was taken',
-          }
-        : undefined);
-    const unstable = freshFailure ?? (result.unrechecked ? undefined : result.unstable);
-    if (unstable && (freshFailure || !flags['allow-unstable'])) {
-      failed.push({
-        storyId: result.storyId,
-        reason: new UnstableCaptureError(result.storyId, unstable, {
-          freshRenderer: ctx.config.freshRenderer !== false,
-        }).message,
-        unstable: true,
-      });
-      continue;
-    }
-    const imagePath = path.join(
-      runDir,
-      'images',
-      `${encodeStoryId(result.storyId)}-current.webp`,
-    );
-    let image: Buffer;
-    try {
-      image = await readFile(imagePath);
-    } catch {
-      failed.push({ storyId: result.storyId, reason: 'capture image missing from run' });
-      continue;
-    }
-    if (hashImage(image) !== result.hash) {
-      failed.push({
-        storyId: result.storyId,
-        reason: 'capture image differs from the reviewed run hash; run again',
-      });
-      continue;
-    }
-    try {
-      const { structureError } = await approveCapture(
-        ctx.store,
-        result.storyId,
-        image,
-        { commit, approvedBy, approvedAt, env },
-        imagePath,
-      );
-      approved.push(result.storyId);
-      // The image is approved; a lost sidecar costs explanation, not status.
-      if (structureError) {
-        io.err(
-          `jux: approved ${result.storyId}, but its structure was not saved: ${structureError}\n`,
-        );
+  const structureWarnings: string[] = [];
+  await batchApprovals(ctx.store, async (store) => {
+    for (const result of candidates) {
+      // The run captured this one twice and got two images. Refuse just this
+      // story; the rest of the batch still goes through.
+      // A story the run captured once carries a placeholder `unstable` for older
+      // approvers; here it is judged by the confirming capture alone, and one
+      // with no confirmation (it had no hash, or nothing ran) fails closed.
+      const confirmation = confirmations.get(result.storyId);
+      const freshFailure =
+        confirmation?.unstable ??
+        (!confirmation
+          ? {
+              hashes: result.hash ? [result.hash] : [],
+              unconfirmed: 'no fresh confirming capture was taken',
+            }
+          : undefined);
+      const unstable = freshFailure ?? (result.unrechecked ? undefined : result.unstable);
+      if (unstable && (freshFailure || !flags['allow-unstable'])) {
+        failed.push({
+          storyId: result.storyId,
+          reason: new UnstableCaptureError(result.storyId, unstable, {
+            freshRenderer: ctx.config.freshRenderer !== false,
+          }).message,
+          unstable: true,
+        });
+        continue;
       }
-    } catch (err) {
-      // The same for every story, and not theirs to fix: exit 2 once, with the
-      // lockfile guidance, instead of one failure per story.
-      if (err instanceof ManifestConflictError) throw err;
-      failed.push({
-        storyId: result.storyId,
-        reason: `could not write baseline: ${errorMessage(err)}`,
-      });
+      const imagePath = path.join(
+        runDir,
+        'images',
+        `${encodeStoryId(result.storyId)}-current.webp`,
+      );
+      let image: Buffer;
+      try {
+        image = await readFile(imagePath);
+      } catch {
+        failed.push({
+          storyId: result.storyId,
+          reason: 'capture image missing from run',
+        });
+        continue;
+      }
+      if (hashImage(image) !== result.hash) {
+        failed.push({
+          storyId: result.storyId,
+          reason: 'capture image differs from the reviewed run hash; run again',
+        });
+        continue;
+      }
+      try {
+        const { structureError } = await approveCapture(
+          store,
+          result.storyId,
+          image,
+          { commit, approvedBy, approvedAt, env },
+          imagePath,
+        );
+        approved.push(result.storyId);
+        // The image is approved; a lost sidecar costs explanation, not status.
+        if (structureError) {
+          structureWarnings.push(
+            `jux: approved ${result.storyId}, but its structure was not saved: ${structureError}\n`,
+          );
+        }
+      } catch (err) {
+        // The same for every story, and not theirs to fix: exit 2 once, with the
+        // lockfile guidance, instead of one failure per story.
+        if (err instanceof ManifestConflictError) throw err;
+        failed.push({
+          storyId: result.storyId,
+          reason: `could not write baseline: ${errorMessage(err)}`,
+        });
+      }
     }
-  }
+  });
+  for (const warning of structureWarnings) io.err(warning);
 
   if (ctx.json) {
     io.out(JSON.stringify({ approved, failed }) + '\n');

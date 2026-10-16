@@ -13,6 +13,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import {
   approveCapture,
+  batchApprovals,
   ignoredPaths,
   acquireBrowser,
   installChrome,
@@ -253,24 +254,28 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
     }
 
     let approved = 0;
-    for (const result of approvable) {
-      const imagePath = capturePath(runDir, result.storyId);
-      const image = await readFile(imagePath).catch(() => null);
-      if (!image) continue;
-      const { structureError } = await approveCapture(
-        ctx.store,
-        result.storyId,
-        image,
-        { commit, approvedBy, approvedAt, env: report.env },
-        imagePath,
-      );
-      if (structureError) {
-        process.stderr.write(
-          `jux: approved ${result.storyId}, but its structure was not saved: ${structureError}\n`,
+    const structureWarnings: string[] = [];
+    await batchApprovals(ctx.store, async (store) => {
+      for (const result of approvable) {
+        const imagePath = capturePath(runDir, result.storyId);
+        const image = await readFile(imagePath).catch(() => null);
+        if (!image) continue;
+        const { structureError } = await approveCapture(
+          store,
+          result.storyId,
+          image,
+          { commit, approvedBy, approvedAt, env: report.env },
+          imagePath,
         );
+        if (structureError) {
+          structureWarnings.push(
+            `jux: approved ${result.storyId}, but its structure was not saved: ${structureError}\n`,
+          );
+        }
+        approved++;
       }
-      approved++;
-    }
+    });
+    for (const warning of structureWarnings) process.stderr.write(warning);
 
     if (ctx.json) {
       process.stdout.write(
