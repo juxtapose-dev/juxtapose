@@ -255,3 +255,9 @@ The [follow-up experiments](briefs/pipeline-followup.md) measure concurrency
 scaling and two rejected micro-optimizations, with screenshot/setup subphase
 timings. The three-worker benchmark is fixed for comparability; the product
 default remains eight workers.
+
+The [Chrome capture investigation](briefs/chrome-capture-internals.md) traces
+browser-main-thread WebP encoding, compares fast PNG plus Sharp, and measures a
+two-browser prototype on macOS and Linux. `JUX_PROFILE_MEMORY=1` optionally adds
+250 ms process-tree RSS samples to `compare-pipeline.mjs` (requires POSIX `ps`).
+These are summed RSS estimates, not unique physical memory measurements.
