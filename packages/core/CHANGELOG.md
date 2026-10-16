@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.23.1
+
+### Patch Changes
+
+- aa9878e: Correct generated agent handoff instructions to commit the readable structure files alongside the baseline manifest after approval.
+
 ## 0.23.0
 
 ### Minor Changes

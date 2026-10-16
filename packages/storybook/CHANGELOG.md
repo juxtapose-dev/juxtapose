@@ -1,5 +1,15 @@
 # @juxtapose/storybook
 
+## 0.12.3
+
+### Patch Changes
+
+- 5e32818: Tighten the visual review panel with a compact, expandable change summary and grouped comparison controls. Start with clean side-by-side captures and enable the diff overlay when needed. Bound comparison images on wide panels while keeping the complete captures visible.
+- Updated dependencies [aa9878e]
+  - @juxtapose/core@0.23.1
+  - @juxtapose/adapter-storybook@0.4.24
+  - @juxtapose/server@0.9.3
+
 ## 0.12.2
 
 ### Patch Changes
