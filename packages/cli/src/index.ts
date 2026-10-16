@@ -21,7 +21,7 @@ jux — visual regression testing for component workbenches
 Usage
   jux init                       set up juxtapose and capture first baselines
   jux run [options]              capture affected stories and compare to baselines
-  jux approve [options]          promote current captures to baselines
+  jux upload --run <directory>   upload an existing run to hosted review\n  jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
   jux doctor [--fix] [--json]    warn if snapshot images are committed, and print the fix;
                                  --fix folds legacy structure sidecars into the manifest
@@ -47,9 +47,10 @@ Common options
   --platform <name>              storybook | ladle | urls (default: autodetect)
   --concurrency <n>              parallel pages (default: 8)
   --allow-unstable               approve: also baseline stories whose two run captures differed
-  --run <dir>                    run directory to read (approve, check, handoff)
+  --run <dir>                    run directory to read (approve, check, handoff, upload)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init, approve: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
+  --upload                      run: upload captured results to hosted review (JUXTAPOSE_TOKEN)
   --no-fresh-renderer            snap, run: reuse each page's renderer between captures (config freshRenderer:
                                  false); faster, but a capture can depend on the one before it
 `;
@@ -161,6 +162,7 @@ async function main(argv: string[]): Promise<number> {
       'allow-unstable': { type: 'boolean', default: false },
       comment: { type: 'boolean', default: false },
       html: { type: 'boolean', default: false },
+      upload: { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },
       run: { type: 'string' },
       as: { type: 'string' },
@@ -210,6 +212,10 @@ async function main(argv: string[]): Promise<number> {
     case 'init': {
       const { initCommand } = await import('./commands/init.js');
       return initCommand(flags);
+    }
+    case 'upload': {
+      const { uploadCommand } = await import('./commands/upload.js');
+      return uploadCommand(flags);
     }
     case 'run': {
       const { runCommand } = await import('./commands/run.js');

@@ -27,6 +27,14 @@ unknown option, or a positional a command does not take (`jux run some-id`),
 exits 2 with a one-line message; it is never ignored. Use `jux run --story <id>`
 to run one story. A missing workbench exits 2 with its own message.
 
+## Hosted uploads
+
+`jux run --upload` uploads a completed run while retaining its local verdict.
+`jux upload --run <directory>` uploads existing artifacts without recapturing;
+its exit code reports transfer success. Both require a project token through
+`JUXTAPOSE_TOKEN`. See [Hosted uploads](hosted-uploads.md) for setup, JSON output,
+limits, CI association, and retries. Uploading does not approve snapshots.
+
 ## Capture only what a change reaches: `jux run --since`
 
 `jux run --since <ref>` diffs the working tree against `<ref>` (committed,

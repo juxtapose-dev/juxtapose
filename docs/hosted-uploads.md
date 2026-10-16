@@ -1,0 +1,51 @@
+# Hosted review uploads
+
+Hosted review is opt-in. Local manifests remain the approval authority: uploading
+never approves snapshots or changes your local comparison settings.
+
+Create a project-scoped token in the hosted dashboard and provide it through the
+`JUXTAPOSE_TOKEN` environment variable (for CI, use a secret). Never commit tokens
+or put them in command arguments.
+
+From a committed project with a built workbench:
+
+```sh
+jux run --upload
+```
+
+To upload an existing run or retry after a service/network failure:
+
+```sh
+jux upload --run .juxtapose/runs/<run-id>
+```
+
+`jux run --upload --json` keeps the existing run-report JSON on stdout and prints
+the hosted review URL on stderr. `jux upload --run <directory> --json` prints
+`{ "runId": "…", "reportUrl": "…" }`. Projects without a linked GitHub repository
+return `reportUrl: null`; link the repository in the dashboard to enable review. A failed upload exits nonzero and retains
+all local artifacts. The upload-only command reports transfer success; it does
+not replace `jux check` or the original run's visual verdict.
+
+The default API is `https://api.juxtapose.dev`. `JUXTAPOSE_API_URL` overrides the
+origin for self-hosting or staging; HTTPS is required except loopback development.
+Redirects are rejected to keep tokens from reaching another server. Requests have
+a 30-second timeout; transient network errors and HTTP 502/503/504 responses are retried at most
+twice using stable run identity. Authentication, quota, and conflict errors are not retried. Re-running the upload uses a stable external run identifier.
+
+On GitHub pull request jobs, `GITHUB_EVENT_PATH` supplies the PR number when its
+head/merge commit matches the captured commit. Detached `HEAD` uses the PR branch
+name; the actual captured commit stays unchanged, including merge checkouts.
+Retrying an older run in an unrelated job does not attach it to that job’s PR. Captures,
+including variant keys, are uploaded as separate snapshots. The original report
+is preserved alongside the service summary, including pixel hashes, instability,
+visual-equivalence evidence, and structural change explanations.
+
+When capturing with `--upload`, available approved baseline images are verified
+against the manifest and saved with the run for consistent review and retries.
+Older run directories without these pinned images show no baseline; the uploader
+does not substitute a newer baseline.
+
+Current limits: at least one result, at most 50,000 captures, capture IDs up to
+200 characters, and each WebP image up to 1 MiB. Capture errors must be fixed and
+recaptured before upload. Viewport-size changes with valid image evidence upload as failures.
+Empty affected runs do not create hosted runs.
