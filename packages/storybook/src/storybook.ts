@@ -14,6 +14,7 @@ export {
   addons,
   types,
   useStorybookApi,
+  useAddonState,
   useStorybookState,
 } from 'storybook/internal/manager-api';
 

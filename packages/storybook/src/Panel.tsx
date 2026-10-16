@@ -10,6 +10,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { styled, Badge, Button, EmptyTabContent, Loader } from './storybook.js';
 import { mutedColor } from './theme.js';
+import { useReviewState } from './review-state.js';
 // Deep import on purpose: '@juxtapose/core' reaches sharp and the browser driver
 // through the capture modules, and this file is bundled for the browser.
 import { BASELINE_IMAGE_UNAVAILABLE, formatPercent } from '@juxtapose/core/format';
@@ -57,7 +58,7 @@ const Toolbar = styled.div(({ theme }) => ({
   flexWrap: 'wrap',
 }));
 
-const Body = styled.div({ padding: 12, overflow: 'auto', flex: 1 });
+const Body = styled.div({ padding: 12, overflow: 'auto', flex: 1, minHeight: 0 });
 
 const Spacer = styled.div({ flex: 1 });
 
@@ -71,7 +72,7 @@ const Stat = styled.span(({ theme }) => ({
   color: mutedColor(theme),
 }));
 
-const ModeGroup = styled.div({ display: 'flex', gap: 2 });
+const ModeGroup = styled.div({ display: 'flex', flexWrap: 'wrap', gap: 2 });
 
 const Note = styled.span(({ theme }) => ({
   color: mutedColor(theme),
@@ -94,10 +95,12 @@ const MODES: { id: ViewMode; label: string; key: string }[] = [
 export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) => {
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, running: false });
-  const [mode, setMode] = useState<ViewMode>('sxs');
-  const [showDiff, setShowDiff] = useState(true);
-  const [unfocus, setUnfocus] = useState(false);
-  const [loupe, setLoupe] = useState(false);
+  // Storybook can remount panels when its layout changes. Keep review choices
+  // in the manager store, rather than resetting the mode mid-inspection.
+  const [mode, setMode] = useReviewState<ViewMode>('juxtapose/review-mode', 'sxs');
+  const [showDiff, setShowDiff] = useReviewState('juxtapose/review-diff', false);
+  const [unfocus, setUnfocus] = useReviewState('juxtapose/review-unfocus', false);
+  const [loupe, setLoupe] = useReviewState('juxtapose/review-loupe', false);
   const request = useRef(0);
   const appliedRequest = useRef(0);
   const visible = useRef(active);
@@ -510,7 +513,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               */}
               {hasComparison ? (
                 <>
-                  <ModeGroup>
+                  <ModeGroup role="group" aria-label="Comparison mode">
                     {MODES.map((m) => (
                       <Button
                         key={m.id}

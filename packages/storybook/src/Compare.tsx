@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { styled, Button } from './storybook.js';
 import { mutedColor } from './theme.js';
+import { useReviewState } from './review-state.js';
 import { Loupe } from './Loupe.js';
 
 export type ViewMode = 'sxs' | 'slider' | 'onion' | 'flicker';
@@ -26,12 +27,25 @@ export interface CompareProps {
   loupe?: boolean;
 }
 
+// A single-image mode uses one side-by-side column's scale so changing modes
+// doesn't enlarge a capture beyond the panel. On narrow panels it needs the
+// whole width to remain readable; query the panel, not the browser viewport.
+const Surface = styled.div<{ paired: boolean; comparing: boolean }>(
+  ({ paired, comparing }) => ({
+    width: comparing && !paired ? 'calc((100% - 12px) / 2)' : '100%',
+    maxWidth: paired ? 1600 : comparing ? 794 : 800,
+    margin: '0 auto',
+    '@container (max-width: 700px)': { width: '100%' },
+  }),
+);
+
 const Frame = styled.div({
   position: 'relative',
   overflow: 'hidden',
   background:
     'repeating-conic-gradient(rgba(0,0,0,.04) 0% 25%, transparent 0% 50%) 50% / 16px 16px',
-  borderRadius: 4,
+  borderRadius: 6,
+  boxShadow: '0 0 0 1px rgba(128,128,128,.18)',
   lineHeight: 0,
 });
 
@@ -52,7 +66,7 @@ const Layer = styled.img<{ opacity?: number }>(({ opacity }) => ({
 
 const Pair = styled.div({
   display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
+  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
   gap: 12,
   alignItems: 'start',
 });
@@ -99,6 +113,7 @@ const Controls = styled.label({
   alignItems: 'center',
   gap: 8,
   marginBottom: 8,
+  minHeight: 28,
   fontSize: 12,
 });
 
@@ -123,16 +138,22 @@ export const Compare: React.FC<CompareProps> = (props) => {
   const retryUrl = (url: string | null) => url && `${url}&retry=${attempt}`;
   return (
     <div
+      style={{ containerType: 'inline-size' }}
       onErrorCapture={(event) => {
         if (event.target instanceof HTMLImageElement) setFailed(true);
       }}
     >
-      <ComparisonImages
-        {...props}
-        baselineUrl={retryUrl(props.baselineUrl)}
-        currentUrl={retryUrl(props.currentUrl)!}
-        diffUrl={retryUrl(props.diffUrl)}
-      />
+      <Surface
+        paired={props.mode === 'sxs' && !!props.baselineUrl}
+        comparing={!!props.baselineUrl}
+      >
+        <ComparisonImages
+          {...props}
+          baselineUrl={retryUrl(props.baselineUrl)}
+          currentUrl={retryUrl(props.currentUrl)!}
+          diffUrl={retryUrl(props.diffUrl)}
+        />
+      </Surface>
     </div>
   );
 };
@@ -221,7 +242,7 @@ const Slider: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
   currentUrl,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
-  const [pct, setPct] = useState(50);
+  const [pct, setPct] = useReviewState('juxtapose/review-wipe', 50);
   const dragging = useRef(false);
 
   const positionFrom = useCallback((clientX: number) => {
@@ -293,7 +314,7 @@ const Onion: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
   baselineUrl,
   currentUrl,
 }) => {
-  const [mix, setMix] = useState(0.5);
+  const [mix, setMix] = useReviewState('juxtapose/review-blend', 0.5);
   return (
     <div>
       <Controls>
@@ -308,7 +329,7 @@ const Onion: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
           onChange={(e) => setMix(Number(e.target.value))}
           style={{ flex: 1 }}
         />
-        <span style={{ whiteSpace: 'nowrap' }}>Current</span>
+        <span style={{ whiteSpace: 'nowrap' }}>Current · {Math.round(mix * 100)}%</span>
       </Controls>
       <Frame>
         <Img src={baselineUrl} alt="baseline" />
@@ -323,10 +344,11 @@ const Flicker: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
   baselineUrl,
   currentUrl,
 }) => {
-  const [hz, setHz] = useState(4);
+  const [hz, setHz] = useReviewState('juxtapose/review-flicker-rate', 4);
   const [showCurrent, setShowCurrent] = useState(false);
-  const [playing, setPlaying] = useState(
-    () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  const [playing, setPlaying] = useReviewState(
+    'juxtapose/review-flicker-playing',
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   );
   const [hidden, setHidden] = useState(document.hidden);
   useEffect(() => {
@@ -335,13 +357,14 @@ const Flicker: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
     const preference = () => {
       if (reduced.matches) setPlaying(false);
     };
+    preference();
     document.addEventListener('visibilitychange', visibility);
     reduced.addEventListener('change', preference);
     return () => {
       document.removeEventListener('visibilitychange', visibility);
       reduced.removeEventListener('change', preference);
     };
-  }, []);
+  }, [setPlaying]);
 
   useEffect(() => {
     if (!playing || hidden) return;
