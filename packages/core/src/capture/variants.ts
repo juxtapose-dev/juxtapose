@@ -9,6 +9,7 @@
 
 import { checkNetwork } from './network-policy.js';
 import { checkRulePlaceholders, mergeNetwork } from './network-rules.js';
+import { checkFreeze, mergeFreeze } from './freeze.js';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
 import type { StoryManifest, StoryOverride, StoryParams, VariantSpec } from '../types.js';
 import { VariantsRuntimeSchema } from '../config/schema.js';
@@ -67,6 +68,7 @@ export function expandVariants(
     const { variants: ownRaw, colorScheme: _ignored, ...baseParams } = story.params;
     checkSettle(baseParams.settle, `story '${story.storyId}'`);
     checkNetwork(baseParams.network, `story '${story.storyId}'`);
+    checkFreeze(baseParams.freeze, `story '${story.storyId}'`);
     const baseTrace = log?.for(story.storyId);
     baseTrace?.put(baseParams, STORY, 'replace');
     if (baseTrace) baseTrace.storyParams = baseParams;
@@ -115,20 +117,24 @@ export function expandVariants(
           },
           // Base params, then the extends chain, then the variant itself;
           // the config override goes over all three.
-          withNetwork(
-            withSettle(
-              {
-                ...baseParams,
-                ...layer,
-                ...(baseParams.renderer || layer.renderer
-                  ? { renderer: { ...baseParams.renderer, ...layer.renderer } }
-                  : {}),
-              },
-              baseParams.settle,
-              layer.settle,
+          withFreeze(
+            withNetwork(
+              withSettle(
+                {
+                  ...baseParams,
+                  ...layer,
+                  ...(baseParams.renderer || layer.renderer
+                    ? { renderer: { ...baseParams.renderer, ...layer.renderer } }
+                    : {}),
+                },
+                baseParams.settle,
+                layer.settle,
+              ),
+              baseParams.network,
+              layer.network,
             ),
-            baseParams.network,
-            layer.network,
+            baseParams.freeze,
+            layer.freeze,
           ),
           overrides,
           trace,
@@ -219,10 +225,12 @@ function resolveChain(
       layer.renderer || spec.renderer
         ? { ...layer.renderer, ...spec.renderer }
         : undefined;
+    const freeze = mergeFreeze(layer.freeze, spec.freeze);
     Object.assign(layer, spec);
     if (renderer) layer.renderer = renderer;
     if (settle) layer.settle = settle;
     if (network) layer.network = network;
+    if (freeze) layer.freeze = freeze;
   }
   delete layer.extends;
   if (trace) trace.chain = names.slice(0, -1);
@@ -250,6 +258,17 @@ function withNetwork<T extends StoryParams>(
 ): T {
   const network = mergeNetwork(under, over);
   return network ? { ...params, network } : params;
+}
+
+/** `params` with `freeze` merged field by field. Untouched when neither side
+ *  sets one. */
+function withFreeze<T extends StoryParams>(
+  params: T,
+  under: StoryParams['freeze'],
+  over: StoryParams['freeze'],
+): T {
+  const freeze = mergeFreeze(under, over);
+  return freeze ? { ...params, freeze } : params;
 }
 
 /**
@@ -284,9 +303,13 @@ export function mergeLiveParams(
   const settled = variantSettle
     ? withSettle(params, settings.settle ?? story.params.settle, variantSettle)
     : params;
-  const layered = variantNetwork
+  const networked = variantNetwork
     ? withNetwork(settled, settings.network ?? story.params.network, variantNetwork)
     : settled;
+  const variantFreeze = story.variantParams?.freeze;
+  const layered = variantFreeze
+    ? withFreeze(networked, settings.freeze ?? story.params.freeze, variantFreeze)
+    : networked;
   if (trace) traceLive(trace, settings, story, variantSettle !== undefined);
   return applyOverride(layered, story.override);
 }

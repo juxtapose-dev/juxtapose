@@ -31,7 +31,8 @@ import {
 import { checkSettle, resolveSettle, type SettleLayer } from './settle-options.js';
 import { applyNetworkPolicy, checkNetwork } from './network-policy.js';
 import { resolveNetwork, liveNetworkDiffers } from './network-rules.js';
-import { layerCapture, layerNetwork } from './layers.js';
+import { layerCapture, layerFreeze, layerNetwork } from './layers.js';
+import { applyFreeze, freezeChanged, resolveFreeze } from './freeze.js';
 import { captureStructure, type StructureCaptureTimings } from './structure.js';
 import { canonicalWebp } from './encoder.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
@@ -212,6 +213,11 @@ async function captureStoryDocument(
   const scheme: ColorScheme =
     story.variant !== undefined ? (params.colorScheme ?? 'light') : 'light';
 
+  // Clock and random (issue #146), read from the layers known before
+  // navigation, like the network policy: the init script must be in place
+  // before the story's document is created.
+  const freeze = resolveFreeze(layerFreeze(deps.settleLayers, params));
+
   // A story that wants animations running can't reuse a page whose stylesheet
   // already froze them, so force the cold path for those. Likewise a scheme
   // change: an app that reads matchMedia once at boot keeps the old scheme
@@ -233,7 +239,10 @@ async function captureStoryDocument(
     warmPages.get(page) === deps.baseUrl &&
     !schemeChanged &&
     !sameStoryOtherCapture &&
-    !(params.animations === 'play' && styleInjected.has(page));
+    !(params.animations === 'play' && styleInjected.has(page)) &&
+    // A warm switch keeps the document, and with it the clock and random
+    // streams that document booted with.
+    !freezeChanged(page, freeze);
 
   phase('navigation');
   // Before showStory, on every capture, so the story renders in its scheme
@@ -303,6 +312,7 @@ async function captureStoryDocument(
   checkNetwork(params.network, `story '${story.storyId}'`);
   const policy = resolveNetwork(layerNetwork(deps.settleLayers, params));
   await applyNetworkPolicy(page, policy, deps.baseUrl);
+  await applyFreeze(page, freeze);
   // Before the render is triggered, so a request or ready() call from this
   // story's render is never mistaken for the previous one's.
   await resetIdle(page, idle, warm);
@@ -399,6 +409,15 @@ async function captureStoryDocument(
     ) {
       deps.onWarning?.(
         `jux: ${story.storyId}: the story's live parameters set network ${JSON.stringify(live.network)}, which is read before navigation and was ignored. Declare it in the project config or the command.`,
+      );
+    }
+    if (
+      live.freeze !== undefined &&
+      deps.settleLayers?.call?.freeze === undefined &&
+      !deepEqual(resolveFreeze(layerFreeze(deps.settleLayers, params)), freeze)
+    ) {
+      deps.onWarning?.(
+        `jux: ${story.storyId}: the story's live parameters set freeze ${JSON.stringify(live.freeze)}, which is read before navigation and was ignored. Declare it in the project config, a stories override or the command.`,
       );
     }
     assertSelectors(params);

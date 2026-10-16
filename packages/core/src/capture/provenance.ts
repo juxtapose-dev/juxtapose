@@ -150,6 +150,9 @@ export function flatten(values: StoryParams | Record<string, unknown>): string[]
       if (s.ready !== undefined) out.push('settle.ready');
       if (s.network?.ignore !== undefined) out.push('settle.network.ignore');
       if (s.network?.require !== undefined) out.push('settle.network.require');
+    } else if (key === 'freeze' && typeof value === 'object' && value !== null) {
+      for (const [k, v] of Object.entries(value))
+        if (v !== undefined) out.push(`freeze.${k}`);
     } else if (key === 'network' && typeof value === 'object' && value !== null) {
       const external = (value as { external?: unknown }).external;
       if (typeof external === 'string') out.push('network.external.default');

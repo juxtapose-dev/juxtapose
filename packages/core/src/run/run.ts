@@ -492,6 +492,7 @@ export function poolSettings(
       project: {
         ...(opts.config?.settle ? { settle: opts.config.settle } : {}),
         ...(opts.config?.network ? { network: opts.config.network } : {}),
+        ...(opts.config?.freeze ? { freeze: opts.config.freeze } : {}),
         ...(opts.config?.waitForSelector !== undefined
           ? { waitForSelector: opts.config.waitForSelector }
           : {}),

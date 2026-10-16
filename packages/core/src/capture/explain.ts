@@ -15,7 +15,8 @@ import type { RecheckMode } from '../config/schema.js';
 import { DEFAULT_VIEWPORT, effectiveRecheck } from '../run/run.js';
 import type { ProjectConfig, StoryManifest, StoryParams } from '../types.js';
 import { externalTypes, liveNetworkDiffers, resolveNetwork } from './network-rules.js';
-import { layerCapture, layerNetwork, type CaptureLayers } from './layers.js';
+import { layerCapture, layerFreeze, layerNetwork, type CaptureLayers } from './layers.js';
+import { resolveFreeze } from './freeze.js';
 import { Trace, flatten, type ProvenanceLog, type Source } from './provenance.js';
 import { resolveSettle, type SettleLayer } from './settle-options.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
@@ -81,6 +82,9 @@ const ALWAYS = [
   'settle.timeout',
   'settle.ready',
   'network.external.default',
+  'freeze.clock',
+  'freeze.random',
+  'freeze.images',
   'threshold',
   'minDiffPercent',
   'recheck',
@@ -121,6 +125,7 @@ function projectLayer(c: ProjectConfig): SettleLayer & StoryParams {
     ...(c.renderer ? { renderer: c.renderer } : {}),
     ...(c.settle ? { settle: c.settle } : {}),
     ...(c.network ? { network: c.network } : {}),
+    ...(c.freeze ? { freeze: c.freeze } : {}),
     ...(c.waitForSelector !== undefined ? { waitForSelector: c.waitForSelector } : {}),
     ...(c.delay !== undefined ? { delay: c.delay } : {}),
     ...(c.viewport ? { viewport: c.viewport } : {}),
@@ -228,6 +233,11 @@ export function explainCapture(
   const netParams = layerNetwork(layers, capture.params);
   const policy = resolveNetwork(netParams);
   const types = externalTypes(netParams?.external);
+  // Also before navigation; `images` is a launch setting, the project's only.
+  const freeze = resolveFreeze({
+    ...layerFreeze(layers, capture.params),
+    ...(config.freeze?.images !== undefined ? { images: config.freeze.images } : {}),
+  });
 
   const optedOut =
     capture.variant !== undefined && live?.variants?.[capture.variant] === false;
@@ -235,8 +245,10 @@ export function explainCapture(
 
   const names = new Set([
     ...ALWAYS,
-    ...flatten(view).filter((n) => !n.startsWith('network.')),
-    ...flatten(project).filter((n) => !n.startsWith('network.')),
+    ...flatten(view).filter((n) => !n.startsWith('network.') && !n.startsWith('freeze.')),
+    ...flatten(project).filter(
+      (n) => !n.startsWith('network.') && !n.startsWith('freeze.'),
+    ),
     ...flatten(capture.params).filter((n) => PRE_PARAMS.includes(n)),
     ...Object.keys(types).map((k) => `network.external.${k}`),
   ]);
@@ -269,6 +281,17 @@ export function explainCapture(
       case 'network.external.frames':
       case 'network.external.media':
         value = policy[setting.slice('network.external.'.length) as 'images'];
+        break;
+      case 'freeze.clock':
+        value = freeze.clockMs === null ? false : new Date(freeze.clockMs).toISOString();
+        break;
+      case 'freeze.random':
+        value = freeze.random;
+        break;
+      case 'freeze.images':
+        value = freeze.images;
+        // A launch setting: only the project config sets it.
+        source = config.freeze?.images !== undefined ? [PROJECT] : DEFAULT;
         break;
       case 'threshold':
         value = resolveThreshold(capture.params, config);
@@ -305,9 +328,12 @@ export function explainCapture(
           : valueOf(view, setting);
     }
     if (value === undefined) continue;
-    if (fromPre.has(setting) || setting.startsWith('network.'))
-      preValues.set(setting, value);
-    const trace = fromPre.has(setting) || setting.startsWith('network.') ? pre : post;
+    const beforeNav =
+      fromPre.has(setting) ||
+      setting.startsWith('network.') ||
+      setting.startsWith('freeze.');
+    if (beforeNav) preValues.set(setting, value);
+    const trace = beforeNav ? pre : post;
     settings.push({
       setting,
       value,
@@ -330,6 +356,16 @@ export function explainCapture(
   )
     notes.push(
       `the story's live parameters set network ${JSON.stringify(live.network)}, which is read before navigation and was ignored. Declare it in the project config or the command.`,
+    );
+  const liveFreeze =
+    live?.freeze !== undefined ? resolveFreeze(layerFreeze(layers, merged)) : null;
+  if (
+    liveFreeze &&
+    call?.freeze === undefined &&
+    (liveFreeze.clockMs !== freeze.clockMs || liveFreeze.random !== freeze.random)
+  )
+    notes.push(
+      `the story's live parameters set freeze ${JSON.stringify(live?.freeze)}, which is read before navigation and was ignored. Declare it in the story's parameters, the project config or a stories override.`,
     );
   for (const k of PRE_PARAMS) {
     const v = live?.[k as keyof StoryParams];

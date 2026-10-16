@@ -13,7 +13,7 @@
 ```
 
 Also accepted: `buildDir` and `origin` (the CLI flags' defaults), `threshold`,
-`minDiffPercent`, `waitForSelector`, `delay`, `settle` and `network` as project-wide
+`minDiffPercent`, `waitForSelector`, `delay`, `settle`, `network` and `freeze` as project-wide
 versions of the per-story options below, and `warmSwitch` — off by default, and best left there: it is ~4x faster but
 does not reproduce cold-load pixels exactly, which under a byte-exact hash
 makes a story's verdict depend on where it lands in the queue.
@@ -259,6 +259,7 @@ Per-story options go through the platform's own parameter mechanism
 | `waitForSelector`              | wait for async content juxtapose can't detect       |
 | `delay`                        | fixed extra wait; last resort                       |
 | `settle`                       | how long to wait for the page to finish (see below) |
+| `freeze`                       | clock and random sources (see below)                |
 | `threshold` / `minDiffPercent` | tune the _reported_ diff in exact mode              |
 | `captureTimeout`               | max ms to wait for render-ready (default 2000)      |
 | `mask`                         | paint over selectors before the shutter (see below) |
@@ -278,9 +279,11 @@ The type is `JuxtaposeParameters`, exported by `@juxtapose/storybook` and
 `Meta` and `StoryObj`. It targets `storybook/internal/csf`, which Storybook 9
 and 10 also export, but it hasn't been checked against them yet.
 
-Captures are reproducible: juxtapose freezes animations, waits for the page to
-finish its work (see [Settle](#settle)), and pins rendering to settings that
-don't vary by machine.
+To reduce capture noise, juxtapose freezes animations and animated images,
+waits for the page to finish its work (see [Settle](#settle)), and uses controlled
+rendering settings. Clock and random freezing are opt-in
+(see [Clock, random and animated images](#clock-random-and-animated-images)).
+These controls do not guarantee identical rendering across machines.
 
 ### Shadow DOM
 
@@ -572,11 +575,92 @@ Read the `pending` list, then do one of the following:
 - **The page shows a different state at every capture**, such as a clock or a
   ticking counter. Mask it (see [Content that changes every run](#content-that-changes-every-run)).
 
+## Clock, random and animated images
+
+A story that renders `new Date()`, a countdown, a generated id or an animated
+GIF captures different pixels on every run. Under an exact hash, that story
+fails every run. jux makes these inputs fixed before any page script runs:
+
+```json
+{
+  "freeze": { "clock": true, "random": true, "images": true }
+}
+```
+
+Animated images freeze by default. Clock and random freezing are opt-in: their
+defaults are `false`, preserving application timing and native randomness.
+
+### `freeze.clock`
+
+`Date`, `Date.now()`, `Date()`, `Intl.DateTimeFormat` (`format()` and
+`formatToParts()` with no date) and `Temporal.Now` start at
+2024-01-01T12:00:00Z. Set an ISO 8601 date (`"2030-06-15"`, read as UTC
+midnight) or a date-time with `Z` or an offset to start somewhere else, or
+`false` (the default) to keep the real clock. A date-time without an offset is an error:
+each machine would read it in its own time zone.
+
+The clock doesn't follow the wall clock. It moves forward only when a timer
+fires, to that timer's due time. Code that measures elapsed time with `Date`
+still progresses: a debounce built on `Date.now()` (lodash's `debounce` and
+`throttle`) still runs. A synchronous loop that waits on `Date.now()` ends
+by advancing 1 ms per read after 10,000 reads without a timer callback.
+This does not make asynchronous execution deterministic: different callback
+orders or interval counts can still produce different dates.
+
+`performance.now()`, `requestAnimationFrame` timestamps and event
+timestamps stay real. jux's own settle wait measures with them.
+
+jux doesn't pin the time zone, so a time rendered in local time depends on the
+machine's `TZ`. The default instant is noon UTC, so the date is the same from
+UTC-11 to UTC+11. To render the same time everywhere, set `TZ` for the run, or
+format dates in an explicit time zone.
+
+### `freeze.random`
+
+When enabled, `Math.random()`, `crypto.getRandomValues()` and
+`crypto.randomUUID()` return a fixed-seed sequence. Different call ordering can
+still change which value a component receives. Values repeat across page
+loads; use this only for test fixtures, never to generate real credentials.
+Web workers keep their own, unseeded, sources.
+
+### `freeze.images`
+
+Animated GIF, WebP and APNG images show their first frame, in `<img>`,
+`<picture>` and CSS backgrounds. This is a Chrome launch setting, so it
+applies to the whole run: set it in the project config, not on a story.
+`animations: 'play'` only controls CSS/Web Animations; to test animated images,
+set `freeze.images: false` for the project.
+
+### Opting out and layering
+
+A story can opt out of `clock` or `random`, for example a story that tests a
+live clock:
+
+```js
+export const LiveClock = {
+  parameters: { juxtapose: { freeze: { clock: false } } },
+};
+```
+
+`freeze` layers field by field like `settle`: the project config, then the
+story, then `stories` overrides. jux reads it before the story's page loads,
+so a `freeze` that only the live preview declares (Storybook parameters that
+aren't in `index.json`) is ignored with a warning. Declare it in the story's
+parameters, the project config or a `stories` override. `jux config --explain`
+shows the effective values and where each came from.
+
+Turning a freeze on changes the pixels of the stories that render a date, a
+random value or an animated image, so their baselines need approving again
+once. Even a previously stable story can change if it consumes dates or random
+values during initialization.
+
 ## Content that changes every run
 
 A clock, a random avatar, a generated id — under an exact hash these are
-red in exact mode; visual tolerance is not a reliable workaround for changing content. Stub the date, seed the random
-source, pin the fixture. That keeps full pixel coverage.
+red in exact mode; visual tolerance is not a reliable workaround for changing content.
+`freeze` covers the browser’s own clock and random sources (see [Clock, random and animated images](#clock-random-and-animated-images)).
+For anything else, such as a server response or a third-party image, stub the
+data or pin the fixture. That keeps full pixel coverage.
 
 When the nondeterminism isn't yours to control, `mask` covers it:
 
@@ -638,7 +722,7 @@ the same options in the project config under `stories`, keyed by story id:
 ```
 
 An entry can set `skip`, `mask`, `delay`, `waitForSelector`, `captureTimeout`,
-`settle`, `network`, `threshold` and `minDiffPercent`, with the meaning and
+`settle`, `network`, `freeze` (`clock` and `random`), `threshold` and `minDiffPercent`, with the meaning and
 values they have in `parameters.juxtapose`. Anything else is an error.
 
 **Which stories match.** A key is a story id with `*` (anything but `/`), `**`
@@ -676,7 +760,7 @@ more specific one wins a conflict:
 
 `delay`, `waitForSelector`, `captureTimeout`, `threshold`, `minDiffPercent` and
 `skip` take the winning value. `mask` is the union of every match, since a
-mask only hides more. `settle` and `network` merge field by field, and the
+mask only hides more. `settle`, `network` and `freeze` merge field by field, and the
 `settle.network` lists combine.
 
 **Skipped by config.** A story the config skips is not dropped silently. It is

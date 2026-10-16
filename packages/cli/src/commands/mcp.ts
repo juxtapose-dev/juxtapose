@@ -20,6 +20,7 @@ import { createInterface } from 'node:readline';
 import path from 'node:path';
 import {
   acquireBrowser,
+  freezeImages,
   checkNetwork,
   checkSettle,
   configWarnings,
@@ -433,11 +434,15 @@ export class McpServer {
   private closed = false;
   private readonly project: string;
   private readonly scheduler: Scheduler;
+  /** The project config's `freeze.images`, a launch setting of the session
+   *  browser. */
+  private readonly freezeImages: boolean | undefined;
 
   constructor(
     private readonly flags: McpFlags = {},
-    opts: { snapSlots?: number } = {},
+    opts: { snapSlots?: number; freezeImages?: boolean } = {},
   ) {
+    this.freezeImages = opts.freezeImages;
     // Real path, so the containment check below compares like with like on a
     // machine where the root itself sits under a symlink (macOS /tmp).
     const root = path.resolve(flags.project ?? process.cwd());
@@ -482,6 +487,7 @@ export class McpServer {
     const next = acquireBrowser({
       chrome: this.flags.chrome,
       noDaemon: this.flags['no-daemon'] === true,
+      freezeImages: this.freezeImages ?? freezeImages(undefined),
     });
     this.browser = next;
     // A failed launch is reported by the calls that asked; the next call retries.
@@ -1030,7 +1036,7 @@ export async function mcpCommand(flags: McpFlags, version: string): Promise<numb
     if (!outBroken) writeOut(JSON.stringify(m) + '\n');
   };
 
-  const server = new McpServer(flags, { snapSlots });
+  const server = new McpServer(flags, { snapSlots, freezeImages: freezeImages(config) });
   const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
   // Tool calls run concurrently; McpServer.call holds each one until the
   // scheduler grants the files and browser time it needs (see scheduler.ts).

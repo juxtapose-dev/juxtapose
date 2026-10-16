@@ -6,9 +6,10 @@
 // overrides and live params already folded in), the call (CLI flags, MCP
 // arguments).
 
-import type { NetworkParams, SettleParams } from '../config/schema.js';
+import type { FreezeParams, NetworkParams, SettleParams } from '../config/schema.js';
 import type { StoryParams } from '../types.js';
 import { mergeNetwork } from './network-rules.js';
+import { mergeFreeze } from './freeze.js';
 import { layerScalars, mergeSettleLayers, type SettleLayer } from './settle-options.js';
 
 export interface CaptureLayers {
@@ -25,6 +26,18 @@ export function layerNetwork(
   return mergeNetwork(
     mergeNetwork(layers?.project?.network, params.network),
     layers?.call?.network,
+  );
+}
+
+/** `freeze` for one capture, field by field, read before navigation like
+ *  `network`: the init script must be in place before the story's document. */
+export function layerFreeze(
+  layers: CaptureLayers | undefined,
+  params: StoryParams,
+): FreezeParams | undefined {
+  return mergeFreeze(
+    mergeFreeze(layers?.project?.freeze, params.freeze),
+    layers?.call?.freeze,
   );
 }
 

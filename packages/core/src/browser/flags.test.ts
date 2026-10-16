@@ -3,6 +3,7 @@ import {
   chromeArgs,
   deterministicLaunchOptions,
   DETERMINISTIC_CHROMIUM_ARGS,
+  imageAnimationArgs,
   PARITY_CHROMIUM_ARGS,
 } from './flags.js';
 import { SPIKE_ARGS } from './__fixtures__/spike-args.js';
@@ -126,4 +127,16 @@ it('selects the JSON escape hatch from the explicit launch environment', () => {
   expect(chromeArgs({ userDataDir: '/U', env: { JUX_CDP_JSON: '1' } })).toContain(
     '--remote-debugging-pipe',
   );
+});
+
+describe('imageAnimationArgs', () => {
+  // Chrome keeps only the last --blink-settings (measured, Chrome 151: a
+  // later list with other hover types replaced the headless one), so the
+  // image switch must carry the headless settings with it.
+  it('repeats the headless blink settings and adds imageAnimationPolicy=2 last', () => {
+    const args = chromeArgs({ userDataDir: '/p', args: imageAnimationArgs() });
+    const blink = args.filter((a) => a.startsWith('--blink-settings='));
+    const headless = blink[0]!.slice('--blink-settings='.length);
+    expect(blink.at(-1)).toBe(`--blink-settings=${headless},imageAnimationPolicy=2`);
+  });
 });

@@ -16,7 +16,7 @@
 // variant-targeting key is the narrower claim, even as a wildcard); then
 // patterns with wildcards before exact ids; then fewer literal characters
 // before more (`a--*` loses to `a--b-*`); then earlier in the file before
-// later. Scalars: last wins. `mask` unions. `settle` and
+// later. Scalars: last wins. `mask` unions. `settle`, `freeze` and
 // `network` merge field by field (settle.network lists concatenate; the
 // override's network.rules are checked before the story's).
 
@@ -26,6 +26,7 @@ import { validate } from '../config/validate.js';
 import { globToRegExp } from './url-pattern.js';
 import { mergeSettle } from './settle-options.js';
 import { checkRulePlaceholders, mergeNetwork } from './network-rules.js';
+import { mergeFreeze } from './freeze.js';
 import { Trace } from './provenance.js';
 
 const isWild = (glob: string) => /[*?]/.test(glob);
@@ -113,14 +114,14 @@ export function resolveOverride(
   };
 }
 
-/** Fold an override into params; the override wins. Masks union, `settle` and
- *  `network` merge field by field, everything else replaces. */
+/** Fold an override into params; the override wins. Masks union, `settle`,
+ *  `freeze` and `network` merge field by field, everything else replaces. */
 export function applyOverride<T extends StoryParams>(
   params: T,
   override: StoryOverride | undefined,
 ): T {
   if (!override) return params;
-  const { mask, settle, network, renderer, ...scalars } = override;
+  const { mask, settle, network, renderer, freeze, ...scalars } = override;
   const out: T = { ...params, ...scalars };
   if (params.renderer || renderer) out.renderer = { ...params.renderer, ...renderer };
   if (params.mask || mask)
@@ -129,6 +130,8 @@ export function applyOverride<T extends StoryParams>(
   if (s) out.settle = s;
   const n = mergeNetwork(params.network, network);
   if (n) out.network = n;
+  const f = mergeFreeze(params.freeze, freeze);
+  if (f) out.freeze = f;
   return out;
 }
 

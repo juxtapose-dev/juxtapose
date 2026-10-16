@@ -22,6 +22,7 @@ import {
   SettleSchema,
   URL_PATTERN_FORMAT,
   withText,
+  type FreezeParams,
   type NetworkParams,
 } from '../config/schema.js';
 import { configError, fits, validate } from '../config/validate.js';
@@ -67,6 +68,7 @@ export const DEFAULT_NETWORK_IGNORE: readonly string[] = [
 export interface SettleLayer {
   settle?: SettleParams;
   network?: NetworkParams;
+  freeze?: FreezeParams;
   waitForSelector?: string;
   delay?: number;
 }

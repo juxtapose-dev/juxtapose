@@ -169,12 +169,39 @@ export const PARITY_CHROMIUM_ARGS: readonly string[] = [
   '--disable-sync',
 ];
 
+const HEADLESS_BLINK_SETTINGS =
+  'primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4';
+
 const HEADLESS_ARGS = [
   '--headless',
   '--hide-scrollbars',
   '--mute-audio',
-  '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
+  `--blink-settings=${HEADLESS_BLINK_SETTINGS}`,
 ];
+
+/**
+ * Extra launch args that show the first frame of every animated image (GIF,
+ * WebP, APNG; in <img>, <picture> and CSS backgrounds) instead of playing it
+ * (issue #182). Blink's `imageAnimationPolicy` setting, 2 = no animation,
+ * the same switch Chrome's "no animation" accessibility preference flips.
+ *
+ * A launch flag because nothing narrower exists: CDP has no per-page image
+ * animation setting (checked against the protocol in devtools-protocol
+ * 0.0.1653615), and every renderer the browser starts gets it, so it holds
+ * through the fresh-renderer hop and from the first paint. Measured on
+ * chrome-headless-shell 151 with a 2-frame 100 ms fixture of each format,
+ * screenshots every 70 ms: unflagged they alternate red and blue, with this
+ * all 8 show frame 0 in all five placements. Policy 1 ("animate once") stops
+ * on the last frame, which is reached at a time that depends on load, so it
+ * is not deterministic.
+ *
+ * Chrome keeps the last `--blink-settings` it is given, so this repeats the
+ * headless settings rather than adding a second list. Appended after
+ * chromeArgs' own (launch `args`), it replaces them.
+ */
+export function imageAnimationArgs(): string[] {
+  return [`--blink-settings=${HEADLESS_BLINK_SETTINGS},imageAnimationPolicy=2`];
+}
 
 /** The full command line, in Playwright's order so the spike's evidence transfers. */
 export function chromeArgs(opts: {
