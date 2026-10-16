@@ -138,6 +138,7 @@ and `--comment` posts the results on the pull request. See [CI](docs/ci.md).
 - [Browser](docs/browser.md): install, your own Chromium, the warm browser
 - [Field tests](docs/field-tests.md): stability on three public Storybooks, and how to reproduce it
 - [CI](docs/ci.md): pull request comments and the HTML report
+- [Hosted uploads](docs/hosted-uploads.md): opt-in hosted review and upload retries
 - [Watch mode](docs/watch-mode.md): the Storybook addon
 - [Packages](docs/packages.md): what each package is for
 

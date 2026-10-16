@@ -4,6 +4,7 @@ import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   buildComment,
+  hashImage,
   describeRendererRetries,
   describeVisualEquivalence,
   describeCause,
@@ -67,6 +68,9 @@ import { stdio, type Io, type Session } from '../io.js';
 import { printSelection } from '../selection-output.js';
 import { recheckFromFlags } from '../recheck-flags.js';
 import { settleFromFlags } from '../settle-flags.js';
+import { UserError } from '../user-error.js';
+
+import { uploadConfig, uploadRun, uploadMessage } from '../hosted-upload.js';
 
 const MAX_GROUPS_SHOWN = 10;
 
@@ -74,6 +78,7 @@ export async function runCommand(
   flags: CommonFlags,
   { io = stdio, browser: lent, signal }: Session = {},
 ): Promise<number> {
+  const hosted = flags.upload && !flags['dry-run'] ? uploadConfig() : undefined;
   // Checked first: a mistyped ref used to fall through to `git-unavailable`,
   // capture everything, and give every story an unexplained `unknown` cause.
   if (
@@ -95,6 +100,11 @@ export async function runCommand(
     io.err(`${recheck.error}\n`);
     return EXIT.usage;
   }
+  if (
+    hosted &&
+    !/^[a-f0-9]{40}$/i.test(gitSha(path.resolve(flags.project ?? process.cwd())))
+  )
+    throw new UserError('Hosted upload requires a committed Git project.');
   const ctx = await resolveContext(flags);
   try {
     checkProjectSettle(ctx.config);
@@ -108,6 +118,7 @@ export async function runCommand(
     if (!ctx.json) io.err(msg + '\n');
   };
 
+  const uploadBaselines = hosted ? await ctx.store.readManifest() : undefined;
   const p = phases();
 
   const enumerated = await p.time('enumerate', () =>
@@ -323,6 +334,17 @@ export async function runCommand(
       commitSha: gitSha(ctx.projectRoot),
       onArtifact: async (a) => {
         await writeArtifact(runDir, a);
+        if (hosted) {
+          const baseline = await ctx.store.get(a.storyId);
+          if (
+            baseline &&
+            hashImage(baseline) === uploadBaselines?.baselines[a.storyId]?.hash
+          )
+            await writeFile(
+              path.join(runDir, 'images', `${encodeStoryId(a.storyId)}-baseline.webp`),
+              baseline,
+            );
+        }
         // A pass matches the manifest hash, so this capture is the approved
         // image: keep it for the failure that needs it later.
         if (a.status === 'pass') {
@@ -365,6 +387,11 @@ export async function runCommand(
     // The comment links the artifact only when there is one to link.
     if (flags.comment)
       await comment(report, ctx.json, Boolean(flags.html), io, ctx.config.storage);
+
+    if (hosted) {
+      const uploaded = await uploadRun(runDir, hosted);
+      io.err(uploadMessage(uploaded));
+    }
 
     // Anything needing human or agent judgement blocks. `pass` and `skip` do not.
     const blocking = report.summary.fail + report.summary.new + report.summary.stale;

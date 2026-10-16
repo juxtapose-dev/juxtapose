@@ -55,6 +55,14 @@ With `--json`, both return `{schema: "juxtapose.selection/v1", count, captures}`
 Each capture has `storyId`, `title`, `name`, and `baseStoryId` for a variant.
 Approval still uses exact reviewed IDs; run selection globs do not broaden it.
 
+## Hosted uploads
+
+`jux run --upload` uploads a completed run while retaining its local verdict.
+`jux upload --run <directory>` uploads existing artifacts without recapturing;
+its exit code reports transfer success. Both require a project token through
+`JUXTAPOSE_TOKEN`. See [Hosted uploads](hosted-uploads.md) for setup, JSON output,
+limits, CI association, and retries. Uploading does not approve snapshots.
+
 ## Capture only what a change reaches: `jux run --since`
 
 `jux run --since <ref>` diffs the working tree against `<ref>` (committed,

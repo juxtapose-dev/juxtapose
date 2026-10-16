@@ -37,6 +37,8 @@ const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   captured.length = 0;
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'jux-discovery-cli-'));
@@ -194,29 +196,35 @@ test('glob narrows discovery and captures matching variants', async () => {
   expect(f.discover.mock.calls[0]?.[2]).toEqual(['a']);
   expect(captured[0]).toEqual(['a', 'a__dark']);
 });
-test('dry-run resolves variants without capturing or writing a report', async () => {
-  const f = fixture();
-  context.json = true;
-  const io = captureIo();
-  expect(
-    await runCommand(
-      { project: f.root, story: ['*__dark'], 'dry-run': true },
-      { io, browser: f.browser },
-    ),
-  ).toBe(0);
-  expect(JSON.parse(io.stdout())).toMatchObject({
-    schema: 'juxtapose.selection/v1',
-    count: 2,
-    captures: [{ storyId: 'a__dark' }, { storyId: 'b__dark' }],
-  });
-  expect(captured).toEqual([]);
-  const { readdirSync } = await import('node:fs');
-  expect(
-    readdirSync(path.join(f.root, '.juxtapose', 'runs')).filter(
-      (name) => name !== '.cache',
-    ),
-  ).toEqual([]);
-});
+test.each([false, true])(
+  'dry-run resolves variants without capturing, uploading, or writing a report (upload=%s)',
+  async (upload) => {
+    vi.stubEnv('JUXTAPOSE_TOKEN', '');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const f = fixture();
+    context.json = true;
+    const io = captureIo();
+    expect(
+      await runCommand(
+        { project: f.root, story: ['*__dark'], 'dry-run': true, upload },
+        { io, browser: f.browser },
+      ),
+    ).toBe(0);
+    expect(JSON.parse(io.stdout())).toMatchObject({
+      schema: 'juxtapose.selection/v1',
+      count: 2,
+      captures: [{ storyId: 'a__dark' }, { storyId: 'b__dark' }],
+    });
+    expect(captured).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const { readdirSync } = await import('node:fs');
+    expect(
+      readdirSync(path.join(f.root, '.juxtapose', 'runs')).filter(
+        (name) => name !== '.cache',
+      ),
+    ).toEqual([]);
+  },
+);
 test('an unmatched selector fails even if another selector matches', async () => {
   const f = fixture();
   const io = captureIo();
