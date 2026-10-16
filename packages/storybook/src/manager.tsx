@@ -4,7 +4,13 @@ import React from 'react';
 import { addons, types, useStorybookApi, useStorybookState } from './storybook.js';
 import { Panel } from './Panel.js';
 import { fetchAffected, fetchBundle, flushIndex, startRun } from './api.js';
-import { applyStatuses, decoratedIds, statusUpdate } from './sidebar.js';
+import {
+  applyStatuses,
+  changedStatuses,
+  decoratedIds,
+  statusUpdate,
+  type StatusUpdate,
+} from './sidebar.js';
 import { registerTestProvider } from './test-provider.js';
 import { CaptureBatch, RenderClassifier } from './watch.js';
 
@@ -107,6 +113,7 @@ function getChannel(api: unknown): Channel | null {
  */
 function startSidebarDecoration(api: unknown): void {
   let decorated: string[] = [];
+  let previous: StatusUpdate = {};
   let stopped = false;
 
   const tick = async () => {
@@ -120,7 +127,9 @@ function startSidebarDecoration(api: unknown): void {
       // Nothing to say yet — don't clear what a previous session set.
       if (Object.keys(update).length === 0) return;
 
-      const ok = await applyStatuses(api, update);
+      const changed = changedStatuses(update, previous);
+      if (Object.keys(changed).length === 0) return;
+      const ok = await applyStatuses(api, changed);
       if (!ok) {
         // The API is missing or broken; retrying every few seconds would just
         // fill the console with the same warning.
@@ -129,6 +138,7 @@ function startSidebarDecoration(api: unknown): void {
         return;
       }
       decorated = decoratedIds(update);
+      previous = update;
     } catch {
       // The dev server may not be up yet, or there may be no run. Both are
       // ordinary states, not errors worth surfacing.

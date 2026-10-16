@@ -156,6 +156,24 @@ export function decoratedIds(update: StatusUpdate): string[] {
   return Object.keys(update).filter((id) => update[id] !== null);
 }
 
+/** Avoid manager updates for an unchanged poll: hosts can remount addon panels
+ * when their status store changes, discarding the review mode and controls. */
+export function changedStatuses(
+  next: StatusUpdate,
+  previous: StatusUpdate,
+): StatusUpdate {
+  return Object.fromEntries(
+    Object.entries(next).filter(([id, status]) => {
+      const before = previous[id];
+      return (
+        status?.status !== before?.status ||
+        status?.title !== before?.title ||
+        status?.description !== before?.description
+      );
+    }),
+  );
+}
+
 /**
  * Push statuses into Storybook, tolerating an API that keeps moving.
  *
