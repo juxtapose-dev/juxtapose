@@ -154,7 +154,13 @@ op-noop: identical: images byte-identical, no structural change.
 The verdict never decides pass/fail — the pixel hash does. It explains a
 failure so an agent can compare the deltas with what it meant to change.
 `jux run` attaches the same object to each failing story as
-`results[].structural`, and `jux handoff` leads with it.
+`results[].structural`. The compact `summary` is intended for display.
+`jux handoff` instead leads with classification and JSON observations: `deltas`,
+`recorded`, and `total`. It preserves every stored delta without the summary's
+prose truncation, followed by changed-region area coverage. Geometry and spatial
+coverage are evidence, not proof of a root cause. If the verdict's storage budget
+omitted deltas, the handoff explicitly marks its evidence incomplete; the diff
+sidecar contains the same bounded verdict and cannot recover omitted changes.
 
 `cause` follows the Vite build manifest, which records chunks, not every
 module. "Changed" means since `--since` (which must name a commit), including
