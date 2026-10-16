@@ -68,12 +68,8 @@ not approved-baseline parity or repeated rendering determinism.
 and that fixture's `.juxtapose/runs`. Discovery harness:
 `/tmp/jux-discovery-browser.mjs`.
 
-## Remaining gates
+## Remaining scope
 
-- Storybook 9 remains unverified. No installed local fixture was found. The
-  suggested official `release-9-0--storybookjs.netlify.app` deployment returned
-  HTTP 404; that is not a compatibility result. Keep the PR draft until a
-  real Storybook 9 build is tested, or explicitly scope support otherwise.
 - Repeat cold-cache subset/full comparisons before claiming a speedup.
 - Discovery currently keeps one cache entry: alternating distinct selections
   evicts it. A full-map cache that can safely satisfy subsets is separate work.
@@ -93,5 +89,12 @@ The fixture's installed and built Storybook versions must match its pinned
 version. Each job retains JSON evidence, CLI logs and the fixture lockfile.
 
 The complete harness passed locally with existing Storybook 10.6.0 dependencies
-and no installation. CI evidence for Storybook 9 is required before closing
-that remaining gate.
+and no installation. It then passed on Linux for **both Storybook 9.1.21 and
+10.6.0**, closing the version-9 validation gap. Each job verified the two-story
+fixture and all eight CLI cases without capture errors.
+
+[Successful compatibility run](https://github.com/juxtapose-dev/juxtapose/actions/runs/38833731256)
+at `6824a0a19cbbe1824427da368e0f06f4e1408dee`;
+[committed evidence](discovery-subset-ci-validation.json). These checks validate
+the selected versions; they do not claim exhaustive coverage of every minor
+release or a repeated performance benchmark.
