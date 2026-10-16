@@ -3,7 +3,7 @@
 // gets a structural verdict instead of "no baseline structure".
 //
 // Initialises a throwaway project over a COPY of examples/storybook's built
-// workbench, asserts every manifest entry carries structure, then injects a
+// workbench, asserts every manifest entry references readable structure, then injects a
 // style change into the copy and asserts the changed stories are explained
 // structurally. Run after `pnpm build` and `pnpm --filter example-storybook build`:
 //   node scripts/check-init.mjs
@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { CacheBaselineStore, decodeStructure } from '../packages/core/dist/index.js';
 
 const exec = promisify(execFile);
 const root = path.resolve(import.meta.dirname, '..');
@@ -61,12 +62,36 @@ const manifest = JSON.parse(
 );
 const entries = Object.entries(manifest.baselines ?? manifest.stories ?? {});
 check(entries.length === initOut.approved, `manifest holds ${entries.length} entries`);
-const bare = entries
-  .filter(([, e]) => !e.structure || !e.structureHash)
-  .map(([id]) => id);
+const store = new CacheBaselineStore({ projectRoot: project });
+const bare = [];
+for (const [id, entry] of entries) {
+  if (
+    typeof entry.structureFile !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(entry.structureFileHash ?? '') ||
+    !entry.structureHash
+  ) {
+    bare.push(id);
+    continue;
+  }
+  // The store verifies the file checksum and reconstructs the full paths;
+  // checking only a filename would miss broken or unreadable evidence.
+  const bytes = await store.getStructure(id);
+  try {
+    const structure = bytes ? decodeStructure(bytes) : null;
+    if (
+      !structure ||
+      structure.schema !== 'juxtapose.structure/v1' ||
+      structure.structureHash !== entry.structureHash ||
+      !Array.isArray(structure.elements)
+    )
+      bare.push(id);
+  } catch {
+    bare.push(id);
+  }
+}
 check(
   bare.length === 0,
-  `every entry has structure (missing: ${bare.slice(0, 5).join(', ') || 'none'})`,
+  `every entry has verified readable structure (missing: ${bare.slice(0, 5).join(', ') || 'none'})`,
 );
 
 // A real visual change in the built copy: every story that has a button or
