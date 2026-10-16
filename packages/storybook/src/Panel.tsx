@@ -73,21 +73,6 @@ const Stat = styled.span(({ theme }) => ({
 
 const ModeGroup = styled.div({ display: 'flex', flexWrap: 'wrap', gap: 2 });
 
-const ModeHint = styled.p(({ theme }) => ({
-  margin: '0 0 10px',
-  fontSize: 12,
-  lineHeight: 1.4,
-  color: mutedColor(theme),
-}));
-
-const MODE_HINTS: Record<ViewMode, string> = {
-  sxs: 'Compare the approved baseline with the current capture. Diff marks changed pixels.',
-  slider:
-    'Drag the divider to inspect alignment. Arrow keys move it; Shift moves faster.',
-  onion: 'Blend the captures to compare spacing, colour, and weight.',
-  flicker: 'Alternate the captures to spot movement. Pause at any time.',
-};
-
 const Note = styled.span(({ theme }) => ({
   color: mutedColor(theme),
   fontSize: 12,
@@ -110,7 +95,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0, running: false });
   const [mode, setMode] = useState<ViewMode>('sxs');
-  const [showDiff, setShowDiff] = useState(true);
+  const [showDiff, setShowDiff] = useState(false);
   const [unfocus, setUnfocus] = useState(false);
   const [loupe, setLoupe] = useState(false);
   const request = useRef(0);
@@ -618,7 +603,6 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               )}
             </Toolbar>
 
-            {hasComparison && <ModeHint>{MODE_HINTS[mode]}</ModeHint>}
             {result.error && <Muted role="alert">{result.error}</Muted>}
             {result.unrechecked && (
               <Muted role="status">
