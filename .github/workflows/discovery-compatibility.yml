@@ -28,7 +28,6 @@ jobs:
       matrix:
         storybook: ['9.1.21', '10.6.0']
     env:
-      JUX_STATE_DIR: ${{ runner.temp }}/jux-discovery-state
       JUX_NO_DAEMON: '1'
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +38,8 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Set temporary browser state
+        run: echo "JUX_STATE_DIR=$RUNNER_TEMP/jux-discovery-state" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - uses: actions/cache@v4
