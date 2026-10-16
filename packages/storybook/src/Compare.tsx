@@ -7,7 +7,7 @@
 //   flicker       small movement, which the eye catches instantly in motion
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { styled } from './storybook.js';
+import { styled, Button } from './storybook.js';
 import { mutedColor } from './theme.js';
 import { Loupe } from './Loupe.js';
 
@@ -102,7 +102,42 @@ const Controls = styled.label({
   fontSize: 12,
 });
 
-export const Compare: React.FC<CompareProps> = ({
+export const Compare: React.FC<CompareProps> = (props) => {
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  if (failed)
+    return (
+      <div role="alert">
+        A capture image could not be loaded. Capture the story again, or{' '}
+        <Button
+          size="small"
+          onClick={() => {
+            setAttempt((n) => n + 1);
+            setFailed(false);
+          }}
+        >
+          Retry images
+        </Button>
+      </div>
+    );
+  const retryUrl = (url: string | null) => url && `${url}&retry=${attempt}`;
+  return (
+    <div
+      onErrorCapture={(event) => {
+        if (event.target instanceof HTMLImageElement) setFailed(true);
+      }}
+    >
+      <ComparisonImages
+        {...props}
+        baselineUrl={retryUrl(props.baselineUrl)}
+        currentUrl={retryUrl(props.currentUrl)!}
+        diffUrl={retryUrl(props.diffUrl)}
+      />
+    </div>
+  );
+};
+
+const ComparisonImages: React.FC<CompareProps> = ({
   baselineUrl,
   currentUrl,
   diffUrl,
@@ -195,31 +230,51 @@ const Slider: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
     setPct(Math.min(100, Math.max(0, ((clientX - box.left) / box.width) * 100)));
   }, []);
 
-  useEffect(() => {
-    // Listeners go on the window so a fast drag that leaves the frame still
-    // tracks, and still releases.
-    const move = (e: MouseEvent) => {
-      if (dragging.current) positionFrom(e.clientX);
-    };
-    const up = () => {
-      dragging.current = false;
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-    return () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-    };
-  }, [positionFrom]);
-
   return (
     <Frame
       ref={ref}
-      onMouseDown={(e) => {
-        dragging.current = true;
-        positionFrom(e.clientX);
+      role="slider"
+      tabIndex={0}
+      aria-label="Comparison wipe position"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(pct)}
+      onKeyDown={(event) => {
+        const step = event.shiftKey ? 10 : 1;
+        const next =
+          event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? 100
+              : event.key === 'ArrowLeft' || event.key === 'ArrowDown'
+                ? pct - step
+                : event.key === 'ArrowRight' || event.key === 'ArrowUp'
+                  ? pct + step
+                  : null;
+        if (next === null) return;
+        event.preventDefault();
+        setPct(Math.max(0, Math.min(100, next)));
       }}
-      style={{ cursor: 'ew-resize', userSelect: 'none' }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.currentTarget.focus();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        dragging.current = true;
+        positionFrom(event.clientX);
+      }}
+      onPointerMove={(event) => {
+        if (dragging.current) positionFrom(event.clientX);
+      }}
+      onPointerUp={() => {
+        dragging.current = false;
+      }}
+      onPointerCancel={() => {
+        dragging.current = false;
+      }}
+      onLostPointerCapture={() => {
+        dragging.current = false;
+      }}
+      style={{ cursor: 'ew-resize', userSelect: 'none', touchAction: 'none' }}
     >
       <Img src={baselineUrl} alt="baseline" draggable={false} />
       <Layer
@@ -270,15 +325,36 @@ const Flicker: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
 }) => {
   const [hz, setHz] = useState(4);
   const [showCurrent, setShowCurrent] = useState(false);
+  const [playing, setPlaying] = useState(
+    () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  const [hidden, setHidden] = useState(document.hidden);
+  useEffect(() => {
+    const visibility = () => setHidden(document.hidden);
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const preference = () => {
+      if (reduced.matches) setPlaying(false);
+    };
+    document.addEventListener('visibilitychange', visibility);
+    reduced.addEventListener('change', preference);
+    return () => {
+      document.removeEventListener('visibilitychange', visibility);
+      reduced.removeEventListener('change', preference);
+    };
+  }, []);
 
   useEffect(() => {
+    if (!playing || hidden) return;
     const id = setInterval(() => setShowCurrent((v) => !v), 1000 / hz / 2);
     return () => clearInterval(id);
-  }, [hz]);
+  }, [hz, playing, hidden]);
 
   return (
     <div>
-      <Controls>
+      <Controls as="div">
+        <Button size="small" onClick={() => setPlaying((value) => !value)}>
+          {playing ? 'Pause flicker' : 'Play flicker'}
+        </Button>
         <span style={{ whiteSpace: 'nowrap' }}>{hz} Hz</span>
         <input
           type="range"

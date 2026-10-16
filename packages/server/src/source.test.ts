@@ -260,7 +260,20 @@ describe('RunDirSource with variants', () => {
       baseStoryId: 'card--a',
       variant: 'dark',
       variantParams: { colorScheme: 'dark' },
-      status: 'new',
+      status: 'fail',
+      structural: {
+        schema: 'juxtapose.verdict/v1',
+        classification: 'text-only',
+        styleTags: [],
+        summary: 'Button label changed from Save to Submit.',
+        deltas: [],
+        deltaCount: 1,
+        coverage: 1,
+        explained: 'full',
+        unexplainedRegions: [],
+        flags: [],
+        escalate: { command: 'jux diff card--a__dark' },
+      },
       mismatchPixels: 0,
       mismatchPercent: 0,
       changedRegions: [],
@@ -277,6 +290,7 @@ describe('RunDirSource with variants', () => {
       'the `dark` variant of `card--a`, captured with colorScheme dark',
     );
     expect(text).toContain('/src/Card.tsx');
+    expect(text).toContain('Button label changed from Save to Submit.');
   });
 });
 

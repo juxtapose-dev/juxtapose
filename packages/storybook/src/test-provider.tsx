@@ -14,7 +14,7 @@
 // The decisions live in test-provider-state.ts, which has no Storybook
 // imports and is therefore testable without a DOM.
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { addons, managerApi, types, styled } from './storybook.js';
 import { mutedColor } from './theme.js';
 import { fetchBundle, fetchProgress, startRun, type Bundle } from './api.js';
@@ -78,6 +78,9 @@ interface TestProviderAddon {
 const TestProviderRow: React.FC<{ store: ProviderStore }> = ({ store }) => {
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const starting = useRef(false);
+  const settledRun = useRef<string | undefined>(undefined);
 
   const refresh = useCallback(async () => {
     const next = await fetchBundle().catch(() => null);
@@ -86,16 +89,22 @@ const TestProviderRow: React.FC<{ store: ProviderStore }> = ({ store }) => {
   }, []);
 
   const run = useCallback(async () => {
+    if (starting.current || running) return;
+    starting.current = true;
+    setError(null);
     setRunning(true);
     store.setState(TEST_PROVIDER_STATE.running);
     try {
       await startRun();
-    } catch {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
       // Failing to *start* is a genuine crash — nothing will follow it.
       store.setState(TEST_PROVIDER_STATE.crashed);
       setRunning(false);
+    } finally {
+      starting.current = false;
     }
-  }, [store]);
+  }, [store, running]);
 
   // Storybook's "run all tests" should run us too. This is the whole reason to
   // be a provider rather than just another panel.
@@ -106,22 +115,39 @@ const TestProviderRow: React.FC<{ store: ProviderStore }> = ({ store }) => {
 
   useEffect(() => {
     let cancelled = false;
+    let polling = false;
 
     const tick = async () => {
-      if (cancelled) return;
+      if (cancelled || polling || starting.current) return;
+      polling = true;
       const progress = await fetchProgress().catch(() => null);
-      if (!progress) return;
-
-      if (progress.running) {
-        setRunning(true);
+      if (!progress || cancelled) {
+        polling = false;
         return;
       }
 
-      if (running) {
-        setRunning(false);
-        const next = await refresh();
-        store.setState(stateAfterRun(Boolean(next?.report)));
+      if (progress.running) {
+        setRunning(true);
+        store.setState(TEST_PROVIDER_STATE.running);
+        polling = false;
+        return;
       }
+
+      if (running || (progress.run && progress.run.id !== settledRun.current)) {
+        const next = await refresh();
+        if (cancelled) return;
+        // Report fetching hashes approved images; do it once per terminal run,
+        // not on every cheap progress poll. Retry if the bundle was unavailable.
+        if (next) settledRun.current = progress.run?.id;
+        setRunning(false);
+        setError(
+          progress.run?.status === 'failed'
+            ? (progress.run.error ?? 'Latest run failed')
+            : null,
+        );
+        store.setState(stateAfterRun(Boolean(next?.report), progress.run));
+      }
+      polling = false;
     };
 
     void tick();
@@ -145,6 +171,10 @@ const TestProviderRow: React.FC<{ store: ProviderStore }> = ({ store }) => {
       <strong>Visual</strong>
       {running ? (
         <Muted>running…</Muted>
+      ) : error ? (
+        <Muted role="alert">{error}</Muted>
+      ) : bundle?.run?.status === 'cancelled' ? (
+        <Muted>cancelled</Muted>
       ) : s ? (
         <Muted>
           {s.pass} pass

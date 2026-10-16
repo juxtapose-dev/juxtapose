@@ -1,3 +1,5 @@
+import type { ReviewRun } from '@juxtapose/server';
+
 // The test provider's decisions, with no Storybook imports.
 //
 // Split from test-provider.tsx so the rules below can be tested without a DOM:
@@ -176,6 +178,11 @@ function isProviderStore(value: unknown): value is ProviderStore {
  * server is unreachable. Conflating the two makes an ordinary red diff look
  * like the tool is broken, which trains people to ignore the state entirely.
  */
-export function stateAfterRun(hasReport: boolean): TestProviderStateValue {
+export function stateAfterRun(
+  hasReport: boolean,
+  run?: ReviewRun,
+): TestProviderStateValue {
+  if (run?.status === 'failed') return TEST_PROVIDER_STATE.crashed;
+  if (run?.status === 'cancelled') return TEST_PROVIDER_STATE.pending;
   return hasReport ? TEST_PROVIDER_STATE.succeeded : TEST_PROVIDER_STATE.crashed;
 }

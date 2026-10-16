@@ -178,3 +178,12 @@ describe('the real storybook/internal/manager-api module', () => {
     expect(realManagerApi.types.experimental_TEST_PROVIDER).toBe('test-provider');
   });
 });
+
+it('does not report an old report as success after a new run fails or is cancelled', () => {
+  expect(
+    stateAfterRun(true, { id: 'failed', status: 'failed', error: 'browser failed' }),
+  ).toBe(TEST_PROVIDER_STATE.crashed);
+  expect(stateAfterRun(true, { id: 'cancelled', status: 'cancelled' })).toBe(
+    TEST_PROVIDER_STATE.pending,
+  );
+});

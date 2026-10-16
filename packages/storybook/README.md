@@ -26,8 +26,29 @@ button runs the visual suite alongside your other tests. The test provider
 needs Storybook 8.5 or later and is checked against 8.6 and 10.6. On earlier
 versions the row doesn't appear; the panel works either way.
 
-Keyboard: `j`/`k` next and previous failing story, `a` approve, `1`–`4` view
-mode, `d` diff overlay, `u` dim unchanged areas.
+The **What changed** section uses the existing report's structural summary,
+with expandable before/after details, evidence limits, and unexplained regions.
+When available, it also shows flake evidence and suggested configuration you can
+select and copy. Suggestions are not applied automatically. Renderer recovery
+reports an exact hash match when successful; it does not establish a root cause.
+These explanations require no additional captures or analysis.
+
+Capture errors, cancellation, and failed runs are shown explicitly. A failed run
+may leave the previous report visible, labelled as such. Approval is unavailable
+for capture errors or confirmed unstable results; eligible approvals still take
+a fresh confirming capture. Missing baseline images show the current capture
+and available structural evidence, without comparison controls.
+
+Keyboard: `j`/`k` next and previous pending capture (including variants), `a`
+approve, `s` side by side, `w` wipe slider, `o` onion, `f` flicker, `d` diff
+overlay, `u` dim unchanged areas, and `z` loupe. Shortcuts ignore text inputs,
+modifier keys, and repeated key events. Approval shortcuts obey the same guards
+as the buttons.
+
+The wipe slider supports pointer dragging, arrow keys (1%; Shift for 10%), and
+Home/End. Flicker has a pause/play control, starts paused when reduced motion
+is requested, and pauses while the browser tab is hidden. If copying an agent
+prompt fails, its text remains selectable in the panel.
 
 The addon mounts its API inside Storybook's own dev server, so there is no
 second process to run and no port to configure.

@@ -4,22 +4,25 @@
 // Histoire UI can reuse it unchanged.
 
 // Deep import: '@juxtapose/core' reaches sharp; this file is bundled for the browser.
-import { compareCodeUnits } from '@juxtapose/core/format';
+import {
+  compareCodeUnits,
+  isSubThreshold as coreIsSubThreshold,
+} from '@juxtapose/core/format';
 import type { RunReport, DiffResult } from '@juxtapose/core';
 
 const API = '/jux/api';
 
-export interface Bundle {
-  report: RunReport | null;
-  approved: string[];
-  running: boolean;
-}
+export type { ReviewBundle as Bundle, RunProgress as Progress } from '@juxtapose/server';
+import type { ReviewBundle as Bundle, RunProgress as Progress } from '@juxtapose/server';
 
-export interface Progress {
-  running: boolean;
-  done: number;
-  total: number;
-  storyId: string | null;
+async function checkResponse(res: Response, operation: string): Promise<void> {
+  if (res.ok) return;
+  const body: unknown = await res.json().catch(() => null);
+  const message =
+    typeof body === 'object' && body !== null && 'error' in body ? body.error : undefined;
+  throw new Error(
+    typeof message === 'string' ? message : `${operation} failed: ${res.status}`,
+  );
 }
 
 // Bundle and Progress come from @juxtapose/server, built from the same types
@@ -43,22 +46,16 @@ export async function approveStory(storyId: string): Promise<void> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ storyId }),
   });
-  if (!res.ok) {
-    const body: unknown = await res.json().catch(() => ({}));
-    const error =
-      typeof body === 'object' && body !== null && 'error' in body
-        ? body.error
-        : undefined;
-    throw new Error(typeof error === 'string' ? error : `approve failed: ${res.status}`);
-  }
+  await checkResponse(res, 'approve');
 }
 
 export async function startRun(storyIds?: string[]): Promise<void> {
-  await fetch(`${API}/run`, {
+  const res = await fetch(`${API}/run`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(storyIds ? { storyIds } : {}),
   });
+  await checkResponse(res, 'run');
 }
 
 /**
@@ -97,7 +94,8 @@ export async function flushIndex(): Promise<void> {
 }
 
 export async function cancelRun(): Promise<void> {
-  await fetch(`${API}/cancel`, { method: 'POST' });
+  const res = await fetch(`${API}/cancel`, { method: 'POST' });
+  await checkResponse(res, 'cancel');
 }
 
 export async function fetchHandoff(storyId: string): Promise<string> {
@@ -115,9 +113,9 @@ export async function fetchHandoff(storyId: string): Promise<string> {
 export function imageUrl(
   kind: 'current' | 'baseline' | 'diff',
   storyId: string,
-  version: number,
+  version: number | string,
 ): string {
-  return `${API}/image/${kind}/${encodeURIComponent(storyId)}?v=${version}`;
+  return `${API}/image/${kind}/${encodeURIComponent(storyId)}?v=${encodeURIComponent(version)}`;
 }
 
 /**
@@ -131,13 +129,7 @@ export function imageUrl(
  * this case: it reports 100%.
  */
 export function isSubThreshold(result: DiffResult | undefined): boolean {
-  return (
-    result?.status === 'fail' &&
-    // No pixel diff ran at all; "marks no pixels" would be a false claim.
-    result.baselineImage !== 'unavailable' &&
-    result.mismatchPixels === 0 &&
-    result.mismatchPercent === 0
-  );
+  return result?.status === 'fail' && coreIsSubThreshold(result);
 }
 
 /** Stories needing review, in report order. */
@@ -225,6 +217,7 @@ export function approvableCaptures(
     (r) =>
       (r.status === 'fail' || r.status === 'new' || r.status === 'stale') &&
       !r.error &&
+      (!r.unstable || r.unrechecked === true) &&
       !done.has(r.storyId),
   );
 }

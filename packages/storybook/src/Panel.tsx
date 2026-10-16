@@ -7,7 +7,7 @@
 // It is also deliberately not a story browser. Storybook's sidebar already does
 // that job; the panel shows the selected story and gets out of the way.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { styled, Badge, Button, EmptyTabContent, Loader } from './storybook.js';
 import { mutedColor } from './theme.js';
 // Deep import on purpose: '@juxtapose/core' reaches sharp and the browser driver
@@ -33,6 +33,7 @@ import {
   pickCapture,
   type Bundle,
 } from './api.js';
+import { ChangeExplanation } from './ChangeExplanation.js';
 import { Compare, type ViewMode } from './Compare.js';
 
 const POLL_MS = 2000;
@@ -97,7 +98,13 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   const [showDiff, setShowDiff] = useState(true);
   const [unfocus, setUnfocus] = useState(false);
   const [loupe, setLoupe] = useState(false);
-  const [version, setVersion] = useState(1);
+  const request = useRef(0);
+  const appliedRequest = useRef(0);
+  const visible = useRef(active);
+  const action = useRef(false);
+  const handoffRequest = useRef(0);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [handoff, setHandoff] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -109,44 +116,77 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   });
 
   const refresh = useCallback(async () => {
+    const generation = ++request.current;
     try {
       const next = await fetchBundle();
+      // A newer request starting must not invalidate every slow response.
+      // Only a newer response already applied can make this one stale.
+      if (!visible.current || generation <= appliedRequest.current) return;
+      appliedRequest.current = generation;
       setBundle(next);
-      setError(null);
+      setConnectionError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (!visible.current || generation <= appliedRequest.current) return;
+      appliedRequest.current = generation;
+      setConnectionError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
   // Poll only while the panel is visible. A background tab has no business
   // hitting the server every two seconds.
   useEffect(() => {
+    visible.current = active;
     if (!active) return;
     void refresh();
     const id = setInterval(() => {
       if (!document.hidden) void refresh();
     }, POLL_MS);
-    return () => clearInterval(id);
+    return () => {
+      visible.current = false;
+      appliedRequest.current = ++request.current;
+      clearInterval(id);
+    };
   }, [active, refresh]);
 
   // A faster poll while capturing, so the progress readout feels live.
   useEffect(() => {
-    if (!progress.running && !bundle?.running) return;
+    if (!active || (!progress.running && !bundle?.running)) return;
+    let disposed = false;
+    let polling = false;
+    let finished = false;
     const tick = async () => {
+      if (polling || document.hidden) return;
+      polling = true;
       const p = await fetchProgress().catch(() => null);
-      if (!p) return;
+      polling = false;
+      if (!p || disposed) return;
       setProgress({ done: p.done, total: p.total, running: p.running });
-      if (!p.running) {
-        // Bump the cache-buster so freshly captured images actually load.
-        setVersion((v) => v + 1);
+      if (!p.running && !finished) {
+        finished = true;
         void refresh();
       }
     };
     const id = setInterval(() => void tick(), PROGRESS_POLL_MS);
-    return () => clearInterval(id);
-  }, [progress.running, bundle?.running, refresh]);
+    return () => {
+      disposed = true;
+      clearInterval(id);
+    };
+  }, [active, progress.running, bundle?.running, refresh]);
 
+  const running = progress.running || bundle?.running === true;
+  const locked = busy || running;
   const report = bundle?.report ?? null;
+  const runError =
+    bundle?.run?.status === 'failed'
+      ? `Latest run failed: ${bundle.run.error ?? 'Unknown error'}. Capture again to retry. Displayed results are from the previous report.`
+      : bundle?.run?.status === 'cancelled'
+        ? 'Latest run cancelled. Displayed results may be incomplete or from an earlier run.'
+        : null;
+  useEffect(() => {
+    handoffRequest.current++;
+    setHandoff(null);
+    setCopied(false);
+  }, [storyId, shown, report?.runId]);
   const approved = useMemo(() => bundle?.approved ?? [], [bundle]);
   const pending = useMemo(() => needsReview(report, approved), [report, approved]);
 
@@ -160,6 +200,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   );
   const captureId = result?.storyId ?? null;
   const isApproved = captureId !== null && approved.includes(captureId);
+  const version = `${report?.runId ?? 'none'}:${isApproved ? 'approved' : 'pending'}`;
   const variantsToApprove = useMemo(
     () => approvableCaptures(captures, approved),
     [captures, approved],
@@ -171,28 +212,54 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   // Without the baseline image (not in the local cache) there is only the
   // current capture, so the comparison modes have nothing to compare.
   const imageUnavailable = result?.baselineImage === 'unavailable';
-  const hasComparison = result?.status === 'fail' && !imageUnavailable;
+  const hasComparison =
+    result?.status === 'fail' && !result.error && !imageUnavailable && !isApproved;
 
   const subThreshold = isSubThreshold(result);
 
   // Approving is only meaningful when there is something to accept: a changed
   // capture, a first baseline, or a re-anchor after a stale one. For a passing
   // story it would write back bytes already on disk.
-  const canApprove =
-    result?.status === 'fail' || result?.status === 'new' || result?.status === 'stale';
+  const canApprove = !!result && approvableCaptures([result], []).length > 0;
 
-  const run = useCallback(async (ids?: string[]) => {
+  const run = useCallback(
+    async (ids?: string[]) => {
+      if (action.current || running) return;
+      action.current = true;
+      setBusy(true);
+      setError(null);
+      try {
+        await startRun(ids);
+        setProgress({ done: 0, total: ids?.length ?? 0, running: true });
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        action.current = false;
+        setBusy(false);
+      }
+    },
+    [running, refresh],
+  );
+
+  const cancel = useCallback(async () => {
+    if (action.current) return;
+    action.current = true;
     setBusy(true);
     try {
-      await startRun(ids);
-      setProgress({ done: 0, total: ids?.length ?? 0, running: true });
+      await cancelRun();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
+      action.current = false;
       setBusy(false);
     }
   }, []);
 
   const approve = useCallback(async () => {
-    if (!captureId) return;
+    if (!captureId || !canApprove || isApproved || running || action.current) return;
+    action.current = true;
     setBusy(true);
     try {
       await approveStory(captureId);
@@ -201,11 +268,14 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      action.current = false;
       setBusy(false);
     }
-  }, [captureId, refresh]);
+  }, [captureId, canApprove, isApproved, running, refresh]);
 
   const approveVariants = useCallback(async () => {
+    if (action.current || running) return;
+    action.current = true;
     setBusy(true);
     // Every capture is attempted, and the panel refreshes whatever happened:
     // stopping at the first failure left later ones unapproved and the
@@ -217,35 +287,52 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     try {
       await refresh();
     } finally {
+      action.current = false;
       setBusy(false);
     }
     setError(failed.length > 0 ? `Could not approve ${describeFailures(failed)}` : null);
-  }, [variantsToApprove, refresh]);
+  }, [variantsToApprove, running, refresh]);
 
   const approveAll = useCallback(async () => {
+    if (action.current || running) return;
+    action.current = true;
     setBusy(true);
     try {
       // Sequential on purpose. The server serializes these anyway, and firing
       // them in parallel just makes a failure harder to attribute. A refusal
       // (an unstable story) is shown, not swallowed.
       const message = await approveAllPending(
-        pending.map((item) => item.storyId),
+        approvableCaptures(pending, approved).map((item) => item.storyId),
         approveStory,
       );
       await refresh();
       setError(message);
     } finally {
+      action.current = false;
       setBusy(false);
     }
-  }, [pending, refresh]);
+  }, [pending, approved, running, refresh]);
 
   const copyHandoff = useCallback(async () => {
     if (!captureId) return;
-    const text = await fetchHandoff(captureId).catch(() => null);
-    if (!text) return;
-    await navigator.clipboard?.writeText(text).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopied(false);
+    const generation = ++handoffRequest.current;
+    try {
+      const text = await fetchHandoff(captureId);
+      if (generation !== handoffRequest.current) return;
+      setHandoff(text);
+      if (!navigator.clipboard)
+        throw new Error('Clipboard unavailable. Select and copy the prompt below.');
+      await navigator.clipboard.writeText(text);
+      if (generation !== handoffRequest.current) return;
+      setCopied(true);
+      setError(null);
+    } catch (err) {
+      if (generation !== handoffRequest.current) return;
+      setError(
+        `Could not copy prompt: ${err instanceof Error ? err.message : String(err)}. You can select the text below when available.`,
+      );
+    }
   }, [captureId]);
 
   // j/k walk captures, not stories: a story with two failing variants is two
@@ -268,7 +355,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
     // Gated the same as the button: pressing `a` on a passing story should do
     // nothing rather than silently rewrite an identical baseline.
     a: () => {
-      if (canApprove) void approve();
+      if (canApprove && !locked && !isApproved) void approve();
     },
     d: () => setShowDiff((v) => !v),
     u: () => setUnfocus((v) => !v),
@@ -279,16 +366,38 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   if (!report) {
     return (
       <EmptyTabContent
-        title="No run yet"
+        title={
+          running
+            ? 'Capturing stories…'
+            : !bundle && !connectionError
+              ? 'Loading visual results…'
+              : connectionError
+                ? 'Could not reach juxtapose'
+                : 'No run yet'
+        }
         description={
-          error
-            ? `Could not reach juxtapose: ${error}`
+          error || connectionError || runError
+            ? (error ?? connectionError ?? runError ?? '')
             : 'Capture this story to compare it against its baseline.'
         }
         footer={
-          <Button size="small" onClick={() => void run()} disabled={busy}>
-            Run all stories
-          </Button>
+          <>
+            <Button
+              size="small"
+              onClick={() => storyId && void run([storyId])}
+              disabled={locked || !storyId}
+            >
+              Capture this story
+            </Button>
+            <Button size="small" onClick={() => void run()} disabled={locked}>
+              Run all stories
+            </Button>
+            {running && (
+              <Button size="small" onClick={() => void cancel()} disabled={busy}>
+                Cancel
+              </Button>
+            )}
+          </>
         }
       />
     );
@@ -302,19 +411,19 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
         <Button
           size="small"
           onClick={() => storyId && void run([storyId])}
-          disabled={busy}
+          disabled={locked || !storyId}
         >
           Capture story
         </Button>
-        <Button size="small" onClick={() => void run()} disabled={busy}>
+        <Button size="small" onClick={() => void run()} disabled={locked}>
           Run all
         </Button>
-        {progress.running && (
+        {running && (
           <>
             <Muted>
               {progress.done}/{progress.total}
             </Muted>
-            <Button size="small" onClick={() => void cancelRun()}>
+            <Button size="small" onClick={() => void cancel()} disabled={busy}>
               Cancel
             </Button>
           </>
@@ -328,17 +437,25 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
         {s.stale > 0 && <Badge status="warning">{s.stale} stale</Badge>}
       </Toolbar>
 
-      {progress.running && <Loader />}
+      {running && <Loader />}
 
       <Body>
         {error && <Muted role="alert">{error}</Muted>}
+        {connectionError && (
+          <p role="alert">Connection lost: {connectionError}. Retrying…</p>
+        )}
+        {runError && <p role="alert">{runError}</p>}
 
         {!result ? (
           <EmptyTabContent
             title="Not captured"
             description="This story wasn't part of the last run."
             footer={
-              <Button size="small" onClick={() => storyId && void run([storyId])}>
+              <Button
+                size="small"
+                disabled={locked || !storyId}
+                onClick={() => storyId && void run([storyId])}
+              >
                 Capture it
               </Button>
             }
@@ -347,13 +464,12 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
           <>
             {captures.length > 1 && (
               <Toolbar as="div" style={{ borderBottom: 'none', paddingLeft: 0 }}>
-                <ModeGroup role="tablist" aria-label="Variant">
+                <ModeGroup role="group" aria-label="Variant">
                   {captures.map((c) => (
                     <Button
                       key={c.storyId}
                       size="small"
-                      role="tab"
-                      aria-selected={c.storyId === captureId}
+                      aria-pressed={c.storyId === captureId}
                       variant={c.storyId === captureId ? 'solid' : 'ghost'}
                       onClick={() =>
                         setShown({ story: storyId, variant: c.variant ?? null })
@@ -375,7 +491,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                     size="small"
                     variant="ghost"
                     onClick={() => void approveVariants()}
-                    disabled={busy}
+                    disabled={locked}
                   >
                     Approve all variants ({variantsToApprove.length})
                   </Button>
@@ -399,6 +515,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                       <Button
                         key={m.id}
                         size="small"
+                        aria-pressed={mode === m.id}
                         variant={mode === m.id ? 'solid' : 'ghost'}
                         onClick={() => setMode(m.id)}
                         title={`${m.label} (${m.key})`}
@@ -412,6 +529,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                     <>
                       <Button
                         size="small"
+                        aria-pressed={showDiff}
                         variant={showDiff ? 'solid' : 'ghost'}
                         onClick={() => setShowDiff((v) => !v)}
                         title="Toggle diff overlay (d)"
@@ -420,6 +538,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                       </Button>
                       <Button
                         size="small"
+                        aria-pressed={unfocus}
                         variant={unfocus ? 'solid' : 'ghost'}
                         onClick={() => setUnfocus((v) => !v)}
                         title="Dim unchanged areas (u)"
@@ -431,6 +550,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
 
                   <Button
                     size="small"
+                    aria-pressed={loupe}
                     variant={loupe ? 'solid' : 'ghost'}
                     onClick={() => setLoupe((v) => !v)}
                     title="Magnify pixels under the cursor (z)"
@@ -451,6 +571,8 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               <Spacer />
 
               {result.status === 'fail' &&
+                !isApproved &&
+                !result.error &&
                 (imageUnavailable ? (
                   <Muted>{BASELINE_IMAGE_UNAVAILABLE}</Muted>
                 ) : subThreshold ? (
@@ -464,7 +586,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                 (isApproved ? (
                   <Badge status="positive">Approved</Badge>
                 ) : (
-                  <Button size="small" onClick={() => void approve()} disabled={busy}>
+                  <Button size="small" onClick={() => void approve()} disabled={locked}>
                     Approve (a)
                   </Button>
                 ))}
@@ -474,7 +596,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                 With nothing changed there is no verdict to reach, so offering
                 it would hand someone a prompt about a diff that does not exist.
               */}
-              {hasComparison && (
+              {result.status === 'fail' && !result.error && !isApproved && (
                 <Button size="small" variant="ghost" onClick={() => void copyHandoff()}>
                   {copied ? 'Copied' : 'Copy agent prompt'}
                 </Button>
@@ -484,8 +606,8 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
             {result.error && <Muted role="alert">{result.error}</Muted>}
             {result.unrechecked && (
               <Muted role="status">
-                Captured once: run `jux approve` to confirm it is stable before it becomes
-                a baseline
+                Captured once: approval takes a fresh capture to confirm stability before
+                saving a baseline.
               </Muted>
             )}
             {result.unstable && !result.unrechecked && (
@@ -496,23 +618,39 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               </Muted>
             )}
 
-            <Compare
-              baselineUrl={
-                result.status === 'new'
-                  ? null
-                  : imageUrl('baseline', result.storyId, version)
-              }
-              currentUrl={imageUrl('current', result.storyId, version)}
-              diffUrl={
-                result.status === 'fail' && !subThreshold
-                  ? imageUrl('diff', result.storyId, version)
-                  : null
-              }
-              mode={mode}
-              showDiff={showDiff}
-              unfocus={unfocus}
-              loupe={loupe}
-            />
+            <ChangeExplanation result={result} />
+            {handoff && (
+              <details open={!copied}>
+                <summary>Agent prompt {copied ? '(copied)' : '(select to copy)'}</summary>
+                <textarea
+                  aria-label="Agent prompt"
+                  readOnly
+                  value={handoff}
+                  rows={8}
+                  style={{ width: '100%' }}
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+              </details>
+            )}
+            {copied && <p role="status">Agent prompt copied.</p>}
+            {!result.error && result.status !== 'skip' && (
+              <Compare
+                key={`${captureId}:${version}`}
+                baselineUrl={
+                  hasComparison ? imageUrl('baseline', result.storyId, version) : null
+                }
+                currentUrl={imageUrl('current', result.storyId, version)}
+                diffUrl={
+                  hasComparison && !subThreshold
+                    ? imageUrl('diff', result.storyId, version)
+                    : null
+                }
+                mode={hasComparison ? mode : 'sxs'}
+                showDiff={showDiff}
+                unfocus={unfocus}
+                loupe={hasComparison && loupe}
+              />
+            )}
 
             {pending.length > 0 && (
               <Toolbar as="div" style={{ borderBottom: 'none', paddingLeft: 0 }}>
@@ -534,7 +672,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                   size="small"
                   variant="ghost"
                   onClick={() => void approveAll()}
-                  disabled={busy}
+                  disabled={locked || approvableCaptures(pending, approved).length === 0}
                 >
                   Approve all
                 </Button>
@@ -561,7 +699,14 @@ function useKeyboardShortcuts(
     if (!active) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (
+        event.repeat ||
+        event.defaultPrevented ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      )
+        return;
 
       const target = event.target instanceof HTMLElement ? event.target : null;
       const tag = target?.tagName;
