@@ -1,5 +1,19 @@
 # @juxtapose/cli
 
+## 0.23.0
+
+### Minor Changes
+
+- 41936d5: Add opt-in hosted review uploads with `jux run --upload` and `jux upload --run <directory>`. Preserve local verdicts and artifacts, validate credentials and images before uploading, and retain complete run diagnostics in the hosted report.
+- a65a610: Keep baseline manifests small by writing readable per-story structure JSON under juxtapose.structures/. Compact repeated paths into relative segments with parent indexes, preserving original structure hashes and explanations. Add generated-file guidance, checksum-verified loading, commit instructions, and doctor migration for existing inline structures. Existing inline and legacy files remain readable.
+
+### Patch Changes
+
+- Updated dependencies [a65a610]
+  - @juxtapose/core@0.23.0
+  - @juxtapose/adapter-ladle@0.3.26
+  - @juxtapose/adapter-storybook@0.4.23
+
 ## 0.22.0
 
 ### Minor Changes

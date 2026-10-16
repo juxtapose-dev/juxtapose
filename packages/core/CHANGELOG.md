@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.23.0
+
+### Minor Changes
+
+- a65a610: Keep baseline manifests small by writing readable per-story structure JSON under juxtapose.structures/. Compact repeated paths into relative segments with parent indexes, preserving original structure hashes and explanations. Add generated-file guidance, checksum-verified loading, commit instructions, and doctor migration for existing inline structures. Existing inline and legacy files remain readable.
+
 ## 0.22.0
 
 ### Minor Changes
