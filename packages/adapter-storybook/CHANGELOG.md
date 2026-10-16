@@ -1,5 +1,13 @@
 # @juxtapose/adapter-storybook
 
+## 0.4.25
+
+### Patch Changes
+
+- 95a846a: Keep Storybook's preview root out of component diff explanations. Preserve component children, inherited style changes, and portals, including comparisons against existing baselines.
+- Updated dependencies [95a846a]
+  - @juxtapose/core@0.23.2
+
 ## 0.4.24
 
 ### Patch Changes

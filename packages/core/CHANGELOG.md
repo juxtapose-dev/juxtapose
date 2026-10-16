@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.23.2
+
+### Patch Changes
+
+- 95a846a: Keep Storybook's preview root out of component diff explanations. Preserve component children, inherited style changes, and portals, including comparisons against existing baselines.
+
 ## 0.23.1
 
 ### Patch Changes
