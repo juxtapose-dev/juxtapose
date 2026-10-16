@@ -95,9 +95,6 @@ describe('chromeArgs', () => {
   });
 
   it('turns off TurboFan in every renderer', () => {
-    // Each cold capture runs the bundle once in a fresh renderer, so
-    // optimising compiles are wasted: -5.6% wall on 200 Spectrum stories,
-    // every hash unchanged.
     expect(V8_FLAGS).toContain('--no-opt');
     expect(chromeArgs({ userDataDir: '/u' })).toContain('--js-flags=--no-opt');
   });
@@ -130,9 +127,11 @@ describe('chromeArgs byte parity', () => {
     ];
     const args = chromeArgs({ userDataDir: '/U', env: {} });
     expect(
-      args.filter((a) => !added.includes(a)).map((a) =>
-        a === '--remote-debugging-pipe=cbor' ? '--remote-debugging-pipe' : a,
-      ),
+      args
+        .filter((a) => !added.includes(a))
+        .map((a) =>
+          a === '--remote-debugging-pipe=cbor' ? '--remote-debugging-pipe' : a,
+        ),
     ).toEqual(SPIKE_ARGS);
     expect(args.indexOf('--disable-partial-raster')).toBe(
       args.indexOf('--force-color-profile=srgb', PARITY_CHROMIUM_ARGS.length) + 1,

@@ -177,22 +177,11 @@ const HEADLESS_ARGS = [
 ];
 
 /**
- * V8 flags for every renderer. These change speed, not pixels.
- *
- * - `--no-opt` turns off TurboFan. Each cold capture loads the workbench's
- *   bundle once in a fresh renderer (issue #153) and throws the process away,
- *   so optimising compiles are work no later call ever profits from.
- *   Measured on the GitHub runner, 200 Spectrum stories at concurrency 3,
- *   three repeats: 85.7 s to 80.9 s wall (-5.6%), 200 of 200 hashes
- *   identical to a run without it in every repeat. JIT tiers decide how fast
- *   script runs, not what it computes, so layout and raster see the same
- *   inputs. Also byte-identical on a loaded Mac: the examples and the
- *   150-story Chakra and 138-story Primer samples, two passes each.
- *
- * - Maglev stays on. In Chrome 151's V8 `--no-opt` leaves it running
- *   (`--trace-opt` still shows MAGLEV compiles), and adding `--no-maglev`
- *   was hash-identical but no faster on those samples, while a hot loop ran
- *   4x slower with it, so a story heavy in script would pay.
+ * Disable TurboFan while retaining Maglev. Earlier fresh-renderer measurements
+ * showed a 5.6% runner gain with exact hashes on the tested sample. Renderer
+ * sharing now defaults on, so current shared-mode measurements are required
+ * before treating that historical result as evidence for the default.
+ * Timing-sensitive application behavior can still differ with JIT scheduling.
  */
 export const V8_FLAGS: readonly string[] = ['--no-opt'];
 
