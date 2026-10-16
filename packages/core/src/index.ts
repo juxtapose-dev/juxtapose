@@ -350,3 +350,5 @@ export {
 export { describeRendererRetries } from './report/renderer-retry.js';
 
 export { describeVisualEquivalence } from './report/comparison.js';
+
+export { batchApprovals } from './baseline/manifest-batch.js';
