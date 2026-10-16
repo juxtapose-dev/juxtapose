@@ -212,9 +212,28 @@ export async function runCommand(
     let stories = indexCaptures;
     if (ctx.platform.discoverParams) {
       try {
+        // Undefined means "the whole store": an empty list means "nothing" to
+        // the adapter, so a full run must never pass one. A --since run that
+        // fell back to everything also leaves it undefined, so it shares the
+        // full run's discovery cache instead of keying a list of every story.
+        const selection =
+          affected && affected.stories.length < enumerated.length
+            ? affected.stories.map((story) => story.storyId)
+            : flags.story?.length
+              ? enumerated
+                  .filter((story) =>
+                    flags.story?.some(
+                      (id) => id === story.storyId || id.startsWith(`${story.storyId}__`),
+                    ),
+                  )
+                  .map((story) => story.storyId)
+              : undefined;
         stories = await p.time('discover', () =>
           prepareCaptures(enumerated, {
             platform: ctx.platform,
+            // Variant capture keys may exist only in live params, so discover
+            // their base stories before validating the final selection.
+            ...(selection ? { storyIds: selection } : {}),
             browser,
             baseUrl,
             viewport: ctx.config.viewport ?? DEFAULT_VIEWPORT,

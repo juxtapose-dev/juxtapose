@@ -1,0 +1,148 @@
+[
+  {
+    "name": "initial-all",
+    "status": 1,
+    "ids": [
+      "a--default",
+      "a--default__dark",
+      "a--default__mobile",
+      "b--default",
+      "b--default__dark"
+    ],
+    "expected": [
+      "a--default",
+      "a--default__dark",
+      "a--default__mobile",
+      "b--default",
+      "b--default__dark"
+    ],
+    "reason": "no-baseline",
+    "pass": true,
+    "summary": {
+      "pass": 0,
+      "fail": 0,
+      "new": 5,
+      "stale": 0,
+      "skip": 0
+    }
+  },
+  {
+    "name": "unchanged",
+    "status": 0,
+    "ids": [],
+    "expected": [],
+    "reason": "no-changes",
+    "pass": true
+  },
+  {
+    "name": "component",
+    "status": 1,
+    "ids": ["a--default", "a--default__dark", "a--default__mobile"],
+    "expected": ["a--default", "a--default__dark", "a--default__mobile"],
+    "reason": "graph-walk",
+    "pass": true,
+    "summary": {
+      "pass": 0,
+      "fail": 0,
+      "new": 3,
+      "stale": 0,
+      "skip": 0
+    }
+  },
+  {
+    "name": "full-after-subset",
+    "status": 1,
+    "ids": [
+      "a--default",
+      "a--default__dark",
+      "a--default__mobile",
+      "b--default",
+      "b--default__dark"
+    ],
+    "expected": [
+      "a--default",
+      "a--default__dark",
+      "a--default__mobile",
+      "b--default",
+      "b--default__dark"
+    ],
+    "reason": "no-baseline",
+    "pass": true,
+    "summary": {
+      "pass": 0,
+      "fail": 0,
+      "new": 5,
+      "stale": 0,
+      "skip": 0
+    }
+  },
+  {
+    "name": "variant",
+    "status": 1,
+    "ids": ["a--default__mobile"],
+    "expected": ["a--default__mobile"],
+    "reason": "requested",
+    "pass": true,
+    "summary": {
+      "pass": 0,
+      "fail": 0,
+      "new": 1,
+      "stale": 0,
+      "skip": 0
+    }
+  },
+  {
+    "name": "stale",
+    "status": 1,
+    "ids": [
+      "a--default",
+      "a--default__dark",
+      "a--default__mobile",
+      "b--default",
+      "b--default__dark"
+    ],
+    "expected": [
+      "a--default",
+      "a--default__dark",
+      "a--default__mobile",
+      "b--default",
+      "b--default__dark"
+    ],
+    "reason": "stale-graph",
+    "pass": true,
+    "summary": {
+      "pass": 0,
+      "fail": 0,
+      "new": 5,
+      "stale": 0,
+      "skip": 0
+    }
+  },
+  {
+    "name": "config",
+    "status": 1,
+    "ids": [
+      "a--default",
+      "a--default__dark",
+      "a--default__mobile",
+      "b--default",
+      "b--default__dark"
+    ],
+    "expected": [
+      "a--default",
+      "a--default__dark",
+      "a--default__mobile",
+      "b--default",
+      "b--default__dark"
+    ],
+    "reason": "config-changed",
+    "pass": true,
+    "summary": {
+      "pass": 0,
+      "fail": 0,
+      "new": 5,
+      "stale": 0,
+      "skip": 0
+    }
+  }
+]

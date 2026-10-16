@@ -1,0 +1,133 @@
+[
+  {
+    "label": "sb10-fixture",
+    "build": "/tmp/jux-discovery-sb10/static",
+    "selected": ["a--default"],
+    "indexStories": 2,
+    "runs": [
+      {
+        "kind": "subset",
+        "ms": 109.451209,
+        "params": {
+          "a--default": {
+            "viewport": {
+              "width": 800,
+              "height": 600
+            },
+            "variants": {
+              "mobile": {
+                "viewport": {
+                  "width": 390,
+                  "height": 844
+                }
+              }
+            }
+          }
+        },
+        "details": {
+          "previewLoadStory": "function",
+          "storeLoadStory": "function",
+          "loadedCSFs": 0
+        }
+      },
+      {
+        "kind": "full",
+        "ms": 90.015625,
+        "params": {
+          "a--default": {
+            "viewport": {
+              "width": 800,
+              "height": 600
+            },
+            "variants": {
+              "mobile": {
+                "viewport": {
+                  "width": 390,
+                  "height": 844
+                }
+              }
+            }
+          },
+          "b--default": {
+            "viewport": {
+              "width": 800,
+              "height": 600
+            }
+          }
+        },
+        "details": {
+          "previewLoadStory": "function",
+          "storeLoadStory": "function",
+          "loadedCSFs": 2
+        }
+      }
+    ],
+    "parity": true
+  },
+  {
+    "label": "chakra",
+    "build": "/Users/jer/.claude/jobs/6ff71ac8/tmp/chakra-src/storybook-static",
+    "selected": [
+      "layout-absolutecenter--basic",
+      "layout-absolutecenter--with-axis",
+      "layout-absolutecenter--with-content"
+    ],
+    "indexStories": 1227,
+    "runs": [
+      {
+        "kind": "subset",
+        "ms": 293.621709,
+        "params": {},
+        "details": {
+          "previewLoadStory": "function",
+          "storeLoadStory": "function",
+          "loadedCSFs": 0
+        }
+      },
+      {
+        "kind": "full",
+        "ms": 388.22749999999996,
+        "params": {},
+        "details": {
+          "previewLoadStory": "function",
+          "storeLoadStory": "function",
+          "loadedCSFs": 124
+        }
+      }
+    ],
+    "parity": true
+  },
+  {
+    "label": "primer",
+    "build": "/Users/jer/.claude/jobs/6ff71ac8/tmp/primer-src/packages/react/storybook-static",
+    "selected": [
+      "components-actionlist--default",
+      "components-actionlist--playground",
+      "components-actionlist--group-playground"
+    ],
+    "indexStories": 1102,
+    "runs": [
+      {
+        "kind": "subset",
+        "ms": 143.48208299999988,
+        "params": {},
+        "details": {
+          "previewLoadStory": "function",
+          "storeLoadStory": "function",
+          "loadedCSFs": 0
+        }
+      },
+      {
+        "kind": "full",
+        "ms": 372.6693750000002,
+        "params": {},
+        "details": {
+          "previewLoadStory": "function",
+          "storeLoadStory": "function",
+          "loadedCSFs": 214
+        }
+      }
+    ],
+    "parity": true
+  }
+]
