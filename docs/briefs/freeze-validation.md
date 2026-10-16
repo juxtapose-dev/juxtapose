@@ -63,3 +63,21 @@ pass each selected ID with `jux run --story <id> --json --no-daemon`, and collec
 three runs using separate temporary `JUX_STATE_DIR` directories. Keep one capture
 run active at a time. Do not substitute live hosted workbenches when measuring
 this change.
+
+## Revalidation with native WebP and binary CDP
+
+Rebased onto main after #241 (native lossless WebP), #249 (binary protocol
+conversion removal), #250 and #251. Production conflicts retained the current
+native encoder and structure timing collection; flag tests retain the JSON
+escape hatch alongside the image-animation policy.
+
+- Build, typecheck and tracked-source lint passed.
+- 94 focused tests passed in 3.67 s, covering freeze/canvas/daemon behavior,
+  the native encoder, CBOR framing and launch flags.
+- With the current native WebP/binary-CDP capture path, Storybook's 18 stories
+  remained exact across three fresh runs and three daemon runs; daemon hashes
+  also matched the fresh reference.
+
+The Chakra/Primer table above remains historical sample evidence from before
+native WebP. Full Chakra/Primer collections have not been rerun on this head;
+no cross-encoder byte-parity claim is made.
