@@ -6,7 +6,6 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 const root = path.resolve(import.meta.dirname, '..');
 if (process.argv[2] === '--prepare') {
   const version = process.argv[3],
@@ -28,7 +27,7 @@ if (process.argv[2] === '--prepare') {
       },
     }),
     '.gitignore': 'node_modules\nstatic/\n.juxtapose/\n',
-    '.storybook/main.js': `import {juxtaposeModuleGraph} from ${JSON.stringify(pathToFileURL(path.join(root, 'packages/core/dist/analysis/vite-plugin.js')).href)};\nexport default {stories:['../stories/**/*.stories.jsx'],framework:{name:'@storybook/react-vite',options:{}},addons:[],viteFinal:async config=>({...config,plugins:[...config.plugins,juxtaposeModuleGraph()]})};\n`,
+    '.storybook/main.js': `import {juxtaposeModuleGraph} from ${JSON.stringify(path.join(root, 'packages/core/dist/analysis/vite-plugin.js'))};\nexport default {stories:['../stories/**/*.stories.jsx'],framework:{name:'@storybook/react-vite',options:{}},addons:[],viteFinal:async config=>({...config,plugins:[...config.plugins,juxtaposeModuleGraph()]})};\n`,
     '.storybook/preview.js':
       'export default {parameters:{juxtapose:{viewport:{width:800,height:600}}}};\n',
     'stories/A.jsx':
