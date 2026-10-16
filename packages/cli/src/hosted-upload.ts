@@ -189,28 +189,30 @@ export async function uploadRun(
       `${encodeStoryId(result.storyId)}-baseline.webp`,
     );
     let baselineHash: string | undefined;
-    try {
-      await readFile(baselinePath);
-      baselineHash = hash(await image(baselinePath));
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-    }
     let contentHash = '0'.repeat(64);
+    let hasDiff = false;
+    // A skipped capture has no image evidence, even if a reused directory
+    // contains files from a previous attempt.
     if (result.status !== 'skip') {
+      try {
+        await readFile(baselinePath);
+        baselineHash = hash(await image(baselinePath));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
       contentHash = hash(await image(imagePath));
       if (result.hash !== undefined && result.hash !== contentHash)
         throw new UserError(
           'A run image no longer matches its report hash. Recapture before uploading.',
         );
+      try {
+        await readFile(diffPath);
+        hasDiff = true;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+      if (hasDiff) await image(diffPath);
     }
-    let hasDiff = false;
-    try {
-      await readFile(diffPath);
-      hasDiff = true;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-    }
-    if (hasDiff) await image(diffPath);
     snapshots.push({
       result,
       imagePath,

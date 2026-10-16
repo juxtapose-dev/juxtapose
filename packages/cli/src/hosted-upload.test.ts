@@ -55,7 +55,7 @@ async function serve(
     url: string,
     body: Buffer,
     headers: import('node:http').IncomingHttpHeaders,
-  ) => { status?: number; body?: unknown; location?: string },
+  ) => { status?: number; body?: unknown; location?: string; disconnect?: boolean },
 ) {
   server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
@@ -351,5 +351,48 @@ describe('hosted uploads', () => {
       return { body: { reportUrl: null } };
     });
     await uploadRun(dir, config);
+  });
+  it('uploads skipped captures as metadata only despite invalid leftover images', async () => {
+    const report = await fixture();
+    await writeFile(
+      path.join(dir, 'report.json'),
+      JSON.stringify({
+        ...report,
+        summary: { pass: 0, fail: 0, new: 0, skip: 1, stale: 0 },
+        results: [
+          {
+            storyId: id,
+            status: 'skip',
+            mismatchPixels: 0,
+            mismatchPercent: 0,
+            durationMs: 0,
+          },
+        ],
+      }),
+    );
+    for (const suffix of ['current', 'diff', 'baseline']) {
+      await writeFile(
+        path.join(dir, 'images', `${encodeStoryId(id)}-${suffix}.webp`),
+        'invalid leftover image',
+      );
+    }
+    const config = await serve((url, bytes) => {
+      if (url === '/v1/runs')
+        return { body: { runId, snapshotPutUrlTemplate: '/snapshots/{storyIdSafe}' } };
+      if (url.startsWith('/snapshots/')) {
+        const multipart = bytes.toString();
+        expect(multipart).toContain('name="meta"');
+        expect(multipart).toContain('"status":"skipped"');
+        expect(multipart).not.toContain('baselineHash');
+        for (const part of ['current', 'diff', 'baseline', 'thumb'])
+          expect(multipart).not.toContain(`name="${part}"`);
+      } else {
+        const wire = JSON.parse(bytes.toString()).report;
+        expect(wire.skippedCount).toBe(1);
+        expect(wire.snapshots[0].contentHash).toBeNull();
+      }
+      return { body: { reportUrl: null } };
+    });
+    expect(await uploadRun(dir, config)).toEqual({ runId, reportUrl: null });
   });
 });
