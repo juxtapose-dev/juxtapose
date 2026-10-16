@@ -14,6 +14,7 @@
 // The cost is repo size. WebP at quality 90 keeps a 1280x800 story around
 // 30-60KB; a 700-story suite is tens of megabytes.
 
+import { batchManifest } from './manifest-batch.js';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
@@ -46,9 +47,13 @@ export class GitBaselineStore implements BaselineStore {
   private readonly imageDir: string;
   private readonly manifestPath: string;
 
-  constructor(opts: GitStoreOptions) {
+  constructor(private readonly opts: GitStoreOptions) {
     this.imageDir = path.join(opts.projectRoot, opts.dir ?? '.juxtapose/baselines');
     this.manifestPath = path.join(opts.projectRoot, MANIFEST_NAME);
+  }
+
+  async batch(action: (store: BaselineStore) => Promise<void>): Promise<void> {
+    await batchManifest(new GitBaselineStore(this.opts), action);
   }
 
   private imagePath(storyId: string): string {

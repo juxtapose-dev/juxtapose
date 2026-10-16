@@ -94,6 +94,10 @@ npx -p @juxtapose/cli jux init              # writes the config, captures, appro
 git add juxtapose.config.json juxtapose.manifest.json .gitignore
 ```
 
+To focus on specific examples, use `jux list` to find IDs, then
+`jux run 'components-button--*'`. Add `--dry-run` to preview the selected captures.
+See [example selection](docs/cli.md#select-specific-examples) for variants and JSON.
+
 After that, run `jux run` whenever you change a component. It captures the
 stories your change can affect and compares them with their baselines. When it
 can't be sure what a change reaches, it captures everything. Approve an

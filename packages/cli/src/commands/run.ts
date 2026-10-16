@@ -32,7 +32,8 @@ import {
   configWarnings,
   storyParamWarnings,
   platformStoryId,
-  selectByStoryId,
+  selectStories,
+  discoveryStoryIds,
   VariantConfigError,
   checkProjectSettle,
   DEFAULT_VIEWPORT,
@@ -64,6 +65,7 @@ import {
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
 import { stdio, type Io, type Session } from '../io.js';
+import { printSelection } from '../selection-output.js';
 import { recheckFromFlags } from '../recheck-flags.js';
 import { settleFromFlags } from '../settle-flags.js';
 import { UserError } from '../user-error.js';
@@ -76,7 +78,7 @@ export async function runCommand(
   flags: CommonFlags,
   { io = stdio, browser: lent, signal }: Session = {},
 ): Promise<number> {
-  const hosted = flags.upload ? uploadConfig() : undefined;
+  const hosted = flags.upload && !flags['dry-run'] ? uploadConfig() : undefined;
   // Checked first: a mistyped ref used to fall through to `git-unavailable`,
   // capture everything, and give every story an unexplained `unknown` cause.
   if (
@@ -172,10 +174,10 @@ export async function runCommand(
     : undefined;
 
   const unknownStories = (captures: StoryManifest[]): string[] =>
-    selectByStoryId(captures, flags.story ?? []).unknown;
+    selectStories(captures, flags.story ?? []).unknown;
   const reportUnknown = (unknown: string[]) => {
     io.err(
-      `jux run: no story or capture with id ${unknown.map((id) => `'${id}'`).join(', ')}\n`,
+      `jux run: no story or capture matching ${unknown.map((id) => `'${id}'`).join(', ')}. Use \`jux list\` to see IDs, and quote globs.\n`,
     );
     return EXIT.usage;
   };
@@ -186,7 +188,16 @@ export async function runCommand(
     if (unknown.length > 0) return reportUnknown(unknown);
   }
 
+  if (flags['dry-run'] && !ctx.platform.discoverParams) {
+    const ids = new Set(affected?.stories.map((s) => s.storyId));
+    const selected = affected
+      ? indexCaptures.filter((s) => ids.has(platformStoryId(s)))
+      : selectStories(indexCaptures, flags.story ?? []).selected;
+    return printSelection(selected, ctx.json, io);
+  }
+
   if (affected && affected.stories.length === 0) {
+    if (flags['dry-run']) return printSelection([], ctx.json, io);
     log(`jux: 0/${indexCaptures.length} captures to take (${affected.reason})`);
     const empty = emptyReport(ctx.projectRoot, indexCaptures.length);
     await emit(ctx.json, empty, ctx.projectRoot, p, io);
@@ -231,13 +242,7 @@ export async function runCommand(
           affected && affected.stories.length < enumerated.length
             ? affected.stories.map((story) => story.storyId)
             : flags.story?.length
-              ? enumerated
-                  .filter((story) =>
-                    flags.story?.some(
-                      (id) => id === story.storyId || id.startsWith(`${story.storyId}__`),
-                    ),
-                  )
-                  .map((story) => story.storyId)
+              ? discoveryStoryIds(enumerated, flags.story)
               : undefined;
         stories = await p.time('discover', () =>
           prepareCaptures(enumerated, {
@@ -282,11 +287,13 @@ export async function runCommand(
         ? `${affected.reason}: ${affected.detail}`
         : affected.reason;
     } else {
-      const { selected, unknown } = selectByStoryId(stories, flags.story ?? []);
+      const { selected, unknown } = selectStories(stories, flags.story ?? []);
       if (unknown.length > 0) return reportUnknown(unknown);
       selection = selected;
       reason = 'requested';
     }
+
+    if (flags['dry-run']) return printSelection(selection, ctx.json, io);
 
     log(`jux: ${selection.length}/${stories.length} captures to take (${reason})`);
 

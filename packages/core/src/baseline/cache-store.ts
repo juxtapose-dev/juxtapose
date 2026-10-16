@@ -18,6 +18,7 @@
 // story, or a CI job with a cold cache, reports the failure by hash and
 // structure and says the image is unavailable.
 
+import { batchManifest } from './manifest-batch.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
@@ -91,13 +92,17 @@ export class CacheBaselineStore implements BaselineStore {
   private readonly warn: (message: string) => void;
   private readonly refused = new Set<string>();
 
-  constructor(opts: CacheStoreOptions) {
+  constructor(private readonly opts: CacheStoreOptions) {
     this.root = opts.projectRoot;
     this.warn = opts.onWarning ?? (() => {});
     this.cacheDir = path.join(opts.projectRoot, opts.dir ?? DEFAULT_CACHE_DIR);
     this.tmpDir = path.join(opts.projectRoot, tmpDirFor(opts.dir));
     this.legacyDir = path.join(opts.projectRoot, LEGACY_IMAGE_DIR);
     this.manifestPath = path.join(opts.projectRoot, MANIFEST_NAME);
+  }
+
+  async batch(action: (store: BaselineStore) => Promise<void>): Promise<void> {
+    await batchManifest(new CacheBaselineStore(this.opts), action);
   }
 
   private cachePath(hash: string): string {
@@ -275,8 +280,7 @@ export class CacheBaselineStore implements BaselineStore {
     const entry = manifest.baselines[storyId];
     if (!entry)
       throw new Error(`no manifest entry for ${storyId} to attach structure to`);
-    // `put` already wrote the entry, so this is its second write; stores are
-    // not batched because approvals are one story at a time.
+    // In a bulk approval, both updates stay in the scoped manifest until commit.
     const { structureHash, ...rest } = decodeStructure(structure);
     manifest.baselines[storyId] = { ...entry, structureHash, structure: rest };
     await this.writeManifest(manifest);

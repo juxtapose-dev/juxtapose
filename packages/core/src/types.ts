@@ -630,6 +630,10 @@ export type BaselineImageLookup =
 /** Baseline persistence. The manifest always lives in git; only the image
  *  bytes vary by implementation. */
 export interface BaselineStore {
+  /** Optional bulk approval scope. Manifest changes become durable only after
+   * the callback succeeds and the returned promise resolves. Images may be
+   * written earlier. Use the supplied store only inside the callback. */
+  batch?(action: (store: BaselineStore) => Promise<void>): Promise<void>;
   get(storyId: string): Promise<Buffer | null>;
   /** Optional: cache an image by its hash without touching the manifest. A
    *  passing run calls it so the cache fills from captures that match. */

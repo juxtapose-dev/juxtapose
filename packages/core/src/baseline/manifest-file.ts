@@ -6,7 +6,8 @@
 // lets CI say which elements changed without an image. Like a lockfile it is
 // regenerated, not hand-merged; see ManifestConflictError.
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import type { BaselineEntry, BaselineManifest } from '../types.js';
 import { isRecord } from '../browser/guards.js';
@@ -129,5 +130,13 @@ export async function writeManifestFile(
       `${indent(JSON.stringify(id), '    ')}: ${indent(serializeEntry(manifest.baselines[id]!), '    ').trimStart()}`,
   );
   const body = entries.length ? `\n${entries.join(',\n')}\n  ` : '';
-  await writeFile(file, `{\n  "version": 1,\n  "baselines": {${body}}\n}\n`);
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, `{\n  "version": 1,\n  "baselines": {${body}}\n}\n`, {
+      flag: 'wx',
+    });
+    await rename(temporary, file);
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
