@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { styled, Button } from './storybook.js';
 import { mutedColor } from './theme.js';
+import { useReviewState } from './review-state.js';
 import { Loupe } from './Loupe.js';
 
 export type ViewMode = 'sxs' | 'slider' | 'onion' | 'flicker';
@@ -241,7 +242,7 @@ const Slider: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
   currentUrl,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
-  const [pct, setPct] = useState(50);
+  const [pct, setPct] = useReviewState('juxtapose/review-wipe', 50);
   const dragging = useRef(false);
 
   const positionFrom = useCallback((clientX: number) => {
@@ -313,7 +314,7 @@ const Onion: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
   baselineUrl,
   currentUrl,
 }) => {
-  const [mix, setMix] = useState(0.5);
+  const [mix, setMix] = useReviewState('juxtapose/review-blend', 0.5);
   return (
     <div>
       <Controls>
@@ -343,10 +344,11 @@ const Flicker: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
   baselineUrl,
   currentUrl,
 }) => {
-  const [hz, setHz] = useState(4);
+  const [hz, setHz] = useReviewState('juxtapose/review-flicker-rate', 4);
   const [showCurrent, setShowCurrent] = useState(false);
-  const [playing, setPlaying] = useState(
-    () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  const [playing, setPlaying] = useReviewState(
+    'juxtapose/review-flicker-playing',
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   );
   const [hidden, setHidden] = useState(document.hidden);
   useEffect(() => {
@@ -355,13 +357,14 @@ const Flicker: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
     const preference = () => {
       if (reduced.matches) setPlaying(false);
     };
+    preference();
     document.addEventListener('visibilitychange', visibility);
     reduced.addEventListener('change', preference);
     return () => {
       document.removeEventListener('visibilitychange', visibility);
       reduced.removeEventListener('change', preference);
     };
-  }, []);
+  }, [setPlaying]);
 
   useEffect(() => {
     if (!playing || hidden) return;
