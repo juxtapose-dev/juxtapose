@@ -212,7 +212,8 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
   // Without the baseline image (not in the local cache) there is only the
   // current capture, so the comparison modes have nothing to compare.
   const imageUnavailable = result?.baselineImage === 'unavailable';
-  const hasComparison = result?.status === 'fail' && !result.error && !imageUnavailable;
+  const hasComparison =
+    result?.status === 'fail' && !result.error && !imageUnavailable && !isApproved;
 
   const subThreshold = isSubThreshold(result);
 
@@ -570,6 +571,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               <Spacer />
 
               {result.status === 'fail' &&
+                !isApproved &&
                 !result.error &&
                 (imageUnavailable ? (
                   <Muted>{BASELINE_IMAGE_UNAVAILABLE}</Muted>
@@ -594,7 +596,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
                 With nothing changed there is no verdict to reach, so offering
                 it would hand someone a prompt about a diff that does not exist.
               */}
-              {result.status === 'fail' && !result.error && (
+              {result.status === 'fail' && !result.error && !isApproved && (
                 <Button size="small" variant="ghost" onClick={() => void copyHandoff()}>
                   {copied ? 'Copied' : 'Copy agent prompt'}
                 </Button>

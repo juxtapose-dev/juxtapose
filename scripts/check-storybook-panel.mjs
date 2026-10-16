@@ -199,7 +199,7 @@ export async function checkStorybookPanel(page, storyId) {
   });
   await textAppears(page, 'Unstable:');
   assert.equal(await buttonExists(page, 'Approve (a)'), false);
-  await change(page, { result: { unstable: null, status: 'new', structural: null } });
+  await change(page, { result: { unstable: null, status: 'fail', structural: null } });
   await page.waitForFunction(() =>
     [...globalThis.document.querySelectorAll('button')].some(
       (b) =>
@@ -219,6 +219,12 @@ export async function checkStorybookPanel(page, storyId) {
     );
   });
   await textAppears(page, 'Approved');
+  assert.equal(
+    await buttonExists(page, 'Slider'),
+    false,
+    'approved captures must not compare the refreshed baseline with the old diff',
+  );
+  assert.equal(await buttonExists(page, 'Copy agent prompt'), false);
   assert.equal(
     await page.evaluate(
       () => globalThis.__juxActions.filter((x) => x === 'approve').length,
