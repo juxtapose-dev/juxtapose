@@ -83,7 +83,10 @@ export async function checkStorybookPanel(page, storyId) {
       return original(input, init);
     };
   }, storyId);
-  await textAppears(page, 'What changed');
+  await page.waitForFunction(
+    () =>
+      globalThis.document.querySelector('section[aria-label="What changed"]') !== null,
+  );
   console.log('panel: comparison controls');
   await click(page, 'Slider');
   await page.waitForFunction(
@@ -125,12 +128,22 @@ export async function checkStorybookPanel(page, storyId) {
       },
     },
   });
-  await textAppears(page, 'Button text changed from Save to Submit.');
+  await textAppears(page, 'View evidence');
+  assert.equal(
+    await page.evaluate(
+      () =>
+        globalThis.document.querySelector('section[aria-label="What changed"] details')
+          ?.open,
+    ),
+    false,
+    'technical evidence should start collapsed',
+  );
   await page.evaluate(() =>
-    [...globalThis.document.querySelectorAll('summary')]
-      .find((x) => x.textContent.includes('Change evidence'))
+    globalThis.document
+      .querySelector('section[aria-label="What changed"] details > summary')
       .click(),
   );
+  await textAppears(page, 'Button text changed from Save to Submit.');
   await textAppears(page, 'Showing 1 of 3 changes');
   assert.equal(
     await buttonExists(page, 'Slider'),
