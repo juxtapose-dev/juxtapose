@@ -57,7 +57,7 @@ const Toolbar = styled.div(({ theme }) => ({
   flexWrap: 'wrap',
 }));
 
-const Body = styled.div({ padding: 12, overflow: 'auto', flex: 1 });
+const Body = styled.div({ padding: 12, overflow: 'auto', flex: 1, minHeight: 0 });
 
 const Spacer = styled.div({ flex: 1 });
 
@@ -71,7 +71,22 @@ const Stat = styled.span(({ theme }) => ({
   color: mutedColor(theme),
 }));
 
-const ModeGroup = styled.div({ display: 'flex', gap: 2 });
+const ModeGroup = styled.div({ display: 'flex', flexWrap: 'wrap', gap: 2 });
+
+const ModeHint = styled.p(({ theme }) => ({
+  margin: '0 0 10px',
+  fontSize: 12,
+  lineHeight: 1.4,
+  color: mutedColor(theme),
+}));
+
+const MODE_HINTS: Record<ViewMode, string> = {
+  sxs: 'Compare the approved baseline with the current capture. Diff marks changed pixels.',
+  slider:
+    'Drag the divider to inspect alignment. Arrow keys move it; Shift moves faster.',
+  onion: 'Blend the captures to compare spacing, colour, and weight.',
+  flicker: 'Alternate the captures to spot movement. Pause at any time.',
+};
 
 const Note = styled.span(({ theme }) => ({
   color: mutedColor(theme),
@@ -510,7 +525,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               */}
               {hasComparison ? (
                 <>
-                  <ModeGroup>
+                  <ModeGroup role="group" aria-label="Comparison mode">
                     {MODES.map((m) => (
                       <Button
                         key={m.id}
@@ -603,6 +618,7 @@ export const Panel: React.FC<PanelProps> = ({ storyId, onSelectStory, active }) 
               )}
             </Toolbar>
 
+            {hasComparison && <ModeHint>{MODE_HINTS[mode]}</ModeHint>}
             {result.error && <Muted role="alert">{result.error}</Muted>}
             {result.unrechecked && (
               <Muted role="status">

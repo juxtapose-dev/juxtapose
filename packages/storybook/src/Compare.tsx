@@ -26,12 +26,19 @@ export interface CompareProps {
   loupe?: boolean;
 }
 
+const Surface = styled.div<{ paired: boolean }>(({ paired }) => ({
+  width: '100%',
+  maxWidth: paired ? 1600 : 800,
+  margin: '0 auto',
+}));
+
 const Frame = styled.div({
   position: 'relative',
   overflow: 'hidden',
   background:
     'repeating-conic-gradient(rgba(0,0,0,.04) 0% 25%, transparent 0% 50%) 50% / 16px 16px',
-  borderRadius: 4,
+  borderRadius: 6,
+  boxShadow: '0 0 0 1px rgba(128,128,128,.18)',
   lineHeight: 0,
 });
 
@@ -52,7 +59,7 @@ const Layer = styled.img<{ opacity?: number }>(({ opacity }) => ({
 
 const Pair = styled.div({
   display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
+  gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
   gap: 12,
   alignItems: 'start',
 });
@@ -99,6 +106,7 @@ const Controls = styled.label({
   alignItems: 'center',
   gap: 8,
   marginBottom: 8,
+  minHeight: 28,
   fontSize: 12,
 });
 
@@ -127,12 +135,14 @@ export const Compare: React.FC<CompareProps> = (props) => {
         if (event.target instanceof HTMLImageElement) setFailed(true);
       }}
     >
-      <ComparisonImages
-        {...props}
-        baselineUrl={retryUrl(props.baselineUrl)}
-        currentUrl={retryUrl(props.currentUrl)!}
-        diffUrl={retryUrl(props.diffUrl)}
-      />
+      <Surface paired={props.mode === 'sxs' && !!props.baselineUrl}>
+        <ComparisonImages
+          {...props}
+          baselineUrl={retryUrl(props.baselineUrl)}
+          currentUrl={retryUrl(props.currentUrl)!}
+          diffUrl={retryUrl(props.diffUrl)}
+        />
+      </Surface>
     </div>
   );
 };
@@ -308,7 +318,7 @@ const Onion: React.FC<{ baselineUrl: string; currentUrl: string }> = ({
           onChange={(e) => setMix(Number(e.target.value))}
           style={{ flex: 1 }}
         />
-        <span style={{ whiteSpace: 'nowrap' }}>Current</span>
+        <span style={{ whiteSpace: 'nowrap' }}>Current · {Math.round(mix * 100)}%</span>
       </Controls>
       <Frame>
         <Img src={baselineUrl} alt="baseline" />

@@ -1,5 +1,23 @@
 import React from 'react';
+import { styled } from './storybook.js';
+import { mutedColor } from './theme.js';
 import type { Delta, DiffResult } from '@juxtapose/core';
+
+const Evidence = styled.section(({ theme }) => ({
+  marginBottom: 12,
+  padding: '10px 12px',
+  border: `1px solid ${theme.appBorderColor}`,
+  borderRadius: 6,
+  overflowWrap: 'anywhere',
+  fontSize: 12,
+  lineHeight: 1.5,
+  '& h3': { fontSize: 12, margin: '0 0 3px', fontWeight: 700 },
+  '& p': { margin: '4px 0' },
+  '& details': { marginTop: 5 },
+  '& summary': { cursor: 'pointer', color: mutedColor(theme) },
+  '& ul': { margin: '8px 0', paddingLeft: 20 },
+  '& li + li': { marginTop: 4 },
+}));
 
 function deltaText(delta: Delta): string {
   switch (delta.kind) {
@@ -29,11 +47,8 @@ export const ChangeExplanation: React.FC<{ result: DiffResult }> = ({ result }) 
   if (result.error || (!verdict && !flake && !retry && result.status !== 'fail'))
     return null;
   return (
-    <section
-      aria-label="What changed"
-      style={{ marginBottom: 12, overflowWrap: 'anywhere' }}
-    >
-      <h3 style={{ fontSize: 13, margin: '8px 0' }}>What changed</h3>
+    <Evidence aria-label="What changed">
+      <h3>What changed</h3>
       {verdict ? (
         <>
           <p>{verdict.summary}</p>
@@ -115,6 +130,6 @@ export const ChangeExplanation: React.FC<{ result: DiffResult }> = ({ result }) 
             : (retry.reason ?? 'The retry did not establish an exact baseline match.')}
         </p>
       )}
-    </section>
+    </Evidence>
   );
 };
