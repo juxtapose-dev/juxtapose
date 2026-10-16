@@ -13,6 +13,7 @@
 //
 // Needs `pnpm build` first (it loads the built @juxtapose/core browser driver,
 // and the project resolves the built addon).
+import { checkStorybookPanel } from './check-storybook-panel.mjs';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import path from 'node:path';
@@ -45,13 +46,18 @@ let stderr = '';
 server.stderr.on('data', (d) => (stderr = (stderr + d).slice(-4000)));
 
 let browser;
-let ok = false;
+let page;
+let ok;
 try {
   await waitForHttp(url, BOOT_TIMEOUT_MS);
   browser = await acquireBrowser({ noDaemon: true });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  const page = await context.newPage();
-  await page.goto(url, { timeout: 60_000 });
+  page = await context.newPage();
+  const index = await (await fetch(`${url}index.json`)).json();
+  const storyId = Object.values(index.entries).find((entry) => entry.type === 'story').id;
+  await page.goto(`${url}?path=/story/${storyId}&addonPanel=juxtapose/panel`, {
+    timeout: 60_000,
+  });
 
   let registered = true;
   await page
@@ -102,11 +108,52 @@ try {
   console.log(`rendered in testing module: ${rendered}`);
   console.log(`"Run tests" reached the addon: ${runPosts.length > 0}`);
   ok = registered && rendered && runPosts.length > 0;
+  if (ok && process.argv.includes('--capture')) {
+    const response = await fetch(`${url}jux/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ storyIds: [storyId] }),
+    });
+    if (!response.ok) throw new Error(`Capture start failed: ${await response.text()}`);
+    const deadline = Date.now() + 90_000;
+    let bundle;
+    do {
+      bundle = await (await fetch(`${url}jux/api/bundle`)).json();
+      if (!bundle.running) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    } while (Date.now() < deadline);
+    if (
+      bundle.run?.status !== 'completed' ||
+      !bundle.report?.results.length ||
+      bundle.report.results.some((result) => result.error)
+    )
+      throw new Error(`Live capture failed: ${JSON.stringify(bundle)}`);
+    console.log(`PASS real capture: ${bundle.report.results.length} captures`);
+  }
+  if (ok) await checkStorybookPanel(page, storyId);
   console.log(
     ok ? `PASS ${PROVIDER_ID} registered` : `FAIL ${PROVIDER_ID} not registered`,
   );
 } catch (e) {
+  ok = false;
   console.error(`FAIL ${e instanceof Error ? e.message : e}`);
+  if (page)
+    console.error(
+      await page
+        .evaluate(
+          () =>
+            globalThis.document.body.innerText +
+            '\n' +
+            JSON.stringify(
+              [...globalThis.document.querySelectorAll('button')].map((b) => ({
+                text: b.textContent.trim(),
+                disabled: b.disabled,
+                ariaDisabled: b.getAttribute('aria-disabled'),
+              })),
+            ),
+        )
+        .catch(() => 'manager unavailable'),
+    );
   if (stderr) console.error(stderr);
 } finally {
   await browser?.close().catch(() => {});

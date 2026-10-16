@@ -6,6 +6,10 @@ on:
     paths:
       - '.github/workflows/discovery-compatibility.yml'
       - 'scripts/check-discovery-selection.mjs'
+      - 'scripts/check-test-provider.mjs'
+      - 'scripts/check-storybook-panel.mjs'
+      - 'packages/storybook/**'
+      - 'packages/server/**'
       - 'packages/adapter-storybook/**'
       - 'packages/core/src/capture/discover*'
       - 'packages/core/src/platform.ts'
@@ -65,6 +69,15 @@ jobs:
         run: ./node_modules/.bin/storybook build --disable-telemetry -o static
       - name: Verify real discovery and --since
         run: node scripts/check-discovery-selection.mjs "$RUNNER_TEMP/fixture" "$RUNNER_TEMP/evidence"
+      - name: Enable local addon in fixture
+        run: |
+          node --input-type=module - "$RUNNER_TEMP/fixture/.storybook/main.js" <<'JS'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const file = process.argv[2];
+          writeFileSync(file, readFileSync(file, 'utf8').replace('addons:[]', `addons:[${JSON.stringify(process.cwd() + '/packages/storybook')}]`));
+          JS
+      - name: Verify addon panel and test provider
+        run: node scripts/check-test-provider.mjs "$RUNNER_TEMP/fixture" --capture
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4

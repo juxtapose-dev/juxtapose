@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  startRun,
+  cancelRun,
   adjacentStory,
   approvableCaptures,
   approveAllPending,
@@ -186,5 +188,37 @@ describe('approveAllPending', () => {
   });
   it('null when everything approves', async () => {
     expect(await approveAllPending(['a'], async () => {})).toBeNull();
+  });
+});
+
+describe('action failures', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('surfaces server rejection of a run instead of reporting it started', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ error: 'Invalid viewport' }), { status: 400 }),
+        ),
+    );
+    await expect(startRun(['a'])).rejects.toThrow('Invalid viewport');
+  });
+  it('reports non-JSON cancel failures', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('proxy offline', { status: 502 })),
+    );
+    await expect(cancelRun()).rejects.toThrow('cancel failed: 502');
+  });
+  it('does not describe capture errors as subthreshold changes', () => {
+    expect(isSubThreshold({ ...result('a', 'fail'), error: 'render failed' })).toBe(
+      false,
+    );
+  });
+  it('excludes confirmed unstable captures, but allows fresh confirmation of unrechecked captures', () => {
+    const unstable = { ...result('a', 'fail'), unstable: { hashes: ['a', 'b'] } };
+    expect(approvableCaptures([unstable], [])).toEqual([]);
+    expect(approvableCaptures([{ ...unstable, unrechecked: true }], [])).toHaveLength(1);
   });
 });

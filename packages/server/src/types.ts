@@ -6,6 +6,14 @@
 
 import type { RunReport, StoryManifest } from '@juxtapose/core';
 
+/** Latest attempted run, including failures before a report could be written.
+ * Optional on responses for compatibility with older review servers. */
+export interface ReviewRun {
+  id: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  error?: string;
+}
+
 /** What the panel polls for. One request, everything it needs to render. */
 export interface ReviewBundle {
   report: RunReport | null;
@@ -14,10 +22,12 @@ export interface ReviewBundle {
   approved: string[];
   /** True while a capture is in flight. */
   running: boolean;
+  run?: ReviewRun;
 }
 
 export interface RunProgress {
   running: boolean;
+  run?: ReviewRun;
   done: number;
   total: number;
   storyId: string | null;

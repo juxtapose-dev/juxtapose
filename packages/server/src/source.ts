@@ -1,5 +1,6 @@
 // A ReviewSource backed by run artifacts on disk plus a live capture pool.
 
+import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -38,7 +39,13 @@ import {
   type RunReport,
   type StoryManifest,
 } from '@juxtapose/core';
-import type { ImageKind, ReviewBundle, ReviewSource, RunProgress } from './types.js';
+import type {
+  ImageKind,
+  ReviewBundle,
+  ReviewSource,
+  RunProgress,
+  ReviewRun,
+} from './types.js';
 
 export interface SourceOptions {
   projectRoot: string;
@@ -88,6 +95,7 @@ export class RunDirSource implements ReviewSource {
   private browser: Browser | null = null;
 
   private running = false;
+  private runState: ReviewRun | undefined;
   private done = 0;
   private total = 0;
   private currentStory: string | null = null;
@@ -125,12 +133,13 @@ export class RunDirSource implements ReviewSource {
       if (current && hashImage(current) === entry.hash) approved.push(result.storyId);
     }
 
-    return { report, approved, running: this.running };
+    return { report, approved, running: this.running, run: this.runState };
   }
 
   async progress(): Promise<RunProgress> {
     return {
       running: this.running,
+      run: this.runState,
       done: this.done,
       total: this.total,
       storyId: this.currentStory,
@@ -297,6 +306,8 @@ export class RunDirSource implements ReviewSource {
       storyId,
       storyTitle: story ? `${story.title} — ${story.name}` : storyId,
       status: result.status,
+      ...(result.structural ? { structural: result.structural } : {}),
+      ...(result.flake ? { flake: result.flake } : {}),
       ...(result.unstable ? { unstable: result.unstable } : {}),
       ...(result.rendererRetry ? { rendererRetry: result.rendererRetry } : {}),
       ...(result.comparison ? { comparison: result.comparison } : {}),
@@ -406,17 +417,23 @@ export class RunDirSource implements ReviewSource {
   async run(storyIds?: string[]): Promise<void> {
     if (this.running) return;
 
-    const all = await this.stories();
-    // A base id runs the story with all its variants; a key, one capture.
-    const selected = storyIds?.length ? selectByStoryId(all, storyIds).selected : all;
-
+    // Reserve before discovery yields: two callers must never share the browser
+    // and artifact directory while both believe they own the capture run.
     this.running = true;
+    this.runState = { id: randomUUID(), status: 'running' };
     this.done = 0;
-    this.total = selected.length;
+    this.total = 0;
     this.currentStory = null;
     this.abort = new AbortController();
 
     try {
+      const all = await this.stories();
+      const selected = storyIds?.length ? selectByStoryId(all, storyIds).selected : all;
+      this.total = selected.length;
+      if (this.abort.signal.aborted) {
+        this.runState = { ...this.runState, status: 'cancelled' };
+        return;
+      }
       const browser = await this.ensureBrowser();
       const report = await runCapture({
         browser,
@@ -429,7 +446,7 @@ export class RunDirSource implements ReviewSource {
         ancestry: existsSync(path.join(this.opts.projectRoot, '.git'))
           ? createAncestryCheck(this.opts.projectRoot)
           : alwaysAncestor,
-        runId: Date.now().toString(36),
+        runId: this.runState.id,
         branch: this.opts.branch,
         commitSha: this.opts.commitSha,
         signal: this.abort.signal,
@@ -453,12 +470,26 @@ export class RunDirSource implements ReviewSource {
 
       // A partial run only re-captured some stories; merging keeps the others
       // visible instead of blanking the panel down to the subset.
-      this.report = storyIds?.length ? mergeReports(this.report, report) : report;
+      const nextReport = storyIds?.length ? mergeReports(this.report, report) : report;
       await mkdir(this.opts.runDir, { recursive: true });
       await writeFile(
         path.join(this.opts.runDir, 'report.json'),
-        JSON.stringify(this.report, null, 2) + '\n',
+        JSON.stringify(nextReport, null, 2) + '\n',
       );
+      this.report = nextReport;
+      this.runState = {
+        ...this.runState,
+        status: this.abort.signal.aborted ? 'cancelled' : 'completed',
+      };
+    } catch (err) {
+      this.runState = this.abort.signal.aborted
+        ? { ...this.runState, status: 'cancelled' }
+        : {
+            ...this.runState,
+            status: 'failed',
+            error: err instanceof Error ? err.message : String(err),
+          };
+      throw err;
     } finally {
       this.running = false;
       this.currentStory = null;
