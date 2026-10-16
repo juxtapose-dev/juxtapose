@@ -11,6 +11,7 @@
 
 import type { Protocol } from 'devtools-protocol';
 import { createHash } from 'node:crypto';
+import { normalizeInWorker } from './structure-worker-client.js';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import type { Page } from '../browser/page.js';
 import { isRecord } from '../browser/guards.js';
@@ -756,6 +757,16 @@ export async function captureStructure(
   mask: readonly string[],
   timings?: StructureCaptureTimings,
 ): Promise<StructureSnapshot | undefined> {
+  return (await prepareStructure(page, viewport, mask, timings))?.();
+}
+
+/** Capture and clean up browser state before CPU-only normalization. */
+export async function prepareStructure(
+  page: Page,
+  viewport: Viewport,
+  mask: readonly string[],
+  timings?: StructureCaptureTimings,
+): Promise<(() => Promise<StructureSnapshot | undefined>) | undefined> {
   const mark = (sel: string) =>
     queryAllExpression(
       sel,
@@ -852,12 +863,16 @@ export async function captureStructure(
         v['marked'] >= markedCounts[k]!; // one count was pushed per mask selector
       if (!intact) return undefined;
     }
-    const start = timings ? performance.now() : 0;
-    try {
-      return normalizeStructure(raw, viewport);
-    } finally {
-      if (timings) timings.normalize = performance.now() - start;
-    }
+    return async () => {
+      const start = timings ? performance.now() : 0;
+      try {
+        return await normalizeInWorker(raw, viewport);
+      } catch {
+        return undefined;
+      } finally {
+        if (timings) timings.normalize = performance.now() - start;
+      }
+    };
   } catch {
     return undefined;
   } finally {

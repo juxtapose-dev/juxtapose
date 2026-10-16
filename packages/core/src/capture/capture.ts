@@ -32,7 +32,7 @@ import { checkSettle, resolveSettle, type SettleLayer } from './settle-options.j
 import { applyNetworkPolicy, checkNetwork } from './network-policy.js';
 import { resolveNetwork, liveNetworkDiffers } from './network-rules.js';
 import { layerCapture, layerNetwork } from './layers.js';
-import { captureStructure, type StructureCaptureTimings } from './structure.js';
+import { prepareStructure, type StructureCaptureTimings } from './structure.js';
 import { canonicalWebp } from './encoder.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
 
@@ -522,21 +522,29 @@ async function captureStoryDocument(
     structureEnabled && process.env.JUX_STRUCTURE_PROFILE === '1'
       ? { mark: 0, snapshot: 0, verify: 0, normalize: 0, cleanup: 0 }
       : undefined;
-  const structure = structureEnabled
-    ? await captureStructure(page, effective, params.mask ?? [], structureTimings)
+  const finishStructure = structureEnabled
+    ? await prepareStructure(page, effective, params.mask ?? [], structureTimings)
     : undefined;
-  const structureMs = performance.now() - tStructure;
+  let structureMs = performance.now() - tStructure;
 
   // A selector matching nothing is not an error — a story that conditionally
   // renders the element shouldn't fail on the branch where it's absent.
   checkResponse();
   phase('screenshot');
   const tShot = performance.now();
-  const shot = await page.screenshot({
+  const pendingShot = page.screenshot({
     ...(params.mask?.length ? { mask: params.mask } : {}),
     format: 'webp',
   });
+  // Browser work and CPU-only normalization run on independent threads.
+  // Account only the normalization tail after screenshot completion in the
+  // exclusive structure phase; detailed normalization timing includes overlap.
+  const pendingStructure = finishStructure?.();
+  const shot = await pendingShot;
   const screenshotMs = performance.now() - tShot;
+  const tailStart = performance.now();
+  const structure = await pendingStructure;
+  structureMs += performance.now() - tailStart;
 
   // LOSSLESS, deliberately, and it is not a size-vs-quality preference.
   //
