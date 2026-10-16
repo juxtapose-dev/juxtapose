@@ -55,3 +55,18 @@ The script retains a temporary project for inspecting actual manifests and Git
 diffs. It reports its location, sizes, counts and approval duration. Small
 structures can gain little or grow due to per-file references and checksums;
 this format is primarily useful for large structures and localized review.
+
+## Migration verification
+
+A fresh `jux doctor --fix` replay on reconstructed inline manifests preserved every
+snapshot, full path, approval identity, timestamp, image hash, and structure hash.
+It migrated all 1,227 Chakra stories in 615 ms and all 1,086 Spectrum stories in
+423 ms. The resulting manifests were 616,935 and 534,928 bytes, respectively;
+combined manifest and structure sizes matched the table above. The input
+manifests including the new generated comment were 18,227,457 and 1,957,663 bytes.
+The benchmark's original unrecorded encoder still produces the independent
+`previous-encoder` doctor warning; migration does not rewrite that metadata.
+
+Compact-file header order is canonical, so migrating inline evidence and later
+approving the same capture do not change the checksum merely because JSON keys
+arrived in a different insertion order.
