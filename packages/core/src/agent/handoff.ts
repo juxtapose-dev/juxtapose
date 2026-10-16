@@ -20,7 +20,6 @@ import type {
   StructuralVerdict,
   Viewport,
 } from '../types.js';
-import { describeDeltas } from '../diff/structural/summary.js';
 import { describeUnstable, NOT_RECHECKED } from '../baseline/approve.js';
 import { describeFlake, describeFlakeGroup } from '../flake/describe.js';
 import { shellQuote } from '../shell-quote.js';
@@ -244,13 +243,23 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   } else if (v) {
     lines.push('## What changed (structure)');
     lines.push('');
-    lines.push(v.summary);
+    lines.push(`Classification: ${v.classification}.`);
+    lines.push(
+      'Observed DOM/style differences (geometry does not establish the root cause):',
+      '```json',
+      JSON.stringify({
+        deltas: v.deltas,
+        recorded: v.deltas.length,
+        total: v.deltaCount,
+      }),
+      '```',
+      `Coverage: ${v.explained}; ${round(v.coverage * 100)}% of changed-region area intersects structural changes. This is spatial coverage, not causal proof.`,
+    );
     lines.push('');
     if (v.deltas.length > 0) {
-      lines.push(...describeDeltas(v.deltas, v.deltaCount));
       if (v.deltaCount > v.deltas.length) {
         lines.push(
-          `  …and ${v.deltaCount - v.deltas.length} more (see the diff data file)`,
+          `Evidence incomplete: ${v.deltaCount - v.deltas.length} additional deltas were omitted by the report size limit. Inspect the source and captures before concluding that all changes are intended.`,
         );
       }
       lines.push('');

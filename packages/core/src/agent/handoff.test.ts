@@ -276,13 +276,29 @@ describe('describeRegion', () => {
       escalate: { command: 'jux handoff components-button--primary' },
     });
 
-  it('leads with the tier-0 summary, deltas and flags, before the pixel figures', () => {
+  it('leads with structured observations and coverage rather than the truncated UI summary', () => {
     const structural = verdictFor('text'); // text-only, flag text-changed
     const out = buildHandoffPrompt({ ...base, structural });
-    expect(out.indexOf(structural.summary)).toBeLessThan(out.indexOf('mismatchPercent'));
-    expect(out).toContain('  button[name="Save"]\n    text "Save" → "Save changes"');
+    expect(out).not.toContain(structural.summary);
+    const evidence = JSON.parse(out.match(/```json\n([^\n]+)\n```/)![1]);
+    expect(evidence.deltas).toEqual(structural.deltas);
+    expect(evidence.recorded).toBe(structural.deltas.length);
+    expect(evidence.total).toBe(structural.deltaCount);
+    expect(out.indexOf('Observed DOM/style')).toBeLessThan(
+      out.indexOf('mismatchPercent'),
+    );
+    expect(out).toContain('not causal proof');
     expect(out).toContain('Flags: text-changed');
     expect(out.indexOf('Flags:')).toBeLessThan(out.indexOf('## If still unsure'));
+  });
+
+  it('states stored-evidence limits without promising missing deltas in a sidecar', () => {
+    const structural = verdictFor('text');
+    structural.deltaCount = structural.deltas.length + 7;
+    const out = buildHandoffPrompt({ ...base, structural });
+    expect(out).toContain('Evidence incomplete: 7 additional deltas');
+    expect(out).not.toContain('(+');
+    expect(out).not.toContain('more (see the diff data file)');
   });
 
   it('tells the agent to compare the deltas with what it intended, and when to look at pixels', () => {
