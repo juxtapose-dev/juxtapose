@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.23.3
+
+### Patch Changes
+
+- cdbf28d: Present agent handoffs as structured DOM/style observations with explicit coverage and evidence limits instead of repeating the truncated UI summary. Keep geometry separate from causal claims.
+
 ## 0.23.2
 
 ### Patch Changes
