@@ -266,7 +266,7 @@ describe('RunDirSource with variants', () => {
         classification: 'text-only',
         styleTags: [],
         summary: 'Button label changed from Save to Submit.',
-        deltas: [],
+        deltas: [{ kind: 'text', el: 'button', from: 'Save', to: 'Submit' }],
         deltaCount: 1,
         coverage: 1,
         explained: 'full',
@@ -290,7 +290,12 @@ describe('RunDirSource with variants', () => {
       'the `dark` variant of `card--a`, captured with colorScheme dark',
     );
     expect(text).toContain('/src/Card.tsx');
-    expect(text).toContain('Button label changed from Save to Submit.');
+    expect(text).toContain('Observed DOM/style differences');
+    expect(text).toContain(
+      JSON.stringify({ kind: 'text', el: 'button', from: 'Save', to: 'Submit' }),
+    );
+    expect(text).toContain('spatial coverage, not causal proof');
+    expect(text).not.toContain('Button label changed from Save to Submit.');
   });
 });
 
