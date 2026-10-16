@@ -1,3 +1,4 @@
+import { encodeStructureAsync } from '../structure-encoding-client.js';
 // `jux run` — capture, compare, report.
 
 import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
@@ -20,7 +21,6 @@ import {
   alwaysAncestor,
   acquireBrowser,
   encodeStoryId,
-  encodeStructure,
   expandVariants,
   captureLabel,
   countStories,
@@ -453,7 +453,7 @@ async function writeArtifact(runDir: string, a: RunArtifact): Promise<void> {
   if (a.structure) {
     await writeFile(
       path.join(images, `${safe}-current.structure.json.gz`),
-      encodeStructure(a.structure),
+      await encodeStructureAsync(a.structure),
     );
   } else
     await rm(path.join(images, `${safe}-current.structure.json.gz`), { force: true });
