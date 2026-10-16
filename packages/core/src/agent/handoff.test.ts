@@ -299,6 +299,12 @@ describe('describeRegion', () => {
     expect(out).toContain('Evidence incomplete: 7 additional deltas');
     expect(out).not.toContain('(+');
     expect(out).not.toContain('more (see the diff data file)');
+    expect(
+      buildHandoffPrompt({
+        ...base,
+        structural: { ...structural, deltas: [] },
+      }),
+    ).toContain(`Evidence incomplete: ${structural.deltaCount} additional deltas`);
   });
 
   it('tells the agent to compare the deltas with what it intended, and when to look at pixels', () => {

@@ -256,13 +256,13 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
       `Coverage: ${v.explained}; ${round(v.coverage * 100)}% of changed-region area intersects structural changes. This is spatial coverage, not causal proof.`,
     );
     lines.push('');
+    if (v.deltaCount > v.deltas.length) {
+      lines.push(
+        `Evidence incomplete: ${v.deltaCount - v.deltas.length} additional deltas were omitted by the report size limit. Inspect the source and captures before concluding that all changes are intended.`,
+        '',
+      );
+    }
     if (v.deltas.length > 0) {
-      if (v.deltaCount > v.deltas.length) {
-        lines.push(
-          `Evidence incomplete: ${v.deltaCount - v.deltas.length} additional deltas were omitted by the report size limit. Inspect the source and captures before concluding that all changes are intended.`,
-        );
-      }
-      lines.push('');
       lines.push(
         'Check these deltas against the change you intended. If they are all intended,',
         `the change is expected: approve it (\`jux approve --story ${shellQuote(p.storyId)}\`). If any`,
