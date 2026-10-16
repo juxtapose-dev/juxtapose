@@ -79,3 +79,19 @@ and that fixture's `.juxtapose/runs`. Discovery harness:
   evicts it. A full-map cache that can safely satisfy subsets is separate work.
 - CSS/public assets, graph gaps, stale builds and unknown changes must retain
   conservative affected-analysis fallbacks. This patch does not weaken them.
+
+## Repeatable compatibility gate
+
+The `discovery compatibility` workflow builds isolated Storybook 9.1.21 and
+10.6.0 fixtures on GitHub Actions. Dependency installation is confined to the
+runner's temporary fixture; it does not replace the repository workspace.
+`scripts/check-discovery-selection.mjs` asserts actual CSF network requests,
+inherited viewport and story-local variants, subset/full cache boundaries,
+whole-store fallback with optional per-story APIs deliberately hidden, and
+eight actual CLI cases including `--since` narrowing and conservative fallback.
+The fixture's installed and built Storybook versions must match its pinned
+version. Each job retains JSON evidence, CLI logs and the fixture lockfile.
+
+The complete harness passed locally with existing Storybook 10.6.0 dependencies
+and no installation. CI evidence for Storybook 9 is required before closing
+that remaining gate.
