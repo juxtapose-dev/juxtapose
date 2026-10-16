@@ -261,3 +261,7 @@ browser-main-thread WebP encoding, compares fast PNG plus Sharp, and measures a
 two-browser prototype on macOS and Linux. `JUX_PROFILE_MEMORY=1` optionally adds
 250 ms process-tree RSS samples to `compare-pipeline.mjs` (requires POSIX `ps`).
 These are summed RSS estimates, not unique physical memory measurements.
+
+The [snapshot worker experiment](briefs/snapshot-worker.md) tests actual CPU-thread
+normalization alongside Chrome screenshot work, including data-copying and startup
+costs. It did not produce a convincing improvement and remains experimental.
