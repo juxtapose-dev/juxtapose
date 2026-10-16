@@ -37,6 +37,8 @@ metadata the core needs to do its own work.
 ```ts
 interface Platform {
   readonly name: string;
+  /** Workbench-owned top-level containers, omitted from component diff facts. */
+  readonly structureContextIds?: readonly string[];
   /** Is this the platform in use here? Drives autodetection. */
   detect(target: EnumerateTarget): Promise<boolean>;
   /** Discover stories. Storybook: index.json. Ladle: meta.json. */
@@ -60,12 +62,21 @@ interface Platform {
 }
 ```
 
-The optional three are all recoveries rather than requirements. `switchStory`
+The optional methods are recoveries rather than requirements. `switchStory`
 is an optimization — a platform without it still works, just slower, because
 the pool falls back to `goto`. `readLiveParams` exists because Storybook
 serializes only a whitelist of parameters into `index.json`, so `skip` and
 per-story viewports are invisible until you ask the running preview. Ladle
 needs neither: its `meta` is statically extracted and complete.
+
+Storybook declares `storybook-root` as structural context. Capture retains the
+raw container for evidence, but agent-facing structural diffs omit its own
+deltas and shorten descendant labels to the component. Children inherit its
+font/color evidence; sibling portals remain included. Context metadata from a
+new capture also applies to older baselines, so no baseline migration is needed.
+Framework-only paint changes remain unexplained pixel differences, rather than
+being hidden or counted as component changes. Existing saved verdicts are not
+rewritten; rerun capture to generate the new explanation.
 
 ## Data model
 

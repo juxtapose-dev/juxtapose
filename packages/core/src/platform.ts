@@ -24,6 +24,11 @@ export interface SettleContext {
 export interface Platform {
   readonly name: string;
 
+  /** Top-level DOM containers owned by the workbench, not the component.
+   * Their children (including inherited styles) and sibling portals remain
+   * structural evidence; the containers do not become agent-facing deltas. */
+  readonly structureContextIds?: readonly string[];
+
   /** True if this platform looks present at the target. Used for autodetection. */
   detect(target: EnumerateTarget): Promise<boolean>;
 
