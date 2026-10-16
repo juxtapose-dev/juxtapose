@@ -71,3 +71,21 @@ JUX_PROFILE_CONCURRENCY=8 JUX_PROFILE_MEMORY=1 node scripts/compare-pipeline.mjs
 JUX_PROFILE_CONCURRENCY=3 JUX_PROFILE_MEMORY=1 JUX_STRUCTURE_PROFILE=1 node scripts/compare-pipeline.mjs BASELINE_CLI CANDIDATE_CLI examples/storybook/storybook-profile 5 --pixel-parity
 node scripts/check-pipeline-structure-parity.mjs PROFILE_DIRECTORY
 ```
+
+## Artifact serialization/compression follow-up
+
+A second prototype moved JSON serialization and synchronous gzip into a dedicated
+worker at the CLI artifact boundary. It retained one pending sidecar at a time,
+including input cloning, result copying, startup and file-write waits.
+
+Five alternating runs at eight page workers were disrupted by increasing host
+load: baseline runs ranged 2.862–4.298 s and candidate runs 2.884–6.757 s. This
+batch does not establish a repeatable speed improvement; the prototype is not
+adopted. All 1,200 measured captures and complete structures matched, and all
+120 decoded cross-arm pairs were exact, with zero retries or failures.
+
+[Evidence with per-run load](encoding-worker-results.json) and
+[prototype patch](experiment-encoding-worker.patch), also on branch
+`perf/structure-encoding-probe`. A production implementation would need explicit
+worker shutdown, cancellation and concurrent-caller handling. No public API or
+production default changes are justified by this result.
