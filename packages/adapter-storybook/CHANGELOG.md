@@ -1,5 +1,17 @@
 # @juxtapose/adapter-storybook
 
+## 0.4.21
+
+### Patch Changes
+
+- 42eac75: Load only selected stories during Storybook parameter discovery, and include the selection in discovery cache keys so partial results cannot be reused for full runs. Preserve whole-store extraction for full selections and previews without per-story loading support.
+- Updated dependencies [7239da1]
+- Updated dependencies [87dfe16]
+- Updated dependencies [5ae3ce9]
+- Updated dependencies [42eac75]
+- Updated dependencies [9dbf3bc]
+  - @juxtapose/core@0.21.0
+
 ## 0.4.20
 
 ### Patch Changes
