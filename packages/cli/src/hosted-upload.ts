@@ -247,6 +247,7 @@ export async function uploadRun(
     typeof created.snapshotPutUrlTemplate !== 'string'
   )
     throw new UserError('Hosted service returned an invalid run response.', 1);
+  let dedupedCount = 0;
   for (const snapshot of snapshots) {
     const { result, contentHash, storyIdSafe } = snapshot;
     const form = new FormData();
@@ -298,12 +299,13 @@ export async function uploadRun(
         'baseline.webp',
       );
     }
-    await request(
+    const uploaded = await request(
       config,
       created.snapshotPutUrlTemplate.replace('{storyIdSafe}', storyIdSafe),
       'PUT',
       form,
     );
+    if (uploaded.deduped === true) dedupedCount++;
   }
   const count = (status: string) =>
     snapshots.filter((s) => s.result.status === status).length;
@@ -319,7 +321,7 @@ export async function uploadRun(
         failCount: count('fail'),
         newCount: count('new'),
         skippedCount: count('skip'),
-        dedupedCount: 0,
+        dedupedCount,
         durationMs: Math.round(report.durationMs),
         snapshots: snapshots.map((s) => ({
           storyId: s.result.storyId,

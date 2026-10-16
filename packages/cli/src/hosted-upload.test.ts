@@ -101,6 +101,7 @@ describe('hosted uploads', () => {
       expect(wire.sourceReport).toEqual(report);
       expect(wire.totalCount).toBe(1);
       expect(wire.failCount).toBe(1);
+      expect(wire.dedupedCount).toBe(1);
       expect(wire.snapshots[0].status).toBe('fail');
       return { body: { reportUrl: 'https://app.juxtapose.dev/review' } };
     });
