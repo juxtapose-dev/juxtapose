@@ -255,3 +255,18 @@ The [follow-up experiments](briefs/pipeline-followup.md) measure concurrency
 scaling and two rejected micro-optimizations, with screenshot/setup subphase
 timings. The three-worker benchmark is fixed for comparability; the product
 default remains eight workers.
+
+The [Chrome capture investigation](briefs/chrome-capture-internals.md) traces
+browser-main-thread WebP encoding, compares fast PNG plus Sharp, and measures a
+two-browser prototype on macOS and Linux. `JUX_PROFILE_MEMORY=1` optionally adds
+250 ms process-tree RSS samples to `compare-pipeline.mjs` (requires POSIX `ps`).
+These are summed RSS estimates, not unique physical memory measurements.
+
+The [snapshot worker experiment](briefs/snapshot-worker.md) tests actual CPU-thread
+normalization alongside Chrome screenshot work, including data-copying and startup
+costs. It did not produce a convincing improvement and remains experimental.
+
+The [fresh production profile](briefs/fresh-production-profile.md) measures the
+current pipeline at eight workers and separates small/medium workloads from
+large examples. Set `JUX_PROFILE_CONCURRENCY=8` on `profile-storybook.mjs` to
+reproduce; its historical default remains three.

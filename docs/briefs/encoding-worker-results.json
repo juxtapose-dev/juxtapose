@@ -1,0 +1,589 @@
+{
+  "metadata": {
+    "buildDir": "/Users/jer/Code/juxtapose/.claude/worktrees/warm-pulse/examples/storybook/storybook-profile",
+    "buildHash": "4ee748435ba9333d27f5bcf91e4a0b6d9347220c93a2276294aaf810a71281b0",
+    "passes": 5,
+    "pixelParityRequested": true,
+    "node": "v26.11.1",
+    "platform": "darwin 27.0.0 arm64",
+    "cpu": "Apple M5 Pro",
+    "logicalCpus": 15,
+    "memoryBytes": 25769803776,
+    "concurrency": 8,
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "daemon": false,
+    "recheck": "off",
+    "memorySampling": true,
+    "arms": {
+      "baseline": {
+        "cli": "/Users/jer/Code/juxtapose/.claude/worktrees/pipeline-baseline-optimized/packages/cli/dist/index.js",
+        "cliHash": "f9cf91c2f17f5a50172f7f4c7d52054ba755d374c6e83fdd27042caa5ee1a2ab",
+        "concurrency": 8,
+        "provenance": {
+          "repoRoot": "/Users/jer/Code/juxtapose/.claude/worktrees/pipeline-baseline-optimized",
+          "gitHead": "7239da1789dc6cce5d618c3b1dadbde6683e8611",
+          "dirty": true,
+          "workingTreeStatus": "?? node_modules\n",
+          "builtPackages": {
+            "core": "ac67f965459d142f99d4af021dbed43a41bec8e0fb776eb6cbf929ada31f610f",
+            "cli": "51213903d58de1f49f6b54aa96f2c77d02284b82f92ec6ff94faa15c073d69f2",
+            "adapter-storybook": "92952cc811965bf29875a09831c1a82c5e8421b024deb26c7e59faca40308871",
+            "adapter-ladle": "0f33878c23e2191673b5e3d34270ec7e66679bcf2b747b9f9dee0a2413f3103d"
+          },
+          "missingBuiltPackages": [],
+          "builtPackagesHash": "8bf852ac7a2ff761c4fff0668aa848ea949f4136534d450e988175816c5ec3a8",
+          "lockfileHash": "7fc9eddfd27b0deff45731e3523296fa84ee0da7d559ec2394c4331d673444f2"
+        },
+        "project": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/baseline",
+        "state": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/baseline/state"
+      },
+      "candidate": {
+        "cli": "/Users/jer/Code/juxtapose/.claude/worktrees/warm-pulse/packages/cli/dist/index.js",
+        "cliHash": "f9cf91c2f17f5a50172f7f4c7d52054ba755d374c6e83fdd27042caa5ee1a2ab",
+        "concurrency": 8,
+        "provenance": {
+          "repoRoot": "/Users/jer/Code/juxtapose/.claude/worktrees/warm-pulse",
+          "gitHead": "2804f63e781f2c3f15b9806cb26f5fdf62a71d65",
+          "dirty": true,
+          "workingTreeStatus": " M packages/cli/src/commands/run.ts\n?? packages/cli/src/structure-encoding-client.ts\n?? packages/cli/src/structure-encoding-worker.ts\n",
+          "builtPackages": {
+            "core": "516c3c5d7f39232c5ba00429d3d9d856da1537d7a9daa5a7a4ccdc4fb8e54c69",
+            "cli": "2a70323b17cb55f029986e1253334e1d3f46e95f1ea5201b1382856f94e0409d",
+            "adapter-storybook": "92952cc811965bf29875a09831c1a82c5e8421b024deb26c7e59faca40308871",
+            "adapter-ladle": "0f33878c23e2191673b5e3d34270ec7e66679bcf2b747b9f9dee0a2413f3103d"
+          },
+          "missingBuiltPackages": [],
+          "builtPackagesHash": "a835313a9e8b04bd130e9485d27d52eeacc885861762dae32007928f7720cea7",
+          "lockfileHash": "7fc9eddfd27b0deff45731e3523296fa84ee0da7d559ec2394c4331d673444f2"
+        },
+        "project": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/candidate",
+        "state": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/candidate/state"
+      }
+    }
+  },
+  "failures": [],
+  "arms": {
+    "baseline": {
+      "runs": 5,
+      "captures": 600,
+      "retries": 0,
+      "phaseCaptures": 600,
+      "wallMs": {
+        "mean": 3844.2408752,
+        "median": 3934.526417000001,
+        "p95": 4297.507792000004,
+        "min": 2862.324457999999,
+        "max": 4297.507792000004
+      },
+      "runMs": {
+        "mean": 3466.4,
+        "median": 3514,
+        "p95": 3863,
+        "min": 2615,
+        "max": 3863
+      },
+      "outsideRunMs": {
+        "mean": 377.8408752000003,
+        "median": 380.7960419999981,
+        "p95": 457.507792000004,
+        "min": 247.32445799999914,
+        "max": 457.507792000004
+      },
+      "phases": {
+        "navigate": {
+          "perCaptureMs": {
+            "mean": 37.951833333333326,
+            "median": 34.5,
+            "p95": 70.8,
+            "min": 8.9,
+            "max": 154.6
+          },
+          "summedWorkerMs": 22771.099999999995,
+          "workerTimePercent": 17.322327302381343
+        },
+        "freshRenderer": {
+          "perCaptureMs": {
+            "mean": 0,
+            "median": 0,
+            "p95": 0,
+            "min": 0,
+            "max": 0
+          },
+          "summedWorkerMs": 0,
+          "workerTimePercent": 0
+        },
+        "render": {
+          "perCaptureMs": {
+            "mean": 24.076333333333366,
+            "median": 17,
+            "p95": 67.6,
+            "min": 0.8,
+            "max": 237.9
+          },
+          "summedWorkerMs": 14445.80000000002,
+          "workerTimePercent": 10.989143069273807
+        },
+        "settle": {
+          "perCaptureMs": {
+            "mean": 16.27933333333334,
+            "median": 11,
+            "p95": 47.8,
+            "min": 0.9,
+            "max": 93.3
+          },
+          "summedWorkerMs": 9767.600000000004,
+          "workerTimePercent": 7.430364108837082
+        },
+        "paint": {
+          "perCaptureMs": {
+            "mean": 30.85516666666666,
+            "median": 27.2,
+            "p95": 67.9,
+            "min": 3.4,
+            "max": 95.4
+          },
+          "summedWorkerMs": 18513.099999999995,
+          "workerTimePercent": 14.08320096884718
+        },
+        "structure": {
+          "perCaptureMs": {
+            "mean": 17.69950000000001,
+            "median": 9.7,
+            "p95": 63.1,
+            "min": 1.4,
+            "max": 149.5
+          },
+          "summedWorkerMs": 10619.700000000006,
+          "workerTimePercent": 8.078569733262745
+        },
+        "screenshot": {
+          "perCaptureMs": {
+            "mean": 52.062666666666644,
+            "median": 48.2,
+            "p95": 95.1,
+            "min": 7.4,
+            "max": 160.7
+          },
+          "summedWorkerMs": 31237.599999999988,
+          "workerTimePercent": 23.762924555285746
+        },
+        "encode": {
+          "perCaptureMs": {
+            "mean": 0.03966666666666672,
+            "median": 0,
+            "p95": 0.2,
+            "min": 0,
+            "max": 1.8
+          },
+          "summedWorkerMs": 23.80000000000003,
+          "workerTimePercent": 0.018105027416184395
+        },
+        "other": {
+          "perCaptureMs": {
+            "mean": 40.12750000000001,
+            "median": 30.6,
+            "p95": 100.7,
+            "min": 1.2,
+            "max": 217.9
+          },
+          "summedWorkerMs": 24076.500000000007,
+          "workerTimePercent": 18.315365234695935
+        }
+      }
+    },
+    "candidate": {
+      "runs": 5,
+      "captures": 600,
+      "retries": 0,
+      "phaseCaptures": 600,
+      "wallMs": {
+        "mean": 4468.3240000000005,
+        "median": 3777.7186250000013,
+        "p95": 6757.002542000002,
+        "min": 2884.0219160000015,
+        "max": 6757.002542000002
+      },
+      "runMs": {
+        "mean": 4103.6,
+        "median": 3342,
+        "p95": 6220,
+        "min": 2660,
+        "max": 6220
+      },
+      "outsideRunMs": {
+        "mean": 364.7240000000005,
+        "median": 360.9418749999968,
+        "p95": 537.002542000002,
+        "min": 224.0219160000015,
+        "max": 537.002542000002
+      },
+      "phases": {
+        "navigate": {
+          "perCaptureMs": {
+            "mean": 47.60966666666661,
+            "median": 36,
+            "p95": 121.4,
+            "min": 8.4,
+            "max": 630.2
+          },
+          "summedWorkerMs": 28565.799999999967,
+          "workerTimePercent": 18.17684335645911
+        },
+        "freshRenderer": {
+          "perCaptureMs": {
+            "mean": 0,
+            "median": 0,
+            "p95": 0,
+            "min": 0,
+            "max": 0
+          },
+          "summedWorkerMs": 0,
+          "workerTimePercent": 0
+        },
+        "render": {
+          "perCaptureMs": {
+            "mean": 28.580166666666663,
+            "median": 19.8,
+            "p95": 80,
+            "min": 0.8,
+            "max": 292.6
+          },
+          "summedWorkerMs": 17148.1,
+          "workerTimePercent": 10.911591048067857
+        },
+        "settle": {
+          "perCaptureMs": {
+            "mean": 17.57399999999999,
+            "median": 11.3,
+            "p95": 55,
+            "min": 0.8,
+            "max": 153.4
+          },
+          "summedWorkerMs": 10544.399999999994,
+          "workerTimePercent": 6.7095585311052925
+        },
+        "paint": {
+          "perCaptureMs": {
+            "mean": 33.21399999999999,
+            "median": 28.6,
+            "p95": 73.1,
+            "min": 4,
+            "max": 297.6
+          },
+          "summedWorkerMs": 19928.399999999994,
+          "workerTimePercent": 12.68073728531531
+        },
+        "structure": {
+          "perCaptureMs": {
+            "mean": 22.320833333333347,
+            "median": 12.5,
+            "p95": 72.9,
+            "min": 1.3,
+            "max": 540.1
+          },
+          "summedWorkerMs": 13392.500000000007,
+          "workerTimePercent": 8.521846916640845
+        },
+        "screenshot": {
+          "perCaptureMs": {
+            "mean": 61.71183333333332,
+            "median": 52.2,
+            "p95": 129.4,
+            "min": 10.3,
+            "max": 675.9
+          },
+          "summedWorkerMs": 37027.09999999999,
+          "workerTimePercent": 23.56089437873078
+        },
+        "encode": {
+          "perCaptureMs": {
+            "mean": 0.0881666666666668,
+            "median": 0,
+            "p95": 0.3,
+            "min": 0,
+            "max": 9.7
+          },
+          "summedWorkerMs": 52.90000000000008,
+          "workerTimePercent": 0.03366105670265455
+        },
+        "other": {
+          "perCaptureMs": {
+            "mean": 50.82616666666665,
+            "median": 37.1,
+            "p95": 134.8,
+            "min": 1.9,
+            "max": 667.2
+          },
+          "summedWorkerMs": 30495.69999999999,
+          "workerTimePercent": 19.404867426978083
+        }
+      }
+    }
+  },
+  "note": "Phase percentages are fractions of summed worker phase time, not elapsed wall time. Retry results excluded from phase accounting; raw reports retained.",
+  "wallMedianChangePercent": -3.9854298937345156,
+  "rawEvidence": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE",
+  "samples": [
+    {
+      "arm": "baseline",
+      "label": "reference",
+      "measured": false,
+      "reference": true,
+      "wallMs": 4093.3991249999995,
+      "loadBefore": [12.32666015625, 29.25732421875, 26.92919921875],
+      "loadAfter": [13.34130859375, 29.1865234375, 26.91748046875],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/baseline/.juxtapose/runs/mva8i6u0",
+      "exitCode": 1,
+      "signal": null,
+      "processMemory": {
+        "samples": 15,
+        "peakRssKiB": 1738464,
+        "peakProcesses": 15,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "baseline",
+      "label": "warmup",
+      "measured": false,
+      "reference": false,
+      "wallMs": 2782.221208,
+      "loadBefore": [13.34130859375, 29.1865234375, 26.91748046875],
+      "loadAfter": [13.34130859375, 29.1865234375, 26.91748046875],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/baseline/.juxtapose/runs/mva8i9vt",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 11,
+        "peakRssKiB": 3493680,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "candidate",
+      "label": "reference",
+      "measured": false,
+      "reference": true,
+      "wallMs": 3689.1291249999995,
+      "loadBefore": [13.34130859375, 29.1865234375, 26.91748046875],
+      "loadAfter": [13.23388671875, 28.90087890625, 26.82958984375],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/candidate/.juxtapose/runs/mva8ic17",
+      "exitCode": 1,
+      "signal": null,
+      "processMemory": {
+        "samples": 14,
+        "peakRssKiB": 1738448,
+        "peakProcesses": 16,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "candidate",
+      "label": "warmup",
+      "measured": false,
+      "reference": false,
+      "wallMs": 2901.041792,
+      "loadBefore": [13.23388671875, 28.90087890625, 26.82958984375],
+      "loadAfter": [12.494140625, 28.4873046875, 26.69580078125],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/candidate/.juxtapose/runs/mva8ievp",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 11,
+        "peakRssKiB": 3543888,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "baseline",
+      "label": "pass-1",
+      "measured": true,
+      "reference": false,
+      "wallMs": 2862.324457999999,
+      "loadBefore": [12.494140625, 28.4873046875, 26.69580078125],
+      "loadAfter": [12.494140625, 28.4873046875, 26.69580078125],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/baseline/.juxtapose/runs/mva8ih4z",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 11,
+        "peakRssKiB": 3273344,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "candidate",
+      "label": "pass-1",
+      "measured": true,
+      "reference": false,
+      "wallMs": 2884.0219160000015,
+      "loadBefore": [12.494140625, 28.4873046875, 26.69580078125],
+      "loadAfter": [12.2138671875, 28.16357421875, 26.591796875],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/candidate/.juxtapose/runs/mva8ijbv",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 11,
+        "peakRssKiB": 3622880,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "candidate",
+      "label": "pass-2",
+      "measured": true,
+      "reference": false,
+      "wallMs": 3451.935042000001,
+      "loadBefore": [12.2138671875, 28.16357421875, 26.591796875],
+      "loadAfter": [15.2392578125, 28.52587890625, 26.728515625],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/candidate/.juxtapose/runs/mva8ilkq",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 13,
+        "peakRssKiB": 3706832,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "baseline",
+      "label": "pass-2",
+      "measured": true,
+      "reference": false,
+      "wallMs": 3883.0496669999993,
+      "loadBefore": [15.2392578125, 28.52587890625, 26.728515625],
+      "loadAfter": [15.2392578125, 28.52587890625, 26.728515625],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/baseline/.juxtapose/runs/mva8ioaw",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 15,
+        "peakRssKiB": 3424272,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "baseline",
+      "label": "pass-3",
+      "measured": true,
+      "reference": false,
+      "wallMs": 4243.796041999998,
+      "loadBefore": [15.2392578125, 28.52587890625, 26.728515625],
+      "loadAfter": [21.5458984375, 29.61279296875, 27.12255859375],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/baseline/.juxtapose/runs/mva8irb9",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 16,
+        "peakRssKiB": 3448064,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "candidate",
+      "label": "pass-3",
+      "measured": true,
+      "reference": false,
+      "wallMs": 5470.941874999997,
+      "loadBefore": [21.5458984375, 29.61279296875, 27.12255859375],
+      "loadAfter": [28.94921875, 31.013671875, 27.63134765625],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/candidate/.juxtapose/runs/mva8iukt",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 17,
+        "peakRssKiB": 3635664,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "candidate",
+      "label": "pass-4",
+      "measured": true,
+      "reference": false,
+      "wallMs": 3777.7186250000013,
+      "loadBefore": [28.94921875, 31.013671875, 27.63134765625],
+      "loadAfter": [33.59765625, 31.94287109375, 27.97900390625],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/candidate/.juxtapose/runs/mva8iyuh",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 14,
+        "peakRssKiB": 3338224,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "baseline",
+      "label": "pass-4",
+      "measured": true,
+      "reference": false,
+      "wallMs": 3934.526417000001,
+      "loadBefore": [33.59765625, 31.94287109375, 27.97900390625],
+      "loadAfter": [42.59814453125, 33.8359375, 28.67041015625],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/baseline/.juxtapose/runs/mva8j1sv",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 15,
+        "peakRssKiB": 3448832,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "baseline",
+      "label": "pass-5",
+      "measured": true,
+      "reference": false,
+      "wallMs": 4297.507792000004,
+      "loadBefore": [42.59814453125, 33.8359375, 28.67041015625],
+      "loadAfter": [45.4326171875, 34.56884765625, 28.958984375],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/baseline/.juxtapose/runs/mva8j4tm",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 17,
+        "peakRssKiB": 3259568,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    },
+    {
+      "arm": "candidate",
+      "label": "pass-5",
+      "measured": true,
+      "reference": false,
+      "wallMs": 6757.002542000002,
+      "loadBefore": [45.4326171875, 34.56884765625, 28.958984375],
+      "loadAfter": [53.16552734375, 36.35205078125, 29.62109375],
+      "runDir": "/var/folders/ss/kjkflpz51g58hhm2g7pqhbh00000gn/T/jux-pipeline-comparison-nH7SxE/candidate/.juxtapose/runs/mva8j888",
+      "exitCode": 0,
+      "signal": null,
+      "processMemory": {
+        "samples": 26,
+        "peakRssKiB": 3198560,
+        "peakProcesses": 12,
+        "errors": 0
+      }
+    }
+  ],
+  "parity": {
+    "captures": 1200,
+    "structures": 1200,
+    "decodedPairs": 120,
+    "failures": 0
+  }
+}

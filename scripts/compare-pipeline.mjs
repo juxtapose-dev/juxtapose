@@ -173,6 +173,7 @@ const metadata = {
   viewport: { width: 1280, height: 800 },
   daemon: false,
   recheck: 'off',
+  memorySampling: process.env.JUX_PROFILE_MEMORY === '1',
   arms,
 };
 save('metadata.json', metadata);
@@ -200,12 +201,54 @@ async function capture(name, label, reference = false, measured = false) {
   const previous = new Set(existsSync(runs) ? readdirSync(runs) : []);
   const loadBefore = os.loadavg(),
     start = performance.now();
-  const result = await exec(process.execPath, [arm.cli, 'run', '--all', '--no-daemon'], {
+  const running = exec(process.execPath, [arm.cli, 'run', '--all', '--no-daemon'], {
     cwd: arm.project,
     env: { ...process.env, JUX_STATE_DIR: arm.state, JUX_NO_DAEMON: '1' },
     maxBuffer: 64 * 1024 * 1024,
-  }).catch((err) => err);
+  });
+  const memory = { samples: 0, peakRssKiB: 0, peakProcesses: 0, errors: 0 };
+  let sampling = Promise.resolve(),
+    busy = false;
+  const sampleMemory = () => {
+    if (busy) return;
+    busy = true;
+    sampling = (async () => {
+      try {
+        const { stdout } = await exec('ps', ['-A', '-o', 'pid=,ppid=,rss='], {
+          timeout: 1000,
+        });
+        const processes = stdout
+          .trim()
+          .split('\n')
+          .map((line) => line.trim().split(/\s+/).map(Number));
+        const descendants = new Set([running.child.pid]);
+        let size;
+        do {
+          size = descendants.size;
+          for (const [pid, ppid] of processes)
+            if (descendants.has(ppid)) descendants.add(pid);
+        } while (size !== descendants.size);
+        const tree = processes.filter(([pid]) => descendants.has(pid));
+        if (tree.length) {
+          memory.samples++;
+          memory.peakRssKiB = Math.max(
+            memory.peakRssKiB,
+            tree.reduce((sum, row) => sum + row[2], 0),
+          );
+          memory.peakProcesses = Math.max(memory.peakProcesses, tree.length);
+        }
+      } catch {
+        memory.errors++;
+      } finally {
+        busy = false;
+      }
+    })();
+  };
+  const timer = metadata.memorySampling ? setInterval(sampleMemory, 250) : undefined;
+  const result = await running.catch((err) => err);
   const wallMs = performance.now() - start;
+  clearInterval(timer);
+  await sampling;
   writeFileSync(
     path.join(out, `${name}-${label}.log`),
     (result.stdout ?? '') +
@@ -230,6 +273,7 @@ async function capture(name, label, reference = false, measured = false) {
     runDir,
     exitCode: result instanceof Error ? (result.code ?? null) : 0,
     signal: result.signal ?? null,
+    ...(metadata.memorySampling ? { processMemory: memory } : {}),
     report,
   };
   samples.push(sample);
