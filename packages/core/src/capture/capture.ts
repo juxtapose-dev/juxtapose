@@ -544,6 +544,9 @@ async function captureStoryDocument(
   const structure = structureEnabled
     ? await captureStructure(page, effective, params.mask ?? [], structureTimings)
     : undefined;
+  if (structure && deps.platform.structureContextIds?.length) {
+    structure.contextElementIds = [...deps.platform.structureContextIds];
+  }
   const structureMs = performance.now() - tStructure;
 
   // A selector matching nothing is not an error — a story that conditionally

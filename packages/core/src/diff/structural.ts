@@ -23,6 +23,7 @@ import { compareCodeUnits, computeFacts, type Fact } from './structural/deltas.j
 import { matchElements } from './structural/match.js';
 import { synthesizeShifts } from './structural/shift.js';
 import { buildChange, buildSummary } from './structural/summary.js';
+import { componentStructure, contextPrefixes } from './structural/context.js';
 
 export interface StructuralDiffInput {
   baseline?: StructureSnapshot;
@@ -67,7 +68,23 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
    *  when the pixel diff marked nothing (sub-threshold). */
   elementRegions: ChangedRegion[];
 } {
-  const { baseline, current, pixels, imagesIdentical } = input;
+  const { pixels, imagesIdentical } = input;
+  // Apply either side's adapter context to both, including older baselines.
+  // Core knows no platform-specific IDs; the adapter supplies that boundary.
+  const contextIds = new Set([
+    ...(input.baseline?.contextElementIds ?? []),
+    ...(input.current?.contextElementIds ?? []),
+  ]);
+  // A wrapper with only absolutely positioned children can have no kept box
+  // on one side. Use both sides' paths so its children still match.
+  const prefixes = [
+    ...new Set([
+      ...contextPrefixes(input.baseline, contextIds),
+      ...contextPrefixes(input.current, contextIds),
+    ]),
+  ];
+  const baseline = componentStructure(input.baseline, contextIds, prefixes);
+  const current = componentStructure(input.current, contextIds, prefixes);
   const comparable =
     baseline !== undefined &&
     current !== undefined &&

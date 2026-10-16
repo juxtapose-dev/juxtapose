@@ -688,7 +688,10 @@ function isStructureSnapshot(v: unknown): v is StructureSnapshot {
     isRecord(v['viewport']) &&
     typeof v['viewport']['width'] === 'number' &&
     typeof v['viewport']['height'] === 'number' &&
-    Array.isArray(v['elements'])
+    Array.isArray(v['elements']) &&
+    (v['contextElementIds'] === undefined ||
+      (Array.isArray(v['contextElementIds']) &&
+        v['contextElementIds'].every((id: unknown) => typeof id === 'string')))
   );
 }
 

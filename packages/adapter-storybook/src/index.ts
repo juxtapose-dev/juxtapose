@@ -70,6 +70,7 @@ const PLAYED_PHASES = ['played', 'completed', 'finished'];
 
 export class StorybookPlatform implements Platform {
   readonly name = 'storybook';
+  readonly structureContextIds = ['storybook-root'];
 
   async detect(target: EnumerateTarget): Promise<boolean> {
     if (target.origin) {

@@ -230,6 +230,10 @@ export interface StructureSnapshot {
    *  of the page was never captured — PR (b)'s `below-fold` flag reads this. */
   contentHeight: number;
   elements: StructureElement[];
+  /** Adapter-owned top-level containers retained as capture context, omitted
+   * from component diff facts. A current capture also applies these IDs to
+   * older baselines that predate this metadata. */
+  contextElementIds?: readonly string[];
   truncated?: { kept: number; total: number };
 }
 
