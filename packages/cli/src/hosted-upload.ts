@@ -384,13 +384,7 @@ async function pullRequest(
     };
     const pr = event.pull_request;
     // An older run retried in another job must not attach to that job's PR.
-    if (
-      !pr ||
-      ![pr.head?.sha, pr.merge_commit_sha, process.env.GITHUB_SHA].includes(
-        report.commitSha,
-      )
-    )
-      return {};
+    if (!pr || ![pr.head?.sha, pr.merge_commit_sha].includes(report.commitSha)) return {};
     const branch = pr.head?.ref;
     return Number.isSafeInteger(event.number) && event.number! > 0
       ? {

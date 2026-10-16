@@ -326,4 +326,29 @@ describe('hosted uploads', () => {
     expect(created).toHaveLength(2);
     expect(new Set(created).size).toBe(1);
   });
+  it('does not associate a pull_request_target base-branch capture using GITHUB_SHA', async () => {
+    const report = await fixture();
+    const event = path.join(dir, 'event.json');
+    await writeFile(
+      event,
+      JSON.stringify({
+        number: 42,
+        pull_request: {
+          head: { sha: 'b'.repeat(40), ref: 'feature/button' },
+          merge_commit_sha: 'c'.repeat(40),
+        },
+      }),
+    );
+    vi.stubEnv('GITHUB_EVENT_PATH', event);
+    vi.stubEnv('GITHUB_EVENT_NAME', 'pull_request_target');
+    vi.stubEnv('GITHUB_SHA', report.commitSha);
+    const config = await serve((url, body) => {
+      if (url === '/v1/runs') {
+        expect(JSON.parse(body.toString()).prNumber).toBeUndefined();
+        return { body: { runId, snapshotPutUrlTemplate: '/snapshots/{storyIdSafe}' } };
+      }
+      return { body: { reportUrl: null } };
+    });
+    await uploadRun(dir, config);
+  });
 });
