@@ -371,7 +371,8 @@ function walkModuleGraph(
       detail: `${served.path} is served from a public dir, which no import graph covers`,
     };
   }
-  const read = files.find((f) => graph.external.includes(f.path));
+  const external = new Set(graph.external);
+  const read = files.find((f) => external.has(f.path));
   if (read) {
     return {
       stories,

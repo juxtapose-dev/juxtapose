@@ -74,6 +74,16 @@ export const STRUCTURE_PROPS: readonly string[] = [
   'content',
 ];
 
+// The requested style columns are fixed for every snapshot. Resolve dependent
+// columns once instead of searching the property list for every kept element.
+const CONTENT_INDEX = STRUCTURE_PROPS.indexOf('content');
+const BACKGROUND_INDEX = STRUCTURE_PROPS.indexOf('background-image');
+const BORDER_WIDTH_INDICES = STRUCTURE_PROPS.map((prop) =>
+  prop.startsWith('border-') && prop.endsWith('-color')
+    ? STRUCTURE_PROPS.indexOf(prop.replace(/-color$/, '-width'))
+    : -1,
+);
+
 /** Inherited properties are stored only where they differ from the parent. */
 export const INHERITED_PROPS: ReadonlySet<string> = new Set([
   'color',
@@ -229,7 +239,6 @@ export function normalizeStructure(
   for (let row = layout.nodeIndex.length - 1; row >= 0; row--) {
     layoutOf[layout.nodeIndex[row]!] = row; // an out-of-range write is dropped
   }
-  const contentIdx = STRUCTURE_PROPS.indexOf('content');
 
   const rare = (r: { index: number[]; value: number[] } | undefined) => {
     const m = new Map<number, string>();
@@ -243,7 +252,6 @@ export function normalizeStructure(
   const currentSource = rare(doc.nodes.currentSourceURL);
   const documentUrl = str(doc.baseURL) ?? str(doc.documentURL) ?? '';
   const pageOrigin = httpOrigin(documentUrl);
-  const backgroundIdx = STRUCTURE_PROPS.indexOf('background-image');
 
   // children lists, own text and each element's nth-of-type, in document order.
   // nth-of-type is counted here, once, rather than by filtering the sibling
@@ -397,9 +405,8 @@ export function normalizeStructure(
           if (INHERITED_PROPS.has(prop)) {
             eff[prop] = v;
             if (inherited[prop] !== v) styles[prop] = v;
-          } else if (prop.startsWith('border-') && prop.endsWith('-color')) {
-            const side = prop.split('-')[1];
-            const width = values[STRUCTURE_PROPS.indexOf(`border-${side}-width`)];
+          } else if (BORDER_WIDTH_INDICES[k]! >= 0) {
+            const width = values[BORDER_WIDTH_INDICES[k]!];
             if (width !== '0px') styles[prop] = v;
           } else if (INITIAL_VALUES[prop] !== v) {
             styles[prop] = v;
@@ -409,7 +416,7 @@ export function normalizeStructure(
         // text; on a normal element it is always `normal`, so drop it there.
         const isPseudo = tag.startsWith('::');
         if (!isPseudo) delete styles.content;
-        const pseudoText = isPseudo ? parseContent(values[contentIdx]) : '';
+        const pseudoText = isPseudo ? parseContent(values[CONTENT_INDEX]) : '';
         // Sidecars are committed to git: never record a secret field's value.
         const secret = tag === 'input' && isSecretInput(a);
         const typed = secret ? undefined : inputValue.get(i);
@@ -438,7 +445,7 @@ export function normalizeStructure(
               baseUrl: documentUrl,
               tag,
               src: tag === 'img' ? (currentSource.get(i) ?? a.src) : a.src,
-              background: rawValues[backgroundIdx] ?? '',
+              background: rawValues[BACKGROUND_INDEX] ?? '',
             })
           : [];
         if (external.length) el.external = external;

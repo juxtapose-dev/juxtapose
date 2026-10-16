@@ -181,14 +181,16 @@ function resolveChain(
   const chain: VariantSpec[] = [];
   const names: string[] = [];
   const seen: string[] = [];
+  const seenNames = new Set<string>();
   let cur: string | undefined = name;
   while (cur !== undefined) {
-    if (seen.includes(cur)) {
+    if (seenNames.has(cur)) {
       throw new VariantConfigError(
         `story '${storyId}' variant '${name}': extends cycle ${[...seen, cur].join(' -> ')}`,
       );
     }
     seen.push(cur);
+    seenNames.add(cur);
     const spec = merged.get(cur);
     if (!spec) {
       // Only reachable for an ancestor: `name` itself came from `merged`.
@@ -196,10 +198,12 @@ function resolveChain(
         `story '${storyId}' variant '${seen[seen.length - 2]}' extends unknown variant '${cur}'`,
       );
     }
-    chain.unshift(spec);
-    names.unshift(cur);
+    chain.push(spec);
+    names.push(cur);
     cur = spec.extends;
   }
+  chain.reverse();
+  names.reverse();
   const layer: VariantSpec = {};
   for (const [i, spec] of chain.entries()) {
     const own = names[i]!;
