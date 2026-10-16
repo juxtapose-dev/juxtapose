@@ -2,7 +2,7 @@
 // command does not take is a usage error, not something silently dropped.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -21,21 +21,46 @@ function jux(...args: string[]) {
 }
 
 describe('jux argument validation', () => {
-  it('rejects a stray positional on run and suggests --story', () => {
-    const r = jux('run', 'some-story-id');
-    expect(r.code).toBe(2);
-    expect(r.err).toContain("unexpected argument 'some-story-id'");
-    expect(r.err).toContain('Did you mean --story some-story-id?');
+  it('accepts positional selectors and combines them with --story', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'jux-selector-'));
+    try {
+      writeFileSync(
+        path.join(root, 'juxtapose.config.json'),
+        JSON.stringify({
+          platform: 'urls',
+          urls: [
+            { id: 'charts-a', url: 'http://127.0.0.1:1/' },
+            { id: 'table-a', url: 'http://127.0.0.1:1/' },
+          ],
+        }),
+      );
+      for (const command of ['list', 'run']) {
+        const r = jux(
+          command,
+          'charts-*',
+          '--story',
+          'table-a',
+          '--project',
+          root,
+          '--json',
+          ...(command === 'run' ? ['--dry-run'] : []),
+        );
+        expect(r.code, r.err).toBe(0);
+        expect(JSON.parse(r.out)).toMatchObject({
+          count: 2,
+          captures: [{ storyId: 'charts-a' }, { storyId: 'table-a' }],
+        });
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
-  it.each(['init', 'run', 'approve', 'check', 'mcp'])(
-    'rejects a positional on %s',
-    (cmd) => {
-      const r = jux(cmd, 'extra');
-      expect(r.code).toBe(2);
-      expect(r.err).toContain(`jux ${cmd}: unexpected argument 'extra'`);
-    },
-  );
+  it.each(['init', 'approve', 'check', 'mcp'])('rejects a positional on %s', (cmd) => {
+    const r = jux(cmd, 'extra');
+    expect(r.code).toBe(2);
+    expect(r.err).toContain(`jux ${cmd}: unexpected argument 'extra'`);
+  });
 
   it('rejects a second positional on handoff and a third on diff', () => {
     expect(jux('handoff', 'a', 'b').err).toContain("unexpected argument 'b'");

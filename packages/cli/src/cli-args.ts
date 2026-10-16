@@ -21,6 +21,7 @@ interface Spec {
 
 export const SPECS: Record<string, Spec> = {
   init: { flags: ['json', ...CONTEXT, 'chrome', 'no-daemon', 'allow-unstable'], max: 0 },
+  list: { flags: ['json', ...CONTEXT, 'story', 'chrome', 'no-daemon'], max: Infinity },
   run: {
     flags: [
       'json',
@@ -30,6 +31,7 @@ export const SPECS: Record<string, Spec> = {
       'comment',
       'html',
       'story',
+      'dry-run',
       'chrome',
       'no-daemon',
       'no-fresh-renderer',
@@ -37,7 +39,7 @@ export const SPECS: Record<string, Spec> = {
       'no-recheck',
       ...SETTLE,
     ],
-    max: 0,
+    max: Infinity,
   },
   approve: {
     flags: [

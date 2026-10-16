@@ -186,6 +186,14 @@ Result:
 
 A diff that finds differences is a result, not an error.
 
+### list
+
+Lists available capture IDs, titles and variants. Optional `stories: string[]`
+filters by exact ID or ID glob (`*`, `**`, `?`); every selector must match.
+Returns `{schema: "juxtapose.selection/v1", count, captures}`. No screenshots or
+run report are written. Live parameter discovery may initialize the browser and
+populate its cache. Use returned IDs with `run` for a focused capture.
+
 ### run
 
 Captures workbench stories and compares them to the approved baselines. Same
@@ -195,7 +203,7 @@ result as `jux run --json`: a `RunReport`.
 | --------- | -------- | ---------------------------------------------------------------------------------------------------- |
 | `all`     | boolean  | Capture every story instead of the affected ones.                                                    |
 | `since`   | string   | Git ref. Traces changed files since it for `cause`.                                                  |
-| `stories` | string[] | Story ids to capture.                                                                                |
+| `stories` | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
 | `settle`  | object   | Settle options for every story, as for `snap`.                                                       |
 | `recheck` | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
 
@@ -216,6 +224,10 @@ again before it writes the baseline. See
 A result captured at the settle cap has `flags: ["settle-timeout"]` (or
 `["settle-fallback"]`) and a
 `settle` object, whatever its `status`.
+
+Set `dryRun: true` to return the selection instead of capturing. It uses the
+same selection rules and response shape as `list`, while retaining run's affected
+analysis when no selectors are supplied. This does not replace the last run.
 
 ### check
 

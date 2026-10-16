@@ -50,7 +50,7 @@ test('run --story with an unknown id exits 2 and lists every unknown id', async 
     { io, browser: noBrowser },
   );
   expect(code).toBe(2);
-  expect(io.stderr()).toContain("no story or capture with id 'nope', 'home__light'");
+  expect(io.stderr()).toContain("no story or capture matching 'nope', 'home__light'");
 });
 
 test('a variant config error exits 2 naming the story and variant', async () => {
