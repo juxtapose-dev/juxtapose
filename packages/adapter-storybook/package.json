@@ -1,6 +1,6 @@
 {
   "name": "@juxtapose/adapter-storybook",
-  "version": "0.4.24",
+  "version": "0.4.25",
   "type": "module",
   "description": "Storybook platform adapter for juxtapose visual testing.",
   "keywords": [
