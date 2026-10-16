@@ -1,5 +1,14 @@
 # @juxtapose/storybook
 
+## 0.12.5
+
+### Patch Changes
+
+- Updated dependencies [cdbf28d]
+  - @juxtapose/core@0.23.3
+  - @juxtapose/adapter-storybook@0.4.26
+  - @juxtapose/server@0.9.5
+
 ## 0.12.4
 
 ### Patch Changes
