@@ -818,16 +818,28 @@ Projects commit hashes and metadata, never snapshot images.
 | ------------------------- | --------------------------------------------------- |
 | `juxtapose.config.json`   | `.juxtapose/` (cache, runs, tmp: all machine-local) |
 | `juxtapose.manifest.json` | baseline images (`.webp`), wherever they are        |
+| `juxtapose.structures/`   |                                                     |
 
-`juxtapose.manifest.json` is one committed file, like a lockfile. Per story it
-holds the approved hash used for exact identity and comparison, and (for the default
-store) the approved structure, one element per line, so an approval is a
-reviewable diff and CI can name the elements that changed with no image. Stories
-are sorted by id and nothing in it depends on the machine or the clock, so an
-unchanged story never produces a diff line and one approval touches only that
-story's lines. The file stays `"version": 1`: the per-story `structure` is an
-extra field that an older jux ignores (it reads the same hashes), so a teammate
-or CI job on a previous release is not told every story is `new`.
+`juxtapose.manifest.json` is a small generated lockfile containing image hashes,
+approval metadata, and references to readable JSON under `juxtapose.structures/`.
+Commit both. The manifest's `$comment` explains that these files are generated;
+the structure directory has a shared README. Neither note affects capture hashes.
+
+Each structure has one element per line. An element's `segment` is relative to
+its indexed `parent` (and may include omitted ancestors); roots and paths that
+cannot be shortened retain `path`. Readers reconstruct the original full paths
+before comparison, so structure hashes and explanations are unchanged. The new
+file schema is `juxtapose.structure/compact-v1` and the manifest remains version 1.
+Older clients still compare the same image hashes, but need an upgrade to read
+the separate structure evidence.
+
+New approvals write this layout. Existing inline structures remain readable;
+`jux doctor --fix` migrates them without capture, approval, or hash changes. File
+references include a SHA-256 checksum: missing, modified, or mismatched files
+are treated as unavailable evidence, never used for a misleading explanation.
+Keep the directory readable JSON; do not gzip or hand-edit it. Unreferenced
+files may remain after removing a baseline; they are ignored, not automatically
+deleted. Stable per-story filenames keep Git diffs local to the changed story.
 
 **Don't hand-merge it; regenerate it**, as you would a lockfile. On a merge
 conflict, take either side (`git checkout --theirs juxtapose.manifest.json`, or
@@ -840,7 +852,7 @@ than treating it as empty.
 
 - `"cache"` (default): a local, git-ignored directory of `<sha256>.webp` files,
   `.juxtapose/cache/baselines/` unless you set `dir`. Approving writes the hash
-  and structure to the manifest and the image to the cache. A passing run also
+  to the manifest, structure to readable files, and the image to the cache. A passing run also
   keeps its capture in the cache. `jux run` never writes the manifest; only
   `jux approve` does (and `jux doctor --fix`, below).
 - `"git"`: commit images under `.juxtapose/baselines/` (or `dir`). The layout
@@ -860,7 +872,7 @@ machine-local. A project with no `storage` key and images already committed
 under `.juxtapose/baselines/` keeps working: jux reads those images (when they
 match the manifest hash), copies each into the cache as it does, and writes new
 ones to the cache. Run `jux doctor` for the migration commands. Old per-story
-`.structure.json.gz` sidecars move into the manifest with `jux doctor --fix`,
+`.structure.json.gz` sidecars move into `juxtapose.structures/` with `jux doctor --fix`,
 which approves nothing. Run
 `jux run --all` before you commit the untracking: the commit deletes the images
 from every clone that pulls it, and those clones then rely on their own run or a

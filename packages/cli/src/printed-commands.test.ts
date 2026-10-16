@@ -30,6 +30,7 @@ test('init prints git add with -- and every path as one literal word', () => {
 test('approve prints the same paths, quoted', () => {
   expect(words(commitList(storage).replaceAll(' and ', ' '))).toEqual([
     'juxtapose.manifest.json',
+    'juxtapose.structures',
     hostile,
   ]);
 });

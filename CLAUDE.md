@@ -207,9 +207,9 @@ Releases go through changesets. Add one with `pnpm changeset` when a change
 should ship; merging to main without a changeset publishes nothing.
 
 Projects that use jux commit hashes and metadata, never images:
-`juxtapose.config.json` and `juxtapose.manifest.json`. The manifest is a
+`juxtapose.config.json`, `juxtapose.manifest.json`, and `juxtapose.structures/`. The manifest is a
 lockfile: per story it holds the approved hash (the exact artifact identity)
-and the approved structure (so CI can name the elements that changed), sorted
+and references to approved readable structure files (so CI can name changed elements), sorted
 and machine-independent so an approval is a small reviewable diff. Never
 hand-merge it; take either side and re-run `jux approve`. `.juxtapose/` is
 entirely machine-local (the hash-keyed image cache, runs, tmp) and ignored with
@@ -219,7 +219,6 @@ hash and structure, not as an error. `storage: { "kind": "git" }` is the opt-in
 legacy layout. The `examples/` directories commit nothing at all: antialiasing
 differs across machines and Chromium versions, so committed baselines there
 would be red for everyone but the author.
-red for everyone but the author.
 
 Shared renderer recovery defaults on: a baseline mismatch retries with a
 resource-cache pulse, then a fresh renderer. Each recovery must match the exact

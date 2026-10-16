@@ -91,7 +91,7 @@ pnpm add -D @juxtapose/cli
 npx storybook build --quiet --disable-telemetry --loglevel error  # or: npx ladle build
 npx -p @juxtapose/cli jux browser install   # once, ~100 MB
 npx -p @juxtapose/cli jux init              # writes the config, captures, approves
-git add juxtapose.config.json juxtapose.manifest.json .gitignore
+git add juxtapose.config.json juxtapose.manifest.json juxtapose.structures/ .gitignore
 ```
 
 To focus on specific examples, use `jux list` to find IDs, then

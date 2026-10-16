@@ -83,7 +83,11 @@ export async function ensureIgnored(
 
 /** Files jux needs committed; a path that git ignores here silently drops out
  *  of every `git add`, and CI loses the structure diffs without a word. */
-const COMMITTED_SAMPLES = ['juxtapose.manifest.json', 'juxtapose.config.json'];
+const COMMITTED_SAMPLES = [
+  'juxtapose.manifest.json',
+  'juxtapose.config.json',
+  'juxtapose.structures/example.json',
+];
 
 export interface IgnoredCommitted {
   /** The sample path git would ignore. */

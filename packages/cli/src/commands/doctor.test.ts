@@ -307,7 +307,7 @@ test('doctor --fix folds matching sidecars into the manifest, approving and capt
   const { root, manifest } = await legacyProject();
   const io = captureIo();
   await doctorCommand({ project: root, fix: true }, { io });
-  expect(io.stderr()).toContain('folded structure into 1 manifest entry');
+  expect(io.stderr()).toContain('migrated 1 structure to readable JSON files');
   expect(io.stderr()).toContain('moved');
 
   const after = JSON.parse(
@@ -322,7 +322,7 @@ test('doctor --fix folds matching sidecars into the manifest, approving and capt
     expect(after.baselines[id].hash).toBe(before.baselines[id].hash);
     expect(after.baselines[id].approvedAt).toBe('t');
   }
-  expect(after.baselines.ok.structure).toBeDefined();
+  expect(after.baselines.ok.structureFile).toBeDefined();
   expect(after.baselines.moved.structure).toBeUndefined();
   // No run happened and none was needed.
   expect(existsSync(path.join(root, '.juxtapose/runs'))).toBe(false);

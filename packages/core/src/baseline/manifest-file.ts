@@ -6,6 +6,7 @@
 // lets CI say which elements changed without an image. Like a lockfile it is
 // regenerated, not hand-merged; see ManifestConflictError.
 
+import { GENERATED_NOTE } from './structure-file.js';
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, rename, rm } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
@@ -15,8 +16,8 @@ import { isRecord } from '../browser/guards.js';
 export const MANIFEST_NAME = 'juxtapose.manifest.json';
 
 /**
- * The manifest is always written as version 1. The inline `structure` on an
- * entry is additive: a reader from before it existed checks `version === 1`,
+ * The manifest is always written as version 1. Structure fields on an
+ * entry are additive: a reader from before it existed checks `version === 1`,
  * reads each entry's `hash`, and ignores fields it does not know, so bumping
  * the version would make an older jux read the whole manifest as empty (every
  * story `new`). 2 is still read, for a manifest an unreleased build wrote.
@@ -132,9 +133,13 @@ export async function writeManifestFile(
   const body = entries.length ? `\n${entries.join(',\n')}\n  ` : '';
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temporary, `{\n  "version": 1,\n  "baselines": {${body}}\n}\n`, {
-      flag: 'wx',
-    });
+    await writeFile(
+      temporary,
+      `{\n  "$comment": ${JSON.stringify(GENERATED_NOTE)},\n  "version": 1,\n  "baselines": {${body}}\n}\n`,
+      {
+        flag: 'wx',
+      },
+    );
     await rename(temporary, file);
   } finally {
     await rm(temporary, { force: true });

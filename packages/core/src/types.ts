@@ -595,18 +595,23 @@ export interface ApprovalMeta {
 }
 
 export interface BaselineEntry extends ApprovalMeta {
+  /** Generated readable compact structure file, relative to the project root. */
+  structureFile?: string;
+  /** SHA-256 of the complete file bytes; mismatched evidence is never used. */
+  structureFileHash?: string;
   /** sha256 of the baseline image bytes. Detects drift between manifest
    *  and store without downloading the image. */
   hash: string;
-  /** The approved structure, inline, so CI can name the elements that changed
-   *  with no image and no second file to keep in step. `structureHash` is
-   *  stored once, in `ApprovalMeta`, and put back on read. */
+  /** Legacy inline evidence. New approvals use structureFile; readers retain
+   * compatibility so migration never requires recapturing or approving. */
   structure?: Omit<StructureSnapshot, 'structureHash'>;
 }
 
 /** Committed to the repo. The source of truth for what "approved" means,
  *  regardless of which store holds the actual bytes. */
 export interface BaselineManifest {
+  /** Generated-file guidance; excluded from all image/structure hashes. */
+  $comment?: string;
   /** Always written as 1 (an older reader accepts only 1); 2 is read only. */
   version: 1 | 2;
   baselines: Record<string, BaselineEntry>;

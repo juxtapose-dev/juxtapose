@@ -149,9 +149,10 @@ It reports:
   `git rm --cached -- ':(glob)<dir>/*.webp'`, the `.gitignore` line, and a
   commit. The pathspec is literal about the directory's own name.
 - `legacy-sidecars`: per-story `.structure.json.gz` files tracked under
-  `.juxtapose/baselines/`. Structure now lives in the manifest; the fix runs
-  `jux doctor --fix` to fold it in, then untracks the files and commits the
-  manifest. `--fix` copies each sidecar into the manifest entry it belongs to
+  `.juxtapose/baselines/`. Structure now lives in readable `juxtapose.structures/` files;
+  `jux doctor --fix` migrates it, then untrack the old files and commit the
+  manifest and structure directory. `--fix` also migrates existing inline
+  structures. It copies each legacy sidecar only when it belongs to the entry
   (the sidecar's hash matches the entry's, or, for an entry with none, the
   legacy image's hash does), and nothing else: no capture, no approval, no
   hash changes, so a failing story stays failing. A sidecar that does not match
