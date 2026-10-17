@@ -167,6 +167,44 @@ test('a passing run lists the target keys without inviting a second reference ca
   );
 });
 
+test('run hint reports progress against the previous saved capture for paired targets', async () => {
+  const f = await fixture();
+  const previous = path.join(f.runs, 'r0');
+  await mkdir(path.join(previous, 'images'), { recursive: true });
+  for (const key of [f.desktop, f.mobile]) {
+    await writeFile(
+      path.join(previous, 'images', `${encodeStoryId(key)}-current.webp`),
+      black,
+    );
+    await writeFile(
+      path.join(f.run, 'images', `${encodeStoryId(key)}-current.webp`),
+      whiteWebp,
+    );
+  }
+  const report = JSON.parse(await readFile(path.join(f.run, 'report.json'), 'utf8'));
+  await writeFile(
+    path.join(previous, 'report.json'),
+    JSON.stringify({ ...report, runId: 'r0' }),
+  );
+  const run = {
+    content: [{ type: 'text' as const, text: JSON.stringify({ runId: 'r1' }) }],
+    isError: false,
+  };
+  const result = await withDesignReferenceFeedback(run, f.root, previous);
+  const hint = JSON.parse((result.content[1] as { text: string }).text);
+  expect(hint.progress).toMatchObject({
+    comparedToRunId: 'r0',
+    paired: 2,
+    improved: 2,
+    regressed: 0,
+    unchangedCount: 0,
+    states: [
+      { name: 'desktop', previousPixels: 96, currentPixels: 0, changePixels: -96 },
+      { name: 'mobile', previousPixels: 96, currentPixels: 0, changePixels: -96 },
+    ],
+  });
+});
+
 test('empty and unrelated runs do not add design feedback', async () => {
   const f = await fixture();
   const empty = {

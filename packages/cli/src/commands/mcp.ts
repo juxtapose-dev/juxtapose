@@ -252,7 +252,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Storybook/Ladle: capture selected stories and variants together after a coherent edit. If a saved run or supplied design-reference hint already describes the starting UI, use it; do not capture again just to rediscover it. Default selection is stories affected by changes. Returns a RunReport plus a compact target-versus-current hint for configured design references; read both before another tool call.',
+      'Storybook/Ladle: capture selected stories and variants together after a coherent edit. If a saved run or supplied design-reference hint already describes the starting UI, use it; do not capture again just to rediscover it. Default selection is stories affected by changes. Returns a RunReport and, for configured design references, a compact target-versus-current hint with progress from the previous captured run when comparable; read both before another tool call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -477,6 +477,7 @@ export const SNAP_SLOTS = 4;
 export async function withDesignReferenceFeedback(
   run: ToolResult,
   project: string,
+  previousRun?: string | null,
 ): Promise<ToolResult> {
   if (run.isError) return run;
   const first = run.content[0];
@@ -502,9 +503,12 @@ export async function withDesignReferenceFeedback(
     const { evaluateReferences } = await import('./reference.js');
     const result = await evaluateReferences({ project, run: runId });
     if (result.outcome === 'no-comparison') return run;
+    const previous = previousRun
+      ? await evaluateReferences({ project, run: previousRun }).catch(() => null)
+      : null;
     run.content.push({
       type: 'text',
-      text: JSON.stringify(compactReferenceFeedback(result)),
+      text: JSON.stringify(compactReferenceFeedback(result, previous)),
     });
   } catch (error) {
     run.content.push({
@@ -515,7 +519,14 @@ export async function withDesignReferenceFeedback(
   return run;
 }
 
-function compactReferenceFeedback(result: ReferenceResult) {
+function compactReferenceFeedback(
+  result: ReferenceResult,
+  previous: ReferenceResult | null,
+) {
+  const progress =
+    previous && previous.runId !== result.runId
+      ? referenceProgress(result, previous)
+      : null;
   const affected = result.states.filter((state) => state.status !== 'pass');
   const passed = result.states.filter((state) => state.status === 'pass');
   affected.sort((a, b) => {
@@ -580,10 +591,58 @@ function compactReferenceFeedback(result: ReferenceResult) {
     omittedAffected: affected.length - states.length,
     passed: passed.slice(0, 8).map((state) => ({ name: state.name, key: state.storyId })),
     omittedPassed: Math.max(0, passed.length - 8),
+    ...(progress ? { progress } : {}),
     guidance:
       result.outcome === 'pass'
         ? 'Each listed captured target has compatible geometry and zero Pixelmatch mismatch pixels under the stated policy; all captured targets pass. Read the run report for regression and flake status; no reference call is needed to verify these targets, and no recapture is needed. NotCaptured targets were not checked.'
         : 'Observed target/current pixels, not inferred CSS causes. Use these facts for the next edit. If a specific uncertainty remains, call reference with detail=json for saved geometry or a region ID for one paired crop; neither needs recapture.',
+  };
+}
+
+function referenceProgress(current: ReferenceResult, previous: ReferenceResult) {
+  const prior = new Map(
+    previous.states.map((state) => [`${state.name}\u0000${state.storyId}`, state]),
+  );
+  const paired = current.states.flatMap((state) => {
+    const before = prior.get(`${state.name}\u0000${state.storyId}`);
+    if (
+      !before ||
+      (before.status !== 'pass' && before.status !== 'fail') ||
+      (state.status !== 'pass' && state.status !== 'fail') ||
+      before.referenceHash !== state.referenceHash ||
+      JSON.stringify(before.geometry) !== JSON.stringify(state.geometry) ||
+      before.mismatchPixels === null ||
+      state.mismatchPixels === null
+    )
+      return [];
+    const changePixels = state.mismatchPixels - before.mismatchPixels;
+    return [
+      {
+        name: state.name,
+        key: state.storyId,
+        previousPixels: before.mismatchPixels,
+        currentPixels: state.mismatchPixels,
+        changePixels,
+      },
+    ];
+  });
+  paired.sort(
+    (a, b) =>
+      Number(b.changePixels > 0) - Number(a.changePixels > 0) ||
+      Math.abs(b.changePixels) - Math.abs(a.changePixels) ||
+      a.name.localeCompare(b.name),
+  );
+  if (!paired.length) return null;
+  const changed = paired.filter((s) => s.changePixels !== 0);
+  return {
+    comparedToRunId: previous.runId,
+    paired: paired.length,
+    improved: paired.filter((s) => s.changePixels < 0).length,
+    regressed: paired.filter((s) => s.changePixels > 0).length,
+    unchangedCount: paired.filter((s) => s.changePixels === 0).length,
+    states: changed.slice(0, 8),
+    omittedChanged: Math.max(0, changed.length - 8),
+    note: 'Negative changePixels means fewer mismatches to the design target; equal counts do not prove identical pixels.',
   };
 }
 
@@ -971,6 +1030,11 @@ export class McpServer {
     return {
       locks: EXCLUSIVE,
       exec: async (signal) => {
+        const config = dryRun ? null : await loadConfig(this.project);
+        const previousRun =
+          config?.designReferences && Object.keys(config.designReferences).length
+            ? await latestRunDir(this.project)
+            : null;
         const { runCommand } = await import('./run.js');
         const result = await this.invoke(
           (s) =>
@@ -988,7 +1052,9 @@ export class McpServer {
             ),
           signal,
         );
-        return dryRun ? result : withDesignReferenceFeedback(result, this.project);
+        return dryRun
+          ? result
+          : withDesignReferenceFeedback(result, this.project, previousRun);
       },
     };
   }

@@ -91,21 +91,25 @@ If `@juxtapose/cli` is already a dev dependency, use `"command": "npx"` with
 
 ## The agent loop
 
-1. Call `snap` on each page the change can affect, named `before`.
-2. Edit the code.
-3. Call `snap` on the same pages, named `after`.
-4. Call `diff` with `a: "before"` and `b: "after"`. Read `summary` and
+For a direct URL check, reuse an existing `before` snap when one already
+describes the starting UI. Otherwise call `snap` on each page the change can
+affect, named `before`.
+
+1. Edit the code.
+2. Call `snap` on the same pages, named `after`.
+3. Call `diff` with `a: "before"` and `b: "after"`. Read `summary` and
    `deltas`.
-5. If the text evidence cannot settle the appearance, call `diff` again with
+4. If the text evidence cannot settle the appearance, call `diff` again with
    `crops: true` and look at the images. Full structural coverage is spatial
    overlap, not proof that the new appearance is correct.
 
-For a Storybook or Ladle project with baselines, call `run`, then `handoff`
-for each failing story. When `designReferences` are configured, `run` includes
-an additional, compact target-versus-current result block for the capture keys it
-just saved. Call `reference` when you need the full measured ledger or a paired
-image crop; it reads the saved images without recapturing. Call `approve` only
-when the user asks you to.
+For a Storybook or Ladle project, use saved starting evidence when available,
+make one coherent edit, then call `run` for affected stories and variants
+together. Read its regression verdict and any design-reference hint before
+calling another tool. If a story fails, use `handoff`; if a specific visual
+question remains, `reference` can return saved measurements or one paired crop
+without recapture. Stop when the requested states and behavior checks pass.
+Call `approve` only when the user asks you to.
 
 ## Tools
 
@@ -116,10 +120,15 @@ an approved story whose structure was not saved, a successful result carries
 it as a second text block. A `run` with captured design targets also carries a
 final text block with `juxtapose.design-reference-hint/v1`: overall counts,
 up to eight affected states, up to eight passed capture keys, and the largest
-changed region ID for focused inspection. A passing hint names the captured
-targets and does not require a second `reference` call to verify them. The first
-RunReport block remains unchanged. Targets outside a
-subset run count as `notCaptured`; if none were captured, no hint is added.
+changed region ID and bounds for focused inspection. When both the current and
+previous saved runs captured the same design target, the hint also reports
+the change in mismatch pixels: a negative count means closer to the target,
+and a positive count means farther away. It compares both captures against
+the current configured reference PNG and does not change the approved-baseline
+verdict. A passing hint names the captured targets and does not require a
+second `reference` call to verify them. The first RunReport block remains
+unchanged. Targets outside a subset run count as `notCaptured`; if none were
+captured, no hint is added.
 For a passing target, the hint means the viewport and image geometry were
 compatible and Pixelmatch found zero mismatch pixels under the stated policy.
 
