@@ -226,6 +226,8 @@ function resolveChain(
         : undefined;
     const freeze = mergeFreeze(layer.freeze, spec.freeze);
     Object.assign(layer, spec);
+    // Same rule as layerDevice: a device above drops the viewport below it.
+    if (spec.device !== undefined && spec.viewport === undefined) delete layer.viewport;
     if (renderer) layer.renderer = renderer;
     if (settle) layer.settle = settle;
     if (network) layer.network = network;

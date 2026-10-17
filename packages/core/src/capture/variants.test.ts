@@ -295,6 +295,25 @@ describe('device layering', () => {
     });
   });
 
+  it('an extending variant that sets device drops the extended viewport', () => {
+    const out = expandVariants([
+      story('s', {
+        variants: {
+          a: { viewport: vp },
+          b: { extends: 'a', device: 'mobile' },
+          c: { extends: 'a', device: 'mobile', viewport: { width: 400, height: 700 } },
+        },
+      }),
+    ]);
+    const b = byKey(out, 's__b').params;
+    expect(b.device).toBe('mobile');
+    expect(b).not.toHaveProperty('viewport');
+    expect(byKey(out, 's__c').params).toMatchObject({
+      device: 'mobile',
+      viewport: { width: 400, height: 700 },
+    });
+  });
+
   it('live viewport does not survive under a variant that sets device', () => {
     const out = expandVariants([story('s', { variants: { m: { device: 'mobile' } } })]);
     const merged = mergeLiveParams(byKey(out, 's__m'), { viewport: vp });

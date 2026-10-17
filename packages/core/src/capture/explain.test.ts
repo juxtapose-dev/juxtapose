@@ -170,6 +170,13 @@ describe('explainCapture', () => {
     expect(src(m, 'viewport')).toEqual(['variant:mobile (project config)']);
   });
 
+  it('the viewport row names the device layer when the device sets the size', () => {
+    const e = explain([story('a', { device: 'ipad' })], 'a');
+    expect(row(e, 'viewport')?.value).toEqual({ width: 810, height: 1080 });
+    expect(src(e, 'viewport')).toEqual(src(e, 'device'));
+    expect(src(e, 'viewport')).toEqual(['story']);
+  });
+
   it('a project device and orientation apply to every story', () => {
     const e = explain([story('a')], 'a', { device: 'pixel-8', orientation: 'landscape' });
     expect(row(e, 'device')?.value).toBe('pixel-8 (915x412 landscape)');
