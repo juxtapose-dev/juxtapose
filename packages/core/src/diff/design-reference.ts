@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import sharp from 'sharp';
 import type { ChangedRegion, DesignReferenceSpec, Viewport } from '../types.js';
 import { diffImages } from './diff.js';
+import type { VisibleColorEvidence } from './color-pairs.js';
 
 /** Design targets have pixels but no capture-time DOM or computed styles. */
 export interface DesignReferenceLedger {
@@ -34,6 +35,8 @@ export interface DesignReferenceLedger {
   mismatchPercent: number | null;
   rawMismatchPixels: number | null;
   regions: Array<ChangedRegion & { id: string }>;
+  /** Sampled co-located colors from visible mismatches, not inferred styles. */
+  visibleColors?: VisibleColorEvidence;
   structure: { status: 'unavailable'; reason: 'design-reference-has-no-dom' };
 }
 
@@ -140,7 +143,10 @@ export async function compareDesignReference(input: {
                 ? 'current-geometry'
                 : undefined;
   if (reason) return { ...base, reason };
-  const diff = await diffImages(target, current.image, { threshold });
+  const diff = await diffImages(target, current.image, {
+    threshold,
+    includeVisibleColors: true,
+  });
   // The geometry checks above ensure diffImages can never silently compare
   // different dimensions; keep this guard if its implementation changes.
   if (diff.dimensionMismatch) return { ...base, reason: 'current-geometry' };
@@ -150,6 +156,7 @@ export async function compareDesignReference(input: {
     mismatchPixels: diff.mismatchPixels,
     mismatchPercent: diff.mismatchPercent,
     rawMismatchPixels: diff.rawMismatchPixels ?? 0,
+    ...(diff.visibleColors ? { visibleColors: diff.visibleColors } : {}),
     regions: diff.changedRegions.map((r, i) => ({
       ...r,
       id: `${comparisonId.slice(0, 16)}:${i + 1}`,

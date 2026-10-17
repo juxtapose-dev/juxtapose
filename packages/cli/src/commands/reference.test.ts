@@ -106,6 +106,7 @@ test('all-state ledger compares exact capture keys from saved images without rec
   const io = captureIo();
   expect(await referenceCommand(undefined, { project: f.root }, { io })).toBe(1);
   expect(io.stdout()).toContain('1 pass, 1 fail');
+  expect(io.stdout()).toContain('observed colors: target #ffffff, current #000000');
 });
 
 test('region IDs can recover a crop after reevaluation', async () => {

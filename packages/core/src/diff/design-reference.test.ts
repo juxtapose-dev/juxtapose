@@ -50,6 +50,7 @@ describe('compareDesignReference', () => {
     });
     expect(result.status).toBe('pass');
     expect(result.mismatchPixels).toBe(0);
+    expect(result.visibleColors?.pairs).toEqual([]);
     expect(result.referenceHash).not.toBe(result.currentHash);
     expect(result.structure).toEqual({
       status: 'unavailable',
@@ -75,11 +76,43 @@ describe('compareDesignReference', () => {
     expect(a.status).toBe('fail');
     expect(a.mismatchPixels).toBe(12);
     expect(a.regions).toHaveLength(1);
+    expect(a.visibleColors).toMatchObject({
+      sampledPixels: 12,
+      comparedPixels: 12,
+      visibleMismatchSamples: 12,
+      pairs: [
+        {
+          reference: [255, 255, 255, 255],
+          current: [0, 0, 0, 255],
+          pixels: 12,
+          sharePercent: 100,
+        },
+      ],
+    });
     expect(a.regions[0]!.id).toBe(b.regions[0]!.id);
     expect(a.comparisonId).toBe(b.comparisonId);
     const differentPolicy = await compareDesignReference({ ...opts, threshold: 0.05 });
     expect(differentPolicy.comparisonId).not.toBe(a.comparisonId);
     expect(differentPolicy.regions[0]!.id).not.toBe(a.regions[0]!.id);
+  });
+
+  it('does not suggest a color edit for pixels accepted by the tolerance', async () => {
+    const f = await fixture();
+    const nearWhite = await sharp({
+      create: { width: 4, height: 3, channels: 4, background: '#fefefd' },
+    })
+      .webp({ lossless: true })
+      .toBuffer();
+    const result = await compareDesignReference({
+      projectRoot: f.root,
+      name: 'mobile',
+      reference: f.reference,
+      current: { ...f.current, image: nearWhite },
+    });
+    expect(result.status).toBe('pass');
+    expect(result.rawMismatchPixels).toBe(12);
+    expect(result.visibleColors?.visibleMismatchSamples).toBe(0);
+    expect(result.visibleColors?.pairs).toEqual([]);
   });
 
   it('rejects geometry and capture key mismatches without pixel verdicts', async () => {
