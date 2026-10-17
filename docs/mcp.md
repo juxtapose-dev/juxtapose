@@ -4,9 +4,10 @@
 server on stdio. A coding agent connects to it to capture pages, compare them,
 and review workbench runs without a shell.
 
-Each tool calls the same code as the matching `jux` command and returns the
-same versioned JSON that the command prints with `--json`. There is no second
-schema: a parser for `jux diff --json` reads the `diff` tool's result.
+Most tools return the same versioned JSON as the matching `jux` command with
+`--json`. `run` returns a bounded `juxtapose.agent-run/v1` summary by default;
+the complete `RunReport` remains in the saved run and is available through
+`report` or `run({report: "full"})`. `jux run --json` is unchanged.
 
 The server keeps one browser for the whole session. The first `snap` or `run`
 call acquires it, and every later call reuses it. Where it comes from depends
@@ -235,8 +236,11 @@ populate its cache. Use returned IDs with `run` for a focused capture.
 
 ### run
 
-Captures workbench stories and compares them to the approved baselines. Same
-result as `jux run --json`: a `RunReport`.
+Captures workbench stories and compares them to the approved baselines. The
+default result includes counts, at most eight stories needing attention (errors
+and unstable captures first), and how many more were omitted. It also includes
+a compact design-target hint when references are configured. The full report
+is saved for focused, read-only lookups.
 
 | Argument  | Type     | Description                                                                                          |
 | --------- | -------- | ---------------------------------------------------------------------------------------------------- |
@@ -245,6 +249,7 @@ result as `jux run --json`: a `RunReport`.
 | `stories` | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
 | `settle`  | object   | Settle options for every story, as for `snap`.                                                       |
 | `recheck` | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
+| `report`  | string   | `"summary"` (default) or `"full"` for the complete `RunReport`.                                      |
 
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.
@@ -267,6 +272,22 @@ A result captured at the settle cap has `flags: ["settle-timeout"]` (or
 Set `dryRun: true` to return the selection instead of capturing. It uses the
 same selection rules and response shape as `list`, while retaining run's affected
 analysis when no selectors are supplied. This does not replace the last run.
+
+### report
+
+Reads a saved run without launching a browser or capturing again. With no
+arguments it returns the same bounded summary as `run`. Pass `story` to get
+one complete result, including structural, pixel, and flake evidence; pass
+`detail: "full"` for the complete `RunReport`. `runId` selects an older saved
+run; otherwise the latest is used. `story` and `detail: "full"` are exclusive.
+The server keeps a small cache of parsed reports and checks for saved-file
+changes before reusing one.
+
+| Argument | Type   | Description                        |
+| -------- | ------ | ---------------------------------- |
+| `runId`  | string | Saved run ID (default latest).     |
+| `story`  | string | Exact capture key to inspect.      |
+| `detail` | string | `"summary"` (default) or `"full"`. |
 
 ### check
 
