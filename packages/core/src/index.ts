@@ -230,6 +230,11 @@ export {
   type DesignReferenceCurrent,
   type DesignReferenceLedger,
 } from './diff/design-reference.js';
+export {
+  observeReferenceOutlines,
+  type OutlineBox,
+  type ReferenceOutlineObservation,
+} from './diff/reference-outlines.js';
 // Tier-3 crops: two images + regions → side-by-side PNG strips, no browser.
 export { renderCrops, MAX_CROPS, MAX_CROP_SIDE, type Crop } from './diff/crops.js';
 export { describeDelta, describeDeltas } from './diff/structural/summary.js';
