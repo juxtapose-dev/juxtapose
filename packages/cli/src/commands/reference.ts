@@ -178,6 +178,7 @@ export async function evaluateReferences(options: {
       .slice(0, 2);
     for (const state of candidates) {
       if (state.status !== 'fail') continue;
+      if (state.geometry.deviceScaleFactor !== 1) continue;
       try {
         const key = encodeStoryId(state.storyId);
         const [current, structureBytes, target] = await Promise.all([
