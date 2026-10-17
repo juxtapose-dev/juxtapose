@@ -182,7 +182,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'snap',
     description:
-      'Capture pages (pixels + structure) under a name. Snap before an edit and again after it, then call diff. Pass url+as for one page, or urls+asPrefix for several. Returns the `jux snap --json` result.',
+      'URL workflow: capture pixels + structure under a name. If no before snap exists, snap before editing; snap after editing under another name, then diff. Pass url+as for one page, or urls+asPrefix for several. For Storybook/Ladle use run instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -252,7 +252,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Workbench projects (Storybook/Ladle build): capture stories and compare them to approved baselines. Default: stories affected by changes. Returns the `jux run --json` RunReport; when designReferences are configured for captured keys, an additional compact text block reports target-versus-current evidence from the saved images, without recapture.',
+      'Storybook/Ladle: capture selected stories and variants together after a coherent edit. If a saved run or supplied design-reference hint already describes the starting UI, use it; do not capture again just to rediscover it. Default selection is stories affected by changes. Returns a RunReport plus a compact target-versus-current hint for configured design references; read both before another tool call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -294,7 +294,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'reference',
     description:
-      'Compare configured named design PNGs with the last saved run; no browser or recapture. Returns a short ledger for captured keys and a notCaptured count by default; set detail to json for measured geometry and bounded region lists. Set region to retrieve one paired target|current PNG crop. Region IDs are bound to the image hashes. Design references have no DOM evidence and use Pixelmatch threshold 0.1, independent of approved-baseline settings.',
+      'Read saved target-versus-current evidence without recapture when the run hint leaves a specific question. Set detail=json for measured geometry/regions; set region to one region ID for a paired PNG crop when text cannot settle appearance. A passing run hint needs no reference call. Region IDs bind to image hashes; design references have no DOM evidence and use Pixelmatch threshold 0.1, separate from approved-baseline settings.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -359,7 +359,7 @@ export const TOOLS: Tool[] = [
 ];
 
 const INSTRUCTIONS =
-  'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops when text evidence cannot settle visual appearance, even if `explained` is "full". For Storybook/Ladle projects use run, check and handoff. When designReferences are configured, run also gives compact target-versus-current evidence; reference returns the full saved comparison or a focused paired crop without recapture. Explain says which layer set the capture settings of a story. Never approve unless the user asks.';
+  'For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, read the run report and any compact design-reference hint before deciding what remains. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference detail=json for saved measurements or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. Local image scripts remain useful when Jux lacks the needed fact. Use check for review blockers, explain for capture settings, and never approve unless the user asks.';
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -577,9 +577,9 @@ function compactReferenceFeedback(result: ReferenceResult) {
     passed: passed.slice(0, 8).map((state) => ({ name: state.name, key: state.storyId })),
     omittedPassed: Math.max(0, passed.length - 8),
     guidance:
-      result.outcome === 'pass' && passed.length <= 8
-        ? 'Each listed captured target has compatible geometry and zero Pixelmatch mismatch pixels under the stated policy. Read the run report for regression and flake status; no reference call is needed to verify these targets. NotCaptured targets were not checked.'
-        : 'Observed target/current pixels, not inferred CSS causes. Call reference for the full ledger or a focused paired image.',
+      result.outcome === 'pass'
+        ? 'Each listed captured target has compatible geometry and zero Pixelmatch mismatch pixels under the stated policy; all captured targets pass. Read the run report for regression and flake status; no reference call is needed to verify these targets, and no recapture is needed. NotCaptured targets were not checked.'
+        : 'Observed target/current pixels, not inferred CSS causes. Use these facts for the next edit. If a specific uncertainty remains, call reference with detail=json for saved geometry or a region ID for one paired crop; neither needs recapture.',
   };
 }
 
