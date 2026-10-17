@@ -1,5 +1,11 @@
 # @juxtapose/cli
 
+## 0.25.1
+
+### Patch Changes
+
+- 83daa01: Explain stale baseline ancestry in compact MCP run results so agents do not reopen a full report or recapture images after an exact visual match.
+
 ## 0.25.0
 
 ### Minor Changes
