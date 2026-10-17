@@ -120,6 +120,8 @@ changed region ID for focused inspection. A passing hint names the captured
 targets and does not require a second `reference` call to verify them. The first
 RunReport block remains unchanged. Targets outside a
 subset run count as `notCaptured`; if none were captured, no hint is added.
+For a passing target, the hint means the viewport and image geometry were
+compatible and Pixelmatch found zero mismatch pixels under the stated policy.
 
 ### reference
 
