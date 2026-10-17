@@ -220,7 +220,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'diff',
     description:
-      'Compare two snaps. Returns juxtapose.verdict/v1 (prefix: juxtapose.verdict-set/v1); differences are a result, not an error. Set crops only when the verdict\'s `explained` is not "full": it adds juxtapose.crops/v1 and baseline|current PNG strips.',
+      'Compare two snaps. Returns juxtapose.verdict/v1 (prefix: juxtapose.verdict-set/v1); differences are a result, not an error. Set crops when the text evidence is insufficient to judge appearance, including when `explained` is "full": it adds juxtapose.crops/v1 and baseline|current PNG strips.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -334,7 +334,7 @@ export const TOOLS: Tool[] = [
 ];
 
 const INSTRUCTIONS =
-  'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops only when `explained` is not "full". For Storybook/Ladle projects use run, check and handoff; explain says which layer set the capture settings of a story. Never approve unless the user asks.';
+  'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops when text evidence cannot settle visual appearance, even if `explained` is "full". For Storybook/Ladle projects use run, check and handoff; explain says which layer set the capture settings of a story. Never approve unless the user asks.';
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}

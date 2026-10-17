@@ -283,6 +283,10 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   }
 
   if (!imageUnavailable) {
+    lines.push(
+      `Pixel summary: ${formatPercent(p.mismatchPercent)} changed (${p.mismatchPixels} pixels) across ${p.changedRegions.length} detected region${p.changedRegions.length === 1 ? '' : 's'} at ${p.viewport.width}×${p.viewport.height}.`,
+      '',
+    );
     lines.push(v && !missing ? '## Pixels' : '## What changed');
     lines.push('');
     lines.push('```json');
@@ -305,7 +309,13 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     if (p.changedRegions.length > 0) {
       lines.push('## Where it changed');
       lines.push('');
-      for (const r of p.changedRegions.slice(0, MAX_REGIONS)) {
+      lines.push(
+        'Largest region boxes first (box area is not the number of changed pixels):',
+      );
+      const rankedRegions = [...p.changedRegions].sort(
+        (a, b) => b.width * b.height - a.width * a.height || a.y - b.y || a.x - b.x,
+      );
+      for (const r of rankedRegions.slice(0, MAX_REGIONS)) {
         lines.push(`- ${describeRegion(r, p.viewport)}`);
       }
       if (p.changedRegions.length > MAX_REGIONS) {
@@ -328,7 +338,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     lines.push('', '## If still unsure', '');
     if (p.cropsCommand) {
       lines.push(
-        `Side-by-side crops of each changed region, unexplained first — run \`${p.cropsCommand}\` and open the files it lists.`,
+        `If text evidence cannot settle the appearance, inspect paired crops even when structural coverage is full. Run \`${p.cropsCommand}\` and open the files it lists.`,
         '',
       );
     }
