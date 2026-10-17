@@ -33,6 +33,8 @@ cache key. Keep design-reference analysis separate: it depends on the
 reference PNG, config and image hashes, so a changed reference must invalidate
 its result even when the saved run is unchanged. Disk analysis remains
 available after MCP restart; no session cache is required for correctness.
+For a cached region request, read only that state's two saved images, validate
+their hashes and render the crop; do not repeat Pixelmatch over every state.
 
 ## Feedback budget and evidence
 
@@ -57,3 +59,8 @@ request from the session cache (0.30 ms for its JSON form). The short response
 was 504 bytes, versus 3,076 bytes for JSON. This verifies the local lookup and
 cache behavior on that fixture; it is not evidence of agent token or elapsed
 time savings.
+
+On the same saved fixture, a region crop requested after the all-state ledger
+took 19.0 ms using cached regions versus 28.0 ms when a fresh MCP server
+recomputed the named comparison. The PNG bytes matched. This single smoke
+measurement establishes correctness and direction, not a stable speed ratio.

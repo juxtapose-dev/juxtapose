@@ -109,6 +109,44 @@ async function savedFile(runDir: string, file: string): Promise<Buffer> {
   return readFile(image);
 }
 
+/** Turn a cached region into an image without running Pixelmatch again. The
+ * saved image hashes are checked before using its old coordinates. */
+export async function cropReferenceChange(options: {
+  project: string;
+  fromRun: string;
+  toRun: string;
+  result: ReferenceChangeResult;
+  regionId: string;
+  name?: string;
+}): Promise<ReferenceChangeResult['crop']> {
+  const state = options.result.states.find(
+    (candidate) =>
+      (!options.name || candidate.name === options.name) &&
+      candidate.regions?.some((region) => region.id === options.regionId),
+  );
+  const region = state?.regions?.find((item) => item.id === options.regionId);
+  if (!state || !region || !state.previousHash || !state.currentHash)
+    throw new Error(
+      `jux: region '${options.regionId}' was not found in this saved comparison`,
+    );
+  const project = await realpath(options.project);
+  const [fromDir, toDir] = await Promise.all([
+    selectedRun(project, options.fromRun),
+    selectedRun(project, options.toRun),
+  ]);
+  const file = `${encodeStoryId(state.storyId)}-current.webp`;
+  const [left, right] = await Promise.all([
+    savedFile(fromDir, file),
+    savedFile(toDir, file),
+  ]);
+  const hash = (image: Buffer) => createHash('sha256').update(image).digest('hex');
+  if (hash(left) !== state.previousHash || hash(right) !== state.currentHash)
+    throw new Error('jux: saved capture changed; request a fresh region ID');
+  const [rendered] = await renderCrops(left, right, [region]);
+  if (!rendered) throw new Error('jux: region lies outside the saved images');
+  return { regionId: region.id, png: rendered.png };
+}
+
 /** Compare two immutable saved captures; this is the edit's image delta, not
  * a change in distance to the design target. No browser or recapture. */
 export async function evaluateReferenceChange(options: {

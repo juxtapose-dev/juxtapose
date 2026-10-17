@@ -143,7 +143,9 @@ it does not recapture or say whether the edit moved closer to the design.
 Its short response lists changed pixel counts and region IDs; `detail: "json"`
 returns `juxtapose.saved-run-change/v1`. A region request returns a paired
 previous/current PNG crop. The server caches a bounded number of these
-immutable saved-run comparisons for repeated lookups in the same session.
+immutable saved-run comparisons for repeated lookups in the same session. A
+crop requested from a cached region reuses its analysis and validates both
+saved image hashes before rendering.
 After a capture, `run` includes compact target feedback by default. Set
 `feedback: "none"` on that call if you intend to request only the
 previous/current view and want to avoid computing the target comparison.

@@ -828,7 +828,8 @@ export class McpServer {
           locks: this.readsRun(),
           exec: async (signal) => {
             if (compare === 'previous') {
-              const { evaluateReferenceChange } = await import('./reference.js');
+              const { cropReferenceChange, evaluateReferenceChange } =
+                await import('./reference.js');
               const latest = await latestRunDir(this.project);
               if (!latest) return errorResult('jux: no saved run found');
               // Names are resolved through project config. A live edit may
@@ -841,7 +842,34 @@ export class McpServer {
                 .update(JSON.stringify(selectedReferences))
                 .digest('hex');
               const key = JSON.stringify([latest, fromRun, name, referenceKey]);
-              let change = region ? undefined : this.referenceChanges.get(key);
+              let change = this.referenceChanges.get(key);
+              if (region && !change && name) {
+                // A summary over all references is reusable for a later crop
+                // that names just one of its states.
+                const allReferenceKey = createHash('sha256')
+                  .update(JSON.stringify(config.designReferences ?? {}))
+                  .digest('hex');
+                const allKey = JSON.stringify([
+                  latest,
+                  fromRun,
+                  undefined,
+                  allReferenceKey,
+                ]);
+                const all = this.referenceChanges.get(allKey);
+                const state = all?.states.find((item) => item.name === name);
+                if (all && state) change = { ...all, states: [state] };
+              }
+              if (region && change) {
+                const crop = await cropReferenceChange({
+                  project: this.project,
+                  fromRun: fromRun!,
+                  toRun: path.basename(latest),
+                  result: change,
+                  regionId: region,
+                  ...(name ? { name } : {}),
+                });
+                change = { ...change, crop };
+              }
               if (!change) {
                 change = await evaluateReferenceChange({
                   project: this.project,
