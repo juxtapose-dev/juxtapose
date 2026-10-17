@@ -12,7 +12,13 @@ export interface ReferenceOutlineObservation {
   kind: 'border-outline-geometry/v1';
   targetBoxes: OutlineBox[];
   currentBoxes: OutlineBox[];
-  note: 'Matched-color border outlines in target and current pixels; element identity and CSS cause are unknown.';
+  layout?: {
+    target: 'stacked' | 'side-by-side';
+    current: 'stacked' | 'side-by-side';
+    /** IDs of uniquely overlapping current textboxes, in box order. */
+    nearCurrentElementIds?: string[];
+  };
+  note: 'Matched-color border outlines in target and current pixels; target element identity and CSS cause are unknown.';
 }
 
 interface RawImage {
@@ -22,7 +28,7 @@ interface RawImage {
 }
 
 const NOTE =
-  'Matched-color border outlines in target and current pixels; element identity and CSS cause are unknown.' as const;
+  'Matched-color border outlines in target and current pixels; target element identity and CSS cause are unknown.' as const;
 
 function textboxBorderColor(
   structure: StructureSnapshot,
@@ -146,6 +152,45 @@ function findOutlines(
   return boxes.sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
+function overlap(startA: number, endA: number, startB: number, endB: number): number {
+  return Math.max(0, Math.min(endA, endB) - Math.max(startA, startB));
+}
+
+function arrangement(boxes: OutlineBox[]): 'stacked' | 'side-by-side' | null {
+  if (boxes.length !== 2) return null;
+  const [a, b] = boxes as [OutlineBox, OutlineBox];
+  const horizontalOverlap = overlap(a.x, a.x + a.width, b.x, b.x + b.width);
+  const verticalOverlap = overlap(a.y, a.y + a.height, b.y, b.y + b.height);
+  if (horizontalOverlap >= 0.7 * Math.min(a.width, b.width) && a.y + a.height + 4 <= b.y)
+    return 'stacked';
+  if (
+    verticalOverlap >= 0.7 * Math.min(a.height, b.height) &&
+    Math.min(a.x + a.width, b.x + b.width) + 4 <= Math.max(a.x, b.x)
+  )
+    return 'side-by-side';
+  return null;
+}
+
+function nearbyTextboxIds(
+  boxes: OutlineBox[],
+  structure: StructureSnapshot,
+): string[] | undefined {
+  const ids: string[] = [];
+  for (const box of boxes) {
+    const candidates = structure.elements.filter((element) => {
+      if (element.role !== 'textbox' || !element.id) return false;
+      const rect = element.rect;
+      const area =
+        overlap(box.x, box.x + box.width, rect.x, rect.x + rect.w) *
+        overlap(box.y, box.y + box.height, rect.y, rect.y + rect.h);
+      return area >= 0.8 * box.width * box.height;
+    });
+    if (candidates.length !== 1) return undefined;
+    ids.push(candidates[0]!.id!);
+  }
+  return new Set(ids).size === ids.length ? ids : undefined;
+}
+
 /** A deliberately narrow image observation. Missing strokes, mismatched
  * border colors and crowded regions abstain instead of implying an element
  * was added or removed. It never changes the design-reference verdict. */
@@ -178,5 +223,22 @@ export async function observeReferenceOutlines(input: {
     })
   )
     return null;
-  return { kind: 'border-outline-geometry/v1', targetBoxes, currentBoxes, note: NOTE };
+  const targetLayout = arrangement(targetBoxes);
+  const currentLayout = arrangement(currentBoxes);
+  const nearCurrentElementIds = nearbyTextboxIds(currentBoxes, input.structure);
+  const layout =
+    targetLayout && currentLayout && targetLayout !== currentLayout
+      ? {
+          target: targetLayout,
+          current: currentLayout,
+          ...(nearCurrentElementIds ? { nearCurrentElementIds } : {}),
+        }
+      : undefined;
+  return {
+    kind: 'border-outline-geometry/v1',
+    targetBoxes,
+    currentBoxes,
+    ...(layout ? { layout } : {}),
+    note: NOTE,
+  };
 }
