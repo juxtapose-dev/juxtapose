@@ -112,11 +112,14 @@ test('one run resolves previous before capture and returns all three bounded blo
   expect(texts[2]).toContain('96 changed pixels');
   expect(runCommand).toHaveBeenCalledTimes(1);
   expect(Buffer.byteLength(texts.join('\n'))).toBeLessThan(5000);
+  const latest = await server.call('report', {});
+  expect(
+    JSON.parse(latest.content[0]!.type === 'text' ? latest.content[0]!.text : '{}').runId,
+  ).toBe('r2');
   // Subsequent detail reuses the same saved comparison, without capture.
   const detail = await server.call('reference', {
     compare: 'previous',
     fromRun: 'r1',
-    toRun: 'r2',
     detail: 'json',
   });
   expect(detail.isError).toBe(false);
