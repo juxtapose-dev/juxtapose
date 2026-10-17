@@ -111,8 +111,9 @@ when the user asks you to.
 
 ## Tools
 
-The server exposes nine tools. Each result's first text block holds the
-command's JSON, except `reference`, which defaults to a short text ledger.
+The server exposes ten tools. Each result's first text block holds the
+command's JSON, except `run`, which defaults to a bounded summary, and
+`reference`, which defaults to a short text ledger.
 When the command also printed a warning, such as
 an approved story whose structure was not saved, a successful result carries
 it as a second text block. A `run` with captured design targets also carries a
@@ -120,7 +121,8 @@ final text block with `juxtapose.design-reference-hint/v1`: overall counts,
 up to eight affected states, up to eight passed capture keys, and the largest
 changed region ID for focused inspection. A passing hint names the captured
 targets and does not require a second `reference` call to verify them. The first
-RunReport block remains unchanged. Targets outside a
+run-summary block is followed by the target hint; request `report` for the
+complete saved result. Targets outside a
 subset run count as `notCaptured`; if none were captured, no hint is added.
 For a passing target, the hint means the viewport and image geometry were
 compatible and Pixelmatch found zero mismatch pixels under the stated policy.
@@ -258,14 +260,15 @@ and unstable captures first), and how many more were omitted. It also includes
 a compact design-target hint when references are configured. The full report
 is saved for focused, read-only lookups.
 
-| Argument  | Type     | Description                                                                                          |
-| --------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `all`     | boolean  | Capture every story instead of the affected ones.                                                    |
-| `since`   | string   | Git ref. Traces changed files since it for `cause`.                                                  |
-| `stories` | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
-| `settle`  | object   | Settle options for every story, as for `snap`.                                                       |
-| `recheck` | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
-| `report`  | string   | `"summary"` (default) or `"full"` for the complete `RunReport`.                                      |
+| Argument   | Type     | Description                                                                                          |
+| ---------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `all`      | boolean  | Capture every story instead of the affected ones.                                                    |
+| `since`    | string   | Git ref. Traces changed files since it for `cause`.                                                  |
+| `stories`  | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
+| `settle`   | object   | Settle options for every story, as for `snap`.                                                       |
+| `recheck`  | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
+| `feedback` | string   | `"target"` (default) or `"none"` to skip design-target analysis after capture.                       |
+| `report`   | string   | `"summary"` (default) or `"full"` for the complete `RunReport`.                                      |
 
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.
