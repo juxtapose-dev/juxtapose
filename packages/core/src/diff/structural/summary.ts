@@ -243,6 +243,7 @@ const NO_PIXEL_DIFF = 'No pixel diff: the baseline image is unavailable';
 export function buildSummary(a: SummaryArgs): string {
   const head = headOf(a);
   const subThreshold = a.flags.includes('sub-threshold');
+  const incompleteStyles = a.flags.includes('incomplete-style-comparison');
   const missing = a.flags.includes('no-baseline-structure')
     ? 'baseline'
     : a.flags.includes('no-current-structure')
@@ -250,6 +251,8 @@ export function buildSummary(a: SummaryArgs): string {
       : undefined;
 
   const tail: string[] = [];
+  if (incompleteStyles && a.deltas.length > 0)
+    tail.push('Grid style comparison incomplete');
   const trunc = [a.baseline, a.current].find((s) => s?.truncated)?.truncated;
   if (trunc) tail.push(`Structure truncated (${trunc.kept}/${trunc.total} elements)`);
 
@@ -277,6 +280,9 @@ export function buildSummary(a: SummaryArgs): string {
           ? 'Pixel diff marks no region, which is not evidence the change is harmless'
           : `${a.regionCount} changed region${a.regionCount === 1 ? '' : 's'}`,
     );
+  } else if (a.deltas.length === 0 && incompleteStyles) {
+    body = `${head}: baseline and current captured different style sets; grid layout cannot be compared`;
+    tail.unshift(a.noPixelDiff ? NO_PIXEL_DIFF : regions(a));
   } else if (a.deltas.length === 0 && a.noPixelDiff) {
     body = `${head}: structure and styles identical; the hash differs, so pixels changed, but there is no baseline image to show where`;
     tail.unshift(NO_PIXEL_DIFF);

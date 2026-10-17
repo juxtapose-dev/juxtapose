@@ -721,3 +721,53 @@ test('elementRegions: each delta element’s rects, unioned per element, rounded
   expect(new Set(keys).size).toBe(keys.length);
   expect(run('noop').elementRegions).toEqual([]);
 });
+
+test('grid column changes are reported only when both snapshots captured the property', () => {
+  const old = structuredClone(fixture.cases.noop.structure);
+  const current = structuredClone(old);
+  const index = old.elements.findIndex((e) => e.tag === 'button');
+  expect(index).toBeGreaterThanOrEqual(0);
+  old.styleCaptureVersion = 2;
+  current.styleCaptureVersion = 2;
+  old.elements[index]!.styles['grid-template-columns'] = '40px 60px';
+  current.elements[index]!.styles['grid-template-columns'] = '100px';
+  current.structureHash = 'changed';
+  const run = (baseline: StructureSnapshot) =>
+    structuralDiff({
+      baseline,
+      current,
+      imagesIdentical: false,
+      pixels: {
+        changedRegions: [{ x: 16, y: 69, width: 100, height: 44 }],
+        dimensionMismatch: false,
+      },
+      escalate: ESC,
+    });
+  expect(run(old)).toMatchObject({
+    classification: 'style-only',
+    styleTags: ['layout'],
+    deltas: [
+      expect.objectContaining({
+        kind: 'style',
+        prop: 'grid-template-columns',
+        from: '40px 60px',
+        to: '100px',
+      }),
+    ],
+  });
+  const legacy = structuredClone(old);
+  delete legacy.styleCaptureVersion;
+  delete legacy.elements[index]!.styles['grid-template-columns'];
+  expect(run(legacy)).toMatchObject({
+    classification: 'unknown',
+    flags: expect.arrayContaining(['incomplete-style-comparison']),
+  });
+  expect(run(legacy).deltas).not.toContainEqual(
+    expect.objectContaining({ prop: 'grid-template-columns' }),
+  );
+  expect(run(legacy).summary).toContain('grid layout cannot be compared');
+  const withOtherChange = structuredClone(legacy);
+  withOtherChange.elements[index]!.styles.gap = '8px';
+  expect(run(withOtherChange).flags).toContain('incomplete-style-comparison');
+  expect(run(withOtherChange).summary).toContain('Grid style comparison incomplete');
+});

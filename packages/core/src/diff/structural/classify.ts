@@ -33,9 +33,20 @@ export interface ClassifyContext {
   };
 }
 
-const TAG_ORDER: StyleTag[] = ['color', 'typography', 'spacing', 'border', 'effects'];
+const comparableStyles = (a?: StructureSnapshot, b?: StructureSnapshot) =>
+  !a || !b || a.styleCaptureVersion === b.styleCaptureVersion;
+
+const TAG_ORDER: StyleTag[] = [
+  'color',
+  'typography',
+  'spacing',
+  'layout',
+  'border',
+  'effects',
+];
 
 export function styleTagOf(prop: string): StyleTag {
+  if (prop === 'grid-template-columns') return 'layout';
   if (/^(padding|margin)-|^gap$/.test(prop)) return 'spacing';
   if (/^border-.*-(width|radius)$/.test(prop) || /^border-.*-color$/.test(prop))
     return 'border';
@@ -75,7 +86,11 @@ export function classify(ctx: ClassifyContext): {
   // Equal hashes and no facts: the DOM and styles did not change, so the
   // pixels are drift or self-painted content. The facts come from the
   // elements themselves, so they outrank a hash that disagrees with them.
-  if (facts.length === 0 && baseline.structureHash === current.structureHash) {
+  if (
+    facts.length === 0 &&
+    comparableStyles(baseline, current) &&
+    baseline.structureHash === current.structureHash
+  ) {
     const selfPainted = selfPaintingAt(current, ctx.unexplainedRegions) !== undefined;
     return { classification: selfPainted ? 'unknown' : 'render-drift', styleTags: none };
   }
@@ -140,6 +155,7 @@ export function computeFlags(ctx: ClassifyContext): Flag[] {
   if (ctx.explained !== 'full') flags.push('unexplained-pixels');
   if (ctx.pixels.subThreshold) flags.push('sub-threshold');
   if (baseline?.truncated || current?.truncated) flags.push('structure-truncated');
+  if (!comparableStyles(baseline, current)) flags.push('incomplete-style-comparison');
   if (!baseline) flags.push('no-baseline-structure');
   if (!current) flags.push('no-current-structure');
   const belowFold = (s: StructureSnapshot | undefined) =>

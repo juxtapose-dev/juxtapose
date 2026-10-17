@@ -224,6 +224,9 @@ export interface StructureElement {
 
 export interface StructureSnapshot {
   schema: 'juxtapose.structure/v1';
+  /** Version 2 includes computed grid-template-columns. Older sidecars omit
+   * this field, so comparisons skip that property until both sides have it. */
+  styleCaptureVersion?: 2;
   viewport: Viewport;
   /** sha256 of the canonical JSON of `elements`. Equal ⇒ identical structure
    *  and styles, so a pixel difference is render drift. */
@@ -275,7 +278,8 @@ export type Classification =
 
 /** Sub-tags of `style-only`, so "colour tweak" and "spacing change" read
  *  differently at a glance. */
-export type StyleTag = 'color' | 'typography' | 'spacing' | 'border' | 'effects';
+export type StyleTag =
+  'color' | 'typography' | 'spacing' | 'layout' | 'border' | 'effects';
 
 export type Flag =
   | 'element-removed'
@@ -286,6 +290,9 @@ export type Flag =
    *  its tolerance, and the structural deltas are the change. */
   | 'sub-threshold'
   | 'structure-truncated'
+  /** One side predates computed grid layout capture, so missing grid facts
+   *  cannot establish that the styles are unchanged. */
+  | 'incomplete-style-comparison'
   | 'no-baseline-structure'
   | 'no-current-structure'
   /** Either side's content is taller than the viewport: changes below the
