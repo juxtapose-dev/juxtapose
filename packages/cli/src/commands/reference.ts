@@ -12,13 +12,17 @@ import {
   observeReferenceOutlines,
   parseRunReport,
   renderCrops,
+  structuralDiff,
+  type Delta,
   type DesignReferenceLedger,
+  type DiffResult,
   type DesignReferenceSpec,
   type ReferenceOutlineObservation,
 } from '@juxtapose/core';
 import { loadConfig } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
+import { observedChanges } from './agent-run-report.js';
 
 type State =
   | { name: string; storyId: string; status: 'error'; error: string }
@@ -69,7 +73,12 @@ export interface ReferenceChangeResult {
       height: number;
       changedPixels?: number;
     }>;
+    /** The saved structure sidecars of both runs, compared as `jux diff`
+     *  compares two snaps. Absent when either sidecar is missing. */
+    structural?: { classification: string; deltaCount: number; deltas: Delta[] };
   }>;
+  /** Observed earlier→later facts deduplicated across the changed states. */
+  changes?: string[];
   crop?: { regionId: string; png: Buffer };
 }
 
@@ -147,13 +156,15 @@ export async function cropReferenceChange(options: {
   return { regionId: region.id, png: rendered.png };
 }
 
-/** Compare two immutable saved captures; this is the edit's image delta, not
- * a change in distance to the design target. No browser or recapture. */
+/** Compare two immutable saved runs, such as a checkpoint and a later attempt:
+ * the edit's image and structure delta, not a change in distance to the
+ * design target. No browser or recapture. */
 export async function evaluateReferenceChange(options: {
   project: string;
   fromRun: string;
-  /** Known latest run from an MCP session avoids a second directory scan. */
+  /** Defaults to the latest run. */
   toRun?: string;
+  /** A design reference name, or a capture key present in either run. */
   name?: string;
   regionId?: string;
 }): Promise<ReferenceChangeResult> {
@@ -161,16 +172,11 @@ export async function evaluateReferenceChange(options: {
   const config = await loadConfig(project);
   checkProjectSettle(config);
   const references = config.designReferences ?? {};
-  const names = options.name ? [options.name] : Object.keys(references).sort();
-  if (!names.length)
-    throw new Error('jux: configure designReferences before comparing captures');
-  if (options.name && !Object.hasOwn(references, options.name))
-    throw new Error(`jux: unknown design reference '${options.name}'`);
   const [fromDir, toDir] = await Promise.all([
     selectedRun(project, options.fromRun),
     selectedRun(project, options.toRun),
   ]);
-  if (fromDir === toDir) throw new Error('jux: fromRun must differ from the latest run');
+  if (fromDir === toDir) throw new Error('jux: fromRun and toRun must be different runs');
   const readReport = async (dir: string) => {
     const file = await realpath(path.join(dir, 'report.json'));
     if (!inside(file, dir)) throw new Error('run report escapes the run');
@@ -179,10 +185,41 @@ export async function evaluateReferenceChange(options: {
   const [before, after] = await Promise.all([readReport(fromDir), readReport(toDir)]);
   const previous = new Map(before.results.map((r) => [r.storyId, r]));
   const current = new Map(after.results.map((r) => [r.storyId, r]));
+  // Design references keep their names; every other capture both runs saved
+  // follows under its own key, so a checkpoint covers projects without
+  // design PNGs and stories no reference names.
+  let targets: Array<{ name: string; storyId: string }>;
+  if (options.name !== undefined) {
+    if (Object.hasOwn(references, options.name))
+      targets = [
+        {
+          name: options.name,
+          storyId: (references[options.name] as DesignReferenceSpec).storyId,
+        },
+      ];
+    else if (previous.has(options.name) || current.has(options.name))
+      targets = [{ name: options.name, storyId: options.name }];
+    else
+      throw new Error(
+        `jux: '${options.name}' is neither a design reference nor a capture in either run`,
+      );
+  } else {
+    const named = Object.keys(references)
+      .sort()
+      .map((name) => ({
+        name,
+        storyId: (references[name] as DesignReferenceSpec).storyId,
+      }));
+    const covered = new Set(named.map((target) => target.storyId));
+    const shared = [...current.keys()]
+      .filter((id) => previous.has(id) && !covered.has(id))
+      .sort();
+    targets = [...named, ...shared.map((storyId) => ({ name: storyId, storyId }))];
+  }
+  if (!targets.length) throw new Error('jux: the two runs share no captures');
   const states: ReferenceChangeResult['states'] = [];
   let crop: ReferenceChangeResult['crop'];
-  for (const name of names) {
-    const storyId = (references[name] as DesignReferenceSpec).storyId;
+  for (const { name, storyId } of targets) {
     const a = previous.get(storyId);
     const b = current.get(storyId);
     if (
@@ -249,6 +286,10 @@ export async function evaluateReferenceChange(options: {
           if (rendered) crop = { regionId: region.id, png: rendered.png };
         }
       }
+      const structural =
+        previousHash === currentHash
+          ? undefined
+          : await savedStructural(fromDir, toDir, storyId, diff);
       states.push({
         name,
         storyId,
@@ -258,6 +299,7 @@ export async function evaluateReferenceChange(options: {
         changedPixels: diff.mismatchPixels,
         changedPercent: diff.mismatchPercent,
         regions,
+        ...(structural ? { structural } : {}),
       });
     } catch (err) {
       states.push({
@@ -272,13 +314,56 @@ export async function evaluateReferenceChange(options: {
     throw new Error(
       `jux: region '${options.regionId}' was not found in this saved comparison`,
     );
+  const changes = observedChanges(
+    states
+      .filter((state) => state.structural?.deltas.length)
+      .map(
+        (state) =>
+          ({
+            storyId: state.storyId,
+            status: 'fail',
+            structural: state.structural,
+          }) as DiffResult,
+      ),
+  );
   return {
     schema: 'juxtapose.saved-run-change/v1',
     fromRunId: before.runId,
     toRunId: after.runId,
     policy: { method: 'pixelmatch', threshold: 0.1, includeAA: false },
     states,
+    ...(changes.length ? { changes } : {}),
     ...(crop ? { crop } : {}),
+  };
+}
+
+/** The structural verdict between two saved runs' sidecars for one capture,
+ *  or undefined when either run saved none (a capture error, an old run). */
+async function savedStructural(
+  fromDir: string,
+  toDir: string,
+  storyId: string,
+  pixels: { changedRegions: DiffResult['changedRegions']; dimensionMismatch: boolean },
+): Promise<ReferenceChangeResult['states'][number]['structural']> {
+  const file = `${encodeStoryId(storyId)}-current.structure.json.gz`;
+  const read = (dir: string) =>
+    savedFile(dir, file).then(
+      (gz) => decodeStructure(gz),
+      () => undefined,
+    );
+  const [baseline, current] = await Promise.all([read(fromDir), read(toDir)]);
+  if (!baseline || !current) return undefined;
+  const verdict = structuralDiff({
+    baseline,
+    current,
+    imagesIdentical: false,
+    pixels,
+    escalate: { command: 'reference compare=previous region=<id>' },
+  });
+  return {
+    classification: verdict.classification,
+    deltaCount: verdict.deltaCount,
+    deltas: verdict.deltas,
   };
 }
 

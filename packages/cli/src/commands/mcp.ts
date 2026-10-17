@@ -48,7 +48,7 @@ import {
 } from '../scheduler.js';
 import { snapName } from '../snap-name.js';
 import { MAX_VIEWPORT_SIDE } from './snap.js';
-import { agentRunSummary, SavedReportCache } from './agent-run-report.js';
+import { agentRunSummary, SavedReportCache, savedRuns } from './agent-run-report.js';
 import type { ReferenceChangeResult, ReferenceResult } from './reference.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
@@ -307,13 +307,13 @@ export const TOOLS: Tool[] = [
   {
     name: 'report',
     description:
-      'Read a saved Storybook/Ladle run without capture. Default: bounded summary of the latest run; story: one full capture result; detail=full: complete RunReport. runId selects an older saved run.',
+      'Read a saved Storybook/Ladle run without capture. Default: bounded summary of the latest run; story: one full capture result; detail=full: complete RunReport; detail=runs: saved run IDs, newest first, for choosing a checkpoint. runId selects an older saved run.',
     inputSchema: {
       type: 'object',
       properties: {
         runId: { type: 'string', description: 'Saved run ID (default latest)' },
         story: { type: 'string', description: 'Exact capture key for one result' },
-        detail: { type: 'string', enum: ['summary', 'full'] },
+        detail: { type: 'string', enum: ['summary', 'full', 'runs'] },
       },
     },
   },
@@ -336,7 +336,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'reference',
     description:
-      'Read saved image evidence without recapture. Default compares the latest capture with the design target. Set compare=previous and fromRun to compare a prior saved capture with the latest capture when you need to see what an edit changed; changed pixels alone do not measure progress toward the target. Set detail=json for regions or region for one paired PNG crop. A passing target run hint needs no reference call.',
+      'Read saved image evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, and toRun defaulting to the latest) for every capture both saved: changed pixels plus observed structural changes (property old→new, resizes). Use it against a checkpoint run ID to see what later edits changed; it does not measure progress toward the target. Set detail=json for regions and deltas, or region for one paired PNG crop. A passing target run hint needs no reference call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -349,9 +349,14 @@ export const TOOLS: Tool[] = [
           type: 'string',
           description: 'Required with compare=previous; exact earlier run ID',
         },
+        toRun: {
+          type: 'string',
+          description: 'With compare=previous: the later run ID (default latest)',
+        },
         name: {
           type: 'string',
-          description: 'Optional configured design reference name; omit for all',
+          description:
+            'Optional design reference name (or, with compare=previous, a capture key); omit for all',
         },
         region: {
           type: 'string',
@@ -410,7 +415,7 @@ export const TOOLS: Tool[] = [
 ];
 
 const INSTRUCTIONS =
-  'For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, read the run report and any compact design-reference hint before deciding what remains. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference detail=json for saved measurements or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. Local image scripts remain useful when Jux lacks the needed fact. Use check for review blockers, explain for capture settings, and never approve unless the user asks.';
+  "For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, read the run report and any compact design-reference hint before deciding what remains. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference detail=json for saved measurements or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. Local image scripts remain useful when Jux lacks the needed fact. Every run is saved: note a good run ID as a checkpoint, and after later edits call reference compare=previous fromRun=<checkpoint> to see what changed since it, pixels and structure, without recapture (report detail=runs lists saved IDs). To roll back, restore that checkpoint's source, not the baselines. Use check for review blockers, explain for capture settings, and never approve unless the user asks.";
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -567,6 +572,38 @@ export async function withDesignReferenceFeedback(
     });
   }
   return run;
+}
+
+/** A checkpoint comparison now covers every shared capture, so unchanged ones
+ *  are counted, not listed: a 200-story run with one edit reads as one line. */
+function savedChangeText(change: ReferenceChangeResult): string {
+  const count = (status: string) =>
+    change.states.filter((state) => state.status === status).length;
+  const notable = change.states.filter((state) => state.status !== 'unchanged');
+  const counts = [
+    `${count('changed')} changed`,
+    `${count('unchanged')} unchanged`,
+    ...(count('incompatible') ? [`${count('incompatible')} incompatible`] : []),
+    ...(count('not-comparable') ? [`${count('not-comparable')} not comparable`] : []),
+  ].join(', ');
+  const lines = notable
+    .slice(0, 8)
+    .map(
+      (state) =>
+        `${state.name}: ${state.status}${state.changedPixels !== undefined ? `, ${state.changedPixels} changed pixels` : ''}${state.reason ? ` (${state.reason})` : ''}${state.regions?.[0] ? `, largest region ${state.regions[0].id}` : ''}`,
+    );
+  return [
+    `Saved capture change ${change.fromRunId} → ${change.toRunId}; Pixelmatch threshold 0.1: ${counts}.`,
+    ...lines,
+    ...(notable.length > 8 ? [`… ${notable.length - 8} more; request detail=json.`] : []),
+    ...(change.changes?.length
+      ? [
+          `Observed structural changes ${change.fromRunId} → ${change.toRunId}:`,
+          ...change.changes.map((line) => `  ${line}`),
+        ]
+      : []),
+    'Changed pixels describe the edit, not distance to the design target.',
+  ].join('\n');
 }
 
 function compactReferenceFeedback(result: ReferenceResult) {
@@ -773,15 +810,24 @@ export class McpServer {
         const story = str(args, 'story');
         const detail = str(args, 'detail');
         if (story === '') throw new ArgError("'story' must be a non-empty capture key");
-        if (detail !== undefined && detail !== 'summary' && detail !== 'full')
-          throw new ArgError("'detail' must be 'summary' or 'full'");
-        if (story && detail === 'full')
-          throw new ArgError("pass 'story' or 'detail=full', not both");
+        if (
+          detail !== undefined &&
+          detail !== 'summary' &&
+          detail !== 'full' &&
+          detail !== 'runs'
+        )
+          throw new ArgError("'detail' must be 'summary', 'full' or 'runs'");
+        if (story && detail !== undefined && detail !== 'summary')
+          throw new ArgError(`pass 'story' or 'detail=${detail}', not both`);
+        if (runId && detail === 'runs')
+          throw new ArgError("'detail=runs' lists every saved run; omit 'runId'");
         return {
           locks: this.readsRun(),
           exec: async () => {
             let data: unknown;
-            if (story) {
+            if (detail === 'runs') {
+              data = await savedRuns(this.project);
+            } else if (story) {
               const { report, result } = await this.reports.story(
                 this.project,
                 story,
@@ -838,8 +884,9 @@ export class McpServer {
           throw new ArgError("'compare' must be 'target' or 'previous'");
         if (compare === 'previous' && !fromRun)
           throw new ArgError("'fromRun' is required with compare='previous'");
-        if (compare === 'target' && fromRun)
-          throw new ArgError("'fromRun' requires compare='previous'");
+        const toRun = str(args, 'toRun');
+        if (compare === 'target' && (fromRun || toRun))
+          throw new ArgError("'fromRun' and 'toRun' require compare='previous'");
         return {
           locks: this.readsRun(),
           exec: async (signal) => {
@@ -848,6 +895,7 @@ export class McpServer {
                 await import('./reference.js');
               const latest = await latestRunDir(this.project);
               if (!latest) return errorResult('jux: no saved run found');
+              const toRunId = toRun ?? path.basename(latest);
               // Names are resolved through project config. A live edit may
               // remap a name without changing either immutable saved run.
               const config = await loadConfig(this.project);
@@ -857,7 +905,7 @@ export class McpServer {
               const referenceKey = createHash('sha256')
                 .update(JSON.stringify(selectedReferences))
                 .digest('hex');
-              const key = JSON.stringify([latest, fromRun, name, referenceKey]);
+              const key = JSON.stringify([toRunId, fromRun, name, referenceKey]);
               let change = this.referenceChanges.get(key);
               if (region && !change && name) {
                 // A summary over all references is reusable for a later crop
@@ -866,7 +914,7 @@ export class McpServer {
                   .update(JSON.stringify(config.designReferences ?? {}))
                   .digest('hex');
                 const allKey = JSON.stringify([
-                  latest,
+                  toRunId,
                   fromRun,
                   undefined,
                   allReferenceKey,
@@ -879,7 +927,7 @@ export class McpServer {
                 const crop = await cropReferenceChange({
                   project: this.project,
                   fromRun: fromRun!,
-                  toRun: path.basename(latest),
+                  toRun: toRunId,
                   result: change,
                   regionId: region,
                   ...(name ? { name } : {}),
@@ -890,7 +938,7 @@ export class McpServer {
                 change = await evaluateReferenceChange({
                   project: this.project,
                   fromRun: fromRun!,
-                  toRun: path.basename(latest),
+                  toRun: toRunId,
                   ...(name ? { name } : {}),
                   ...(region ? { regionId: region } : {}),
                 });
@@ -903,12 +951,6 @@ export class McpServer {
                 }
               }
               const crop = change.crop;
-              const summary = change.states
-                .slice(0, 8)
-                .map(
-                  (state) =>
-                    `${state.name}: ${state.status}${state.changedPixels !== undefined ? `, ${state.changedPixels} changed pixels` : ''}${state.regions?.[0] ? `, largest region ${state.regions[0].id}` : ''}`,
-                );
               const content: ToolResult['content'] = [
                 {
                   type: 'text',
@@ -917,7 +959,7 @@ export class McpServer {
                         ...change,
                         crop: crop ? { regionId: crop.regionId } : undefined,
                       })
-                    : `Saved capture change ${change.fromRunId} → ${change.toRunId}; Pixelmatch threshold 0.1.\n${summary.join('\n')}${change.states.length > 8 ? `\n… ${change.states.length - 8} more states; request detail=json.` : ''}\nChanged pixels describe the edit, not distance to the design target.`,
+                    : savedChangeText(change),
                 },
               ];
               if (crop)

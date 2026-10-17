@@ -164,11 +164,29 @@ appear in the design reference or why the layouts differ.
 By default, compares the last saved run with configured named design PNGs. No
 browser is opened. Pass `name` to select one target, or omit it for the
 captured-state ledger. To see what changed since an earlier run, call
-`reference` with `compare: "previous"` and `fromRun: "<run-id>"`. That view
-compares the earlier saved image with the latest saved image using Pixelmatch;
-it does not recapture or say whether the edit moved closer to the design.
-Its short response lists changed pixel counts and region IDs; `detail: "json"`
-returns `juxtapose.saved-run-change/v1`. A region request returns a paired
+`reference` with `compare: "previous"` and `fromRun: "<run-id>"`. `toRun`
+selects the later run; it defaults to the latest. The view covers every
+capture both runs saved, not only design-reference states, so it works in a
+project without design PNGs. Design references keep their names; other
+captures appear under their capture keys, and `name` accepts either. It
+compares the saved images with Pixelmatch and, when both runs saved structure,
+the structure the way `diff` compares two snaps. It does not recapture or say
+whether the edit moved closer to the design.
+
+Saved runs are never pruned, so any earlier run works as a checkpoint: keep a
+good run's ID, and after later edits compare against it. `report` with
+`detail: "runs"` lists up to 20 saved runs, newest first, with their counts.
+To roll back, restore the checkpoint's source and run again; approving is not a
+checkpoint, because it rewrites the committed baselines.
+
+The short response counts changed and unchanged captures, lists up to eight
+that changed with their changed pixel counts and region IDs, and adds up to
+six observed structural changes deduplicated across them, such as
+`main>section>form gap 12px→20px (all 4)`. On the four-capture billing
+fixture, comparing the regressed run with the repaired one took 88 ms and
+821 bytes and named all four edits. `detail: "json"`
+returns `juxtapose.saved-run-change/v1`, with each changed state's structural
+deltas. A region request returns a paired
 previous/current PNG crop. The server caches a bounded number of these
 immutable saved-run comparisons for repeated lookups in the same session. A
 crop requested from a cached region reuses its analysis and validates both

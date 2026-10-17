@@ -10,7 +10,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { encodeStoryId } from '@juxtapose/core';
+import { encodeStoryId, encodeStructure, type StructureSnapshot } from '@juxtapose/core';
 import { captureIo } from '../io.js';
 import {
   evaluateReferenceChange,
@@ -522,4 +522,119 @@ test('geometry, missing captures, invalid config and path escapes are explicit',
     status: 'error',
     error: 'saved image escapes the run',
   });
+});
+
+function formStructure(gap: string): StructureSnapshot {
+  return {
+    schema: 'juxtapose.structure/v1',
+    viewport: { width: 12, height: 8 },
+    structureHash: gap,
+    contentHeight: 8,
+    elements: [
+      {
+        path: 'html>body>form',
+        parent: null,
+        tag: 'form',
+        rect: { x: 0, y: 0, w: 12, h: 8 },
+        paintOrder: 0,
+        styles: { gap },
+      },
+    ],
+  };
+}
+
+test('compare=previous checks any two saved runs as checkpoints, with structure and no design references', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jux-checkpoint-'));
+  roots.push(root);
+  await writeFile(path.join(root, 'juxtapose.config.json'), '{}');
+  const story = 'form--default';
+  const runs: Array<[string, Buffer, string, string]> = [
+    ['r1', black, '12px', '2030-01-01'],
+    ['r2', whiteWebp, '20px', '2030-01-02'],
+    ['r3', whiteWebp, '20px', '2030-01-03'],
+  ];
+  for (const [runId, image, gap, date] of runs) {
+    const dir = path.join(root, '.juxtapose/runs', runId);
+    await mkdir(path.join(dir, 'images'), { recursive: true });
+    await writeFile(
+      path.join(dir, 'report.json'),
+      JSON.stringify({
+        runId,
+        startedAt: `${date}T00:00:00Z`,
+        capturedCount: 1,
+        summary: { pass: 1, fail: 0, new: 0, stale: 0, skip: 0 },
+        results: [{ storyId: story, status: 'pass', viewport: { width: 12, height: 8 } }],
+      }),
+    );
+    await writeFile(
+      path.join(dir, 'images', `${encodeStoryId(story)}-current.webp`),
+      image,
+    );
+    await writeFile(
+      path.join(dir, 'images', `${encodeStoryId(story)}-current.structure.json.gz`),
+      encodeStructure(formStructure(gap)),
+    );
+    await utimes(path.join(dir, 'report.json'), new Date(date), new Date(date));
+    await utimes(dir, new Date(date), new Date(date));
+  }
+
+  // r2 is not the latest run: the checkpoint and the attempt are both chosen.
+  const change = await evaluateReferenceChange({
+    project: root,
+    fromRun: 'r1',
+    toRun: 'r2',
+  });
+  expect(change).toMatchObject({
+    fromRunId: 'r1',
+    toRunId: 'r2',
+    states: [
+      {
+        name: story,
+        status: 'changed',
+        structural: {
+          deltas: [
+            {
+              kind: 'style',
+              el: 'html>body>form',
+              prop: 'gap',
+              from: '12px',
+              to: '20px',
+            },
+          ],
+        },
+      },
+    ],
+    changes: ['html>body>form gap 12px→20px (all 1)'],
+  });
+  // Identical saved bytes need no structural comparison.
+  const same = await evaluateReferenceChange({ project: root, fromRun: 'r2' });
+  expect(same.states[0]).toMatchObject({ status: 'unchanged', changedPixels: 0 });
+  expect(same.states[0]).not.toHaveProperty('structural');
+  expect(same).not.toHaveProperty('changes');
+
+  const server = new McpServer({ project: root, chrome: '/nonexistent/chrome' });
+  try {
+    const text = await server.call('reference', {
+      compare: 'previous',
+      fromRun: 'r1',
+      toRun: 'r2',
+    });
+    expect(text.isError).toBe(false);
+    const body = text.content[0]?.type === 'text' ? text.content[0].text : '';
+    expect(body).toContain('r1 → r2');
+    expect(body).toContain('1 changed, 0 unchanged');
+    expect(body).toContain('html>body>form gap 12px→20px (all 1)');
+    const listed = await server.call('report', { detail: 'runs' });
+    expect(
+      JSON.parse(listed.content[0]?.type === 'text' ? listed.content[0].text : '{}'),
+    ).toMatchObject({
+      schema: 'juxtapose.saved-runs/v1',
+      runs: [{ runId: 'r3' }, { runId: 'r2' }, { runId: 'r1' }],
+      omitted: 0,
+    });
+    const misuse = await server.call('reference', { toRun: 'r2' });
+    expect(misuse.isError).toBe(true);
+  } finally {
+    await server.close();
+  }
 });

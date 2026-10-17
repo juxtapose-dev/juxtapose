@@ -1,4 +1,4 @@
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { parseRunReport, type DiffResult, type RunReport } from '@juxtapose/core';
 import { latestRunDir } from '../run-dir.js';
@@ -34,6 +34,50 @@ export async function savedRunReportPath(
   const file = await realpath(path.join(dir, 'report.json'));
   if (!inside(file, dir)) throw new Error('jux: run report escapes the saved run');
   return file;
+}
+
+const MAX_LISTED_RUNS = 20;
+
+/** Saved runs newest first, so an agent can pick a checkpoint without having
+ *  kept every run ID. Only the newest reports are parsed; runs are never
+ *  pruned, so the directory can hold hundreds. */
+export async function savedRuns(project: string) {
+  const root = path.join(project, '.juxtapose', 'runs');
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const dated = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && /^[a-zA-Z0-9_-]+$/.test(entry.name))
+      .map(async (entry) => {
+        const file = path.join(root, entry.name, 'report.json');
+        const info = await stat(file).catch(() => null);
+        return info ? { runId: entry.name, file, mtime: info.mtimeMs } : null;
+      }),
+  );
+  const runs = dated
+    .filter((run): run is NonNullable<typeof run> => run !== null)
+    .sort((a, b) => b.mtime - a.mtime);
+  const listed = await Promise.all(
+    runs.slice(0, MAX_LISTED_RUNS).map(async (run) => {
+      try {
+        // The same containment checks as a report lookup: no symlinked escape.
+        const file = await savedRunReportPath(project, run.runId);
+        const report = parseRunReport(await readFile(file, 'utf8'), file);
+        return {
+          runId: report.runId,
+          startedAt: report.startedAt,
+          capturedCount: report.capturedCount,
+          summary: report.summary,
+        };
+      } catch {
+        return { runId: run.runId, error: 'report unreadable' };
+      }
+    }),
+  );
+  return {
+    schema: 'juxtapose.saved-runs/v1',
+    runs: listed,
+    omitted: Math.max(0, runs.length - MAX_LISTED_RUNS),
+  };
 }
 
 /** Parsed reports are shared by repeated story/full lookups in one MCP session. */
