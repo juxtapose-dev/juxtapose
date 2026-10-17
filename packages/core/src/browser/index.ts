@@ -79,4 +79,17 @@ export {
   PARITY_CHROMIUM_ARGS,
   type LaunchOptions,
 } from './flags.js';
-export type { Viewport } from './types.js';
+export type {
+  DeviceDescriptor,
+  DeviceEmulation,
+  Orientation,
+  UserAgentMetadata,
+  Viewport,
+} from './types.js';
+export {
+  BUILTIN_DEVICES,
+  defaultOrientation,
+  resolveDevices,
+  type DeviceRegistry,
+  type UserDeviceSpec,
+} from './devices.js';
