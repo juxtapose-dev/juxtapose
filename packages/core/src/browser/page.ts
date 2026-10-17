@@ -8,7 +8,8 @@
 // Screenshotter.screenshotPage (coreBundle.js L21258–21370).
 
 import type { Protocol } from 'devtools-protocol';
-import type { DeviceEmulation, Viewport } from './types.js';
+import type { DeviceEmulation, UserAgentMetadata, Viewport } from './types.js';
+import { CHROME_VERSION } from './pins.js';
 import {
   CdpConnection,
   CdpError,
@@ -298,6 +299,22 @@ const metricsOverride = (
       }
     : { angle: 0, type: 'landscapePrimary' },
 });
+
+// Metadata without brands gets Chrome's defaults, measured 2026-10-17 on
+// Chrome 151: brands Not=A?Brand 99, HeadlessChrome 151, Chromium 151, and
+// fullVersionList the same with 99.0.0.0 and the full version. A real phone
+// says Google Chrome, and Sec-CH-UA is what phone and bot detection reads, so
+// supply that list in Chrome's order with Google Chrome for HeadlessChrome.
+const CHROME_MAJOR = CHROME_VERSION.split('.')[0]!;
+const chromeBrands = (major: boolean): Protocol.Emulation.UserAgentBrandVersion[] => [
+  { brand: 'Not=A?Brand', version: major ? '99' : '99.0.0.0' },
+  { brand: 'Google Chrome', version: major ? CHROME_MAJOR : CHROME_VERSION },
+  { brand: 'Chromium', version: major ? CHROME_MAJOR : CHROME_VERSION },
+];
+const clientHints = (m: UserAgentMetadata): Protocol.Emulation.UserAgentMetadata =>
+  m.brands
+    ? m
+    : { ...m, brands: chromeBrands(true), fullVersionList: chromeBrands(false) };
 
 // Only the color scheme varies (per-story variants); every other feature is
 // pinned for every capture.
@@ -743,11 +760,9 @@ export class CdpPage implements Page {
   // (hover: none), maxTouchPoints 5, ontouchstart, the override UA,
   // userAgentData.mobile true and portrait-primary; touch/mouse disabled,
   // userAgent '' and the default metrics restore pointer fine, 0 touch points,
-  // Browser.getVersion's UA and landscape-primary. Metadata without `brands`
-  // keeps Chrome's own (Not=A?Brand 99, HeadlessChrome 151, Chromium 151,
-  // the same list a default page reports), so none are supplied here. A page
-  // that never had a device gets only the metrics call, so the default path
-  // sends what it always has.
+  // Browser.getVersion's UA, landscape-primary, userAgentData.mobile false and
+  // the default brands. A page that never had a device gets only the metrics
+  // call, so the default path sends what it always has.
   async setEmulation(
     viewport: Viewport,
     emulation: DeviceEmulation | undefined,
@@ -775,7 +790,7 @@ export class CdpPage implements Page {
         ? {
             userAgent: emulation.userAgent,
             ...(emulation.userAgentMetadata && {
-              userAgentMetadata: emulation.userAgentMetadata,
+              userAgentMetadata: clientHints(emulation.userAgentMetadata),
             }),
           }
         : { userAgent: '' },

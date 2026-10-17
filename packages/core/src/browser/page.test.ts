@@ -25,6 +25,8 @@ const pixel8Emulation: DeviceEmulation = {
 let server: Server;
 let base: string;
 let browser: Browser;
+/** Each request's `sec-ch-ua` header, by path. */
+const secChUa = new Map<string, string | undefined>();
 
 const PAGES: Record<string, string> = {
   '/tall':
@@ -55,6 +57,7 @@ const PAGES: Record<string, string> = {
 
 beforeAll(async () => {
   server = createServer((req, res) => {
+    secChUa.set(req.url ?? '', req.headers['sec-ch-ua'] as string | undefined);
     if (req.url === '/hang') return; // keep the request open forever
     if (req.url === '/slow-img') {
       setTimeout(() => {
@@ -252,11 +255,16 @@ describe.skipIf(!chrome)('CdpPage', () => {
     }));
   it('setEmulation applies mobile metrics, touch and UA client hints, and undefined resets them', () =>
     withPage(async (page) => {
+      type Brand = { brand: string; version: string };
       const probe = () =>
-        page.evaluate(() => {
+        page.evaluate(async () => {
           const uaData = (
             navigator as Navigator & {
-              userAgentData?: { mobile: boolean; brands: unknown[] };
+              userAgentData: {
+                mobile: boolean;
+                brands: Brand[];
+                getHighEntropyValues(h: string[]): Promise<{ fullVersionList: Brand[] }>;
+              };
             }
           ).userAgentData;
           return {
@@ -265,16 +273,23 @@ describe.skipIf(!chrome)('CdpPage', () => {
             hoverNone: matchMedia('(hover: none)').matches,
             touchPoints: navigator.maxTouchPoints,
             ua: navigator.userAgent,
-            mobile: uaData?.mobile,
-            brands: uaData?.brands.length ?? 0,
+            mobile: uaData.mobile,
+            brands: uaData.brands,
+            fullVersionList: (await uaData.getHighEntropyValues(['fullVersionList']))
+              .fullVersionList,
             orientation: screen.orientation.type,
           };
         });
+      // http://127.0.0.1, not data:: userAgentData exists only in a secure context.
+      await page.goto(`${base}/frame`);
+      const never = await probe();
+      const major = never.brands.find((b) => b.brand === 'Chromium')!.version;
+
       const viewport = { width: 393, height: 852 };
       await page.setEmulation!(viewport, pixel8Emulation);
-      // http://127.0.0.1, not data:: userAgentData exists only in a secure context.
       await page.goto(`${base}/plain`);
-      expect(await probe()).toMatchObject({
+      const device = await probe();
+      expect(device).toMatchObject({
         coarse: true,
         hoverNone: true,
         touchPoints: 5,
@@ -282,15 +297,24 @@ describe.skipIf(!chrome)('CdpPage', () => {
         mobile: true,
         orientation: 'portrait-primary',
       });
-      expect((await probe()).brands).toBeGreaterThan(0);
+      // A real Android phone says Google Chrome; HeadlessChrome is a bot tell.
+      for (const list of [device.brands, device.fullVersionList]) {
+        expect(list.map((b) => b.brand)).toContain('Google Chrome');
+        expect(list.map((b) => b.brand)).not.toContain('HeadlessChrome');
+      }
+      expect(device.brands).toContainEqual({ brand: 'Google Chrome', version: major });
+      expect(secChUa.get('/plain')).toContain(`"Google Chrome";v="${major}"`);
+      expect(secChUa.get('/plain')).not.toContain('HeadlessChrome');
 
       await page.setEmulation!(viewport, undefined);
       await page.goto(`${base}/frame`);
       const { userAgent } = await page.send('Browser.getVersion');
-      expect(await probe()).toMatchObject({
+      expect(await probe()).toEqual({
+        ...never,
         fine: true,
         touchPoints: 0,
         ua: userAgent,
+        mobile: false,
         orientation: 'landscape-primary',
       });
     }));
