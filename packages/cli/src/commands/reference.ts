@@ -1,15 +1,19 @@
 // Compare configured design PNGs with images already saved by `jux run`.
 // This command never resolves a platform or opens a browser.
+import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import {
   checkProjectSettle,
   compareDesignReference,
+  decodeStructure,
   encodeStoryId,
+  observeReferenceOutlines,
   parseRunReport,
   renderCrops,
   type DesignReferenceLedger,
   type DesignReferenceSpec,
+  type ReferenceOutlineObservation,
 } from '@juxtapose/core';
 import { loadConfig } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
@@ -20,6 +24,7 @@ type State =
   | (Omit<DesignReferenceLedger, 'regions'> & {
       regionCount: number;
       regions: DesignReferenceLedger['regions'];
+      outline?: ReferenceOutlineObservation;
     });
 
 export interface ReferenceResult {
@@ -83,6 +88,8 @@ export async function evaluateReferences(options: {
   run?: string;
   name?: string;
   regionId?: string;
+  /** MCP run hints only: up to two high-mismatch states, without recapture. */
+  includeOutlines?: boolean;
 }): Promise<ReferenceResult> {
   const project = await realpath(options.project);
   const config = await loadConfig(project);
@@ -161,6 +168,65 @@ export async function evaluateReferences(options: {
     throw new Error(
       `jux: region '${options.regionId}' was not found in this saved comparison; the reference or capture may have changed. Run reference again for current region IDs.`,
     );
+  if (options.includeOutlines) {
+    const failing = states
+      .filter(
+        (state): state is Extract<State, { regions: unknown }> =>
+          state.status === 'fail' &&
+          'regions' in state &&
+          state.regions.length > 0 &&
+          state.geometry.deviceScaleFactor === 1,
+      )
+      .sort((a, b) => (b.mismatchPixels ?? 0) - (a.mismatchPixels ?? 0));
+    // First cover distinct viewports, then spend any remaining slot on the
+    // next-largest failure. Desktop and mobile often have different causes.
+    const candidates: typeof failing = [];
+    const viewports = new Set<string>();
+    for (const state of failing) {
+      const key = JSON.stringify(state.geometry.viewport);
+      if (viewports.has(key)) continue;
+      candidates.push(state);
+      viewports.add(key);
+      if (candidates.length === 2) break;
+    }
+    for (const state of failing) {
+      if (candidates.length === 2) break;
+      if (!candidates.includes(state)) candidates.push(state);
+    }
+    for (const state of candidates) {
+      if (state.status !== 'fail') continue;
+      try {
+        const key = encodeStoryId(state.storyId);
+        const [current, structureBytes, target] = await Promise.all([
+          savedFile(runDir, `${key}-current.webp`),
+          savedFile(runDir, `${key}-current.structure.json.gz`),
+          readFile(state.referenceImage),
+        ]);
+        const sha256 = (bytes: Buffer) =>
+          createHash('sha256').update(bytes).digest('hex');
+        if (
+          sha256(current) !== state.currentHash ||
+          sha256(target) !== state.referenceHash
+        )
+          continue;
+        const structure = decodeStructure(structureBytes);
+        if (
+          structure.viewport.width !== state.geometry.viewport.width ||
+          structure.viewport.height !== state.geometry.viewport.height
+        )
+          continue;
+        const outline = await observeReferenceOutlines({
+          reference: target,
+          current,
+          structure,
+          region: state.regions[0]!,
+        });
+        if (outline) state.outline = outline;
+      } catch {
+        // An optional image clue must never alter the comparison verdict.
+      }
+    }
+  }
   const summary = {
     pass: states.filter((s) => s.status === 'pass').length,
     fail: states.filter((s) => s.status === 'fail').length,

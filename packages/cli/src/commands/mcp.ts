@@ -500,7 +500,11 @@ export async function withDesignReferenceFeedback(
     if (!config.designReferences || !Object.keys(config.designReferences).length)
       return run;
     const { evaluateReferences } = await import('./reference.js');
-    const result = await evaluateReferences({ project, run: runId });
+    const result = await evaluateReferences({
+      project,
+      run: runId,
+      includeOutlines: true,
+    });
     if (result.outcome === 'no-comparison') return run;
     run.content.push({
       type: 'text',
@@ -568,6 +572,7 @@ function compactReferenceFeedback(result: ReferenceResult) {
             },
           }
         : {}),
+      ...(state.outline ? { outline: state.outline } : {}),
     };
   });
   return {
