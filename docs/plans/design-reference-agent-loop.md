@@ -48,9 +48,10 @@ The fast evaluation may inform wording and evidence order before release.
   run a story, and compare the saved results without a second capture.
 - The same run can be reopened after server restart; comparison and crop IDs
   resolve from disk without depending on an in-memory cache.
-- The agent sees every selected state's status. Missing reference, incompatible
-  geometry, capture error, instability and ordinary visual mismatch are not
-  conflated.
+- The agent sees every selected state's status; configured references for
+  unrelated stories outside a subset run do not turn that run into an error.
+  Missing reference, incompatible geometry, capture error, instability and
+  ordinary visual mismatch are not conflated.
 - Output distinguishes observed pixels/DOM from suggested causes; the agent
   can request a bounded paired crop by ID and receive exactly the saved target
   and current pixels.
