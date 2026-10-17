@@ -18,8 +18,11 @@ import type {
 import {
   FREEZE_ANIMATIONS_CSS,
   rerasterLayers,
+  SCROLL_THROUGH_TIMEOUT_MS,
+  scrollThrough,
   waitForPaint,
   waitForSelector,
+  waitForStillFrames,
 } from './settle.js';
 import {
   installIdleDetector,
@@ -466,7 +469,10 @@ async function captureStoryDocument(
   // Settle must never throw on timeout (a slow story is a reviewable diff),
   // so the story budget has to outlast the cap and the fixed delay.
   deps.onSettleBudget?.(
-    settle.timeoutMs + (params.delay ?? 0) + (params.waitForSelector ? timeoutMs : 0),
+    settle.timeoutMs +
+      (params.delay ?? 0) +
+      (params.waitForSelector ? timeoutMs : 0) +
+      (params.fullPage ? 2 * settle.timeoutMs + SCROLL_THROUGH_TIMEOUT_MS : 0),
   );
   const tSettle = performance.now();
   if (params.waitForSelector) {
@@ -474,7 +480,19 @@ async function captureStoryDocument(
   }
 
   phase('idle wait');
-  const first = await waitForIdle(page, idle, settle);
+  let first = await waitForIdle(page, idle, settle);
+  // After the page goes quiet, not before: the URL platform hands over at
+  // DOMContentLoaded, and on formhealth.co a scroll at that point ran before
+  // the deferred GSAP reveal had attached, leaving its illustration at
+  // opacity 0. Idle again afterwards, so the lazy images and reveals the
+  // scroll sets off are waited on like any other request or mutation, then
+  // still frames, for the reveals a JS animation loop plays (settle.ts).
+  if (params.fullPage) {
+    phase('scroll through');
+    await scrollThrough(page);
+    first = await waitForIdle(page, idle, settle);
+    await waitForStillFrames(page, settle.timeoutMs);
+  }
   acc.settle += performance.now() - tSettle;
 
   // Fixed delay is the escape hatch of last resort — it costs the same on

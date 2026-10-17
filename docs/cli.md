@@ -322,11 +322,18 @@ through project overrides:
 The saved `viewport` describes image bounds. Full-page captures additionally
 record `layoutViewport` with the original browser dimensions; consumers should
 use that field to check reference-layout compatibility. Structure coordinates
-cover the same document area as the image. Capture resets document scroll to
-the origin, preserving viewport-based CSS and fixed/sticky layout at that
-position. It does not scroll through lazy-loaded content or expose content
-inside independently scrolling containers. Documents over 32,767 pixels on
-one side or 100 million total pixels are rejected before image allocation.
+cover the same document area as the image.
+
+Once the page is idle, capture scrolls through the document one viewport at a
+time, so `loading="lazy"` images and scroll-triggered reveals
+(IntersectionObserver, GSAP and similar) load and play. It then waits for the
+requests that set off and for the DOM to stop changing, up to the settle
+timeout; a page that animates forever is captured at that point. Capture then
+resets document scroll to the origin, preserving viewport-based CSS and
+fixed/sticky layout at that position, so a fixed cookie banner appears over
+the first viewport. Content inside independently scrolling containers is not
+expanded. Documents over 32,767 pixels on one side or 100 million total pixels
+are rejected before image allocation.
 
 ## Capture a built or deployed Storybook
 
