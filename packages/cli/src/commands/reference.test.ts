@@ -121,6 +121,39 @@ test('all-state ledger compares exact capture keys from saved images without rec
   expect(io.stdout()).toContain('observed colors: target #ffffff, current #000000');
 });
 
+test('a saved full-page capture compares against a target with separate layout viewport', async () => {
+  const f = await fixture();
+  const configPath = path.join(f.root, 'juxtapose.config.json');
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  config.designReferences.mobile = {
+    ...config.designReferences.mobile,
+    viewport: { width: 12, height: 6 },
+    captureKind: 'full-page',
+  };
+  await writeFile(configPath, JSON.stringify(config));
+  const reportPath = path.join(f.run, 'report.json');
+  const report = JSON.parse(await readFile(reportPath, 'utf8'));
+  report.results[1].layoutViewport = { width: 12, height: 6 };
+  await writeFile(reportPath, JSON.stringify(report));
+  const result = await evaluateReferences({ project: f.root, name: 'mobile' });
+  expect(result.outcome).toBe('pass');
+  expect(result.states[0]).toMatchObject({
+    status: 'pass',
+    geometry: {
+      captureKind: 'full-page',
+      viewport: { width: 12, height: 6 },
+      expectedPixels: { width: 12, height: 8 },
+    },
+  });
+  delete report.results[1].layoutViewport;
+  await writeFile(reportPath, JSON.stringify(report));
+  const incompatible = await evaluateReferences({ project: f.root, name: 'mobile' });
+  expect(incompatible.states[0]).toMatchObject({
+    status: 'incompatible',
+    reason: 'capture-kind',
+  });
+});
+
 test('a run result gains bounded design feedback without changing its report block or recapturing', async () => {
   const f = await fixture();
   const original = JSON.stringify({ runId: 'r1', results: [{ storyId: f.desktop }] });

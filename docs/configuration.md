@@ -18,9 +18,29 @@ They are separate from approved regression baselines:
 ```
 
 The image path must stay inside the project, including after symlink resolution.
-The PNG dimensions must equal `viewport × deviceScaleFactor` (default `1`),
-and the saved capture must have the same viewport. Only viewport captures are
-supported. `jux reference` and the MCP `reference` tool compare against images
+For a viewport target (the default), the PNG dimensions must equal
+`viewport × deviceScaleFactor` (default `1`) and the saved capture must have
+the same viewport. For a full-page target, set `captureKind: "full-page"` and
+capture that story with `fullPage: true`:
+
+```json
+{
+  "stories": { "checkout--default__mobile": { "fullPage": true } },
+  "designReferences": {
+    "checkout-mobile-page": {
+      "storyId": "checkout--default__mobile",
+      "image": "design/checkout-mobile-page.png",
+      "viewport": { "width": 390, "height": 844 },
+      "captureKind": "full-page"
+    }
+  }
+}
+```
+
+The configured viewport is the browser's layout viewport, even when the PNG
+extends below it. Jux compares the whole image without cropping or resizing;
+the saved capture must record the same layout viewport and have the PNG's
+dimensions. `jux reference` and the MCP `reference` tool compare against images
 already saved by `jux run`; they never capture or approve. The comparison uses
 Pixelmatch threshold `0.1` and excludes antialiasing, independently of the
 approved-baseline `comparison` setting. Missing captures and geometry mismatches

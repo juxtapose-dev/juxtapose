@@ -66,6 +66,74 @@ describe('compareDesignReference', () => {
     });
   });
 
+  it('compares a full-page PNG using its recorded layout viewport and image bounds', async () => {
+    const f = await fixture();
+    const target = await sharp({
+      create: { width: 4, height: 5, channels: 4, background: '#ffffff' },
+    })
+      .png()
+      .toBuffer();
+    await writeFile(join(f.root, 'design/card.png'), target);
+    const reference = { ...f.reference, captureKind: 'full-page' as const };
+    const current = {
+      ...f.current,
+      image: await sharp(target).webp({ lossless: true }).toBuffer(),
+      viewport: { width: 4, height: 5 },
+      layoutViewport: { width: 4, height: 3 },
+      captureKind: 'full-page' as const,
+    };
+    const pass = await compareDesignReference({
+      projectRoot: f.root,
+      name: 'mobile',
+      reference,
+      current,
+    });
+    expect(pass.status).toBe('pass');
+    expect(pass.geometry).toMatchObject({
+      captureKind: 'full-page',
+      viewport: { width: 4, height: 3 },
+      expectedPixels: { width: 4, height: 5 },
+    });
+    expect(
+      (
+        await compareDesignReference({
+          projectRoot: f.root,
+          name: 'mobile',
+          reference,
+          current: { ...current, layoutViewport: { width: 4, height: 4 } },
+        })
+      ).reason,
+    ).toBe('viewport');
+    expect(
+      (
+        await compareDesignReference({
+          projectRoot: f.root,
+          name: 'mobile',
+          reference,
+          current: {
+            ...current,
+            image: f.current.image,
+            viewport: { width: 4, height: 3 },
+          },
+        })
+      ).reason,
+    ).toBe('current-geometry');
+    expect(
+      (
+        await compareDesignReference({
+          projectRoot: f.root,
+          name: 'mobile',
+          reference,
+          current: {
+            ...current,
+            captureKind: 'viewport' as const,
+            layoutViewport: undefined,
+          },
+        })
+      ).reason,
+    ).toBe('capture-kind');
+  });
+
   it('reports a reproducible changed region and comparison id', async () => {
     const f = await fixture();
     const altered = await sharp({

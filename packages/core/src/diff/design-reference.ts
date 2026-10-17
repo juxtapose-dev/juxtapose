@@ -33,7 +33,7 @@ export interface DesignReferenceLedger {
   geometry: {
     viewport: Viewport;
     deviceScaleFactor: number;
-    captureKind: 'viewport';
+    captureKind: 'viewport' | 'full-page';
     expectedPixels: Viewport;
     referencePixels: Viewport;
     currentPixels: Viewport;
@@ -51,7 +51,10 @@ export interface DesignReferenceLedger {
 export interface DesignReferenceCurrent {
   storyId: string;
   image: Buffer;
+  /** Image bounds for full-page captures; layout viewport otherwise. */
   viewport: Viewport;
+  /** Browser layout viewport, required for full-page captures. */
+  layoutViewport?: Viewport;
   /** Jux captures at 1 today; supply the actual factor if that changes. */
   deviceScaleFactor?: number;
   captureKind?: 'viewport' | 'full-page';
@@ -76,8 +79,9 @@ export async function compareDesignReference(input: {
   const dpr = reference.deviceScaleFactor ?? 1;
   if (!Number.isFinite(dpr) || dpr < 0.1 || dpr > 8)
     throw new Error('design reference deviceScaleFactor must be from 0.1 to 8');
-  if (reference.captureKind && reference.captureKind !== 'viewport')
-    throw new Error('only viewport design references are supported');
+  const referenceKind = reference.captureKind ?? 'viewport';
+  const currentKind =
+    current.captureKind ?? (current.layoutViewport ? 'full-page' : 'viewport');
   const imagePath = await projectPngPath(projectRoot, reference.image);
   const target = await readFile(imagePath);
   const [targetMeta, currentMeta] = await Promise.all([
@@ -88,21 +92,22 @@ export async function compareDesignReference(input: {
     throw new Error(`design reference ${name} must be a PNG image`);
   const targetPixels = dimensions(targetMeta);
   const currentPixels = dimensions(currentMeta);
-  const expectedPixels = {
+  const viewportPixels = {
     width: reference.viewport.width * dpr,
     height: reference.viewport.height * dpr,
   };
-  if (!Number.isInteger(expectedPixels.width) || !Number.isInteger(expectedPixels.height))
+  if (!Number.isInteger(viewportPixels.width) || !Number.isInteger(viewportPixels.height))
     throw new Error(
       'design reference viewport × deviceScaleFactor must yield whole pixels',
     );
+  const expectedPixels = referenceKind === 'full-page' ? targetPixels : viewportPixels;
   const policy = { method: 'pixelmatch' as const, threshold, includeAA: false as const };
   const referenceHash = hash(target);
   const currentHash = hash(current.image);
   const geometry = {
     viewport: reference.viewport,
     deviceScaleFactor: dpr,
-    captureKind: 'viewport' as const,
+    captureKind: referenceKind,
     expectedPixels,
     referencePixels: targetPixels,
     currentPixels,
@@ -138,18 +143,25 @@ export async function compareDesignReference(input: {
   const reason =
     reference.storyId !== current.storyId
       ? 'capture-key'
-      : reference.viewport.width !== current.viewport.width ||
-          reference.viewport.height !== current.viewport.height
-        ? 'viewport'
-        : dpr !== (current.deviceScaleFactor ?? 1)
-          ? 'device-scale-factor'
-          : (reference.captureKind ?? 'viewport') !== (current.captureKind ?? 'viewport')
-            ? 'capture-kind'
-            : targetPixels.width !== expectedPixels.width ||
-                targetPixels.height !== expectedPixels.height
+      : referenceKind !== currentKind
+        ? 'capture-kind'
+        : reference.viewport.width !==
+              (current.layoutViewport ?? current.viewport).width ||
+            reference.viewport.height !==
+              (current.layoutViewport ?? current.viewport).height
+          ? 'viewport'
+          : dpr !== (current.deviceScaleFactor ?? 1)
+            ? 'device-scale-factor'
+            : targetPixels.width < viewportPixels.width ||
+                targetPixels.height < viewportPixels.height ||
+                (referenceKind === 'viewport' &&
+                  (targetPixels.width !== expectedPixels.width ||
+                    targetPixels.height !== expectedPixels.height))
               ? 'reference-geometry'
               : currentPixels.width !== expectedPixels.width ||
-                  currentPixels.height !== expectedPixels.height
+                  currentPixels.height !== expectedPixels.height ||
+                  current.viewport.width * dpr !== currentPixels.width ||
+                  current.viewport.height * dpr !== currentPixels.height
                 ? 'current-geometry'
                 : undefined;
   if (reason) return { ...base, reason };

@@ -338,7 +338,14 @@ export async function evaluateReferences(options: {
         projectRoot: project,
         name,
         reference,
-        current: { storyId: result.storyId, image: current, viewport: result.viewport },
+        current: {
+          storyId: result.storyId,
+          image: current,
+          viewport: result.viewport,
+          ...(result.layoutViewport
+            ? { layoutViewport: result.layoutViewport, captureKind: 'full-page' as const }
+            : {}),
+        },
         cacheDir: path.join(runDir, 'reference-analysis-v1'),
       });
       if (options.regionId) {
