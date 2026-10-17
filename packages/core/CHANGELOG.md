@@ -1,5 +1,15 @@
 # @juxtapose/core
 
+## 0.24.0
+
+### Minor Changes
+
+- 3440b1b: Compare saved story captures with configured design reference images. MCP runs automatically include compact target feedback for captured references; the CLI and MCP reference tools return an all-state result and allow agents to request a paired crop by region ID without recapturing the page.
+- 28de788: Capture computed grid column templates in structural snapshots so responsive
+  layout changes can be named directly in visual diff feedback. Mark comparisons
+  against older structural sidecars as incomplete instead of inventing a grid
+  style change.
+
 ## 0.23.3
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@juxtapose/adapter-ladle",
-  "version": "0.3.29",
+  "version": "0.3.30",
   "type": "module",
   "description": "Ladle platform adapter for juxtapose visual testing.",
   "keywords": [

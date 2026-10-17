@@ -1,5 +1,21 @@
 # @juxtapose/cli
 
+## 0.24.0
+
+### Minor Changes
+
+- 3440b1b: Compare saved story captures with configured design reference images. MCP runs automatically include compact target feedback for captured references; the CLI and MCP reference tools return an all-state result and allow agents to request a paired crop by region ID without recapturing the page.
+
+### Patch Changes
+
+- 60e0f5b: List passing design reference capture keys in the compact MCP run hint so agents can verify complete matches without requesting the full reference ledger.
+- e2f9c23: State the exact geometry and Pixelmatch pass conditions in the compact design-reference MCP hint, so agents can verify target matches without a redundant full-ledger call.
+- Updated dependencies [3440b1b]
+- Updated dependencies [28de788]
+  - @juxtapose/core@0.24.0
+  - @juxtapose/adapter-ladle@0.3.30
+  - @juxtapose/adapter-storybook@0.4.27
+
 ## 0.23.3
 
 ### Patch Changes
