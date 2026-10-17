@@ -60,7 +60,8 @@ was 504 bytes, versus 3,076 bytes for JSON. This verifies the local lookup and
 cache behavior on that fixture; it is not evidence of agent token or elapsed
 time savings.
 
-On the same saved fixture, a region crop requested after the all-state ledger
-took 19.0 ms using cached regions versus 28.0 ms when a fresh MCP server
-recomputed the named comparison. The PNG bytes matched. This single smoke
-measurement establishes correctness and direction, not a stable speed ratio.
+On the same saved fixture, 20 post-warm-up paired crop requests with alternating
+order had a 17.81 ms median using cached regions versus 28.05 ms when a fresh
+MCP server recomputed the named comparison (p90: 18.50 versus 30.04 ms). All
+PNG bytes matched. This measures one machine and region; it does not establish
+agent-loop savings.
