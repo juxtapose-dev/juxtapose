@@ -131,6 +131,12 @@ test('a run result gains bounded design feedback without changing its report blo
     omittedPassed: 0,
   });
   expect(hint.states[0].largestRegion.id).toMatch(/^[a-f0-9]+:\d+$/);
+  expect(hint.states[0].largestRegion).toMatchObject({
+    x: expect.any(Number),
+    y: expect.any(Number),
+    width: expect.any(Number),
+    height: expect.any(Number),
+  });
 });
 
 test('a passing run lists the target keys without inviting a second reference call', async () => {

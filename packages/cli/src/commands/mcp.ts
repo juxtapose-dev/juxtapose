@@ -552,6 +552,10 @@ function compactReferenceFeedback(result: ReferenceResult) {
             largestRegion: {
               id: state.regions[0].id,
               pixels: state.regions[0].changedPixels,
+              x: state.regions[0].x,
+              y: state.regions[0].y,
+              width: state.regions[0].width,
+              height: state.regions[0].height,
             },
           }
         : {}),

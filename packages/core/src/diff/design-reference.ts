@@ -1,6 +1,14 @@
-import { createHash } from 'node:crypto';
-import { readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import sharp from 'sharp';
 import type { ChangedRegion, DesignReferenceSpec, Viewport } from '../types.js';
 import { diffImages } from './diff.js';
@@ -58,6 +66,8 @@ export async function compareDesignReference(input: {
   reference: DesignReferenceSpec;
   current: DesignReferenceCurrent;
   threshold?: number;
+  /** Optional run-local cache for derived analysis. Source image bytes are still hashed. */
+  cacheDir?: string;
 }): Promise<DesignReferenceLedger> {
   const { projectRoot, name, reference, current } = input;
   const threshold = input.threshold ?? 0.1;
@@ -143,6 +153,10 @@ export async function compareDesignReference(input: {
                 ? 'current-geometry'
                 : undefined;
   if (reason) return { ...base, reason };
+  const cached = input.cacheDir
+    ? await readCachedLedger(input.cacheDir, comparisonId, base)
+    : null;
+  if (cached) return cached;
   const diff = await diffImages(target, current.image, {
     threshold,
     includeVisibleColors: true,
@@ -150,7 +164,7 @@ export async function compareDesignReference(input: {
   // The geometry checks above ensure diffImages can never silently compare
   // different dimensions; keep this guard if its implementation changes.
   if (diff.dimensionMismatch) return { ...base, reason: 'current-geometry' };
-  return {
+  const ledger: DesignReferenceLedger = {
     ...base,
     status: diff.mismatchPixels === 0 ? 'pass' : 'fail',
     mismatchPixels: diff.mismatchPixels,
@@ -162,6 +176,90 @@ export async function compareDesignReference(input: {
       id: `${comparisonId.slice(0, 16)}:${i + 1}`,
     })),
   };
+  if (input.cacheDir) await writeCachedLedger(input.cacheDir, ledger);
+  return ledger;
+}
+
+/** A new analysis algorithm or ledger meaning must use a new directory version. */
+const CACHE_VERSION = 1;
+const MAX_CACHE_BYTES = 1024 * 1024;
+
+async function safeCacheDir(dir: string, create: boolean): Promise<string | null> {
+  try {
+    if (create) await mkdir(dir, { recursive: true });
+    if (!(await lstat(dir)).isDirectory()) return null;
+    const real = await realpath(dir);
+    // Refuse a link at the cache directory itself. Canonicalize its parent so
+    // macOS's /var → /private/var alias does not make a real directory miss.
+    if (real !== join(await realpath(dirname(dir)), basename(dir))) return null;
+    return real;
+  } catch {
+    return null;
+  }
+}
+
+async function readCachedLedger(
+  dir: string,
+  comparisonId: string,
+  expected: DesignReferenceLedger,
+): Promise<DesignReferenceLedger | null> {
+  const root = await safeCacheDir(dir, false);
+  if (!root) return null;
+  const file = join(root, `${comparisonId}.json`);
+  try {
+    const stat = await lstat(file);
+    if (!stat.isFile() || stat.size > MAX_CACHE_BYTES) return null;
+    const parsed: unknown = JSON.parse(await readFile(file, 'utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    const entry = parsed as { version?: unknown; checksum?: unknown; ledger?: unknown };
+    if (
+      entry.version !== CACHE_VERSION ||
+      !entry.ledger ||
+      typeof entry.ledger !== 'object'
+    )
+      return null;
+    const ledger = entry.ledger as DesignReferenceLedger;
+    if (
+      ledger.comparisonId !== comparisonId ||
+      ledger.referenceHash !== expected.referenceHash ||
+      ledger.currentHash !== expected.currentHash ||
+      ledger.referenceImage !== expected.referenceImage ||
+      ledger.storyId !== expected.storyId ||
+      ledger.name !== expected.name ||
+      !['pass', 'fail'].includes(ledger.status) ||
+      !Array.isArray(ledger.regions) ||
+      JSON.stringify(ledger.geometry) !== JSON.stringify(expected.geometry) ||
+      JSON.stringify(ledger.policy) !== JSON.stringify(expected.policy)
+    )
+      return null;
+    if (entry.checksum !== hash(Buffer.from(JSON.stringify(ledger)))) return null;
+    return ledger;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedLedger(
+  dir: string,
+  ledger: DesignReferenceLedger,
+): Promise<void> {
+  const root = await safeCacheDir(dir, true);
+  if (!root) return;
+  const payload = JSON.stringify({
+    version: CACHE_VERSION,
+    ledger,
+    checksum: hash(Buffer.from(JSON.stringify(ledger))),
+  });
+  if (Buffer.byteLength(payload) > MAX_CACHE_BYTES) return;
+  const temporary = join(root, `.${ledger.comparisonId}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, payload, { flag: 'wx' });
+    await rename(temporary, join(root, `${ledger.comparisonId}.json`));
+  } catch {
+    // A read-only run directory or broken cache must not change a visual verdict.
+  } finally {
+    await rm(temporary, { force: true }).catch(() => {});
+  }
 }
 
 async function projectPngPath(root: string, path: string): Promise<string> {
