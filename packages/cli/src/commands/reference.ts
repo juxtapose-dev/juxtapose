@@ -25,6 +25,8 @@ type State =
 export interface ReferenceResult {
   schema: 'juxtapose.design-reference-set/v1';
   runId: string;
+  outcome: 'pass' | 'fail' | 'error' | 'no-comparison';
+  message?: string;
   policy: { method: 'pixelmatch'; threshold: 0.1; includeAA: false };
   summary: {
     pass: number;
@@ -150,17 +152,33 @@ export async function evaluateReferences(options: {
     throw new Error(
       `jux: region '${options.regionId}' was not found in this saved comparison; the reference or capture may have changed. Run reference again for current region IDs.`,
     );
+  const summary = {
+    pass: states.filter((s) => s.status === 'pass').length,
+    fail: states.filter((s) => s.status === 'fail').length,
+    incompatible: states.filter((s) => s.status === 'incompatible').length,
+    error: states.filter((s) => s.status === 'error').length,
+    notCaptured,
+  };
+  const outcome =
+    states.length === 0
+      ? 'no-comparison'
+      : summary.error
+        ? 'error'
+        : summary.fail || summary.incompatible
+          ? 'fail'
+          : 'pass';
   return {
     schema: 'juxtapose.design-reference-set/v1',
     runId: report.runId,
+    outcome,
+    ...(outcome === 'no-comparison'
+      ? {
+          message:
+            'No configured design reference was captured in this run. Run the referenced story or select a run that captured it.',
+        }
+      : {}),
     policy: { method: 'pixelmatch', threshold: 0.1, includeAA: false },
-    summary: {
-      pass: states.filter((s) => s.status === 'pass').length,
-      fail: states.filter((s) => s.status === 'fail').length,
-      incompatible: states.filter((s) => s.status === 'incompatible').length,
-      error: states.filter((s) => s.status === 'error').length,
-      notCaptured,
-    },
+    summary,
     states,
     ...(crop ? { crop } : {}),
   };
@@ -201,6 +219,7 @@ export async function referenceCommand(
       io.out(
         `Design references · run ${result.runId}: ${s.pass} pass, ${s.fail} fail, ${s.incompatible} incompatible, ${s.error} error, ${s.notCaptured} not captured\n`,
       );
+      if (result.message) io.out(`${result.message}\n`);
       io.out(
         'Policy: Pixelmatch threshold 0.1, antialiasing excluded; separate from approved-baseline policy.\n',
       );
@@ -222,9 +241,9 @@ export async function referenceCommand(
         'Use --json for measured geometry, bounded regions, stable region IDs and image paths.\n',
       );
     }
-    return result.summary.error
+    return result.outcome === 'no-comparison' || result.outcome === 'error'
       ? 3
-      : result.summary.fail || result.summary.incompatible
+      : result.outcome === 'fail'
         ? 1
         : 0;
   } catch (err) {

@@ -82,6 +82,7 @@ test('all-state ledger compares exact capture keys from saved images without rec
   const f = await fixture();
   const before = await readFile(path.join(f.run, 'report.json'), 'utf8');
   const result = await evaluateReferences({ project: f.root });
+  expect(result.outcome).toBe('fail');
   expect(result.summary).toEqual({
     pass: 1,
     fail: 1,
@@ -187,6 +188,7 @@ test('a subset run excludes unrelated and skipped references by default, but an 
   expect(await referenceCommand(undefined, { project: f.root }, { io })).toBe(1);
   expect(io.stdout()).toContain('2 not captured');
   const explicit = await evaluateReferences({ project: f.root, name: 'unrelated' });
+  expect(explicit.outcome).toBe('error');
   expect(explicit.summary).toEqual({
     pass: 0,
     fail: 0,
@@ -198,6 +200,40 @@ test('a subset run excludes unrelated and skipped references by default, but an 
     status: 'error',
     error: 'capture key is absent from the saved run',
   });
+});
+
+test('a run with no configured capture is a no-comparison result, not a pass', async () => {
+  const f = await fixture();
+  await writeFile(
+    path.join(f.run, 'report.json'),
+    JSON.stringify({
+      runId: 'r1',
+      results: [
+        {
+          storyId: 'unrelated--story',
+          status: 'pass',
+          viewport: { width: 12, height: 8 },
+        },
+      ],
+    }),
+  );
+  const result = await evaluateReferences({ project: f.root });
+  expect(result).toMatchObject({
+    outcome: 'no-comparison',
+    summary: { pass: 0, fail: 0, incompatible: 0, error: 0, notCaptured: 2 },
+    states: [],
+  });
+  expect(result.message).toContain('Run the referenced story');
+  const io = captureIo();
+  expect(await referenceCommand(undefined, { project: f.root }, { io })).toBe(3);
+  expect(io.stdout()).toContain('No configured design reference was captured');
+  const server = new McpServer({ project: f.root, chrome: '/nonexistent/chrome' });
+  const tool = await server.call('reference', {});
+  expect(tool.isError).toBe(true);
+  expect(tool.content[0]!.type === 'text' ? tool.content[0].text : '').toContain(
+    'No configured design reference was captured',
+  );
+  await server.close();
 });
 
 test('geometry, missing captures, invalid config and path escapes are explicit', async () => {
