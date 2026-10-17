@@ -8,7 +8,7 @@
 // Screenshotter.screenshotPage (coreBundle.js L21258–21370).
 
 import type { Protocol } from 'devtools-protocol';
-import type { Viewport } from './types.js';
+import type { DeviceEmulation, Viewport } from './types.js';
 import {
   CdpConnection,
   CdpError,
@@ -82,6 +82,16 @@ export interface Page {
    * @internal Core sets it per capture for variants; adapters must not.
    */
   setColorScheme?(scheme: 'light' | 'dark'): Promise<void>;
+  /**
+   * Resize and emulate a device (mobile metrics, touch, UA), or with
+   * `undefined` go back to the default desktop emulation. Optional so a Page
+   * implemented outside core still type-checks.
+   * @internal Core sets it per capture for `device`/`orientation`; adapters must not.
+   */
+  setEmulation?(
+    viewport: Viewport,
+    emulation: DeviceEmulation | undefined,
+  ): Promise<void>;
   /**
    * PNG by default. `format: 'webp'` is Chrome's lossless WebP (VP8L, with
    * Chrome's ICC chunk still in it). Core removes that metadata before hashing.
@@ -267,16 +277,26 @@ const BLOCK_SERVICE_WORKERS_SCRIPT = `
 if (navigator.serviceWorker) navigator.serviceWorker.register = async () => { console.warn('Service Worker registration blocked by Playwright'); };
 `;
 
+// Without a device this is the override every capture has always sent:
+// desktop, landscape, even for a tall viewport. Changing it would move the
+// bytes of every existing baseline.
 const metricsOverride = (
   v: Viewport,
+  emulation?: DeviceEmulation,
 ): Protocol.Emulation.SetDeviceMetricsOverrideRequest => ({
-  mobile: false,
+  mobile: emulation?.mobile ?? false,
   width: v.width,
   height: v.height,
   screenWidth: v.width,
   screenHeight: v.height,
   deviceScaleFactor: 1,
-  screenOrientation: { angle: 0, type: 'landscapePrimary' },
+  screenOrientation: emulation
+    ? {
+        angle: emulation.angle,
+        type:
+          emulation.orientation === 'portrait' ? 'portraitPrimary' : 'landscapePrimary',
+      }
+    : { angle: 0, type: 'landscapePrimary' },
 });
 
 // Only the color scheme varies (per-story variants); every other feature is
@@ -376,6 +396,8 @@ export const FRESH_RENDERER_URL = 'data:text/html,jux-fresh-renderer';
 export class CdpPage implements Page {
   private currentUrl = 'about:blank';
   private viewport: Viewport;
+  /** The device setEmulation applied; setViewportSize keeps it. */
+  private emulation: DeviceEmulation | undefined;
   private closed = false;
   /**
    * Why the page is unusable, once it is. `goneP` rejects with it at that
@@ -708,8 +730,56 @@ export class CdpPage implements Page {
       viewport.height === this.viewport.height
     )
       return;
-    await this.send('Emulation.setDeviceMetricsOverride', metricsOverride(viewport));
+    await this.send(
+      'Emulation.setDeviceMetricsOverride',
+      metricsOverride(viewport, this.emulation),
+    );
     this.viewport = viewport;
+  }
+
+  // Measured 2026-10-17, Chrome 151 with jux's launch flags: touch emulation
+  // overrides the pinned --blink-settings hover/pointer types per page. After
+  // these four calls and a navigation a page reports (pointer: coarse),
+  // (hover: none), maxTouchPoints 5, ontouchstart, the override UA,
+  // userAgentData.mobile true and portrait-primary; touch/mouse disabled,
+  // userAgent '' and the default metrics restore pointer fine, 0 touch points,
+  // Browser.getVersion's UA and landscape-primary. Metadata without `brands`
+  // keeps Chrome's own (Not=A?Brand 99, HeadlessChrome 151, Chromium 151,
+  // the same list a default page reports), so none are supplied here. A page
+  // that never had a device gets only the metrics call, so the default path
+  // sends what it always has.
+  async setEmulation(
+    viewport: Viewport,
+    emulation: DeviceEmulation | undefined,
+  ): Promise<void> {
+    const previous = this.emulation;
+    await this.send(
+      'Emulation.setDeviceMetricsOverride',
+      metricsOverride(viewport, emulation),
+    );
+    this.viewport = viewport;
+    this.emulation = emulation;
+    if (!emulation && !previous) return;
+    const touch = emulation?.touch ?? false;
+    await this.send(
+      'Emulation.setTouchEmulationEnabled',
+      touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
+    );
+    await this.send(
+      'Emulation.setEmitTouchEventsForMouse',
+      touch ? { enabled: true, configuration: 'mobile' } : { enabled: false },
+    );
+    await this.send(
+      'Emulation.setUserAgentOverride',
+      emulation?.userAgent
+        ? {
+            userAgent: emulation.userAgent,
+            ...(emulation.userAgentMetadata && {
+              userAgentMetadata: emulation.userAgentMetadata,
+            }),
+          }
+        : { userAgent: '' },
+    );
   }
 
   async setColorScheme(scheme: 'light' | 'dark'): Promise<void> {
