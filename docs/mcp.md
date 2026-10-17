@@ -133,6 +133,11 @@ field when those strokes are absent, the capture DPR differs from 1, or the
 geometry difference is at most two pixels. The boxes do not identify elements or imply a CSS cause, and they do
 not affect the Pixelmatch verdict. Read this compact observation before
 requesting the full reference ledger or a crop.
+When exactly two detected outlines have an unambiguous relationship, `layout`
+can report `stacked` versus `side-by-side`. `nearCurrentElementIds`, when
+present, identifies current textboxes that uniquely overlap the measured
+outlines. These IDs are spatial hints; they do not establish which elements
+appear in the design reference or why the layouts differ.
 
 ### reference
 
