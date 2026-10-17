@@ -23,6 +23,7 @@ import { loadConfig } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
 import { observedChanges } from './agent-run-report.js';
+import { ReferenceLayoutCache, type ReferenceLayoutDetail } from './reference-layout.js';
 
 export interface TargetProgress {
   fromRun: string;
@@ -38,6 +39,7 @@ type State =
       outline?: ReferenceOutlineObservation;
       progress?: TargetProgress;
       bestRun?: string;
+      layout?: ReferenceLayoutDetail | { status: 'unavailable'; reason: string };
     });
 
 export interface ReferenceResult {
@@ -383,6 +385,9 @@ export async function evaluateReferences(options: {
   regionId?: string;
   /** MCP run hints only: up to two high-mismatch states, without recapture. */
   includeOutlines?: boolean;
+  /** Requested JSON detail only; never computes evidence for a passing target. */
+  includeLayout?: boolean;
+  layoutCache?: ReferenceLayoutCache;
 }): Promise<ReferenceResult> {
   const project = await realpath(options.project);
   const config = await loadConfig(project);
@@ -399,6 +404,7 @@ export async function evaluateReferences(options: {
   const report = parseRunReport(await readFile(reportFile, 'utf8'));
   const results = new Map(report.results.map((r) => [r.storyId, r]));
   const states: State[] = [];
+  const layoutCache = options.layoutCache ?? new ReferenceLayoutCache();
   let notCaptured = 0;
   let crop: ReferenceResult['crop'];
   for (const name of names) {
@@ -441,6 +447,34 @@ export async function evaluateReferences(options: {
         },
         cacheDir: path.join(runDir, 'reference-analysis-v1'),
       });
+      let layout: Extract<State, { geometry: unknown }>['layout'];
+      if (options.includeLayout && ledger.status === 'fail') {
+        try {
+          const [target, structure] = await Promise.all([
+            readFile(ledger.referenceImage),
+            savedFile(
+              runDir,
+              `${encodeStoryId(reference.storyId)}-current.structure.json.gz`,
+            ),
+          ]);
+          layout = await layoutCache.evaluate({
+            project,
+            reference: target,
+            current,
+            structure,
+            referenceHash: ledger.referenceHash,
+            currentHash: ledger.currentHash,
+          });
+        } catch (error) {
+          layout = {
+            status: 'unavailable',
+            reason: (error instanceof Error ? error.message : String(error)).slice(
+              0,
+              240,
+            ),
+          };
+        }
+      }
       if (options.regionId) {
         const region = ledger.regions.find((r) => r.id === options.regionId);
         if (region) {
@@ -454,6 +488,7 @@ export async function evaluateReferences(options: {
         ...ledger,
         regionCount: ledger.regions.length,
         regions: ledger.regions.slice(0, 8),
+        ...(layout ? { layout } : {}),
       });
     } catch (err) {
       states.push({
@@ -563,6 +598,7 @@ export async function referenceCommand(
   name: string | undefined,
   flags: { project?: string; run?: string; json?: boolean; region?: string },
   { io = stdio }: Session = {},
+  layoutCache?: ReferenceLayoutCache,
 ): Promise<number> {
   if (flags.region && !flags.json) {
     io.err('jux: --region requires --json to return the PNG as base64\n');
@@ -574,6 +610,8 @@ export async function referenceCommand(
       ...(flags.run ? { run: flags.run } : {}),
       ...(name ? { name } : {}),
       ...(flags.region ? { regionId: flags.region } : {}),
+      includeLayout: Boolean(flags.json && !flags.region),
+      ...(layoutCache ? { layoutCache } : {}),
     });
     if (flags.json) {
       io.out(

@@ -50,6 +50,7 @@ import { snapName } from '../snap-name.js';
 import { MAX_VIEWPORT_SIDE } from './snap.js';
 import { agentRunSummary, SavedReportCache, savedRuns } from './agent-run-report.js';
 import type { ReferenceChangeResult, ReferenceResult } from './reference.js';
+import { ReferenceLayoutCache } from './reference-layout.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 
@@ -346,7 +347,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'reference',
     description:
-      'Read saved image evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, and toRun defaulting to the latest) for every capture both saved: changed pixels plus observed structural changes (property old→new, resizes). Use it against a checkpoint run ID to see what later edits changed; it does not measure progress toward the target. Set detail=json for regions and deltas, or region for one paired PNG crop. A passing target run hint needs no reference call.',
+      'Read saved image evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, and toRun defaulting to the latest) for every capture both saved: changed pixels plus observed structural changes (property old→new, resizes). Use it against a checkpoint run ID to see what later edits changed; it does not measure progress toward the target. Set detail=json for regions, deltas and conservative target paint geometry, or region for one paired PNG crop. A passing target run hint needs no reference call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -710,6 +711,7 @@ export class McpServer {
   private readonly project: string;
   private readonly scheduler: Scheduler;
   private readonly reports = new SavedReportCache();
+  private readonly layouts = new ReferenceLayoutCache();
   /** Saved runs are immutable. Bound repeated previous/current analysis in
    * this session; a new latest run gets a different cache key. */
   private readonly referenceChanges = new Map<string, ReferenceChangeResult>();
@@ -1003,6 +1005,7 @@ export class McpServer {
                     ...(region ? { region } : {}),
                   },
                   s,
+                  this.layouts,
                 ),
               signal,
             );

@@ -153,6 +153,31 @@ field when those strokes are absent, the capture DPR differs from 1, or the
 geometry difference is at most two pixels. The boxes do not identify elements or imply a CSS cause, and they do
 not affect the Pixelmatch verdict. Read this compact observation before
 requesting the full reference ledger or a crop.
+
+Requested `reference({detail: "json"})` also adds `layout` to failing target
+states when the saved current DOM is available. It contains up to eight
+conservative painted-region matches with target/current boxes, current element
+IDs and short labels. `dx`, `dy`, `dw` and `dh` mean current minus target;
+the boxes describe pixels, not CSS border boxes. Element identity comes from
+the current DOM; a design PNG has no DOM. Each match names its provenance and
+a confidence-rule ID defined once in `confidenceRules`.
+
+This analysis matches exact flat fills and unchanged inner paint, rejects
+ambiguous repeated controls, and omits geometry changes of two pixels or less.
+Different fonts, colors, gradients or ambiguous shapes may produce no facts.
+`status: "measured"` means analysis completed, not that the UI passes;
+`status: "abstained"` with `reason: "component-budget"` or
+`"incompatible-geometry"` means it could not provide these measurements.
+`"unavailable"` reports missing or unusable saved inputs. The existing target
+verdict remains authoritative, including when there are no layout matches.
+
+Passing targets, default run hints and crop-only requests skip layout analysis.
+The MCP session retains at most 16 image analyses and 16 pair comparisons,
+without retaining decoded screenshots. Content-addressed derived files under
+`.juxtapose/analysis/target-layout-v2/` survive a restart. Keys include image
+bytes, current structure bytes and algorithm version. Changed inputs invalidate
+the analysis; corrupt caches are recomputed and a read-only cache does not
+change the verdict. These facts remain on demand pending agent-value testing.
 When exactly two detected outlines have an unambiguous relationship, `layout`
 can report `stacked` versus `side-by-side`. `nearCurrentElementIds`, when
 present, identifies current textboxes that uniquely overlap the measured

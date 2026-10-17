@@ -1,5 +1,6 @@
 import type { StructureSnapshot } from '../../types.js';
 import { styleReader } from '../../capture/structure.js';
+import { label } from '../structural/label.js';
 import type { EvidenceBlock, LayoutBox, TargetEvidence } from './index.js';
 
 export interface LayoutMatch {
@@ -12,7 +13,7 @@ export interface LayoutMatch {
   dw: number;
   dh: number;
   /** Current element only, when its visible rectangle bounds uniquely agree. */
-  element: { path: string; id?: string; provenance: 'structure' };
+  element: { path: string; label: string; id?: string; provenance: 'structure' };
   provenance: 'measured-from-pixels';
   confidenceRule: string;
 }
@@ -169,6 +170,7 @@ export function matchLayout(
       ...delta,
       element: {
         path: element.path,
+        label: label(element),
         ...(element.id ? { id: element.id } : {}),
         provenance: 'structure',
       },

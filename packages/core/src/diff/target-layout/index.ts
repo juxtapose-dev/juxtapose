@@ -1,5 +1,7 @@
 import type { StructureSnapshot } from '../../types.js';
 import { styleReader } from '../../capture/structure.js';
+import sharp from 'sharp';
+import { fromPng } from './segment.js';
 
 export interface LayoutBox {
   x: number;
@@ -66,5 +68,16 @@ export function fromStructure(snapshot: StructureSnapshot): TargetEvidence {
   };
 }
 
-export { fromPng } from './segment.js';
+/** The caller caches this derived evidence by encoded image hash. Keeping
+ * RGBA local avoids retaining 16 MB for every 4 MP target in an MCP session. */
+export async function extractTargetEvidence(image: Buffer): Promise<TargetEvidence> {
+  const { data, info } = await sharp(image)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return fromPng({ data, width: info.width, height: info.height });
+}
+
+export { fromPng };
 export { matchLayout } from './match.js';
+export type TargetLayoutResult = ReturnType<typeof import('./match.js').matchLayout>;

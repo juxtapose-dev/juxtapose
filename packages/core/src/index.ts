@@ -232,6 +232,13 @@ export {
 } from './diff/design-reference.js';
 export { diffImages } from './diff/diff.js';
 export {
+  extractTargetEvidence,
+  matchLayout as matchTargetLayout,
+  fromStructure as targetEvidenceFromStructure,
+  type TargetEvidence,
+  type TargetLayoutResult,
+} from './diff/target-layout/index.js';
+export {
   observeReferenceOutlines,
   type OutlineBox,
   type ReferenceOutlineObservation,

@@ -1,9 +1,9 @@
 # Target layout evidence prototype
 
-Internal, experimental analysis for offline evaluation. Nothing calls this from
-capture, the default MCP hint, or `reference` yet. Do not promote it until a
-PNG-only agent decision replay demonstrates value and reference analysis is
-cached by image, structure and algorithm identity.
+Internal, experimental analysis for offline evaluation. Requested `reference` JSON detail uses this on failing targets. Capture and
+the default MCP hint do not run it. Do not promote it until a
+PNG-only agent decision replay demonstrates value in addition to the offline precision screen. Segmentation and pair evidence
+are cached by image, structure and algorithm identity.
 
 `fromPng` accepts **already decoded RGBA**, not encoded PNG bytes. It finds exact
 opaque-color components using row runs and union-find. It drops the largest
