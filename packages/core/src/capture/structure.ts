@@ -63,6 +63,9 @@ export const STRUCTURE_PROPS: readonly string[] = [
   'transform',
   'box-shadow',
   'gap',
+  // A responsive grid changing its column count can otherwise appear only as
+  // moved/resized children, leaving the agent to search for the cause.
+  'grid-template-columns',
   'z-index',
   // SVG paint is computed style, not an attribute: without these an icon
   // recolour is unexplained pixels.
@@ -118,6 +121,7 @@ export const INITIAL_VALUES: Readonly<Record<string, string>> = {
   transform: 'none',
   'box-shadow': 'none',
   gap: 'normal',
+  'grid-template-columns': 'none',
   'z-index': 'auto',
   content: 'normal',
 };
@@ -455,6 +459,7 @@ export function normalizeStructure(
 
   const snapshot: StructureSnapshot = {
     schema: 'juxtapose.structure/v1',
+    styleCaptureVersion: 2,
     viewport,
     structureHash: hashElements(elements),
     contentHeight: round(doc.contentHeight ?? viewport.height),

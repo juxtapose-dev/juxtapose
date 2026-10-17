@@ -48,6 +48,7 @@ test('returns a normalized snapshot', async () => {
   const { page, send } = fakePage({});
   const s = await captureStructure(page, viewport, []);
   expect(s?.schema).toBe('juxtapose.structure/v1');
+  expect(s?.styleCaptureVersion).toBe(2);
   expect(send).toHaveBeenCalledWith(
     'DOMSnapshot.captureSnapshot',
     expect.objectContaining({ includePaintOrder: true }),
@@ -56,6 +57,9 @@ test('returns a normalized snapshot', async () => {
   // 2.6-4.9 s of a Primer TreeView capture (see captureStructure).
   const params = (send.mock.calls[0] as unknown[] | undefined)?.[1];
   expect(params).not.toHaveProperty('includeDOMRects');
+  expect(params).toMatchObject({
+    computedStyles: expect.arrayContaining(['grid-template-columns']),
+  });
 });
 
 test('a CDP failure yields undefined, never a throw', async () => {
@@ -205,6 +209,26 @@ describe.skipIf(!chrome)('captureStructure on a real page', () => {
         queryAllExpression(`[${MASK_ATTR}]`, 'return els.length;'),
       );
       expect(left).toBe(0);
+    } finally {
+      await ctx.close();
+    }
+  });
+  test('records the computed responsive grid column template', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 200, height: 100 } });
+    try {
+      const page = await ctx.newPage();
+      await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/`);
+      await page.evaluate(() => {
+        const grid = document.createElement('div');
+        grid.id = 'grid';
+        grid.style.cssText =
+          'display:grid;grid-template-columns:40px 60px;width:100px;height:10px';
+        document.body.append(grid);
+      });
+      const s = await captureStructure(page, { width: 200, height: 100 }, []);
+      expect(
+        s?.elements.find((e) => e.id === 'grid')?.styles['grid-template-columns'],
+      ).toBe('40px 60px');
     } finally {
       await ctx.close();
     }

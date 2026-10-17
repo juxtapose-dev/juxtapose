@@ -129,6 +129,13 @@ export function computeFacts(
       }
 
       for (const prop of STRUCTURE_PROPS) {
+        // A pre-v2 baseline never captured this value. Comparing its empty
+        // default with a current grid would invent a change on every grid.
+        if (
+          prop === 'grid-template-columns' &&
+          (a.styleCaptureVersion !== 2 || b.styleCaptureVersion !== 2)
+        )
+          continue;
         // An unstored border colour resolves to currentColor, so a plain
         // `color` change would also report four phantom border-colour deltas
         // on every borderless element. No border, no border-colour fact.
