@@ -145,7 +145,8 @@ export async function compareDesignReference(input: {
       ? 'capture-key'
       : referenceKind !== currentKind
         ? 'capture-kind'
-        : reference.viewport.width !==
+        : (currentKind === 'full-page' && !current.layoutViewport) ||
+            reference.viewport.width !==
               (current.layoutViewport ?? current.viewport).width ||
             reference.viewport.height !==
               (current.layoutViewport ?? current.viewport).height

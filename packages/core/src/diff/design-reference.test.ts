@@ -134,6 +134,19 @@ describe('compareDesignReference', () => {
     ).toBe('capture-kind');
   });
 
+  it('requires recorded layout geometry even when a full-page image fits the viewport', async () => {
+    const f = await fixture();
+    const result = await compareDesignReference({
+      projectRoot: f.root,
+      name: 'mobile',
+      reference: { ...f.reference, captureKind: 'full-page' },
+      current: { ...f.current, captureKind: 'full-page' },
+    });
+    expect(result.status).toBe('incompatible');
+    expect(result.reason).toBe('viewport');
+    expect(result.mismatchPixels).toBeNull();
+  });
+
   it('reports a reproducible changed region and comparison id', async () => {
     const f = await fixture();
     const altered = await sharp({
