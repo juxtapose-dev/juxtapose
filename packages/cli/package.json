@@ -1,6 +1,6 @@
 {
   "name": "@juxtapose/cli",
-  "version": "0.24.1",
+  "version": "0.25.0",
   "type": "module",
   "description": "jux — visual regression testing CLI for Storybook, Ladle and friends.",
   "keywords": [
