@@ -98,6 +98,9 @@ function priority(result: DiffResult): number {
 /** Bounded MCP overview. Full evidence remains in the saved report. */
 export function agentRunSummary(report: RunReport) {
   const attention = report.results.filter((r) => priority(r) < 5);
+  const onlyStaleAttention =
+    attention.length > 0 &&
+    attention.every((result) => priority(result) === 4 && !result.unstable);
   attention.sort(
     (a, b) => priority(a) - priority(b) || a.storyId.localeCompare(b.storyId),
   );
@@ -128,6 +131,14 @@ export function agentRunSummary(report: RunReport) {
       ...(r.status === 'fail' ? { mismatchPercent: r.mismatchPercent } : {}),
     })),
     omittedAttention: Math.max(0, attention.length - MAX_STORIES),
-    next: 'Call report with story for one full result, or detail=full for the saved RunReport. No recapture is needed.',
+    ...(attention.some((result) => result.status === 'stale') && !onlyStaleAttention
+      ? {
+          staleMeaning:
+            'Stale baseline image bytes match; the approval commit is outside current branch ancestry.',
+        }
+      : {}),
+    next: onlyStaleAttention
+      ? 'These stale captures match saved baseline bytes. Their approval commits are outside current branch ancestry; no visual edit, detailed report, or recapture is needed. Re-approval is a separate decision to re-anchor the baselines.'
+      : 'Call report with story for one full result, or detail=full for the saved RunReport. No recapture is needed.',
   };
 }

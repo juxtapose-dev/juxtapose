@@ -78,6 +78,34 @@ describe('saved MCP run reports', () => {
     expect(JSON.stringify(summary).length).toBeLessThan(1600);
   });
 
+  test('explains exact-match stale baselines without asking for another visual lookup', () => {
+    const stale = report(2);
+    stale.summary = { pass: 0, fail: 0, new: 0, stale: 2, skip: 0 };
+    stale.results.forEach((result) => {
+      result.status = 'stale';
+      result.mismatchPixels = 0;
+      result.mismatchPercent = 0;
+    });
+    const compact = agentRunSummary(stale);
+    expect(compact.next).toContain(
+      'approval commits are outside current branch ancestry',
+    );
+    expect(compact.next).toContain('no visual edit, detailed report, or recapture');
+
+    stale.results[1]!.status = 'fail';
+    stale.summary = { pass: 0, fail: 1, new: 0, stale: 1, skip: 0 };
+    const mixed = agentRunSummary(stale);
+    expect(mixed.staleMeaning).toContain(
+      'approval commit is outside current branch ancestry',
+    );
+    expect(mixed.next).toContain('Call report with story');
+
+    stale.results[1]!.status = 'stale';
+    stale.results[1]!.unstable = { hashes: ['a'], unconfirmed: 'not rechecked' };
+    stale.results[1]!.unrechecked = true;
+    expect(agentRunSummary(stale).next).toContain('Call report with story');
+  });
+
   test('reads one saved story or full report without browser and refreshes changed reports', async () => {
     const project = await projectWithReport(report(20));
     const cache = new SavedReportCache();
