@@ -517,6 +517,7 @@ export async function withDesignReferenceFeedback(
 
 function compactReferenceFeedback(result: ReferenceResult) {
   const affected = result.states.filter((state) => state.status !== 'pass');
+  const passed = result.states.filter((state) => state.status === 'pass');
   affected.sort((a, b) => {
     const priority = (s: typeof a) =>
       s.status === 'error' || s.status === 'incompatible'
@@ -573,8 +574,12 @@ function compactReferenceFeedback(result: ReferenceResult) {
     counts: result.summary,
     states,
     omittedAffected: affected.length - states.length,
+    passed: passed.slice(0, 8).map((state) => ({ name: state.name, key: state.storyId })),
+    omittedPassed: Math.max(0, passed.length - 8),
     guidance:
-      'Observed target/current pixels, not inferred CSS causes. Call reference with a returned name for full measurements or a region ID for a focused paired image.',
+      result.outcome === 'pass' && passed.length <= 8
+        ? 'All captured design targets match. Read the run report for regression and flake status; no reference call is needed to verify these targets.'
+        : 'Observed target/current pixels, not inferred CSS causes. Call reference for the full ledger or a focused paired image.',
   };
 }
 

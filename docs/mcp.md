@@ -115,8 +115,10 @@ When the command also printed a warning, such as
 an approved story whose structure was not saved, a successful result carries
 it as a second text block. A `run` with captured design targets also carries a
 final text block with `juxtapose.design-reference-hint/v1`: overall counts,
-up to eight affected states, and the largest changed region ID for focused
-inspection. The first RunReport block remains unchanged. Targets outside a
+up to eight affected states, up to eight passed capture keys, and the largest
+changed region ID for focused inspection. A passing hint names the captured
+targets and does not require a second `reference` call to verify them. The first
+RunReport block remains unchanged. Targets outside a
 subset run count as `notCaptured`; if none were captured, no hint is added.
 
 ### reference

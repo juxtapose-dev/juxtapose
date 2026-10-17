@@ -127,8 +127,35 @@ test('a run result gains bounded design feedback without changing its report blo
     counts: { pass: 1, fail: 1, notCaptured: 0 },
     states: [{ name: 'desktop', key: f.desktop, status: 'fail' }],
     omittedAffected: 0,
+    passed: [{ name: 'mobile', key: f.mobile }],
+    omittedPassed: 0,
   });
   expect(hint.states[0].largestRegion.id).toMatch(/^[a-f0-9]+:\d+$/);
+});
+
+test('a passing run lists the target keys without inviting a second reference call', async () => {
+  const f = await fixture();
+  await writeFile(
+    path.join(f.run, 'images', `${encodeStoryId(f.desktop)}-current.webp`),
+    whiteWebp,
+  );
+  const run = {
+    content: [{ type: 'text' as const, text: JSON.stringify({ runId: 'r1' }) }],
+    isError: false,
+  };
+  const result = await withDesignReferenceFeedback(run, f.root);
+  const hint = JSON.parse((result.content[1] as { text: string }).text);
+  expect(hint).toMatchObject({
+    outcome: 'pass',
+    counts: { pass: 2, fail: 0 },
+    states: [],
+    passed: [
+      { name: 'desktop', key: f.desktop },
+      { name: 'mobile', key: f.mobile },
+    ],
+    omittedPassed: 0,
+  });
+  expect(hint.guidance).toContain('no reference call is needed');
 });
 
 test('empty and unrelated runs do not add design feedback', async () => {
