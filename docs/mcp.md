@@ -116,7 +116,9 @@ it as a second text block. The JSON itself never changes shape.
 ### reference
 
 Compares the last saved run with configured named design PNGs. No browser is
-opened. Pass `name` to select one target, or omit it for the all-state ledger.
+opened. Pass `name` to select one target, or omit it for the captured-state ledger.
+Configured targets outside a subset run or skipped there count as `notCaptured`;
+explicitly naming an absent target reports an error.
 The default result is a short text ledger; pass `detail: "json"` for
 `juxtapose.design-reference-set/v1` with measured geometry and bounded region
 lists. Pass a returned `region` ID to receive one paired target/current PNG as

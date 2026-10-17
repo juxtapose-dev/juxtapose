@@ -26,7 +26,14 @@ export interface ReferenceResult {
   schema: 'juxtapose.design-reference-set/v1';
   runId: string;
   policy: { method: 'pixelmatch'; threshold: 0.1; includeAA: false };
-  summary: { pass: number; fail: number; incompatible: number; error: number };
+  summary: {
+    pass: number;
+    fail: number;
+    incompatible: number;
+    error: number;
+    /** Configured targets without a capture in this run; excluded by default. */
+    notCaptured: number;
+  };
   states: State[];
   /** Present only when a region ID was requested. Left is target, right is current. */
   crop?: { regionId: string; png: Buffer };
@@ -82,10 +89,18 @@ export async function evaluateReferences(options: {
   const report = parseRunReport(await readFile(reportFile, 'utf8'));
   const results = new Map(report.results.map((r) => [r.storyId, r]));
   const states: State[] = [];
+  let notCaptured = 0;
   let crop: ReferenceResult['crop'];
   for (const name of names) {
     const reference = references[name] as DesignReferenceSpec;
     const result = results.get(reference.storyId);
+    // `jux run` often captures only changed stories. A configured target for
+    // another story is outside this comparison, not a broken capture. An
+    // explicit name still reports the absent capture as an error.
+    if ((!result || result.status === 'skip') && !options.name) {
+      notCaptured++;
+      continue;
+    }
     if (!result || result.status === 'skip' || result.error || !result.viewport) {
       states.push({
         name,
@@ -144,6 +159,7 @@ export async function evaluateReferences(options: {
       fail: states.filter((s) => s.status === 'fail').length,
       incompatible: states.filter((s) => s.status === 'incompatible').length,
       error: states.filter((s) => s.status === 'error').length,
+      notCaptured,
     },
     states,
     ...(crop ? { crop } : {}),
@@ -183,7 +199,7 @@ export async function referenceCommand(
     } else {
       const s = result.summary;
       io.out(
-        `Design references · run ${result.runId}: ${s.pass} pass, ${s.fail} fail, ${s.incompatible} incompatible, ${s.error} error\n`,
+        `Design references · run ${result.runId}: ${s.pass} pass, ${s.fail} fail, ${s.incompatible} incompatible, ${s.error} error, ${s.notCaptured} not captured\n`,
       );
       io.out(
         'Policy: Pixelmatch threshold 0.1, antialiasing excluded; separate from approved-baseline policy.\n',

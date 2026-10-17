@@ -293,7 +293,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'reference',
     description:
-      'Compare configured named design PNGs with the last saved run; no browser or recapture. Returns a short all-state text ledger by default; set detail to json for measured geometry and bounded region lists. Set region to retrieve one paired target|current PNG crop. Region IDs are bound to the image hashes. Design references have no DOM evidence and use Pixelmatch threshold 0.1, independent of approved-baseline settings.',
+      'Compare configured named design PNGs with the last saved run; no browser or recapture. Returns a short ledger for captured keys and a notCaptured count by default; set detail to json for measured geometry and bounded region lists. Set region to retrieve one paired target|current PNG crop. Region IDs are bound to the image hashes. Design references have no DOM evidence and use Pixelmatch threshold 0.1, independent of approved-baseline settings.',
     inputSchema: {
       type: 'object',
       properties: {

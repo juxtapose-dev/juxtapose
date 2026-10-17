@@ -82,7 +82,13 @@ test('all-state ledger compares exact capture keys from saved images without rec
   const f = await fixture();
   const before = await readFile(path.join(f.run, 'report.json'), 'utf8');
   const result = await evaluateReferences({ project: f.root });
-  expect(result.summary).toEqual({ pass: 1, fail: 1, incompatible: 0, error: 0 });
+  expect(result.summary).toEqual({
+    pass: 1,
+    fail: 1,
+    incompatible: 0,
+    error: 0,
+    notCaptured: 0,
+  });
   expect(result.states.map((s) => [s.name, s.storyId, s.status])).toEqual([
     ['desktop', f.desktop, 'fail'],
     ['mobile', f.mobile, 'pass'],
@@ -131,7 +137,13 @@ test('MCP returns the all-state ledger and one crop after a server restart witho
   const ledger = JSON.parse(
     first.content[0]!.type === 'text' ? first.content[0].text : '{}',
   );
-  expect(ledger.summary).toEqual({ pass: 1, fail: 1, incompatible: 0, error: 0 });
+  expect(ledger.summary).toEqual({
+    pass: 1,
+    fail: 1,
+    incompatible: 0,
+    error: 0,
+    notCaptured: 0,
+  });
   const id = ledger.states[0].regions[0].id as string;
   await firstServer.close();
   const secondServer = new McpServer({ project: f.root, chrome: '/nonexistent/chrome' });
@@ -139,6 +151,53 @@ test('MCP returns the all-state ledger and one crop after a server restart witho
   expect(crop.isError).toBe(false);
   expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
   await secondServer.close();
+});
+
+test('a subset run excludes unrelated and skipped references by default, but an explicit name errors', async () => {
+  const f = await fixture();
+  const configPath = path.join(f.root, 'juxtapose.config.json');
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  config.designReferences.unrelated = {
+    storyId: 'another--story',
+    image: 'design/target.png',
+    viewport: { width: 12, height: 8 },
+  };
+  await writeFile(configPath, JSON.stringify(config));
+  const reportPath = path.join(f.run, 'report.json');
+  await writeFile(
+    reportPath,
+    JSON.stringify({
+      runId: 'r1',
+      results: [
+        { storyId: f.desktop, status: 'fail', viewport: { width: 12, height: 8 } },
+        { storyId: f.mobile, status: 'skip' },
+      ],
+    }),
+  );
+  const result = await evaluateReferences({ project: f.root });
+  expect(result.summary).toEqual({
+    pass: 0,
+    fail: 1,
+    incompatible: 0,
+    error: 0,
+    notCaptured: 2,
+  });
+  expect(result.states.map((s) => s.name)).toEqual(['desktop']);
+  const io = captureIo();
+  expect(await referenceCommand(undefined, { project: f.root }, { io })).toBe(1);
+  expect(io.stdout()).toContain('2 not captured');
+  const explicit = await evaluateReferences({ project: f.root, name: 'unrelated' });
+  expect(explicit.summary).toEqual({
+    pass: 0,
+    fail: 0,
+    incompatible: 0,
+    error: 1,
+    notCaptured: 0,
+  });
+  expect(explicit.states[0]).toMatchObject({
+    status: 'error',
+    error: 'capture key is absent from the saved run',
+  });
 });
 
 test('geometry, missing captures, invalid config and path escapes are explicit', async () => {
