@@ -11,7 +11,12 @@
 import sharp from 'sharp';
 import pixelmatch from 'pixelmatch';
 import type { ChangedRegion, StoryParams, ProjectConfig } from '../types.js';
-import { computeChangedRegions } from './regions.js';
+import {
+  computeChangedRegions,
+  computeChangedRegionsWithCounts,
+  type CountedRegion,
+} from './regions.js';
+import { visibleColorPairs, type VisibleColorEvidence } from './color-pairs.js';
 
 const DEFAULT_THRESHOLD = 0.1;
 const DEFAULT_MIN_DIFF_PERCENT = 0;
@@ -22,10 +27,14 @@ export interface DiffOutput {
   rawMismatchPixels?: number;
   mismatchPercent: number;
   changedRegions: ChangedRegion[];
+  /** Only when requested: regions ranked by exact marked-pixel count. */
+  rankedChangedRegions?: CountedRegion[];
   /** WebP overlay marking changed pixels. Absent when nothing changed. */
   diffImage?: Buffer;
   /** True when dimensions differ — no pixel comparison was possible. */
   dimensionMismatch: boolean;
+  /** Optional sampled pixel evidence for design-reference feedback. */
+  visibleColors?: VisibleColorEvidence;
 }
 
 /**
@@ -39,7 +48,11 @@ export interface DiffOutput {
 export async function diffImages(
   baseline: Buffer,
   current: Buffer,
-  opts: { threshold?: number; minDiffPercent?: number } = {},
+  opts: {
+    threshold?: number;
+    minDiffPercent?: number;
+    includeVisibleColors?: boolean;
+  } = {},
 ): Promise<DiffOutput> {
   const threshold = opts.threshold ?? DEFAULT_THRESHOLD;
   const minDiffPercent = opts.minDiffPercent ?? DEFAULT_MIN_DIFF_PERCENT;
@@ -77,8 +90,12 @@ export async function diffImages(
   const mismatchPixels = pixelmatch(a.data, b.data, diff, width, height, {
     threshold,
     includeAA: false,
+    diffMask: opts.includeVisibleColors ?? false,
   });
   const mismatchPercent = (mismatchPixels / (width * height)) * 100;
+  const visibleColors = opts.includeVisibleColors
+    ? visibleColorPairs(a.data, b.data, diff, width, height)
+    : undefined;
 
   if (mismatchPixels === 0 || mismatchPercent < minDiffPercent) {
     return {
@@ -87,6 +104,7 @@ export async function diffImages(
       mismatchPercent,
       changedRegions: [],
       dimensionMismatch: false,
+      ...(visibleColors ? { visibleColors } : {}),
     };
   }
 
@@ -97,13 +115,26 @@ export async function diffImages(
     .webp({ lossless: true, effort: 0 })
     .toBuffer();
 
+  const counted = opts.includeVisibleColors
+    ? computeChangedRegionsWithCounts(diff, width, height)
+    : undefined;
   return {
     mismatchPixels,
     rawMismatchPixels,
     mismatchPercent,
-    changedRegions: computeChangedRegions(diff, width, height),
+    changedRegions: counted
+      ? counted.map(({ changedPixels: _changedPixels, ...region }) => region)
+      : computeChangedRegions(diff, width, height),
+    ...(counted
+      ? {
+          rankedChangedRegions: [...counted].sort(
+            (a, b) => b.changedPixels - a.changedPixels || a.y - b.y || a.x - b.x,
+          ),
+        }
+      : {}),
     diffImage,
     dimensionMismatch: false,
+    ...(visibleColors ? { visibleColors } : {}),
   };
 }
 

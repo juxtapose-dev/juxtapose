@@ -191,6 +191,23 @@ describe('buildHandoffPrompt', () => {
     expect(out).toContain('and 38 more');
   });
 
+  it('leads with a readable pixel summary and ranks region boxes without claiming pixel impact', () => {
+    const out = buildHandoffPrompt({
+      ...base,
+      changedRegions: [
+        { x: 10, y: 10, width: 3, height: 3 },
+        { x: 100, y: 100, width: 40, height: 20 },
+      ],
+      cropsCommand: 'jux diff a b --crops',
+    });
+    expect(out).toContain(
+      'Pixel summary: 3.72% changed (30474 pixels) across 2 detected regions',
+    );
+    expect(out).toContain('box area is not the number of changed pixels');
+    expect(out.indexOf('(100, 100) 40×20px')).toBeLessThan(out.indexOf('(10, 10) 3×3px'));
+    expect(out).toContain('inspect paired crops even when structural coverage is full');
+  });
+
   it('leads with the cause when the run traced one', () => {
     const v = structuralDiff({
       baseline: fixture.cases.noop.structure,

@@ -96,18 +96,46 @@ If `@juxtapose/cli` is already a dev dependency, use `"command": "npx"` with
 3. Call `snap` on the same pages, named `after`.
 4. Call `diff` with `a: "before"` and `b: "after"`. Read `summary` and
    `deltas`.
-5. If `explained` is `"full"`, the deltas account for every changed pixel.
-   Otherwise, call `diff` again with `crops: true` and look at the images.
+5. If the text evidence cannot settle the appearance, call `diff` again with
+   `crops: true` and look at the images. Full structural coverage is spatial
+   overlap, not proof that the new appearance is correct.
 
 For a Storybook or Ladle project with baselines, call `run`, then `handoff`
-for each failing story. Call `approve` only when the user asks you to.
+for each failing story. When `designReferences` are configured, `run` includes
+an additional, compact target-versus-current result block for the capture keys it
+just saved. Call `reference` when you need the full measured ledger or a paired
+image crop; it reads the saved images without recapturing. Call `approve` only
+when the user asks you to.
 
 ## Tools
 
-The server exposes seven tools. Each result's first text block holds the
-command's JSON, unless noted. When the command also printed a warning, such as
+The server exposes nine tools. Each result's first text block holds the
+command's JSON, except `reference`, which defaults to a short text ledger.
+When the command also printed a warning, such as
 an approved story whose structure was not saved, a successful result carries
-it as a second text block. The JSON itself never changes shape.
+it as a second text block. A `run` with captured design targets also carries a
+final text block with `juxtapose.design-reference-hint/v1`: overall counts,
+up to eight affected states, and the largest changed region ID for focused
+inspection. The first RunReport block remains unchanged. Targets outside a
+subset run count as `notCaptured`; if none were captured, no hint is added.
+
+### reference
+
+Compares the last saved run with configured named design PNGs. No browser is
+opened. Pass `name` to select one target, or omit it for the captured-state ledger.
+Configured targets outside a subset run or skipped there count as `notCaptured`;
+explicitly naming an absent target reports an error.
+If none of the configured targets were captured, the result is an error with
+`outcome: "no-comparison"` in JSON detail, rather than a visual pass.
+The default result is a short text ledger that includes a dominant observed
+target/current color pair when one exists; pass `detail: "json"` for
+`juxtapose.design-reference-set/v1` with measured geometry, sampled visible target/current color pairs, and up to eight regions ranked by exact changed-pixel count. The short ledger names the largest region and its count. Pass a returned `region` ID to receive one paired target/current PNG as
+an MCP image block. Region IDs remain valid after an MCP server restart while
+the saved images and config remain the same. If either image changes, an old ID
+is rejected; call `reference` again for current IDs. The ledger has explicit
+pass, fail, incompatible, and error counts. The tool uses Pixelmatch threshold
+`0.1`, independently of approved-baseline comparison settings. Design PNGs
+have no DOM structure evidence.
 
 ### snap
 

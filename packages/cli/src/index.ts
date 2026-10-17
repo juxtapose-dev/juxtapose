@@ -28,6 +28,8 @@ Usage
   jux doctor [--fix] [--json]    warn if snapshot images are committed, and print the fix;
                                  --fix migrates inline/legacy structures to readable JSON files
   jux handoff <storyId>          print an agent prompt for one failing story
+  jux reference [name] [--run <dir>] [--json]
+                                 compare configured design PNGs with a saved run, without capturing
   jux snap <url>… [options]      capture pages: pixels + structure, no workbench
   jux browser install|path|status|start|stop  manage the pinned and warm browser (install downloads once, ~100 MB)
   jux config --explain <storyId> [--json]
@@ -35,7 +37,7 @@ Usage
                                  which layer each came from (config, story, stories glob, variant, CLI)
   jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix, two runs with --runs)
   jux mcp [--project <dir>] [--concurrency <n>]
-                                 MCP server on stdio for coding agents: snap, diff, list, run, check, handoff, approve
+                                 MCP server on stdio for coding agents: snap, diff, list, run, check, handoff, reference, approve
                                  (--concurrency: snaps at once, 1-16, default half the cores up to 4)
   jux --version                  print installed package versions
 `;
@@ -49,7 +51,8 @@ Common options
   --platform <name>              storybook | ladle | urls (default: autodetect)
   --concurrency <n>              parallel pages (default: 8)
   --allow-unstable               approve: also baseline stories whose two run captures differed
-  --run <dir>                    run directory to read (approve, check, handoff, upload)
+  --run <dir>                    run directory to read (approve, check, handoff, reference, upload)
+  --region <id>                  reference: return a saved comparison's paired crop (--json)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init, approve: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
   --upload                      run: upload captured results to hosted review (JUXTAPOSE_TOKEN)
@@ -180,6 +183,7 @@ async function main(argv: string[]): Promise<number> {
       story: { type: 'string', multiple: true },
       'dry-run': { type: 'boolean' },
       run: { type: 'string' },
+      region: { type: 'string' },
       as: { type: 'string' },
       'as-prefix': { type: 'string' },
       prefix: { type: 'boolean', default: false },
@@ -258,6 +262,10 @@ async function main(argv: string[]): Promise<number> {
       const { handoffCommand } = await import('./commands/handoff.js');
       return handoffCommand(positionals[0], flags);
     }
+    case 'reference': {
+      const { referenceCommand } = await import('./commands/reference.js');
+      return referenceCommand(positionals[0], flags);
+    }
     case 'snap': {
       const { snapCommand } = await import('./commands/snap.js');
       return snapCommand(positionals, flags);
@@ -293,6 +301,7 @@ const COMMANDS = [
   'approve',
   'check',
   'handoff',
+  'reference',
   'snap',
   'config',
   'diff',

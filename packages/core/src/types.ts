@@ -15,6 +15,7 @@ import type {
   StorageConfig,
   StoryOverride,
   UrlEntry,
+  DesignReferenceSpec,
   VariantSpec,
 } from './config/schema.js';
 export type {
@@ -26,6 +27,7 @@ export type {
   StorageConfig,
   StoryOverride,
   UrlEntry,
+  DesignReferenceSpec,
   VariantSpec,
 };
 

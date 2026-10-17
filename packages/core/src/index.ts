@@ -50,6 +50,7 @@ export type {
   BaselineManifest,
   ProjectConfig,
   UrlEntry,
+  DesignReferenceSpec,
   StorageConfig,
   BaselineStore,
   BaselineImageLookup,
@@ -66,6 +67,8 @@ export type {
 // a later config loader describes the same shapes instead of restating them.
 export {
   ProjectConfigSchema,
+  DesignReferenceSchema,
+  DesignReferencesSchema,
   JuxtaposeParametersSchema,
   SettleSchema,
   NetworkSchema,
@@ -222,6 +225,11 @@ export {
   type StructuralDiffInput,
 } from './diff/structural.js';
 export { compareSnaps, type SnapSide, type SnapComparison } from './diff/compare.js';
+export {
+  compareDesignReference,
+  type DesignReferenceCurrent,
+  type DesignReferenceLedger,
+} from './diff/design-reference.js';
 // Tier-3 crops: two images + regions → side-by-side PNG strips, no browser.
 export { renderCrops, MAX_CROPS, MAX_CROP_SIDE, type Crop } from './diff/crops.js';
 export { describeDelta, describeDeltas } from './diff/structural/summary.js';

@@ -12,7 +12,10 @@ interface Box {
   y1: number;
   x2: number;
   y2: number;
+  pixels: number;
 }
+
+export type CountedRegion = ChangedRegion & { changedPixels: number };
 
 const DEFAULT_GAP = 8;
 
@@ -45,6 +48,18 @@ export function computeChangedRegions(
   height: number,
   gap: number = DEFAULT_GAP,
 ): ChangedRegion[] {
+  return computeChangedRegionsWithCounts(diff, width, height, gap).map(
+    ({ changedPixels: _changedPixels, ...region }) => region,
+  );
+}
+
+/** The same boxes with exact marked-pixel counts for impact-ranked feedback. */
+export function computeChangedRegionsWithCounts(
+  diff: Buffer,
+  width: number,
+  height: number,
+  gap: number = DEFAULT_GAP,
+): CountedRegion[] {
   // Pass 1: per-row runs of changed pixels. Rows are cheap to scan and
   // collapse most of the pixel count immediately.
   const spans: { y: number; x1: number; x2: number }[] = [];
@@ -73,7 +88,13 @@ export function computeChangedRegions(
     }
 
     if (touched.length === 0) {
-      boxes.push({ x1: span.x1, y1: span.y, x2: span.x2, y2: span.y });
+      boxes.push({
+        x1: span.x1,
+        y1: span.y,
+        x2: span.x2,
+        y2: span.y,
+        pixels: span.x2 - span.x1 + 1,
+      });
       continue;
     }
 
@@ -84,6 +105,7 @@ export function computeChangedRegions(
     target.x2 = Math.max(target.x2, span.x2);
     target.y1 = Math.min(target.y1, span.y);
     target.y2 = Math.max(target.y2, span.y);
+    target.pixels += span.x2 - span.x1 + 1;
 
     // Fold any other boxes this span bridged into the first, back-to-front so
     // the splices don't shift indices we still need.
@@ -94,6 +116,7 @@ export function computeChangedRegions(
       target.x2 = Math.max(target.x2, other.x2);
       target.y1 = Math.min(target.y1, other.y1);
       target.y2 = Math.max(target.y2, other.y2);
+      target.pixels += other.pixels;
       boxes.splice(at, 1);
     }
   }
@@ -103,6 +126,7 @@ export function computeChangedRegions(
     y: b.y1,
     width: b.x2 - b.x1 + 1,
     height: b.y2 - b.y1 + 1,
+    changedPixels: b.pixels,
   }));
 }
 

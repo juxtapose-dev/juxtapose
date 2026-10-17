@@ -659,6 +659,46 @@ export const StoriesSchema = withText(
   },
 );
 
+/** Named design images are independent of approved regression baselines. The
+ * current capture is still selected by its capture key (including variants). */
+export const DesignReferenceSchema = Type.Object(
+  {
+    storyId: Type.String({
+      minLength: 1,
+      description: 'Exact capture key, including a variant suffix when applicable.',
+    }),
+    image: Type.String({
+      minLength: 1,
+      description:
+        'PNG path relative to the project root. Paths outside the project are rejected, including symlinks.',
+    }),
+    viewport: ViewportSchema,
+    deviceScaleFactor: Type.Optional(
+      Type.Number({
+        minimum: 0.1,
+        maximum: 8,
+        description:
+          'PNG pixels per CSS pixel. Default 1; must match the current capture.',
+      }),
+    ),
+    captureKind: Type.Optional(
+      StringEnum(['viewport'] as const, {
+        description: 'Viewport screenshot. Full-page references are not supported yet.',
+      }),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description: 'One named design PNG and the conditions it represents.',
+  },
+);
+
+export const DesignReferencesSchema = Type.Record(
+  Type.String({ pattern: '^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$' }),
+  DesignReferenceSchema,
+  { description: 'Named design targets, separate from approved regression baselines.' },
+);
+
 // ---------------------------------------------------------------------------
 // Project config
 
@@ -696,6 +736,7 @@ const projectChecked = {
   network: NetworkSchema,
   freeze: ProjectFreezeSchema,
   stories: StoriesSchema,
+  designReferences: DesignReferencesSchema,
   waitForSelector: settleScalar(
     Type.String({ description: "Project-wide `waitForSelector`; a story's own wins." }),
     'waitForSelector must be a CSS selector',
@@ -892,4 +933,5 @@ export type JuxtaposeParameters = Static<typeof JuxtaposeParametersSchema>;
 export type StoryOverride = Static<typeof StoryOverrideSchema>;
 export type StorageConfig = Static<typeof StorageConfigSchema>;
 export type UrlEntry = Static<typeof UrlEntrySchema>;
+export type DesignReferenceSpec = Static<typeof DesignReferenceSchema>;
 export type ProjectConfig = Static<typeof ProjectConfigSchema>;
