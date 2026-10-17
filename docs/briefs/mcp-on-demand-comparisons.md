@@ -50,3 +50,10 @@ token cap. Grade final visual and behavior quality independently. The prior
 always-on progress block used 12,652 counted tokens and 18.8 seconds versus
 9,443 tokens and 12.9 seconds in one equal-quality pair, so optional access
 must earn its place with a better result on a task where it changes the edit.
+
+An unmodeled smoke check on the saved four-state billing captures measured
+66.3 ms for the first previous/current MCP request and 0.29 ms for the same
+request from the session cache (0.21 ms for its JSON form). The short response
+was 504 bytes, versus 3,076 bytes for JSON. This verifies the local lookup and
+cache behavior on that fixture; it is not evidence of agent token or elapsed
+time savings.
