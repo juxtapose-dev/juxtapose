@@ -1459,10 +1459,11 @@
               "type": "number"
             },
             "captureKind": {
-              "description": "Viewport screenshot. Full-page references are not supported yet.",
+              "description": "Viewport (default) or full-page screenshot. `viewport` always describes the browser layout viewport, even for a full-page image.",
               "type": "string",
               "enum": [
-                "viewport"
+                "viewport",
+                "full-page"
               ]
             }
           }
