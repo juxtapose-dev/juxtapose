@@ -111,27 +111,28 @@ export async function diffImages(
   // Lossless: the overlay is a sparse mask of flat colour, which lossless
   // compresses better than lossy anyway, and blurring the marked pixels would
   // defeat the point of the image.
-  const diffImage = await sharp(diff, { raw: { width, height, channels: 4 } })
+  const diffImagePromise = sharp(diff, { raw: { width, height, channels: 4 } })
     .webp({ lossless: true, effort: 0 })
     .toBuffer();
 
   const counted = opts.includeVisibleColors
     ? computeChangedRegionsWithCounts(diff, width, height)
     : undefined;
+  const changedRegions = counted
+    ? counted.map(({ changedPixels: _changedPixels, ...region }) => region)
+    : computeChangedRegions(diff, width, height);
+  const rankedChangedRegions = counted
+    ? [...counted].sort(
+        (a, b) => b.changedPixels - a.changedPixels || a.y - b.y || a.x - b.x,
+      )
+    : undefined;
+  const diffImage = await diffImagePromise;
   return {
     mismatchPixels,
     rawMismatchPixels,
     mismatchPercent,
-    changedRegions: counted
-      ? counted.map(({ changedPixels: _changedPixels, ...region }) => region)
-      : computeChangedRegions(diff, width, height),
-    ...(counted
-      ? {
-          rankedChangedRegions: [...counted].sort(
-            (a, b) => b.changedPixels - a.changedPixels || a.y - b.y || a.x - b.x,
-          ),
-        }
-      : {}),
+    changedRegions,
+    ...(rankedChangedRegions ? { rankedChangedRegions } : {}),
     diffImage,
     dimensionMismatch: false,
     ...(visibleColors ? { visibleColors } : {}),
