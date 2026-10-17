@@ -41,7 +41,7 @@ const MAX_LISTED_RUNS = 20;
 /** Saved runs newest first, so an agent can pick a checkpoint without having
  *  kept every run ID. Only the newest reports are parsed; runs are never
  *  pruned, so the directory can hold hundreds. */
-export async function savedRuns(project: string) {
+export async function recentSavedRunIds(project: string) {
   const root = path.join(project, '.juxtapose', 'runs');
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
   const dated = await Promise.all(
@@ -55,12 +55,22 @@ export async function savedRuns(project: string) {
   );
   const runs = dated
     .filter((run): run is NonNullable<typeof run> => run !== null)
-    .sort((a, b) => b.mtime - a.mtime);
+    .sort(
+      (a, b) => b.mtime - a.mtime || (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0),
+    );
+  return {
+    runIds: runs.slice(0, MAX_LISTED_RUNS).map((run) => run.runId),
+    omitted: Math.max(0, runs.length - MAX_LISTED_RUNS),
+  };
+}
+
+export async function savedRuns(project: string) {
+  const { runIds, omitted } = await recentSavedRunIds(project);
   const listed = await Promise.all(
-    runs.slice(0, MAX_LISTED_RUNS).map(async (run) => {
+    runIds.map(async (runId) => {
       try {
         // The same containment checks as a report lookup: no symlinked escape.
-        const file = await savedRunReportPath(project, run.runId);
+        const file = await savedRunReportPath(project, runId);
         const report = parseRunReport(await readFile(file, 'utf8'), file);
         return {
           runId: report.runId,
@@ -69,14 +79,14 @@ export async function savedRuns(project: string) {
           summary: report.summary,
         };
       } catch {
-        return { runId: run.runId, error: 'report unreadable' };
+        return { runId, error: 'report unreadable' };
       }
     }),
   );
   return {
     schema: 'juxtapose.saved-runs/v1',
     runs: listed,
-    omitted: Math.max(0, runs.length - MAX_LISTED_RUNS),
+    omitted,
   };
 }
 

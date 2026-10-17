@@ -192,8 +192,40 @@ immutable saved-run comparisons for repeated lookups in the same session. A
 crop requested from a cached region reuses its analysis and validates both
 saved image hashes before rendering.
 After a capture, `run` includes compact target feedback by default. Set
-`feedback: "none"` on that call if you intend to request only the
-previous/current view and want to avoid computing the target comparison.
+`compareTo: "previous"` (resolved before capture) or a saved run ID to append
+the checkpoint pixel/structure change in the same call. The extra text block
+starts with `juxtapose.saved-run-change/v1`. It reuses the saved comparison cache
+for later `reference` detail or crop requests. Set `feedback: "none"` to skip
+target analysis while still requesting a checkpoint comparison.
+
+`progress: true` additionally includes each listed target's `progress`, when a
+compatible preceding comparison exists, and `bestRun`:
+
+```json
+{
+  "progress": { "fromRun": "r2", "pixels": [812, 224], "trend": "closer" },
+  "bestRun": "r3"
+}
+```
+
+These are opt-in measurements, not a quality score. Progress compares target
+mismatch pixels against the immediately preceding run. `bestRun` is the fewest
+mismatch pixels among this run and compatible saved analyses in the newest 20
+runs; ties prefer this run, then the newest earlier run. Reference bytes,
+capture key, geometry and comparison policy must match. Missing historical
+analyses are skipped, except the preceding run, which may be analysed once
+from its saved images against the current target through the existing content
+cache. Stale analyses and incompatible captures contribute no trend. Old
+reports without capture hashes require that re-analysis before use. No browser
+is opened for history.
+
+One `run` supplies these verdicts without a follow-up `report` or `reference`.
+Use those tools only for missing detail. Stop when all required captures,
+targets and behavior checks pass; `notCaptured` targets remain unchecked.
+Record a useful `bestRun` as a checkpoint, and retain its source separately.
+Checkpoint comparisons and progress cannot be requested with `dryRun`;
+progress also requires target feedback. An invalid checkpoint is rejected
+before capture. Neither option changes approval or acceptance policy.
 
 In the default target view, configured targets outside a subset run or skipped
 there count as `notCaptured`;
@@ -305,15 +337,17 @@ and unstable captures first), and how many more were omitted. It also includes
 a compact design-target hint when references are configured. The full report
 is saved for focused, read-only lookups.
 
-| Argument   | Type     | Description                                                                                          |
-| ---------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `all`      | boolean  | Capture every story instead of the affected ones.                                                    |
-| `since`    | string   | Git ref. Traces changed files since it for `cause`.                                                  |
-| `stories`  | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
-| `settle`   | object   | Settle options for every story, as for `snap`.                                                       |
-| `recheck`  | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
-| `feedback` | string   | `"target"` (default) or `"none"` to skip design-target analysis after capture.                       |
-| `report`   | string   | `"summary"` (default) or `"full"` for the complete `RunReport`.                                      |
+| Argument    | Type     | Description                                                                                          |
+| ----------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `all`       | boolean  | Capture every story instead of the affected ones.                                                    |
+| `since`     | string   | Git ref. Traces changed files since it for `cause`.                                                  |
+| `stories`   | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
+| `settle`    | object   | Settle options for every story, as for `snap`.                                                       |
+| `recheck`   | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
+| `feedback`  | string   | `"target"` (default) or `"none"` to skip design-target analysis after capture.                       |
+| `compareTo` | string   | Saved run ID or `"previous"`; append checkpoint change (default off).                                |
+| `progress`  | boolean  | Add compatible target trend and bounded best-run history (default off).                              |
+| `report`    | string   | `"summary"` (default) or `"full"` for the complete `RunReport`.                                      |
 
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.

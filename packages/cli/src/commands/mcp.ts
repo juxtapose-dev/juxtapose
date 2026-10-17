@@ -269,16 +269,26 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Capture selected Storybook/Ladle stories after an edit. Returns a bounded run summary and a design-target hint by default. Set feedback=none if requesting a saved previous/current diff instead; set report=full for all results. Use report for saved detail without recapture.',
+      'Capture affected stories and variants after an edit. One call returns the baseline verdict, target hint, and optional compareTo checkpoint change. Do not repeat these with report or reference. Stop when all required captures and checks pass. report=full returns all results.',
     inputSchema: {
       type: 'object',
       properties: {
         all: { type: 'boolean', description: 'Capture every story' },
+        compareTo: {
+          type: 'string',
+          description:
+            'Saved run ID or "previous" (resolved before capture). Append the saved pixel/structure change; off by default.',
+        },
+        progress: {
+          type: 'boolean',
+          description:
+            'Opt-in target pixel trend and bestRun among the newest 20 saved runs; off by default. Record bestRun as a checkpoint.',
+        },
         feedback: {
           type: 'string',
           enum: ['target', 'none'],
           description:
-            'Design-target hint after capture (default), or none when you intend to request a saved previous/current comparison instead',
+            'Design-target hint after capture (default), or none to skip target analysis; compareTo works with either',
         },
         dryRun: {
           type: 'boolean',
@@ -415,7 +425,7 @@ export const TOOLS: Tool[] = [
 ];
 
 const INSTRUCTIONS =
-  "For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, read the run report and any compact design-reference hint before deciding what remains. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference detail=json for saved measurements or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. Local image scripts remain useful when Jux lacks the needed fact. Every run is saved: note a good run ID as a checkpoint, and after later edits call reference compare=previous fromRun=<checkpoint> to see what changed since it, pixels and structure, without recapture (report detail=runs lists saved IDs). To roll back, restore that checkpoint's source, not the baselines. Use check for review blockers, explain for capture settings, and never approve unless the user asks.";
+  "For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, read the run report and any compact design-reference hint before deciding what remains. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference detail=json for saved measurements or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. Local image scripts remain useful when Jux lacks the needed fact. One run returns the baseline verdict and target result; add compareTo=<checkpoint> for the saved pixel/structure change in that call. Do not repeat these with report or reference. Optional progress identifies each target’s bestRun; record it as a checkpoint (report detail=runs lists saved IDs). Stop only when all required states and checks pass, including targets outside subset runs. To roll back, restore that checkpoint's source, not the baselines. Use check for review blockers, explain for capture settings, and never approve unless the user asks.";
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -532,6 +542,7 @@ export const SNAP_SLOTS = 4;
 export async function withDesignReferenceFeedback(
   run: ToolResult,
   project: string,
+  options: { progress?: boolean; previousRun?: string } = {},
 ): Promise<ToolResult> {
   if (run.isError) return run;
   const first = run.content[0];
@@ -561,6 +572,10 @@ export async function withDesignReferenceFeedback(
       includeOutlines: true,
     });
     if (result.outcome === 'no-comparison') return run;
+    if (options.progress) {
+      const { targetProgress } = await import('./reference-progress.js');
+      await targetProgress(project, result, options.previousRun).catch(() => {});
+    }
     run.content.push({
       type: 'text',
       text: JSON.stringify(compactReferenceFeedback(result)),
@@ -606,7 +621,7 @@ function savedChangeText(change: ReferenceChangeResult): string {
   ].join('\n');
 }
 
-function compactReferenceFeedback(result: ReferenceResult) {
+export function compactReferenceFeedback(result: ReferenceResult) {
   const affected = result.states.filter((state) => state.status !== 'pass');
   const passed = result.states.filter((state) => state.status === 'pass');
   affected.sort((a, b) => {
@@ -638,6 +653,8 @@ function compactReferenceFeedback(result: ReferenceResult) {
       status: state.status,
       pixels: state.mismatchPixels,
       percent: state.mismatchPercent,
+      ...(state.progress ? { progress: state.progress } : {}),
+      ...(state.bestRun ? { bestRun: state.bestRun } : {}),
       ...(state.regions[0]
         ? {
             largestRegion: {
@@ -670,11 +687,16 @@ function compactReferenceFeedback(result: ReferenceResult) {
     counts: result.summary,
     states,
     omittedAffected: affected.length - states.length,
-    passed: passed.slice(0, 8).map((state) => ({ name: state.name, key: state.storyId })),
+    passed: passed.slice(0, 8).map((state) => ({
+      name: state.name,
+      key: state.storyId,
+      ...('progress' in state && state.progress ? { progress: state.progress } : {}),
+      ...('bestRun' in state && state.bestRun ? { bestRun: state.bestRun } : {}),
+    })),
     omittedPassed: Math.max(0, passed.length - 8),
     guidance:
       result.outcome === 'pass'
-        ? 'Each listed captured target has compatible geometry and zero Pixelmatch mismatch pixels under the stated policy; all captured targets pass. Read the run report for regression and flake status; no reference call is needed to verify these targets, and no recapture is needed. NotCaptured targets were not checked.'
+        ? 'Each listed captured target has compatible geometry and zero Pixelmatch mismatch pixels under the stated policy; all captured targets pass. Use the accompanying run summary for baseline and flake verdicts; no reference call is needed. Stop only when all required states and behavior checks pass. NotCaptured targets were not checked.'
         : 'Observed target/current pixels, not inferred CSS causes. Use these facts for the next edit. If a specific uncertainty remains, call reference with detail=json for saved geometry or a region ID for one paired crop; neither needs recapture.',
   };
 }
@@ -1215,9 +1237,17 @@ export class McpServer {
   private run(args: Args): Planned {
     const all = bool(args, 'all');
     const dryRun = bool(args, 'dryRun');
+    const compareTo = str(args, 'compareTo');
+    if (compareTo !== undefined && !/^[a-zA-Z0-9_-]+$/.test(compareTo))
+      throw new ArgError("'compareTo' must be a saved run ID or 'previous'");
+    const progress = bool(args, 'progress');
+    if (dryRun && (compareTo !== undefined || progress))
+      throw new ArgError("'compareTo' and 'progress' require a capture, not dryRun");
     const feedback = str(args, 'feedback') ?? 'target';
     if (feedback !== 'target' && feedback !== 'none')
       throw new ArgError("'feedback' must be 'target' or 'none'");
+    if (progress && feedback === 'none')
+      throw new ArgError("'progress' requires feedback='target'");
     const since = str(args, 'since');
     const stories = strings(args, 'stories');
     const settle = settleArg(args);
@@ -1232,6 +1262,16 @@ export class McpServer {
     return {
       locks: EXCLUSIVE,
       exec: async (signal) => {
+        // Resolve under the capture lock: a queued run must compare to the
+        // last completed run, never to itself or a half-written neighbour.
+        const previous =
+          compareTo === 'previous' || progress ? await latestRunDir(this.project) : null;
+        const previousRun = previous ? path.basename(previous) : undefined;
+        const fromRun = compareTo === 'previous' ? previousRun : compareTo;
+        if (compareTo && !fromRun)
+          return errorResult('jux: no saved checkpoint; run without compareTo first');
+        // Invalid checkpoints fail before spending a browser capture.
+        if (fromRun) await this.reports.get(this.project, fromRun);
         const { runCommand } = await import('./run.js');
         const result = await this.invoke(
           (s) =>
@@ -1253,7 +1293,30 @@ export class McpServer {
         const withFeedback =
           feedback === 'none'
             ? result
-            : await withDesignReferenceFeedback(result, this.project);
+            : await withDesignReferenceFeedback(result, this.project, {
+                progress,
+                ...(previousRun ? { previousRun } : {}),
+              });
+        if (fromRun) {
+          const first = result.content[0];
+          if (first?.type === 'text') {
+            const report = parseRunReport(first.text);
+            if (report.capturedCount > 0 && report.runId !== 'empty') {
+              try {
+                const change = await this.savedChange(fromRun, report.runId);
+                withFeedback.content.push({
+                  type: 'text',
+                  text: `${change.schema}\n${savedChangeText(change)}`,
+                });
+              } catch (error) {
+                withFeedback.content.push({
+                  type: 'text',
+                  text: `Saved checkpoint comparison unavailable: ${error instanceof Error ? error.message : String(error)}`,
+                });
+              }
+            }
+          }
+        }
         if (reportDetail === 'full') return withFeedback;
         const first = withFeedback.content[0];
         if (first?.type === 'text') {
@@ -1263,6 +1326,23 @@ export class McpServer {
         return withFeedback;
       },
     };
+  }
+
+  private async savedChange(fromRun: string, toRun: string) {
+    const config = await loadConfig(this.project);
+    const referenceKey = createHash('sha256')
+      .update(JSON.stringify(config.designReferences ?? {}))
+      .digest('hex');
+    const key = JSON.stringify([toRun, fromRun, undefined, referenceKey]);
+    let change = this.referenceChanges.get(key);
+    if (!change) {
+      const { evaluateReferenceChange } = await import('./reference.js');
+      change = await evaluateReferenceChange({ project: this.project, fromRun, toRun });
+      if (this.referenceChanges.size >= 8)
+        this.referenceChanges.delete(this.referenceChanges.keys().next().value!);
+      this.referenceChanges.set(key, change);
+    }
+    return change;
   }
 
   /** Explicit ids only, each one a result in the last run: an approval that

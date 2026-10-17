@@ -24,12 +24,20 @@ import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
 import { observedChanges } from './agent-run-report.js';
 
+export interface TargetProgress {
+  fromRun: string;
+  pixels: [number, number];
+  trend: 'closer' | 'further' | 'same';
+}
+
 type State =
   | { name: string; storyId: string; status: 'error'; error: string }
   | (Omit<DesignReferenceLedger, 'regions'> & {
       regionCount: number;
       regions: DesignReferenceLedger['regions'];
       outline?: ReferenceOutlineObservation;
+      progress?: TargetProgress;
+      bestRun?: string;
     });
 
 export interface ReferenceResult {

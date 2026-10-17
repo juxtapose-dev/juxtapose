@@ -79,6 +79,7 @@ const NOT_CONFIG = [
   'docs/cli.md schema', // an explain result
   'docs/mcp.md mcpServers', // MCP client settings
   'docs/mcp.md mcpServers',
+  'docs/mcp.md progress', // an opt-in target-progress result
 ];
 
 function docsJsonBlocks() {
