@@ -1391,6 +1391,68 @@
         }
       }
     },
+    "designReferences": {
+      "description": "Named design targets, separate from approved regression baselines.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$": {
+          "additionalProperties": false,
+          "description": "One named design PNG and the conditions it represents.",
+          "type": "object",
+          "required": [
+            "storyId",
+            "image",
+            "viewport"
+          ],
+          "properties": {
+            "storyId": {
+              "minLength": 1,
+              "description": "Exact capture key, including a variant suffix when applicable.",
+              "type": "string"
+            },
+            "image": {
+              "minLength": 1,
+              "description": "PNG path relative to the project root. Paths outside the project are rejected, including symlinks.",
+              "type": "string"
+            },
+            "viewport": {
+              "additionalProperties": false,
+              "description": "The capture size, in CSS pixels.",
+              "type": "object",
+              "required": [
+                "width",
+                "height"
+              ],
+              "properties": {
+                "width": {
+                  "minimum": 1,
+                  "description": "CSS pixels.",
+                  "type": "integer"
+                },
+                "height": {
+                  "minimum": 1,
+                  "description": "CSS pixels.",
+                  "type": "integer"
+                }
+              }
+            },
+            "deviceScaleFactor": {
+              "minimum": 0.1,
+              "maximum": 8,
+              "description": "PNG pixels per CSS pixel. Default 1; must match the current capture.",
+              "type": "number"
+            },
+            "captureKind": {
+              "description": "Viewport screenshot. Full-page references are not supported yet.",
+              "type": "string",
+              "enum": [
+                "viewport"
+              ]
+            }
+          }
+        }
+      }
+    },
     "waitForSelector": {
       "description": "Project-wide `waitForSelector`; a story's own wins.",
       "type": "string"
