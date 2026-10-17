@@ -28,14 +28,23 @@ setTimeout(() => {
 }, 50);
 </script>`;
 
+// Never stops writing the DOM, so the still-frames wait can only end at its cap.
+const FOREVER = `<!doctype html><body style="margin:0;height:1000px">
+<div id="spin"></div>
+<script>
+const spin = document.getElementById('spin');
+const step = (t) => { spin.style.width = (t % 100) + 'px'; requestAnimationFrame(step); };
+requestAnimationFrame(step);
+</script>`;
+
 const chrome = chromeForTests();
 let server: Server;
 let browser: Browser;
 let base: string;
 beforeAll(async () => {
-  server = createServer((_req, res) => {
+  server = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(PAGE);
+    res.end(req.url === '/forever' ? FOREVER : PAGE);
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -65,6 +74,30 @@ describe.skipIf(!chrome)('full-page capture', () => {
         .toBuffer({ resolveWithObject: true });
       const at = (2050 * info.width + 50) * info.channels;
       expect([...data.subarray(at, at + 3)]).toEqual([255, 0, 0]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  it('flags a capture whose DOM never stops changing after the scroll', async () => {
+    const platform = createUrlPlatform([{ id: 'forever', url: `${base}/forever` }]);
+    const [story] = await platform.enumerate({ projectRoot: process.cwd() });
+    const context = await browser.newContext({ viewport: { width: 320, height: 240 } });
+    try {
+      const page = await context.newPage();
+      const snap = await captureStory(
+        page,
+        {
+          ...story!,
+          params: { ...story!.params, fullPage: true, settle: { timeout: 300 } },
+        },
+        { platform, baseUrl: base },
+        { width: 320, height: 240 },
+      );
+      expect(snap?.settle).toMatchObject({
+        status: 'timeout',
+        pending: ['DOM still changing 300 ms after the full-page scroll'],
+      });
     } finally {
       await context.close();
     }

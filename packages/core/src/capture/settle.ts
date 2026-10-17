@@ -256,6 +256,8 @@ export async function waitForPaint(page: Page, timeoutMs = 1000): Promise<void> 
     .catch(() => {});
 }
 
+export const SCROLL_THROUGH_TIMEOUT_MS = 5000;
+
 /**
  * Scroll the document through once, then back to the top.
  *
@@ -268,10 +270,12 @@ export async function waitForPaint(page: Page, timeoutMs = 1000): Promise<void> 
  * afterwards, which covers the requests and mutations this sets off.
  *
  * Bounded by the full-page image limit and a time cap, so an infinite feed
- * that grows as it scrolls is captured, not chased. Never throws.
+ * that grows as it scrolls cannot hold the capture forever (one that grows
+ * past the limit is still rejected by fullPageSize). The return to the top is
+ * instant too, and comes before the caller's idle and paint waits, so what
+ * the page does on scrolling back is settled before the shutter. Never
+ * throws.
  */
-export const SCROLL_THROUGH_TIMEOUT_MS = 5000;
-
 export async function scrollThrough(
   page: Page,
   timeoutMs = SCROLL_THROUGH_TIMEOUT_MS,
@@ -311,17 +315,18 @@ export async function scrollThrough(
  * scrollThrough returned in 0.1 ms with GSAP's reveal at opacity 0, mid-fade.
  * A tween writes the DOM every frame, so this waits for the writes to stop
  * (the reveal there took ~1 s). A page that never stops, a looping animation,
- * is captured at the cap. Never throws.
+ * is captured at the cap. Resolves false when the cap was hit, so the caller
+ * can flag the capture. Never throws.
  */
 export async function waitForStillFrames(
   page: Page,
   capMs: number,
   frames = 10,
-): Promise<void> {
-  await page
+): Promise<boolean> {
+  return page
     .evaluate(
       ({ cap, need }) =>
-        new Promise<void>((resolve) => {
+        new Promise<boolean>((resolve) => {
           let still = 0;
           // Counted in the callback: records are delivered as a microtask, so
           // a takeRecords() from the frame callback alone always found none.
@@ -335,16 +340,16 @@ export async function waitForStillFrames(
             characterData: true,
             subtree: true,
           });
-          const done = () => {
+          const done = (stillReached: boolean) => {
             clearTimeout(timer);
             mo.disconnect();
-            resolve();
+            resolve(stillReached);
           };
-          const timer = setTimeout(done, cap);
+          const timer = setTimeout(() => done(false), cap);
           const tick = () => {
             still = changed || mo.takeRecords().length > 0 ? 0 : still + 1;
             changed = false;
-            if (still >= need) done();
+            if (still >= need) done(true);
             else requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
@@ -352,5 +357,5 @@ export async function waitForStillFrames(
       { cap: capMs, need: frames },
       { timeout: capMs + 1000 },
     )
-    .catch(() => {});
+    .catch(() => true);
 }
