@@ -84,16 +84,35 @@ A device descriptor (built-in or user-defined):
 
 | field               | meaning                                                                 |
 | ------------------- | ----------------------------------------------------------------------- |
-| `width`, `height`   | CSS px viewport, portrait as listed                                     |
+| `width`, `height`   | CSS px viewport in the device's default orientation                     |
 | `mobile`            | Chrome mobile emulation (`Emulation.setDeviceMetricsOverride` `mobile`) |
 | `touch`             | touch emulation on/off (`maxTouchPoints` 5 when on)                     |
 | `userAgent`         | UA string; omitted means Chrome's own                                   |
 | `userAgentMetadata` | client hints for `Emulation.setUserAgentOverride`                       |
 | `extends`           | user-defined only: built-in or earlier user device to start from        |
 
-No `deviceScaleFactor` field: always 1. Orientation is portrait for
-mobile/tablet; landscape is a user-defined device with width and height
-swapped (my call: no separate orientation option in v1).
+No `deviceScaleFactor` field: always 1.
+
+### Orientation (Jer's)
+
+An `orientation` option, `"portrait"` or `"landscape"`, accepted everywhere
+`device` is (`--orientation` on snap, MCP snap, project default, story
+params, URL entry `params`, variants), layered the same way.
+
+- Each device's listed size is its default orientation: phones and tablets
+  are listed tall, so they default to **portrait**; `desktop` is listed
+  wide, so it defaults to **landscape**. A user device's default is likewise
+  whichever its width and height make it.
+- The other orientation swaps width and height and is reported to the page:
+  `screenOrientation` in the metrics override (`portraitPrimary` angle 0,
+  `landscapePrimary` angle 90 for mobile/tablet devices, angle 0 for
+  desktop), so `screen.orientation` and `(orientation: …)` agree with the
+  size.
+- With an explicit `viewport`, that size is used as given and the reported
+  orientation follows its aspect (width > height is landscape); the page is
+  never told "portrait" for a wide viewport.
+- No device and no orientation keeps today's emulation exactly (landscape,
+  angle 0), per the byte-identical anti-goal.
 
 ### Built-in list
 
@@ -117,7 +136,6 @@ Keys are lowercase kebab-case (`iphone-15-pro-max`).
 {
   "devices": {
     "kiosk": { "width": 1080, "height": 1920 },
-    "iphone-15-landscape": { "extends": "iphone-15", "width": 852, "height": 393 },
     "mobile": { "extends": "pixel-8" }
   }
 }
@@ -254,11 +272,11 @@ unchanged scope).
 
 ## Surfaces to update
 
-- CLI: `--device`, `--dismiss-consent` (help text in `index.ts`; `--viewport`
+- CLI: `--device`, `--orientation`, `--dismiss-consent` (help text in `index.ts`; `--viewport`
   is missing from `jux snap --help` today and should be added at the same
   time).
-- MCP `snap` tool: `device`, `dismissConsent`.
-- Config schema + `schema.json` + runtime checks: `devices`, `device`,
+- MCP `snap` tool: `device`, `orientation`, `dismissConsent`.
+- Config schema + `schema.json` + runtime checks: `devices`, `device`, `orientation`,
   `dismissConsent`.
 - Docs: `docs/configuration.md` (devices, per-story option table, network
   section cross-link), `docs/cli.md`, `docs/mcp.md`. Variants have no
@@ -272,8 +290,11 @@ unchanged scope).
 - Real-browser tests (like `capture/full-page-capture.test.ts`) for: UA
   reaching the server on navigation; `navigator.userAgent`,
   `navigator.maxTouchPoints`, `matchMedia('(pointer: coarse)')` and client
-  hints inside the page for a mobile device; emulation reset when the next
-  capture on the same page has no device; consent dismissal against a local
+  hints inside the page for a mobile device; `orientation: "landscape"` on a
+  phone swapping the size and reporting `screen.orientation.type`
+  `landscape-primary` with `(orientation: landscape)` matching; emulation
+  reset when the next capture on the same page has no device; consent
+  dismissal against a local
   page using a CMP autoconsent recognizes (fixture), and the no-popup case
   unchanged.
 - Manual: `jux snap https://www.formhealth.co --device mobile --full-page
@@ -293,7 +314,6 @@ unchanged scope).
   overrides.
 - User devices may replace built-in names (how `mobile` gets repointed).
 - `viewport` next to `device` overrides size only.
-- Landscape is a user-defined device, no orientation option in v1.
 - `jux snap` keeps ignoring project `viewport`/`variants`.
 - Consent dismissal rejects (never accepts), and its setting layers like
   `network`, including `stories` overrides.
