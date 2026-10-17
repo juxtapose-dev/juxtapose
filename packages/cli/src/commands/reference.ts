@@ -7,6 +7,7 @@ import {
   checkProjectSettle,
   compareDesignReference,
   decodeStructure,
+  diffImages,
   encodeStoryId,
   observeReferenceOutlines,
   parseRunReport,
@@ -46,6 +47,32 @@ export interface ReferenceResult {
   crop?: { regionId: string; png: Buffer };
 }
 
+export interface ReferenceChangeResult {
+  schema: 'juxtapose.saved-run-change/v1';
+  fromRunId: string;
+  toRunId: string;
+  policy: { method: 'pixelmatch'; threshold: 0.1; includeAA: false };
+  states: Array<{
+    name: string;
+    storyId: string;
+    status: 'changed' | 'unchanged' | 'incompatible' | 'not-comparable';
+    reason?: string;
+    previousHash?: string;
+    currentHash?: string;
+    changedPixels?: number;
+    changedPercent?: number;
+    regions?: Array<{
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      changedPixels?: number;
+    }>;
+  }>;
+  crop?: { regionId: string; png: Buffer };
+}
+
 const inside = (child: string, parent: string) =>
   child.startsWith(parent.endsWith(path.sep) ? parent : parent + path.sep);
 
@@ -80,6 +107,141 @@ async function savedFile(runDir: string, file: string): Promise<Buffer> {
   const image = await realpath(path.join(imageRoot, file));
   if (!inside(image, imageRoot)) throw new Error('saved image escapes the run');
   return readFile(image);
+}
+
+/** Compare two immutable saved captures; this is the edit's image delta, not
+ * a change in distance to the design target. No browser or recapture. */
+export async function evaluateReferenceChange(options: {
+  project: string;
+  fromRun: string;
+  /** Known latest run from an MCP session avoids a second directory scan. */
+  toRun?: string;
+  name?: string;
+  regionId?: string;
+}): Promise<ReferenceChangeResult> {
+  const project = await realpath(options.project);
+  const config = await loadConfig(project);
+  checkProjectSettle(config);
+  const references = config.designReferences ?? {};
+  const names = options.name ? [options.name] : Object.keys(references).sort();
+  if (!names.length)
+    throw new Error('jux: configure designReferences before comparing captures');
+  if (options.name && !Object.hasOwn(references, options.name))
+    throw new Error(`jux: unknown design reference '${options.name}'`);
+  const [fromDir, toDir] = await Promise.all([
+    selectedRun(project, options.fromRun),
+    selectedRun(project, options.toRun),
+  ]);
+  if (fromDir === toDir) throw new Error('jux: fromRun must differ from the latest run');
+  const readReport = async (dir: string) => {
+    const file = await realpath(path.join(dir, 'report.json'));
+    if (!inside(file, dir)) throw new Error('run report escapes the run');
+    return parseRunReport(await readFile(file, 'utf8'));
+  };
+  const [before, after] = await Promise.all([readReport(fromDir), readReport(toDir)]);
+  const previous = new Map(before.results.map((r) => [r.storyId, r]));
+  const current = new Map(after.results.map((r) => [r.storyId, r]));
+  const states: ReferenceChangeResult['states'] = [];
+  let crop: ReferenceChangeResult['crop'];
+  for (const name of names) {
+    const storyId = (references[name] as DesignReferenceSpec).storyId;
+    const a = previous.get(storyId);
+    const b = current.get(storyId);
+    if (
+      !a ||
+      !b ||
+      a.status === 'skip' ||
+      b.status === 'skip' ||
+      a.error ||
+      b.error ||
+      !a.viewport ||
+      !b.viewport
+    ) {
+      states.push({
+        name,
+        storyId,
+        status: 'not-comparable',
+        reason: 'usable capture missing from one run',
+      });
+      continue;
+    }
+    if (
+      a.viewport.width !== b.viewport.width ||
+      a.viewport.height !== b.viewport.height
+    ) {
+      states.push({ name, storyId, status: 'incompatible', reason: 'viewport changed' });
+      continue;
+    }
+    try {
+      const file = `${encodeStoryId(storyId)}-current.webp`;
+      const [left, right] = await Promise.all([
+        savedFile(fromDir, file),
+        savedFile(toDir, file),
+      ]);
+      const previousHash = createHash('sha256').update(left).digest('hex');
+      const currentHash = createHash('sha256').update(right).digest('hex');
+      const comparisonId = createHash('sha256')
+        .update(`${storyId}\0${previousHash}\0${currentHash}\0pixelmatch:0.1`)
+        .digest('hex');
+      const diff =
+        previousHash === currentHash
+          ? {
+              mismatchPixels: 0,
+              mismatchPercent: 0,
+              dimensionMismatch: false,
+              changedRegions: [],
+            }
+          : await diffImages(left, right, { threshold: 0.1, includeRegionCounts: true });
+      if (diff.dimensionMismatch) {
+        states.push({
+          name,
+          storyId,
+          status: 'incompatible',
+          reason: 'image dimensions changed',
+        });
+        continue;
+      }
+      const regions = (diff.rankedChangedRegions ?? diff.changedRegions)
+        .slice(0, 8)
+        .map((r, i) => ({ ...r, id: `${comparisonId.slice(0, 16)}:${i + 1}` }));
+      if (options.regionId) {
+        const region = regions.find((r) => r.id === options.regionId);
+        if (region) {
+          const [rendered] = await renderCrops(left, right, [region]);
+          if (rendered) crop = { regionId: region.id, png: rendered.png };
+        }
+      }
+      states.push({
+        name,
+        storyId,
+        status: diff.mismatchPixels ? 'changed' : 'unchanged',
+        previousHash,
+        currentHash,
+        changedPixels: diff.mismatchPixels,
+        changedPercent: diff.mismatchPercent,
+        regions,
+      });
+    } catch (err) {
+      states.push({
+        name,
+        storyId,
+        status: 'not-comparable',
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  if (options.regionId && !crop)
+    throw new Error(
+      `jux: region '${options.regionId}' was not found in this saved comparison`,
+    );
+  return {
+    schema: 'juxtapose.saved-run-change/v1',
+    fromRunId: before.runId,
+    toRunId: after.runId,
+    policy: { method: 'pixelmatch', threshold: 0.1, includeAA: false },
+    states,
+    ...(crop ? { crop } : {}),
+  };
 }
 
 /** Recompute from saved files, so region IDs survive an MCP restart. */

@@ -47,8 +47,8 @@ import {
 } from '../scheduler.js';
 import { snapName } from '../snap-name.js';
 import { MAX_VIEWPORT_SIDE } from './snap.js';
-import type { ReferenceResult } from './reference.js';
 import { agentRunSummary, SavedReportCache } from './agent-run-report.js';
+import type { ReferenceChangeResult, ReferenceResult } from './reference.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 
@@ -252,11 +252,17 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Storybook/Ladle: capture selected stories and variants together after a coherent edit. Default selection is stories affected by changes. Returns a bounded run summary plus a compact design-target hint; use report for saved detail without recapturing. Set report=full for the complete RunReport.',
+      'Capture selected Storybook/Ladle stories after an edit. Returns a bounded run summary and a design-target hint by default. Set feedback=none if requesting a saved previous/current diff instead; set report=full for all results. Use report for saved detail without recapture.',
     inputSchema: {
       type: 'object',
       properties: {
         all: { type: 'boolean', description: 'Capture every story' },
+        feedback: {
+          type: 'string',
+          enum: ['target', 'none'],
+          description:
+            'Design-target hint after capture (default), or none when you intend to request a saved previous/current comparison instead',
+        },
         dryRun: {
           type: 'boolean',
           description:
@@ -313,10 +319,19 @@ export const TOOLS: Tool[] = [
   {
     name: 'reference',
     description:
-      'Read saved target-versus-current evidence without recapture when the run hint leaves a specific question. Set detail=json for measured geometry/regions; set region to one region ID for a paired PNG crop when text cannot settle appearance. A passing run hint needs no reference call. Region IDs bind to image hashes; design references have no DOM evidence and use Pixelmatch threshold 0.1, separate from approved-baseline settings.',
+      'Read saved image evidence without recapture. Default compares the latest capture with the design target. Set compare=previous and fromRun to compare a prior saved capture with the latest capture when you need to see what an edit changed; changed pixels alone do not measure progress toward the target. Set detail=json for regions or region for one paired PNG crop. A passing target run hint needs no reference call.',
     inputSchema: {
       type: 'object',
       properties: {
+        compare: {
+          type: 'string',
+          enum: ['target', 'previous'],
+          description: 'Design target (default) or a prior saved capture',
+        },
+        fromRun: {
+          type: 'string',
+          description: 'Required with compare=previous; exact earlier run ID',
+        },
         name: {
           type: 'string',
           description: 'Optional configured design reference name; omit for all',
@@ -619,6 +634,9 @@ export class McpServer {
   private readonly project: string;
   private readonly scheduler: Scheduler;
   private readonly reports = new SavedReportCache();
+  /** Saved runs are immutable. Bound repeated previous/current analysis in
+   * this session; a new latest run gets a different cache key. */
+  private readonly referenceChanges = new Map<string, ReferenceChangeResult>();
   /** The project config's `freeze.images`, a launch setting of the session
    *  browser. */
   private readonly freezeImages: boolean | undefined;
@@ -795,11 +813,67 @@ export class McpServer {
         const name = str(args, 'name');
         const region = str(args, 'region');
         const detail = str(args, 'detail');
+        const compare = str(args, 'compare') ?? 'target';
+        const fromRun = str(args, 'fromRun');
         if (detail !== undefined && detail !== 'json')
           throw new ArgError("'detail' must be 'json'");
+        if (compare !== 'target' && compare !== 'previous')
+          throw new ArgError("'compare' must be 'target' or 'previous'");
+        if (compare === 'previous' && !fromRun)
+          throw new ArgError("'fromRun' is required with compare='previous'");
+        if (compare === 'target' && fromRun)
+          throw new ArgError("'fromRun' requires compare='previous'");
         return {
           locks: this.readsRun(),
           exec: async (signal) => {
+            if (compare === 'previous') {
+              const { evaluateReferenceChange } = await import('./reference.js');
+              const latest = await latestRunDir(this.project);
+              if (!latest) return errorResult('jux: no saved run found');
+              const key = JSON.stringify([latest, fromRun, name]);
+              let change = region ? undefined : this.referenceChanges.get(key);
+              if (!change) {
+                change = await evaluateReferenceChange({
+                  project: this.project,
+                  fromRun: fromRun!,
+                  toRun: path.basename(latest),
+                  ...(name ? { name } : {}),
+                  ...(region ? { regionId: region } : {}),
+                });
+                if (!region) {
+                  if (this.referenceChanges.size >= 8)
+                    this.referenceChanges.delete(
+                      this.referenceChanges.keys().next().value!,
+                    );
+                  this.referenceChanges.set(key, change);
+                }
+              }
+              const crop = change.crop;
+              const summary = change.states
+                .slice(0, 8)
+                .map(
+                  (state) =>
+                    `${state.name}: ${state.status}${state.changedPixels !== undefined ? `, ${state.changedPixels} changed pixels` : ''}${state.regions?.[0] ? `, largest region ${state.regions[0].id}` : ''}`,
+                );
+              const content: ToolResult['content'] = [
+                {
+                  type: 'text',
+                  text: detail
+                    ? JSON.stringify({
+                        ...change,
+                        crop: crop ? { regionId: crop.regionId } : undefined,
+                      })
+                    : `Saved capture change ${change.fromRunId} → ${change.toRunId}; Pixelmatch threshold 0.1.\n${summary.join('\n')}${change.states.length > 8 ? `\n… ${change.states.length - 8} more states; request detail=json.` : ''}\nChanged pixels describe the edit, not distance to the design target.`,
+                },
+              ];
+              if (crop)
+                content.push({
+                  type: 'image',
+                  mimeType: 'image/png',
+                  data: crop.png.toString('base64'),
+                });
+              return { content, isError: false };
+            }
             const { referenceCommand } = await import('./reference.js');
             const result = await this.invoke(
               (s) =>
@@ -814,6 +888,14 @@ export class McpServer {
                 ),
               signal,
             );
+            if (!region && !detail && !result.isError) {
+              const first = result.content[0];
+              if (first?.type === 'text') {
+                first.text = first.text
+                  .replaceAll('Use --json', 'Call reference with detail=json')
+                  .replaceAll('use --json', 'call reference with detail=json');
+              }
+            }
             if (region && !result.isError) {
               const first = result.content[0];
               if (first?.type === 'text') {
@@ -1023,6 +1105,9 @@ export class McpServer {
   private run(args: Args): Planned {
     const all = bool(args, 'all');
     const dryRun = bool(args, 'dryRun');
+    const feedback = str(args, 'feedback') ?? 'target';
+    if (feedback !== 'target' && feedback !== 'none')
+      throw new ArgError("'feedback' must be 'target' or 'none'");
     const since = str(args, 'since');
     const stories = strings(args, 'stories');
     const settle = settleArg(args);
@@ -1055,7 +1140,10 @@ export class McpServer {
           signal,
         );
         if (dryRun || result.isError) return result;
-        const withFeedback = await withDesignReferenceFeedback(result, this.project);
+        const withFeedback =
+          feedback === 'none'
+            ? result
+            : await withDesignReferenceFeedback(result, this.project);
         if (reportDetail === 'full') return withFeedback;
         const first = withFeedback.content[0];
         if (first?.type === 'text') {
