@@ -1,5 +1,18 @@
 # @juxtapose/core
 
+## 0.24.2
+
+### Patch Changes
+
+- c7f42ef: Add a compact target-versus-current layout relationship to design-reference
+  outline hints when two detected textboxes are clearly stacked in one image and
+  side by side in the other. Include uniquely overlapping current textbox IDs as
+  spatial hints so agents can act without requesting a crop in simple cases.
+- 5a7bae3: Let MCP agents request a saved previous/current image diff only when they need
+  to inspect an edit. Keep target comparison as the default, return focused
+  region crops on demand, and cache repeated saved-run comparisons in the MCP
+  session.
+
 ## 0.24.1
 
 ### Patch Changes

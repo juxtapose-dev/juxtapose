@@ -1,5 +1,27 @@
 # @juxtapose/cli
 
+## 0.25.0
+
+### Minor Changes
+
+- 978a0b1: Keep MCP `run` output bounded for large workbenches, with a read-only `report` tool for a saved run or one full story result. MCP sessions cache parsed saved reports; `run({report: 'full'})` retains the complete response.
+- 5a7bae3: Let MCP agents request a saved previous/current image diff only when they need
+  to inspect an edit. Keep target comparison as the default, return focused
+  region crops on demand, and cache repeated saved-run comparisons in the MCP
+  session.
+
+### Patch Changes
+
+- c7f42ef: Add a compact target-versus-current layout relationship to design-reference
+  outline hints when two detected textboxes are clearly stacked in one image and
+  side by side in the other. Include uniquely overlapping current textbox IDs as
+  spatial hints so agents can act without requesting a crop in simple cases.
+- Updated dependencies [c7f42ef]
+- Updated dependencies [5a7bae3]
+  - @juxtapose/core@0.24.2
+  - @juxtapose/adapter-ladle@0.3.32
+  - @juxtapose/adapter-storybook@0.4.29
+
 ## 0.24.1
 
 ### Patch Changes
