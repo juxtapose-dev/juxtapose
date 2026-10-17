@@ -52,8 +52,8 @@ always-on progress block used 12,652 counted tokens and 18.8 seconds versus
 must earn its place with a better result on a task where it changes the edit.
 
 An unmodeled smoke check on the saved four-state billing captures measured
-66.3 ms for the first previous/current MCP request and 0.29 ms for the same
-request from the session cache (0.21 ms for its JSON form). The short response
+69.0 ms for the first previous/current MCP request and 0.38 ms for the same
+request from the session cache (0.30 ms for its JSON form). The short response
 was 504 bytes, versus 3,076 bytes for JSON. This verifies the local lookup and
 cache behavior on that fixture; it is not evidence of agent token or elapsed
 time savings.

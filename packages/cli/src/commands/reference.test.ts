@@ -329,6 +329,23 @@ test('MCP requests an edit-only image delta on demand from saved runs', async ()
     region: id,
   });
   expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+  const configPath = path.join(f.root, 'juxtapose.config.json');
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  config.designReferences.desktop.storyId = f.mobile;
+  await writeFile(configPath, JSON.stringify(config));
+  const remapped = await server.call('reference', {
+    compare: 'previous',
+    fromRun: 'r1',
+    detail: 'json',
+  });
+  const remappedStates = JSON.parse(
+    remapped.content[0]?.type === 'text' ? remapped.content[0].text : '{}',
+  ).states;
+  expect(remappedStates[0]).toMatchObject({
+    name: 'desktop',
+    storyId: f.mobile,
+    status: 'unchanged',
+  });
   await server.close();
 });
 

@@ -12,6 +12,7 @@
 // Hand-rolled JSON-RPC 2.0 over newline-delimited stdio (MCP 2025-06-18),
 // like the dependency-free CDP driver: the surface is five methods.
 
+import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { readFile, realpath } from 'node:fs/promises';
@@ -830,7 +831,16 @@ export class McpServer {
               const { evaluateReferenceChange } = await import('./reference.js');
               const latest = await latestRunDir(this.project);
               if (!latest) return errorResult('jux: no saved run found');
-              const key = JSON.stringify([latest, fromRun, name]);
+              // Names are resolved through project config. A live edit may
+              // remap a name without changing either immutable saved run.
+              const config = await loadConfig(this.project);
+              const selectedReferences = name
+                ? { [name]: config.designReferences?.[name] }
+                : (config.designReferences ?? {});
+              const referenceKey = createHash('sha256')
+                .update(JSON.stringify(selectedReferences))
+                .digest('hex');
+              const key = JSON.stringify([latest, fromRun, name, referenceKey]);
               let change = region ? undefined : this.referenceChanges.get(key);
               if (!change) {
                 change = await evaluateReferenceChange({
