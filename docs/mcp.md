@@ -19,6 +19,17 @@ If stale captures appear alongside visual failures or unstable captures, the
 response explains the stale status while keeping the detailed-report path for
 the other issues.
 
+When captures fail with structure evidence, the compact response carries
+`changesFromApproved`: up to six lines of approved→current facts, deduplicated
+across the failing captures, such as
+`main>section>form gap 20px→12px (all 4)`. It lists changed computed properties
+and repeated size changes, with the capture IDs when two or fewer show one, so
+a mobile-only change stays visible. Each verdict stores a budgeted prefix of its
+deltas, so a count means "listed in", not "affected". The lines are measured
+differences from the approved baseline, not CSS causes and not the design
+target. Beyond eight failing captures, a change seen in only one capture is
+left to `report`. When the lines exist, they replace `groups`.
+
 The server keeps one browser for the whole session. The first `snap` or `run`
 call acquires it, and every later call reuses it. Where it comes from depends
 on the warm browser:

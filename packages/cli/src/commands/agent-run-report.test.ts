@@ -4,7 +4,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { RunReport } from '@juxtapose/core';
 import { McpServer } from './mcp.js';
-import { agentRunSummary, SavedReportCache } from './agent-run-report.js';
+import {
+  agentRunSummary,
+  observedChanges,
+  SavedReportCache,
+} from './agent-run-report.js';
 
 const projects: string[] = [];
 afterEach(async () => {
@@ -76,6 +80,77 @@ describe('saved MCP run reports', () => {
     expect(summary.omittedAttention).toBe(992);
     expect(summary.groups).toEqual([{ summary: 'Shared token changed', count: 1000 }]);
     expect(JSON.stringify(summary).length).toBeLessThan(1600);
+  });
+
+  describe('observed changes across variants', () => {
+    type Structural = NonNullable<RunReport['results'][number]['structural']>;
+    const style = (el: string, prop: string, from: string, to: string) =>
+      ({ kind: 'style', el, prop, from, to }) as const;
+    const resized = (el: string, dw: number, dh: number) =>
+      ({ kind: 'resized', el, dw, dh }) as const;
+    const withDeltas = (id: string, deltas: Structural['deltas']) => ({
+      storyId: id,
+      status: 'fail' as const,
+      mismatchPixels: 1,
+      mismatchPercent: 1,
+      changedRegions: [],
+      durationMs: 1,
+      structural: { deltas, deltaCount: deltas.length } as Structural,
+    });
+    const gap = style('main>section>form', 'gap', '20px', '12px');
+    const green = style(
+      'button[name="Save details"]',
+      'background-color',
+      'rgb(40, 91, 196)',
+      'rgb(27, 119, 63)',
+    );
+
+    test('lists each distinct fact once, including one only a mobile variant shows', () => {
+      const lines = observedChanges([
+        withDeltas('card', [resized('main', 0, -24), gap, resized('div.field', 0, -8)]),
+        withDeltas('card__mobile', [
+          resized('main', 0, -24),
+          gap,
+          style('div.address-grid', 'grid-template-columns', '266px', '125px 125px'),
+          resized('div.field (1st)', 0, -8),
+          resized('fieldset', 0, -104),
+        ]),
+        withDeltas('other', [gap, green, resized('div.field (2nd)', 0, -8)]),
+      ] as RunReport['results']);
+      expect(lines).toEqual([
+        'main>section>form gap 20px→12px (all 3)',
+        'button[name="Save details"] background-color #285bc4→#1b773f (other)',
+        'div.address-grid grid-template-columns 266px→125px 125px (card__mobile)',
+        'div.field resized h-8px (all 3)',
+      ]);
+    });
+
+    test('stays bounded and drops single-capture noise in a large run', () => {
+      const results = Array.from({ length: 300 }, (_, i) =>
+        withDeltas(`story-${i}`, [
+          gap,
+          style(`div.unique-${i}`, 'width', `${i}px`, `${i + 1}px`),
+          resized(`section.s${i % 40}`, 0, 4),
+        ]),
+      ) as RunReport['results'];
+      const lines = observedChanges(results);
+      expect(lines[0]).toBe('main>section>form gap 20px→12px (all 300)');
+      expect(lines.some((line) => line.includes('unique-'))).toBe(false);
+      expect(lines.length).toBeLessThanOrEqual(7);
+      expect(JSON.stringify(lines).length).toBeLessThan(900);
+    });
+
+    test('replaces the truncated group lines only when facts exist', () => {
+      const value = report(2);
+      value.groups = [{ signature: 's', summary: 'grouped', storyIds: ['story-0'] }];
+      expect(agentRunSummary(value).groups).toBeDefined();
+      value.results[0] = withDeltas('story-0', [gap]) as RunReport['results'][number];
+      const summary = agentRunSummary(value);
+      expect(summary.changesFromApproved).toEqual([
+        'main>section>form gap 20px→12px (all 1)',
+      ]);
+      expect(summary.groups).toBeUndefined();
+    });
   });
 
   test('explains exact-match stale baselines without asking for another visual lookup', () => {

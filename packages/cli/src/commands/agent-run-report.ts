@@ -95,8 +95,72 @@ function priority(result: DiffResult): number {
   return 5;
 }
 
+const MAX_CHANGES = 6;
+/** Up to this many failing captures, a change seen in one is still listed:
+ *  it is usually a different viewport or state of the same page (a mobile-only
+ *  grid). Beyond it, single-capture changes are noise a handoff can name. */
+const SINGLE_CAPTURE_LIMIT = 8;
+/** Page containers resize with every reflow; naming them repeats the consequence. */
+const CONTAINER_LABELS = new Set(['main', 'body', 'html']);
+
+const hex = (value: string) =>
+  value.replace(/rgb\((\d+), (\d+), (\d+)\)/g, (_, r: string, g: string, b: string) =>
+    [r, g, b].reduce((out, c) => out + Number(c).toString(16).padStart(2, '0'), '#'),
+  );
+const px = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
+/** Observed approved→current facts, deduplicated across the failing captures:
+ *  changed computed properties, and resizes that repeat. Each verdict stores a
+ *  budgeted prefix of its deltas, so a count is "listed in", not "affected".
+ *  It states what the structure sidecars measured, not which rule caused it. */
+export function observedChanges(results: DiffResult[]): string[] {
+  const failing = results.filter(
+    (r) => r.status === 'fail' && !r.error && r.structural?.deltas.length,
+  );
+  const minimum = failing.length <= SINGLE_CAPTURE_LIMIT ? 1 : 2;
+  const found = new Map<string, { style: boolean; ids: string[] }>();
+  for (const r of failing) {
+    const own = new Set<string>();
+    for (const d of r.structural!.deltas) {
+      const el = 'el' in d ? d.el.replace(/ \(\d+(?:st|nd|rd|th)\)$/, '') : '';
+      let text: string;
+      if (d.kind === 'style') text = `${el} ${d.prop} ${hex(d.from)}→${hex(d.to)}`;
+      else if (d.kind === 'resized' && !CONTAINER_LABELS.has(el))
+        text = `${el} resized ${[d.dw && `w${px(d.dw)}`, d.dh && `h${px(d.dh)}`]
+          .filter(Boolean)
+          .join(' ')}px`;
+      else continue;
+      if (own.has(text)) continue;
+      own.add(text);
+      const entry = found.get(text) ?? { style: d.kind === 'style', ids: [] };
+      entry.ids.push(r.storyId);
+      found.set(text, entry);
+    }
+  }
+  const listed = [...found]
+    .filter(([, e]) => e.ids.length >= (e.style ? minimum : 2))
+    .sort(
+      ([ta, a], [tb, b]) =>
+        Number(b.style) - Number(a.style) ||
+        b.ids.length - a.ids.length ||
+        (ta < tb ? -1 : ta > tb ? 1 : 0),
+    );
+  const lines = listed.slice(0, MAX_CHANGES).map(([text, e]) => {
+    const where =
+      e.ids.length === failing.length
+        ? `all ${failing.length}`
+        : e.ids.length <= 2
+          ? e.ids.join(', ')
+          : `${e.ids.length}/${failing.length}`;
+    return `${text} (${where})`;
+  });
+  if (listed.length > MAX_CHANGES) lines.push(`+${listed.length - MAX_CHANGES} more`);
+  return lines;
+}
+
 /** Bounded MCP overview. Full evidence remains in the saved report. */
 export function agentRunSummary(report: RunReport) {
+  const changes = observedChanges(report.results);
   const attention = report.results.filter((r) => priority(r) < 5);
   const onlyStaleAttention =
     attention.length > 0 &&
@@ -119,9 +183,13 @@ export function agentRunSummary(report: RunReport) {
     summary: report.summary,
     durationMs: report.durationMs,
     recheck: report.recheck,
-    ...(groups.length
-      ? { groups, omittedGroups: Math.max(0, (report.groups?.length ?? 0) - 3) }
-      : {}),
+    // The deduplicated facts subsume the truncated group lines, so only one
+    // of the two is sent.
+    ...(changes.length
+      ? { changesFromApproved: changes }
+      : groups.length
+        ? { groups, omittedGroups: Math.max(0, (report.groups?.length ?? 0) - 3) }
+        : {}),
     attention: attention.slice(0, MAX_STORIES).map((r) => ({
       storyId: r.storyId,
       status: r.status,
