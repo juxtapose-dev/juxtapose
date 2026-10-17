@@ -1,5 +1,19 @@
 # @juxtapose/cli
 
+## 0.24.1
+
+### Patch Changes
+
+- d7e5b46: Guide MCP agents to reuse saved visual evidence, run affected Storybook stories after coherent edits, and request reference detail or crops only for unresolved questions. Passing design-reference hints now tell agents they can stop querying even when more than eight targets passed.
+- b00d733: Add a bounded image-outline observation to MCP design-reference run hints when matching border strokes reveal a meaningful layout difference. The observation uses saved images and the current DOM sidecar, abstains when evidence is weak, and leaves the visual verdict unchanged.
+- 2bc87d1: Cache design-reference comparison metadata alongside each saved run, keyed by the reference and current image hashes, geometry, and comparison policy. Include the largest changed region's bounds in the compact MCP run hint so agents can locate it without requesting the full reference ledger.
+- Updated dependencies [46b49ec]
+- Updated dependencies [b00d733]
+- Updated dependencies [2bc87d1]
+  - @juxtapose/core@0.24.1
+  - @juxtapose/adapter-ladle@0.3.31
+  - @juxtapose/adapter-storybook@0.4.28
+
 ## 0.24.0
 
 ### Minor Changes

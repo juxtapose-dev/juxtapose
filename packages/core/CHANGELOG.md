@@ -1,5 +1,13 @@
 # @juxtapose/core
 
+## 0.24.1
+
+### Patch Changes
+
+- 46b49ec: Overlap lossless diff overlay encoding with changed-region extraction to shorten changed-image comparisons without changing their results.
+- b00d733: Add a bounded image-outline observation to MCP design-reference run hints when matching border strokes reveal a meaningful layout difference. The observation uses saved images and the current DOM sidecar, abstains when evidence is weak, and leaves the visual verdict unchanged.
+- 2bc87d1: Cache design-reference comparison metadata alongside each saved run, keyed by the reference and current image hashes, geometry, and comparison policy. Include the largest changed region's bounds in the compact MCP run hint so agents can locate it without requesting the full reference ledger.
+
 ## 0.24.0
 
 ### Minor Changes
