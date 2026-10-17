@@ -101,17 +101,23 @@ If `@juxtapose/cli` is already a dev dependency, use `"command": "npx"` with
    overlap, not proof that the new appearance is correct.
 
 For a Storybook or Ladle project with baselines, call `run`, then `handoff`
-for each failing story. For a configured design target, call `reference` after
-`run` to compare saved images without recapturing. Call `approve` only when
-the user asks you to.
+for each failing story. When `designReferences` are configured, `run` includes
+a second, compact target-versus-current result block for the capture keys it
+just saved. Call `reference` when you need the full measured ledger or a paired
+image crop; it reads the saved images without recapturing. Call `approve` only
+when the user asks you to.
 
 ## Tools
 
-The server exposes eight tools. Each result's first text block holds the
+The server exposes nine tools. Each result's first text block holds the
 command's JSON, except `reference`, which defaults to a short text ledger.
 When the command also printed a warning, such as
 an approved story whose structure was not saved, a successful result carries
-it as a second text block. The JSON itself never changes shape.
+it as a second text block. A `run` with captured design targets also carries a
+second text block with `juxtapose.design-reference-hint/v1`: overall counts,
+up to eight affected states, and the largest changed region ID for focused
+inspection. The first RunReport block remains unchanged. Targets outside a
+subset run count as `notCaptured`; if none were captured, no hint is added.
 
 ### reference
 

@@ -48,6 +48,7 @@ import {
 } from '../scheduler.js';
 import { snapName } from '../snap-name.js';
 import { MAX_VIEWPORT_SIDE } from './snap.js';
+import type { ReferenceResult } from './reference.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 
@@ -251,7 +252,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Workbench projects (Storybook/Ladle build): capture stories and compare them to approved baselines. Default: stories affected by changes. Returns the `jux run --json` RunReport.',
+      'Workbench projects (Storybook/Ladle build): capture stories and compare them to approved baselines. Default: stories affected by changes. Returns the `jux run --json` RunReport; when designReferences are configured for captured keys, a second compact text block reports target-versus-current evidence from the saved images, without recapture.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -358,7 +359,7 @@ export const TOOLS: Tool[] = [
 ];
 
 const INSTRUCTIONS =
-  'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops when text evidence cannot settle visual appearance, even if `explained` is "full". For Storybook/Ladle projects use run, check and handoff; reference compares configured design PNGs with the saved run without recapture. Explain says which layer set the capture settings of a story. Never approve unless the user asks.';
+  'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops when text evidence cannot settle visual appearance, even if `explained` is "full". For Storybook/Ladle projects use run, check and handoff. When designReferences are configured, run also gives compact target-versus-current evidence; reference returns the full saved comparison or a focused paired crop without recapture. Explain says which layer set the capture settings of a story. Never approve unless the user asks.';
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -469,6 +470,113 @@ interface Planned {
  *  editor share the machine. The config sets it higher where that is
  *  measured to help. */
 export const SNAP_SLOTS = 4;
+
+/** Keep the run report as the first, unchanged MCP block. A second bounded
+ * block gives agents the design-target verdict they would otherwise have to
+ * request in another turn. The full reference tool remains available. */
+export async function withDesignReferenceFeedback(
+  run: ToolResult,
+  project: string,
+): Promise<ToolResult> {
+  if (run.isError) return run;
+  const first = run.content[0];
+  if (first?.type !== 'text') return run;
+  let runId: string;
+  try {
+    const parsed: unknown = JSON.parse(first.text);
+    if (
+      !isRecord(parsed) ||
+      typeof parsed['runId'] !== 'string' ||
+      parsed['runId'] === 'empty' ||
+      parsed['capturedCount'] === 0
+    )
+      return run;
+    runId = parsed['runId'];
+  } catch {
+    return run;
+  }
+  try {
+    const config = await loadConfig(project);
+    if (!config.designReferences || !Object.keys(config.designReferences).length)
+      return run;
+    const { evaluateReferences } = await import('./reference.js');
+    const result = await evaluateReferences({ project, run: runId });
+    if (result.outcome === 'no-comparison') return run;
+    run.content.push({
+      type: 'text',
+      text: JSON.stringify(compactReferenceFeedback(result)),
+    });
+  } catch (error) {
+    run.content.push({
+      type: 'text',
+      text: `Design reference comparison unavailable: ${error instanceof Error ? error.message : String(error)}. Call the reference tool for details.`,
+    });
+  }
+  return run;
+}
+
+function compactReferenceFeedback(result: ReferenceResult) {
+  const affected = result.states.filter((state) => state.status !== 'pass');
+  affected.sort((a, b) => {
+    const priority = (s: typeof a) =>
+      s.status === 'error' || s.status === 'incompatible'
+        ? Number.POSITIVE_INFINITY
+        : (s.mismatchPixels ?? 0);
+    return priority(b) - priority(a);
+  });
+  const states = affected.slice(0, 8).map((state) => {
+    if (state.status === 'error')
+      return {
+        name: state.name,
+        key: state.storyId,
+        status: state.status,
+        error: state.error,
+      };
+    if (state.status === 'incompatible')
+      return {
+        name: state.name,
+        key: state.storyId,
+        status: state.status,
+        reason: state.reason,
+      };
+    const dominant = state.visibleColors?.pairs[0];
+    return {
+      name: state.name,
+      key: state.storyId,
+      status: state.status,
+      pixels: state.mismatchPixels,
+      percent: state.mismatchPercent,
+      ...(state.regions[0]
+        ? {
+            largestRegion: {
+              id: state.regions[0].id,
+              pixels: state.regions[0].changedPixels,
+            },
+          }
+        : {}),
+      ...(dominant && dominant.pixels >= 32 && dominant.sharePercent >= 50
+        ? {
+            observedColorPair: {
+              reference: dominant.reference,
+              current: dominant.current,
+              sharePercent: dominant.sharePercent,
+            },
+          }
+        : {}),
+    };
+  });
+  return {
+    schema: 'juxtapose.design-reference-hint/v1',
+    runId: result.runId,
+    outcome: result.outcome,
+    policy: result.policy,
+    counts: result.summary,
+    states,
+    omittedAffected: affected.length - states.length,
+    guidance:
+      'Observed target/current pixels, not inferred CSS causes. Call reference with a returned name for full measurements or a region ID for a focused paired image.',
+  };
+}
 
 /** One server: the tool handlers, the scheduler and the session browser.
  *  The transport is separate so tests can drive it without a process. */
@@ -855,7 +963,7 @@ export class McpServer {
       locks: EXCLUSIVE,
       exec: async (signal) => {
         const { runCommand } = await import('./run.js');
-        return this.invoke(
+        const result = await this.invoke(
           (s) =>
             runCommand(
               {
@@ -871,6 +979,7 @@ export class McpServer {
             ),
           signal,
         );
+        return dryRun ? result : withDesignReferenceFeedback(result, this.project);
       },
     };
   }

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { encodeStoryId } from '@juxtapose/core';
 import { captureIo } from '../io.js';
 import { evaluateReferences, referenceCommand } from './reference.js';
-import { McpServer } from './mcp.js';
+import { McpServer, withDesignReferenceFeedback } from './mcp.js';
 
 const roots: string[] = [];
 // Tiny solid-color fixtures keep this CLI test independent of sharp, which is
@@ -107,6 +107,65 @@ test('all-state ledger compares exact capture keys from saved images without rec
   expect(await referenceCommand(undefined, { project: f.root }, { io })).toBe(1);
   expect(io.stdout()).toContain('1 pass, 1 fail');
   expect(io.stdout()).toContain('observed colors: target #ffffff, current #000000');
+});
+
+test('a run result gains bounded design feedback without changing its report block or recapturing', async () => {
+  const f = await fixture();
+  const original = JSON.stringify({ runId: 'r1', results: [{ storyId: f.desktop }] });
+  const toolResult = {
+    content: [{ type: 'text' as const, text: original }],
+    isError: false,
+  };
+  const withReference = await withDesignReferenceFeedback(toolResult, f.root);
+  expect(withReference.content[0]).toEqual({ type: 'text', text: original });
+  expect(withReference.content).toHaveLength(2);
+  const hint = JSON.parse((withReference.content[1] as { text: string }).text);
+  expect(hint).toMatchObject({
+    schema: 'juxtapose.design-reference-hint/v1',
+    runId: 'r1',
+    outcome: 'fail',
+    counts: { pass: 1, fail: 1, notCaptured: 0 },
+    states: [{ name: 'desktop', key: f.desktop, status: 'fail' }],
+    omittedAffected: 0,
+  });
+  expect(hint.states[0].largestRegion.id).toMatch(/^[a-f0-9]+:\d+$/);
+});
+
+test('empty and unrelated runs do not add design feedback', async () => {
+  const f = await fixture();
+  const empty = {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({ runId: 'empty', capturedCount: 0 }),
+      },
+    ],
+    isError: false,
+  };
+  expect(await withDesignReferenceFeedback(empty, f.root)).toBe(empty);
+  expect(empty.content).toHaveLength(1);
+
+  const unrelated = {
+    content: [
+      { type: 'text' as const, text: JSON.stringify({ runId: 'r1', capturedCount: 1 }) },
+    ],
+    isError: false,
+  };
+  await writeFile(
+    path.join(f.run, 'report.json'),
+    JSON.stringify({
+      runId: 'r1',
+      results: [
+        {
+          storyId: 'unrelated--story',
+          status: 'pass',
+          viewport: { width: 12, height: 8 },
+        },
+      ],
+    }),
+  );
+  expect(await withDesignReferenceFeedback(unrelated, f.root)).toBe(unrelated);
+  expect(unrelated.content).toHaveLength(1);
 });
 
 test('region IDs can recover a crop after reevaluation', async () => {
