@@ -156,6 +156,9 @@ test('a passing run lists the target keys without inviting a second reference ca
     omittedPassed: 0,
   });
   expect(hint.guidance).toContain('no reference call is needed');
+  expect(hint.guidance).toContain(
+    'compatible geometry and zero Pixelmatch mismatch pixels',
+  );
 });
 
 test('empty and unrelated runs do not add design feedback', async () => {

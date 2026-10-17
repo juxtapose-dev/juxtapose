@@ -578,7 +578,7 @@ function compactReferenceFeedback(result: ReferenceResult) {
     omittedPassed: Math.max(0, passed.length - 8),
     guidance:
       result.outcome === 'pass' && passed.length <= 8
-        ? 'All captured design targets match. Read the run report for regression and flake status; no reference call is needed to verify these targets.'
+        ? 'Each listed captured target has compatible geometry and zero Pixelmatch mismatch pixels under the stated policy. Read the run report for regression and flake status; no reference call is needed to verify these targets. NotCaptured targets were not checked.'
         : 'Observed target/current pixels, not inferred CSS causes. Call reference for the full ledger or a focused paired image.',
   };
 }
