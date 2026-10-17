@@ -7,7 +7,8 @@ and review workbench runs without a shell.
 Most tools return the same versioned JSON as the matching `jux` command with
 `--json`. `run` returns a bounded `juxtapose.agent-run/v1` summary by default;
 the complete `RunReport` remains in the saved run and is available through
-`report` or `run({report: "full"})`. `jux run --json` is unchanged.
+`report` or `run({report: "full"})`. `reference` can compare two saved captures
+on demand. `jux run --json` is unchanged.
 
 The server keeps one browser for the whole session. The first `snap` or `run`
 call acquires it, and every later call reuses it. Where it comes from depends
@@ -110,8 +111,9 @@ when the user asks you to.
 
 ## Tools
 
-The server exposes nine tools. Each result's first text block holds the
-command's JSON, except `reference`, which defaults to a short text ledger.
+The server exposes ten tools. Each result's first text block holds the
+command's JSON, except `run`, which defaults to a bounded summary, and
+`reference`, which defaults to a short text ledger.
 When the command also printed a warning, such as
 an approved story whose structure was not saved, a successful result carries
 it as a second text block. A `run` with captured design targets also carries a
@@ -119,7 +121,8 @@ final text block with `juxtapose.design-reference-hint/v1`: overall counts,
 up to eight affected states, up to eight passed capture keys, and the largest
 changed region ID for focused inspection. A passing hint names the captured
 targets and does not require a second `reference` call to verify them. The first
-RunReport block remains unchanged. Targets outside a
+run-summary block is followed by the target hint; request `report` for the
+complete saved result. Targets outside a
 subset run count as `notCaptured`; if none were captured, no hint is added.
 For a passing target, the hint means the viewport and image geometry were
 compatible and Pixelmatch found zero mismatch pixels under the stated policy.
@@ -133,9 +136,24 @@ requesting the full reference ledger or a crop.
 
 ### reference
 
-Compares the last saved run with configured named design PNGs. No browser is
-opened. Pass `name` to select one target, or omit it for the captured-state ledger.
-Configured targets outside a subset run or skipped there count as `notCaptured`;
+By default, compares the last saved run with configured named design PNGs. No
+browser is opened. Pass `name` to select one target, or omit it for the
+captured-state ledger. To see what changed since an earlier run, call
+`reference` with `compare: "previous"` and `fromRun: "<run-id>"`. That view
+compares the earlier saved image with the latest saved image using Pixelmatch;
+it does not recapture or say whether the edit moved closer to the design.
+Its short response lists changed pixel counts and region IDs; `detail: "json"`
+returns `juxtapose.saved-run-change/v1`. A region request returns a paired
+previous/current PNG crop. The server caches a bounded number of these
+immutable saved-run comparisons for repeated lookups in the same session. A
+crop requested from a cached region reuses its analysis and validates both
+saved image hashes before rendering.
+After a capture, `run` includes compact target feedback by default. Set
+`feedback: "none"` on that call if you intend to request only the
+previous/current view and want to avoid computing the target comparison.
+
+In the default target view, configured targets outside a subset run or skipped
+there count as `notCaptured`;
 explicitly naming an absent target reports an error.
 If none of the configured targets were captured, the result is an error with
 `outcome: "no-comparison"` in JSON detail, rather than a visual pass.
@@ -242,14 +260,15 @@ and unstable captures first), and how many more were omitted. It also includes
 a compact design-target hint when references are configured. The full report
 is saved for focused, read-only lookups.
 
-| Argument  | Type     | Description                                                                                          |
-| --------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `all`     | boolean  | Capture every story instead of the affected ones.                                                    |
-| `since`   | string   | Git ref. Traces changed files since it for `cause`.                                                  |
-| `stories` | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
-| `settle`  | object   | Settle options for every story, as for `snap`.                                                       |
-| `recheck` | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
-| `report`  | string   | `"summary"` (default) or `"full"` for the complete `RunReport`.                                      |
+| Argument   | Type     | Description                                                                                          |
+| ---------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `all`      | boolean  | Capture every story instead of the affected ones.                                                    |
+| `since`    | string   | Git ref. Traces changed files since it for `cause`.                                                  |
+| `stories`  | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
+| `settle`   | object   | Settle options for every story, as for `snap`.                                                       |
+| `recheck`  | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
+| `feedback` | string   | `"target"` (default) or `"none"` to skip design-target analysis after capture.                       |
+| `report`   | string   | `"summary"` (default) or `"full"` for the complete `RunReport`.                                      |
 
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.

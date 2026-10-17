@@ -230,6 +230,7 @@ export {
   type DesignReferenceCurrent,
   type DesignReferenceLedger,
 } from './diff/design-reference.js';
+export { diffImages } from './diff/diff.js';
 export {
   observeReferenceOutlines,
   type OutlineBox,

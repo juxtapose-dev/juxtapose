@@ -1,10 +1,22 @@
 import { afterEach, expect, test } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { encodeStoryId } from '@juxtapose/core';
 import { captureIo } from '../io.js';
-import { evaluateReferences, referenceCommand } from './reference.js';
+import {
+  evaluateReferenceChange,
+  evaluateReferences,
+  referenceCommand,
+} from './reference.js';
 import { McpServer, withDesignReferenceFeedback } from './mcp.js';
 
 const roots: string[] = [];
@@ -227,6 +239,12 @@ test('MCP returns the all-state ledger and one crop after a server restart witho
   expect(short.content[0]!.type === 'text' ? short.content[0].text : '').toContain(
     '1 pass, 1 fail',
   );
+  expect(short.content[0]!.type === 'text' ? short.content[0].text : '').toContain(
+    'Call reference with detail=json for measured geometry',
+  );
+  expect(short.content[0]!.type === 'text' ? short.content[0].text : '').not.toContain(
+    'Use --json',
+  );
   const first = await firstServer.call('reference', { detail: 'json' });
   expect(first.isError).toBe(false);
   const ledger = JSON.parse(
@@ -246,6 +264,106 @@ test('MCP returns the all-state ledger and one crop after a server restart witho
   expect(crop.isError).toBe(false);
   expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
   await secondServer.close();
+});
+
+test('MCP requests an edit-only image delta on demand from saved runs', async () => {
+  const f = await fixture();
+  const next = path.join(f.runs, 'r2');
+  await mkdir(path.join(next, 'images'), { recursive: true });
+  await writeFile(
+    path.join(next, 'report.json'),
+    JSON.stringify({
+      runId: 'r2',
+      results: [
+        { storyId: f.desktop, status: 'pass', viewport: { width: 12, height: 8 } },
+        { storyId: f.mobile, status: 'pass', viewport: { width: 12, height: 8 } },
+      ],
+    }),
+  );
+  await writeFile(
+    path.join(next, 'images', `${encodeStoryId(f.desktop)}-current.webp`),
+    whiteWebp,
+  );
+  await writeFile(
+    path.join(next, 'images', `${encodeStoryId(f.mobile)}-current.webp`),
+    whiteWebp,
+  );
+  await utimes(next, new Date('2030-01-01'), new Date('2030-01-01'));
+  const change = await evaluateReferenceChange({ project: f.root, fromRun: 'r1' });
+  expect(change).toMatchObject({
+    fromRunId: 'r1',
+    toRunId: 'r2',
+    states: [
+      {
+        name: 'desktop',
+        status: 'changed',
+        changedPixels: 96,
+        regions: [{ changedPixels: 96 }],
+      },
+      { name: 'mobile', status: 'unchanged', changedPixels: 0 },
+    ],
+  });
+  const server = new McpServer({ project: f.root, chrome: '/nonexistent/chrome' });
+  const target = await server.call('reference', {});
+  expect(target.content[0]?.type === 'text' ? target.content[0].text : '').toContain(
+    '2 pass',
+  );
+  const short = await server.call('reference', { compare: 'previous', fromRun: 'r1' });
+  expect(short.isError).toBe(false);
+  expect(short.content[0]?.type === 'text' ? short.content[0].text : '').toContain(
+    '96 changed pixels',
+  );
+  const full = await server.call('reference', {
+    compare: 'previous',
+    fromRun: 'r1',
+    detail: 'json',
+  });
+  const parsed = JSON.parse(
+    full.content[0]?.type === 'text' ? full.content[0].text : '{}',
+  );
+  const id = parsed.states[0].regions[0].id as string;
+  const crop = await server.call('reference', {
+    compare: 'previous',
+    fromRun: 'r1',
+    name: 'desktop',
+    region: id,
+  });
+  expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+  const currentImage = path.join(
+    next,
+    'images',
+    `${encodeStoryId(f.desktop)}-current.webp`,
+  );
+  await writeFile(currentImage, black);
+  const stale = await server.call('reference', {
+    compare: 'previous',
+    fromRun: 'r1',
+    name: 'desktop',
+    region: id,
+  });
+  expect(stale.isError).toBe(true);
+  expect(stale.content[0]?.type === 'text' ? stale.content[0].text : '').toContain(
+    'saved capture changed',
+  );
+  await writeFile(currentImage, whiteWebp);
+  const configPath = path.join(f.root, 'juxtapose.config.json');
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  config.designReferences.desktop.storyId = f.mobile;
+  await writeFile(configPath, JSON.stringify(config));
+  const remapped = await server.call('reference', {
+    compare: 'previous',
+    fromRun: 'r1',
+    detail: 'json',
+  });
+  const remappedStates = JSON.parse(
+    remapped.content[0]?.type === 'text' ? remapped.content[0].text : '{}',
+  ).states;
+  expect(remappedStates[0]).toMatchObject({
+    name: 'desktop',
+    storyId: f.mobile,
+    status: 'unchanged',
+  });
+  await server.close();
 });
 
 test('a subset run excludes unrelated and skipped references by default, but an explicit name errors', async () => {
