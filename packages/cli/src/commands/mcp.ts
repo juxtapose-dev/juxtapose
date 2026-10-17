@@ -1,10 +1,9 @@
 // `jux mcp` — a Model Context Protocol server on stdio, for coding agents that
 // have no shell or that pay a browser launch per `jux` call.
 //
-// A skin over the commands, not a second API: every tool calls the same
-// function `jux <command> --json` calls, with output captured instead of
-// printed, so a tool result is the CLI's own versioned JSON (decision 6 of the
-// 2026-10-12 agent toolchain spec). What MCP adds is the session: one browser
+// Most tools call the same function as `jux <command> --json`. The run tool
+// returns a bounded agent overview by default; report retrieves its saved
+// full JSON or one result without capturing again. What MCP adds is the session: one browser
 // acquired on first use and lent to every snap and run until stdin closes,
 // which is the per-call launch cost an agent loop otherwise pays each turn.
 // Calls that touch different snaps run in parallel on that browser;
@@ -49,6 +48,7 @@ import {
 import { snapName } from '../snap-name.js';
 import { MAX_VIEWPORT_SIDE } from './snap.js';
 import type { ReferenceResult } from './reference.js';
+import { agentRunSummary, SavedReportCache } from './agent-run-report.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 
@@ -252,7 +252,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Storybook/Ladle: capture selected stories and variants together after a coherent edit. If a saved run or supplied design-reference hint already describes the starting UI, use it; do not capture again just to rediscover it. Default selection is stories affected by changes. Returns a RunReport plus a compact target-versus-current hint for configured design references; read both before another tool call.',
+      'Storybook/Ladle: capture selected stories and variants together after a coherent edit. Default selection is stories affected by changes. Returns a bounded run summary plus a compact design-target hint; use report for saved detail without recapturing. Set report=full for the complete RunReport.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -272,6 +272,25 @@ export const TOOLS: Tool[] = [
         settle: SETTLE,
         network: NETWORK,
         recheck: RECHECK,
+        report: {
+          type: 'string',
+          enum: ['summary', 'full'],
+          description:
+            'Response detail (default summary); full returns the complete RunReport',
+        },
+      },
+    },
+  },
+  {
+    name: 'report',
+    description:
+      'Read a saved Storybook/Ladle run without capture. Default: bounded summary of the latest run; story: one full capture result; detail=full: complete RunReport. runId selects an older saved run.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runId: { type: 'string', description: 'Saved run ID (default latest)' },
+        story: { type: 'string', description: 'Exact capture key for one result' },
+        detail: { type: 'string', enum: ['summary', 'full'] },
       },
     },
   },
@@ -471,9 +490,8 @@ interface Planned {
  *  measured to help. */
 export const SNAP_SLOTS = 4;
 
-/** Keep the run report as the first, unchanged MCP block. An additional bounded
- * block gives agents the design-target verdict they would otherwise have to
- * request in another turn. The full reference tool remains available. */
+/** Called before the run report is compacted. An additional bounded block
+ * gives agents the design-target verdict they would otherwise request later. */
 export async function withDesignReferenceFeedback(
   run: ToolResult,
   project: string,
@@ -600,6 +618,7 @@ export class McpServer {
   private closed = false;
   private readonly project: string;
   private readonly scheduler: Scheduler;
+  private readonly reports = new SavedReportCache();
   /** The project config's `freeze.images`, a launch setting of the session
    *  browser. */
   private readonly freezeImages: boolean | undefined;
@@ -714,6 +733,41 @@ export class McpServer {
         return this.diff(args);
       case 'run':
         return this.run(args);
+      case 'report': {
+        const runId = str(args, 'runId');
+        const story = str(args, 'story');
+        const detail = str(args, 'detail');
+        if (story === '') throw new ArgError("'story' must be a non-empty capture key");
+        if (detail !== undefined && detail !== 'summary' && detail !== 'full')
+          throw new ArgError("'detail' must be 'summary' or 'full'");
+        if (story && detail === 'full')
+          throw new ArgError("pass 'story' or 'detail=full', not both");
+        return {
+          locks: this.readsRun(),
+          exec: async () => {
+            let data: unknown;
+            if (story) {
+              const { report, result } = await this.reports.story(
+                this.project,
+                story,
+                runId,
+              );
+              if (!result)
+                return errorResult(`jux: story '${story}' is not in run ${report.runId}`);
+              data = result;
+            } else {
+              data =
+                detail === 'full'
+                  ? await this.reports.get(this.project, runId)
+                  : await this.reports.summary(this.project, runId);
+            }
+            return {
+              content: [{ type: 'text', text: JSON.stringify(data) }],
+              isError: false,
+            };
+          },
+        };
+      }
       case 'list':
         return this.run({ ...args, all: true, dryRun: true });
       case 'check':
@@ -973,6 +1027,13 @@ export class McpServer {
     const stories = strings(args, 'stories');
     const settle = settleArg(args);
     const recheck = recheckArg(args);
+    const reportDetail = str(args, 'report');
+    if (
+      reportDetail !== undefined &&
+      reportDetail !== 'summary' &&
+      reportDetail !== 'full'
+    )
+      throw new ArgError("'report' must be 'summary' or 'full'");
     return {
       locks: EXCLUSIVE,
       exec: async (signal) => {
@@ -993,7 +1054,15 @@ export class McpServer {
             ),
           signal,
         );
-        return dryRun ? result : withDesignReferenceFeedback(result, this.project);
+        if (dryRun || result.isError) return result;
+        const withFeedback = await withDesignReferenceFeedback(result, this.project);
+        if (reportDetail === 'full') return withFeedback;
+        const first = withFeedback.content[0];
+        if (first?.type === 'text') {
+          const report = parseRunReport(first.text);
+          first.text = JSON.stringify(agentRunSummary(report));
+        }
+        return withFeedback;
       },
     };
   }

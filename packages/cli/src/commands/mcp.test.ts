@@ -163,6 +163,7 @@ describe('jux mcp protocol', () => {
       'diff',
       'list',
       'run',
+      'report',
       'check',
       'handoff',
       'reference',
@@ -919,9 +920,13 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
       expect(first.isError).toBe(false);
       const report = JSON.parse(text(first)) as {
         runId: string;
+        schema: string;
         summary: { new: number };
       };
+      expect(report.schema).toBe('juxtapose.agent-run/v1');
       expect(report.summary.new).toBe(2);
+      const saved = await c.call('report', { runId: report.runId, story: 'home' });
+      expect(JSON.parse(text(saved))).toMatchObject({ storyId: 'home', status: 'new' });
 
       // Every requested id is reported, as JSON; unknown ids are refused.
       const approved = await c.call('approve', { stories: ['home'] });
@@ -969,7 +974,7 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     const c = new Client(runProject);
     try {
       await handshake(c);
-      const run = await c.call('run', { stories: ['home'] });
+      const run = await c.call('run', { stories: ['home'], report: 'full' });
       expect(run.isError).toBe(false);
       const report = JSON.parse(text(run)) as {
         results: Array<{ storyId: string; baseStoryId?: string; variant?: string }>;
