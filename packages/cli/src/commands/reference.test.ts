@@ -2,13 +2,27 @@ import { afterEach, expect, test } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import sharp from 'sharp';
 import { encodeStoryId } from '@juxtapose/core';
 import { captureIo } from '../io.js';
 import { evaluateReferences, referenceCommand } from './reference.js';
 import { McpServer } from './mcp.js';
 
 const roots: string[] = [];
+// Tiny solid-color fixtures keep this CLI test independent of sharp, which is
+// an implementation dependency of core rather than the CLI package.
+const white = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAwAAAAICAYAAADN5B7xAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAE0lEQVQYlWP4TyJgGNVABCA5lADspH6QblB3gwAAAABJRU5ErkJggg==',
+  'base64',
+);
+const black = Buffer.from('UklGRhoAAABXRUJQVlA4TA4AAAAvC8ABAAcQEf0PRET/Aw==', 'base64');
+const whiteWebp = Buffer.from(
+  'UklGRh4AAABXRUJQVlA4TBEAAAAvC8ABAAfQ//73v/+BiOh/AAA=',
+  'base64',
+);
+const red = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAwAAAAICAYAAADN5B7xAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAFklEQVQYlWP4z8DwnxTMMKqBgQahBAB3Fr9B2o/6XQAAAABJRU5ErkJggg==',
+  'base64',
+);
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
@@ -20,17 +34,6 @@ async function fixture() {
   const run = path.join(runs, 'r1');
   await mkdir(path.join(run, 'images'), { recursive: true });
   await mkdir(path.join(root, 'design'));
-  const white = await sharp({
-    create: { width: 12, height: 8, channels: 4, background: '#fff' },
-  })
-    .png()
-    .toBuffer();
-  const black = await sharp({
-    create: { width: 12, height: 8, channels: 4, background: '#000' },
-  })
-    .webp({ lossless: true })
-    .toBuffer();
-  const whiteWebp = await sharp(white).webp({ lossless: true }).toBuffer();
   await writeFile(path.join(root, 'design', 'target.png'), white);
   const desktop = 'card--default';
   const mobile = 'card--default__mobile';
@@ -114,12 +117,7 @@ test('region IDs can recover a crop after reevaluation', async () => {
   const again = await evaluateReferences({ project: f.root, name: 'desktop', regionId });
   expect(again.crop?.regionId).toBe(regionId);
   expect(again.crop?.png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
-  await writeFile(
-    path.join(f.root, 'design/target.png'),
-    await sharp({ create: { width: 12, height: 8, channels: 4, background: '#f00' } })
-      .png()
-      .toBuffer(),
-  );
+  await writeFile(path.join(f.root, 'design/target.png'), red);
   await expect(
     evaluateReferences({ project: f.root, name: 'desktop', regionId }),
   ).rejects.toThrow('Run reference again');

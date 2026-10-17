@@ -165,6 +165,7 @@ describe('jux mcp protocol', () => {
       'run',
       'check',
       'handoff',
+      'reference',
       'explain',
       'approve',
     ]);
