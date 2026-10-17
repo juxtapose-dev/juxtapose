@@ -21,6 +21,7 @@ let other: string; // the same server under another origin (localhost)
 let browser: Browser;
 const sockets = new Set<Socket>();
 let clockTicks = 0;
+let frameTicks = 0;
 
 const STORY = 'card--basic';
 
@@ -77,7 +78,7 @@ beforeAll(async () => {
   server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     const html = (body: string) => {
-      res.writeHead(200, { 'content-type': 'text/html' });
+      res.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' });
       res.end(body);
     };
     switch (url.pathname) {
@@ -106,7 +107,7 @@ beforeAll(async () => {
         );
       case '/rand-frame-inner':
         return html(
-          `<!doctype html><body style="background:rgb(${Math.floor(Math.random() * 200)},50,50)">x`,
+          `<!doctype html><body style="background:rgb(${++frameTicks % 2 ? 40 : 180},50,50)">x`,
         );
       case '/tricky':
         // Ids and attributes frameworks really generate: React useId, Zag/Ark
