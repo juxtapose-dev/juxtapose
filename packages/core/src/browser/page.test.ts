@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import sharp from 'sharp';
+import { captureStructure } from '../capture/structure.js';
 import { Browser, type BrowserContext } from './browser.js';
 import { CdpPage, PageCrashedError, TimeoutError, type Page } from './page.js';
 import { CdpConnection, SendTimeoutError, TargetClosedError } from './cdp.js';
@@ -14,6 +15,8 @@ let base: string;
 let browser: Browser;
 
 const PAGES: Record<string, string> = {
+  '/tall':
+    '<!doctype html><style>body{margin:0}#height{height:100vh}#below{height:500px;background:rgb(0,255,0)}</style><div id=height></div><div id=below>Below the fold</div>',
   '/plain':
     '<!doctype html><body style="margin:0;background:#fff"><div id="box" style="width:100px;height:50px;background:#00f"></div><input id="i" autofocus></body>',
   '/late':
@@ -234,6 +237,50 @@ describe.skipIf(!chrome)('CdpPage', () => {
       expect(await page.evaluate(() => window.innerWidth)).toBe(480);
       const meta = await sharp(await page.screenshot()).metadata();
       expect([meta.format, meta.width, meta.height]).toEqual(['png', 480, 400]);
+    }));
+  it('full-page captures preserve the layout viewport and include below-fold DOM at matching coordinates', () =>
+    withPage(async (page) => {
+      await page.setViewportSize({ width: 480, height: 400 });
+      await page.goto(`${base}/tall`);
+      const size = await page.fullPageSize!();
+      expect(size).toEqual({ width: 480, height: 900 });
+      for (const format of ['png', 'webp'] as const) {
+        const shot = await page.screenshot({ fullPage: true, captureSize: size, format });
+        const meta = await sharp(shot).metadata();
+        expect([meta.width, meta.height]).toEqual([480, 900]);
+        const pixel = await sharp(shot)
+          .extract({ left: 10, top: 850, width: 1, height: 1 })
+          .removeAlpha()
+          .raw()
+          .toBuffer();
+        expect(pixel[0]).toBeLessThanOrEqual(1);
+        expect(pixel[1]).toBeGreaterThanOrEqual(254);
+        expect(pixel[2]).toBeLessThanOrEqual(1);
+      }
+      expect(
+        await page.evaluate(() => [
+          innerWidth,
+          innerHeight,
+          document.querySelector('#height')!.getBoundingClientRect().height,
+        ]),
+      ).toEqual([480, 400, 400]);
+      const structure = await captureStructure(page, size, []);
+      expect(structure?.elements.find((e) => e.id === 'below')?.rect).toEqual({
+        x: 0,
+        y: 400,
+        w: 480,
+        h: 500,
+      });
+      const viewport = await sharp(await page.screenshot()).metadata();
+      expect([viewport.width, viewport.height]).toEqual([480, 400]);
+    }));
+  it('full-page rejects unsafe document dimensions before allocating an image', () =>
+    withPage(async (page) => {
+      await page.goto(`${base}/tall`);
+      await page.evaluate(() => {
+        document.body.style.height = '40000px';
+      });
+      await expect(page.fullPageSize!()).rejects.toThrow('safe image bounds');
     }));
   // Issue #120. With partial raster, a repaint re-rasters only the invalidated
   // rect of a tile, clipped to it, and Skia's coverage on an antialiased edge

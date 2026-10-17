@@ -86,7 +86,13 @@ export interface Page {
    * PNG by default. `format: 'webp'` is Chrome's lossless WebP (VP8L, with
    * Chrome's ICC chunk still in it). Core removes that metadata before hashing.
    */
-  screenshot(opts?: { mask?: string[]; format?: 'png' | 'webp' }): Promise<Buffer>;
+  fullPageSize?(): Promise<Viewport>;
+  screenshot(opts?: {
+    mask?: string[];
+    format?: 'png' | 'webp';
+    fullPage?: boolean;
+    captureSize?: Viewport;
+  }): Promise<Buffer>;
   /**
    * Raw CDP on this page's session, for DOMSnapshot.
    * @internal Not part of the adapter API; the protocol surface is Chrome's, not ours.
@@ -710,9 +716,32 @@ export class CdpPage implements Page {
     await this.send('Emulation.setEmulatedMedia', emulatedMedia(scheme));
   }
 
+  /** Document capture bounds; does not resize the emulated layout viewport. */
+  async fullPageSize(): Promise<Viewport> {
+    const { cssContentSize } = await this.send('Page.getLayoutMetrics');
+    const width = Math.max(this.viewport.width, Math.ceil(cssContentSize.width));
+    const height = Math.max(this.viewport.height, Math.ceil(cssContentSize.height));
+    if (
+      !Number.isSafeInteger(width) ||
+      !Number.isSafeInteger(height) ||
+      width > 32767 ||
+      height > 32767 ||
+      width * height > 100_000_000
+    )
+      throw new Error(
+        'jux: full-page capture exceeds safe image bounds (32767px per side, 100 million pixels)',
+      );
+    return { width, height };
+  }
+
   /** Screenshotter.screenshotPage: prepare → fonts.ready → mask → getLayoutMetrics → captureScreenshot → cleanup. */
   async screenshot(
-    opts: { mask?: string[]; format?: 'png' | 'webp' } = {},
+    opts: {
+      mask?: string[];
+      format?: 'png' | 'webp';
+      fullPage?: boolean;
+      captureSize?: Viewport;
+    } = {},
   ): Promise<Buffer> {
     const mask = opts.mask ?? [];
     for (const sel of mask) assertCssSelector(sel);
@@ -729,13 +758,18 @@ export class CdpPage implements Page {
         // preferred cssVisualViewport (@deprecated there): the clip must match
         // Screenshotter's.
         const { visualViewport } = await this.send('Page.getLayoutMetrics');
-        const clip = {
-          x: visualViewport.pageX,
-          y: visualViewport.pageY,
-          width: Math.ceil(this.viewport.width / visualViewport.scale),
-          height: Math.ceil(this.viewport.height / visualViewport.scale),
-          scale: visualViewport.scale,
-        };
+        const fullSize = opts.fullPage
+          ? (opts.captureSize ?? (await this.fullPageSize()))
+          : undefined;
+        const clip = fullSize
+          ? { x: 0, y: 0, ...fullSize, scale: 1 }
+          : {
+              x: visualViewport.pageX,
+              y: visualViewport.pageY,
+              width: Math.ceil(this.viewport.width / visualViewport.scale),
+              height: Math.ceil(this.viewport.height / visualViewport.scale),
+              scale: visualViewport.scale,
+            };
         const { data } = await this.send('Page.captureScreenshot', {
           // Quality 100 is what makes Chrome's WebP lossless (VP8L): without
           // it Chrome encodes lossy VP8 at q80, and q99 is lossy too.
@@ -743,7 +777,7 @@ export class CdpPage implements Page {
             ? { format: 'webp' as const, quality: 100 }
             : { format: 'png' as const }),
           clip,
-          captureBeyondViewport: false,
+          captureBeyondViewport: opts.fullPage === true,
         });
         return Buffer.from(data, 'base64');
       } finally {

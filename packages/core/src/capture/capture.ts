@@ -18,8 +18,11 @@ import type {
 import {
   FREEZE_ANIMATIONS_CSS,
   rerasterLayers,
+  SCROLL_THROUGH_TIMEOUT_MS,
+  scrollThrough,
   waitForPaint,
   waitForSelector,
+  waitForStillFrames,
 } from './settle.js';
 import {
   installIdleDetector,
@@ -462,11 +465,25 @@ async function captureStoryDocument(
   checkSettle(params.settle, `story '${story.storyId}'`);
   const settle = resolveSettle(layered.settle);
 
+  // Strict: live params are not schema-checked, and a string 'false' must not
+  // turn on a different kind of capture.
+  const fullPage = params.fullPage === true;
+  // Before the settle waits, not after them: a driver that can't measure the
+  // document should fail the story without spending its whole budget first.
+  if (fullPage && !page.fullPageSize)
+    throw new Error('jux: this browser driver does not support full-page capture');
+  const layoutViewport = params.viewport ?? effectiveViewport;
+
   phase('waitForSelector');
   // Settle must never throw on timeout (a slow story is a reviewable diff),
-  // so the story budget has to outlast the cap and the fixed delay.
+  // so the story budget has to outlast the cap and the fixed delay. Full
+  // page adds a second idle wait and the still-frames wait; the post-paint
+  // wait shares the second idle wait's cap.
   deps.onSettleBudget?.(
-    settle.timeoutMs + (params.delay ?? 0) + (params.waitForSelector ? timeoutMs : 0),
+    settle.timeoutMs +
+      (params.delay ?? 0) +
+      (params.waitForSelector ? timeoutMs : 0) +
+      (fullPage ? 2 * settle.timeoutMs + SCROLL_THROUGH_TIMEOUT_MS : 0),
   );
   const tSettle = performance.now();
   if (params.waitForSelector) {
@@ -474,7 +491,31 @@ async function captureStoryDocument(
   }
 
   phase('idle wait');
-  const first = await waitForIdle(page, idle, settle);
+  let first = await waitForIdle(page, idle, settle);
+  // Any wait that hit its cap, kept even when a later one goes idle: the
+  // capture was still taken from a page that did not finish.
+  let flagged: IdleResult | undefined = first.status === 'idle' ? undefined : first;
+  // After the page goes quiet, not before: the URL platform hands over at
+  // DOMContentLoaded, and on formhealth.co a scroll at that point ran before
+  // the deferred GSAP reveal had attached, leaving its illustration at
+  // opacity 0. Idle again afterwards, so the lazy images and reveals the
+  // scroll sets off are waited on like any other request or mutation, then
+  // still frames, for the reveals a JS animation loop plays (settle.ts).
+  // scrollThrough ends back at the top, so the document is at its origin
+  // for the paint barrier and the shutter.
+  if (fullPage) {
+    phase('scroll through');
+    await scrollThrough(page);
+    first = await waitForIdle(page, idle, settle);
+    if (first.status !== 'idle') flagged ??= first;
+    if (!(await waitForStillFrames(page, settle.timeoutMs))) {
+      flagged ??= {
+        status: 'timeout',
+        waitedMs: settle.timeoutMs,
+        pending: [`DOM still changing ${settle.timeoutMs} ms after the full-page scroll`],
+      };
+    }
+  }
   acc.settle += performance.now() - tSettle;
 
   // Fixed delay is the escape hatch of last resort — it costs the same on
@@ -501,7 +542,6 @@ async function captureStoryDocument(
   // Work that landed during the paint barrier (an observer callback, a
   // request the last frame started) gets one more wait, within what is left
   // of the cap. Once: a page that keeps moving is captured, not chased.
-  let flagged: IdleResult | undefined = first.status === 'idle' ? undefined : first;
   const tMoved = performance.now();
   if (
     first.status === 'idle' &&
@@ -524,7 +564,7 @@ async function captureStoryDocument(
     await rerasterLayers(page);
     await waitForPaint(page);
     acc.paint += performance.now() - tRepaint;
-    if (second.status !== 'idle') flagged = second;
+    if (second.status !== 'idle') flagged ??= second;
   } else {
     acc.paint += performance.now() - tMoved;
   }
@@ -532,7 +572,7 @@ async function captureStoryDocument(
   // Structure from the same frame the screenshot is about to take: after the
   // paint barrier, before the shutter, with nothing in between that could
   // mutate the page.
-  const effective = params.viewport ?? effectiveViewport;
+  const effective = fullPage ? await page.fullPageSize!() : layoutViewport;
   phase('structure capture');
   const tStructure = performance.now();
   const structureEnabled =
@@ -544,6 +584,7 @@ async function captureStoryDocument(
   const structure = structureEnabled
     ? await captureStructure(page, effective, params.mask ?? [], structureTimings)
     : undefined;
+  if (structure && fullPage) structure.layoutViewport = layoutViewport;
   if (structure && deps.platform.structureContextIds?.length) {
     structure.contextElementIds = [...deps.platform.structureContextIds];
   }
@@ -557,6 +598,7 @@ async function captureStoryDocument(
   const shot = await page.screenshot({
     ...(params.mask?.length ? { mask: params.mask } : {}),
     format: 'webp',
+    ...(fullPage ? { fullPage: true, captureSize: effective } : {}),
   });
   const screenshotMs = performance.now() - tShot;
 
@@ -603,6 +645,7 @@ async function captureStoryDocument(
     // so report what we actually captured at — the agent handoff computes
     // region area as a fraction of it.
     viewport: effective,
+    ...(fullPage ? { layoutViewport } : {}),
     renderer,
     ...(params.comparison ? { comparison: params.comparison } : {}),
     capturedAt: new Date().toISOString(),

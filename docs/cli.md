@@ -305,6 +305,36 @@ repeatable, `--network-external <allow|block>`, and `--network <json>` (a config
 config's `freshRenderer` for that command: captures reuse each page's renderer,
 which is faster, but a story's pixels can depend on the story captured before it.
 
+## Full-document captures (experimental)
+
+`jux snap <url> --as page --viewport 390x844 --full-page` captures the entire
+rendered document while keeping the browser's layout viewport at 390×844.
+The MCP equivalent is `snap({ url, as: "page", viewport: { width: 390, height: 844 }, fullPage: true })`.
+The default remains a viewport-only capture.
+
+For Storybook or Ladle, set `parameters.juxtapose.fullPage: true`, or apply it
+through project overrides:
+
+```json
+{ "stories": { "*": { "fullPage": true } } }
+```
+
+The saved `viewport` describes image bounds. Full-page captures additionally
+record `layoutViewport` with the original browser dimensions; consumers should
+use that field to check reference-layout compatibility. Structure coordinates
+cover the same document area as the image.
+
+Once the page is idle, capture scrolls through the document one viewport at a
+time, so `loading="lazy"` images and scroll-triggered reveals
+(IntersectionObserver, GSAP and similar) load and play. It then waits for the
+requests that set off and for the DOM to stop changing, up to the settle
+timeout; a page that animates forever is captured at that point. Capture then
+resets document scroll to the origin, preserving viewport-based CSS and
+fixed/sticky layout at that position, so a fixed cookie banner appears over
+the first viewport. Content inside independently scrolling containers is not
+expanded. Documents over 32,767 pixels on one side or 100 million total pixels
+are rejected before image allocation.
+
 ## Capture a built or deployed Storybook
 
 Use `--build-dir <dir>` to capture a static build. Use `--origin <url>` to

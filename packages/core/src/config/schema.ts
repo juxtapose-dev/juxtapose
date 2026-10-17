@@ -434,6 +434,11 @@ export const ComparisonSchema = Type.Object(
 );
 
 const captureOptions = {
+  fullPage: Type.Boolean({
+    description:
+      'Capture the full document without resizing the layout viewport. Default false.',
+  }),
+
   comparison: ComparisonSchema,
   renderer: RendererSchema,
   skip: withText(Type.Boolean({ description: 'Never capture this story.' }), {
@@ -682,8 +687,9 @@ export const DesignReferenceSchema = Type.Object(
       }),
     ),
     captureKind: Type.Optional(
-      StringEnum(['viewport'] as const, {
-        description: 'Viewport screenshot. Full-page references are not supported yet.',
+      StringEnum(['viewport', 'full-page'] as const, {
+        description:
+          'Viewport (default) or full-page screenshot. `viewport` always describes the browser layout viewport, even for a full-page image.',
       }),
     ),
   },

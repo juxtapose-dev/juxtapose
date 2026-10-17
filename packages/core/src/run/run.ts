@@ -533,6 +533,7 @@ async function judge(
     // with the regions means nobody downstream has to re-enumerate stories to
     // find out what the coordinates are relative to.
     viewport: snapshot.viewport,
+    ...(snapshot.layoutViewport ? { layoutViewport: snapshot.layoutViewport } : {}),
     // Never silent: a capture taken at the settle cap says so on every
     // status, a pass included, with what was still pending.
     ...(captureFlags(snapshot).length > 0 ? { flags: captureFlags(snapshot) } : {}),

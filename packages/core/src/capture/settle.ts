@@ -255,3 +255,107 @@ export async function waitForPaint(page: Page, timeoutMs = 1000): Promise<void> 
     )
     .catch(() => {});
 }
+
+export const SCROLL_THROUGH_TIMEOUT_MS = 5000;
+
+/**
+ * Scroll the document through once, then back to the top.
+ *
+ * A full-page image covers the whole document, but the layout viewport stays
+ * at the origin, so nothing below it is ever scrolled into view: `loading=lazy`
+ * images stay unrequested and IntersectionObserver or scroll-listener reveals
+ * stay hidden. On formhealth.co a GSAP-revealed illustration captured as a
+ * blank 600px band. One viewport per step with two frames each, so observer
+ * callbacks and scroll handlers run at every position. Callers wait for idle
+ * afterwards, which covers the requests and mutations this sets off.
+ *
+ * Bounded by the full-page image limit and a time cap, so an infinite feed
+ * that grows as it scrolls cannot hold the capture forever (one that grows
+ * past the limit is still rejected by fullPageSize). The return to the top is
+ * instant too, and comes before the caller's idle and paint waits, so what
+ * the page does on scrolling back is settled before the shutter. Never
+ * throws.
+ */
+export async function scrollThrough(
+  page: Page,
+  timeoutMs = SCROLL_THROUGH_TIMEOUT_MS,
+): Promise<void> {
+  await page
+    .evaluate(async (cap) => {
+      const deadline = performance.now() + cap;
+      const frames = () =>
+        new Promise<void>((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => r())),
+        );
+      const root = document.scrollingElement ?? document.documentElement;
+      const step = Math.max(1, window.innerHeight);
+      // 'instant' overrides a page's `scroll-behavior: smooth`, which would
+      // otherwise animate each step and leave most positions unvisited.
+      for (
+        let y = step;
+        y < Math.min(root.scrollHeight, 32767) && performance.now() < deadline;
+        y += step
+      ) {
+        window.scrollTo({ top: y, behavior: 'instant' });
+        await frames();
+      }
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      await frames();
+    }, timeoutMs)
+    .catch(() => {});
+}
+
+/**
+ * Wait until the DOM has gone `frames` consecutive frames without changing,
+ * or `capMs`.
+ *
+ * The idle wait stops counting a rAF loop after three frames, so a perpetual
+ * canvas animation cannot pin it at the cap (idle.ts). A JS animation library
+ * runs every tween from one such loop: on formhealth.co the idle wait after
+ * scrollThrough returned in 0.1 ms with GSAP's reveal at opacity 0, mid-fade.
+ * A tween writes the DOM every frame, so this waits for the writes to stop
+ * (the reveal there took ~1 s). A page that never stops, a looping animation,
+ * is captured at the cap. Resolves false when the cap was hit, so the caller
+ * can flag the capture. Never throws.
+ */
+export async function waitForStillFrames(
+  page: Page,
+  capMs: number,
+  frames = 10,
+): Promise<boolean> {
+  return page
+    .evaluate(
+      ({ cap, need }) =>
+        new Promise<boolean>((resolve) => {
+          let still = 0;
+          // Counted in the callback: records are delivered as a microtask, so
+          // a takeRecords() from the frame callback alone always found none.
+          let changed = false;
+          const mo = new MutationObserver(() => {
+            changed = true;
+          });
+          mo.observe(document, {
+            attributes: true,
+            childList: true,
+            characterData: true,
+            subtree: true,
+          });
+          const done = (stillReached: boolean) => {
+            clearTimeout(timer);
+            mo.disconnect();
+            resolve(stillReached);
+          };
+          const timer = setTimeout(() => done(false), cap);
+          const tick = () => {
+            still = changed || mo.takeRecords().length > 0 ? 0 : still + 1;
+            changed = false;
+            if (still >= need) done(true);
+            else requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        }),
+      { cap: capMs, need: frames },
+      { timeout: capMs + 1000 },
+    )
+    .catch(() => true);
+}

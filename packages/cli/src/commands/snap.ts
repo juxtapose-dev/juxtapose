@@ -44,6 +44,7 @@ export interface SnapFlags extends SettleFlags {
   as?: string;
   'as-prefix'?: string;
   viewport?: string;
+  'full-page'?: boolean;
   'wait-for'?: string;
   mask?: string[];
   chrome?: string;
@@ -59,6 +60,7 @@ interface Written {
   image: string;
   structure: string | null;
   viewport: Viewport;
+  layoutViewport?: Viewport;
   env: CaptureEnv;
   structureHash: string | null;
   elements: number;
@@ -218,6 +220,7 @@ export async function snapCommand(
       ...(viewport ? { viewport } : {}),
       // A snap has no story: the flags are the story layer, over the config.
       params: {
+        ...(flags['full-page'] ? { fullPage: true } : {}),
         ...(flags['wait-for'] ? { waitForSelector: flags['wait-for'] } : {}),
         ...(flags.mask?.length ? { mask: flags.mask } : {}),
         ...(delay !== undefined ? { delay } : {}),
@@ -327,6 +330,7 @@ export async function snapCommand(
 function retryCommand(url: string, name: string, flags: SnapFlags): string {
   const parts = ['jux', 'snap', shellQuote(url), '--as', shellQuote(name)];
   if (flags.viewport) parts.push('--viewport', shellQuote(flags.viewport));
+  if (flags['full-page']) parts.push('--full-page');
   if (flags['wait-for']) parts.push('--wait-for', shellQuote(flags['wait-for']));
   for (const m of flags.mask ?? []) parts.push('--mask', shellQuote(m));
   if (flags.delay !== undefined) parts.push('--delay', shellQuote(flags.delay));
@@ -426,6 +430,7 @@ export async function writeSnap(
     image,
     structure: s ? sidecar : null,
     viewport: snapshot.viewport,
+    ...(snapshot.layoutViewport ? { layoutViewport: snapshot.layoutViewport } : {}),
     env,
     structureHash: s?.structureHash ?? null,
     elements: s?.elements.length ?? 0,

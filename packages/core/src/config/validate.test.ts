@@ -372,7 +372,7 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
     { stories: { x: { dely: 1 } } },
     undefined,
     'VariantConfigError',
-    "jux: project config: stories['x']: unknown option 'dely' (expected comparison, renderer, skip, mask, delay, waitForSelector, captureTimeout, settle, network, freeze, threshold, minDiffPercent)",
+    "jux: project config: stories['x']: unknown option 'dely' (expected fullPage, comparison, renderer, skip, mask, delay, waitForSelector, captureTimeout, settle, network, freeze, threshold, minDiffPercent)",
   ],
   [
     'project',
@@ -505,7 +505,7 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
     { stories: { 'components-card--*': { dely: 1 } } },
     undefined,
     'VariantConfigError',
-    "jux: project config: stories['components-card--*']: unknown option 'dely' (expected comparison, renderer, skip, mask, delay, waitForSelector, captureTimeout, settle, network, freeze, threshold, minDiffPercent)",
+    "jux: project config: stories['components-card--*']: unknown option 'dely' (expected fullPage, comparison, renderer, skip, mask, delay, waitForSelector, captureTimeout, settle, network, freeze, threshold, minDiffPercent)",
   ],
   [
     'project',

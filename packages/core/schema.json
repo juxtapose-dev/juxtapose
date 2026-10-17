@@ -43,6 +43,10 @@
             "description": "Per-story capture options: `parameters.juxtapose` in Storybook, `meta.juxtapose` in Ladle.",
             "type": "object",
             "properties": {
+              "fullPage": {
+                "description": "Capture the full document without resizing the layout viewport. Default false.",
+                "type": "boolean"
+              },
               "comparison": {
                 "additionalProperties": false,
                 "type": "object",
@@ -361,6 +365,10 @@
                             "description": "Screenshot after the story's play function, not at first render.",
                             "type": "boolean"
                           },
+                          "fullPage": {
+                            "description": "Capture the full document without resizing the layout viewport. Default false.",
+                            "type": "boolean"
+                          },
                           "comparison": {
                             "additionalProperties": false,
                             "type": "object",
@@ -664,6 +672,10 @@
                       },
                       "captureAfterPlay": {
                         "description": "Screenshot after the story's play function, not at first render.",
+                        "type": "boolean"
+                      },
+                      "fullPage": {
+                        "description": "Capture the full document without resizing the layout viewport. Default false.",
                         "type": "boolean"
                       },
                       "comparison": {
@@ -1155,6 +1167,10 @@
           "description": "Options for the stories this glob matches, with the meaning they have in `parameters.juxtapose`. Layered over the story's own.",
           "type": "object",
           "properties": {
+            "fullPage": {
+              "description": "Capture the full document without resizing the layout viewport. Default false.",
+              "type": "boolean"
+            },
             "comparison": {
               "additionalProperties": false,
               "type": "object",
@@ -1443,10 +1459,11 @@
               "type": "number"
             },
             "captureKind": {
-              "description": "Viewport screenshot. Full-page references are not supported yet.",
+              "description": "Viewport (default) or full-page screenshot. `viewport` always describes the browser layout viewport, even for a full-page image.",
               "type": "string",
               "enum": [
-                "viewport"
+                "viewport",
+                "full-page"
               ]
             }
           }
@@ -1542,6 +1559,10 @@
                 },
                 "captureAfterPlay": {
                   "description": "Screenshot after the story's play function, not at first render.",
+                  "type": "boolean"
+                },
+                "fullPage": {
+                  "description": "Capture the full document without resizing the layout viewport. Default false.",
                   "type": "boolean"
                 },
                 "comparison": {
