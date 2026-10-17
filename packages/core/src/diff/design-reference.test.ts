@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, symlink, writeFile, rm } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readdir,
+  readFile,
+  symlink,
+  writeFile,
+  rm,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
@@ -94,6 +102,58 @@ describe('compareDesignReference', () => {
     const differentPolicy = await compareDesignReference({ ...opts, threshold: 0.05 });
     expect(differentPolicy.comparisonId).not.toBe(a.comparisonId);
     expect(differentPolicy.regions[0]!.id).not.toBe(a.regions[0]!.id);
+  });
+
+  it('reuses saved analysis for identical image bytes and invalidates on a changed target', async () => {
+    const f = await fixture();
+    const cacheDir = join(f.root, 'reference-analysis-v1');
+    const input = {
+      projectRoot: f.root,
+      name: 'mobile',
+      reference: f.reference,
+      current: f.current,
+      cacheDir,
+    };
+    const first = await compareDesignReference(input);
+    const files = await readdir(cacheDir);
+    expect(files).toEqual([`${first.comparisonId}.json`]);
+    expect(await compareDesignReference(input)).toEqual(first);
+
+    // A corrupt cache entry is recomputed, never accepted as a verdict.
+    await writeFile(join(cacheDir, files[0]!), '{broken');
+    expect(await compareDesignReference(input)).toEqual(first);
+    expect(JSON.parse(await readFile(join(cacheDir, files[0]!), 'utf8'))).toMatchObject({
+      version: 1,
+      ledger: { comparisonId: first.comparisonId },
+    });
+
+    const black = await sharp({
+      create: { width: 4, height: 3, channels: 4, background: '#000000' },
+    })
+      .png()
+      .toBuffer();
+    await writeFile(join(f.root, 'design/card.png'), black);
+    const changed = await compareDesignReference(input);
+    expect(changed.status).toBe('fail');
+    expect(changed.comparisonId).not.toBe(first.comparisonId);
+    expect(await readdir(cacheDir)).toHaveLength(2);
+  });
+
+  it('does not write analysis through a substituted cache directory link', async () => {
+    const f = await fixture();
+    const elsewhere = await mkdtemp(join(tmpdir(), 'jux-reference-cache-outside-'));
+    roots.push(elsewhere);
+    const cacheDir = join(f.root, 'reference-analysis-v1');
+    await symlink(elsewhere, cacheDir);
+    const result = await compareDesignReference({
+      projectRoot: f.root,
+      name: 'mobile',
+      reference: f.reference,
+      current: f.current,
+      cacheDir,
+    });
+    expect(result.status).toBe('pass');
+    expect(await readdir(elsewhere)).toEqual([]);
   });
 
   it('does not suggest a color edit for pixels accepted by the tolerance', async () => {

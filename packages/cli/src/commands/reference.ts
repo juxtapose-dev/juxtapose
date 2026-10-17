@@ -132,6 +132,7 @@ export async function evaluateReferences(options: {
         name,
         reference,
         current: { storyId: result.storyId, image: current, viewport: result.viewport },
+        cacheDir: path.join(runDir, 'reference-analysis-v1'),
       });
       if (options.regionId) {
         const region = ledger.regions.find((r) => r.id === options.regionId);
