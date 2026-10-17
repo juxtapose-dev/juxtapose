@@ -509,6 +509,27 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
   ],
   [
     'project',
+    { devices: { a: { widht: 1 } } },
+    undefined,
+    'VariantConfigError',
+    "jux: project config: device 'a': unknown option 'widht' (expected extends, width, height, mobile, touch, userAgent, userAgentMetadata)",
+  ],
+  [
+    'project',
+    { orientation: 'sideways' },
+    undefined,
+    'VariantConfigError',
+    "jux: project config: orientation must be 'portrait' or 'landscape', got \"sideways\"",
+  ],
+  [
+    'project',
+    { stories: { x: { device: 'mobile' } } },
+    undefined,
+    'VariantConfigError',
+    "jux: project config: stories['x']: unknown option 'device' (expected fullPage, comparison, renderer, skip, mask, delay, waitForSelector, captureTimeout, settle, network, freeze, threshold, minDiffPercent)",
+  ],
+  [
+    'project',
     { freshRenderer: 'no', storyTimeout: 0 },
     undefined,
     'SettleConfigError',
@@ -723,6 +744,7 @@ const INVALID: Array<[Kind, unknown, string | undefined, string, string]> = [
  *  does not check (the published schema is stricter; see config/schema.ts). */
 const VALID: Array<[Kind, unknown]> = [
   ['project', {}],
+  ['project', { devices: { kiosk: { width: 1080, height: 1920 } }, device: 'kiosk' }],
   ['project', { platform: 'whatever', concurrency: 'x', viewport: 5, unknownKey: 1 }],
   [
     'project',

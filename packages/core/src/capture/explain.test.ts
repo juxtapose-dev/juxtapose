@@ -158,6 +158,25 @@ describe('explainCapture', () => {
     ]);
   });
 
+  it('shows the resolved device, its size and the layer that set it', () => {
+    const config = { variants: { mobile: { device: 'mobile' } } };
+    const stories = [story('a', { viewport: { width: 800, height: 600 } })];
+    const base = explain(stories, 'a', config);
+    const m = explain(stories, 'a__mobile', config);
+    expect(row(base, 'device')).toBeUndefined();
+    expect(row(m, 'device')?.value).toBe('mobile (iphone-15, 393x852 portrait)');
+    expect(src(m, 'device')).toEqual(['variant:mobile (project config)']);
+    expect(row(m, 'viewport')?.value).toEqual({ width: 393, height: 852 });
+    expect(src(m, 'viewport')).toEqual(['variant:mobile (project config)']);
+  });
+
+  it('a project device and orientation apply to every story', () => {
+    const e = explain([story('a')], 'a', { device: 'pixel-8', orientation: 'landscape' });
+    expect(row(e, 'device')?.value).toBe('pixel-8 (915x412 landscape)');
+    expect(src(e, 'device')).toEqual(['project']);
+    expect(row(e, 'viewport')?.value).toEqual({ width: 915, height: 412 });
+  });
+
   it('says where a project variant was declared', () => {
     const e = explain([story('a')], 'a__tablet', {
       variants: { tablet: { viewport: { width: 768, height: 1024 } } },

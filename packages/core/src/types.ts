@@ -1,4 +1,4 @@
-import type { Orientation, Viewport } from './browser/types.js';
+import type { Viewport } from './browser/types.js';
 import type { StructureCaptureTimings } from './capture/structure.js';
 export type { StructureCaptureTimings } from './capture/structure.js';
 // Core data model. Deliberately free of any platform (Storybook/Ladle) types —
@@ -33,11 +33,7 @@ export type {
 
 /** Per-story tuning, read from the platform's story parameters: what
  *  `parameters.juxtapose` accepts. */
-export type StoryParams = JuxtaposeParameters & {
-  /** A device key or alias (`mobile`, `iphone-15`, a project device). */
-  device?: string;
-  orientation?: Orientation;
-};
+export type StoryParams = JuxtaposeParameters;
 
 /** Something about a capture that doesn't fail it but should be read.
  *  `settle-timeout`: the settle wait hit its cap. `settle-fallback`: the

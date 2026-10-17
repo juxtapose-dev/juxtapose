@@ -121,8 +121,7 @@ export function expandVariants(
             withNetwork(
               withSettle(
                 {
-                  ...baseParams,
-                  ...layer,
+                  ...layerDevice(baseParams, layer),
                   ...(baseParams.renderer || layer.renderer
                     ? { renderer: { ...baseParams.renderer, ...layer.renderer } }
                     : {}),
@@ -272,6 +271,17 @@ function withFreeze<T extends StoryParams>(
 }
 
 /**
+ * One layer over another. A layer that sets `device` and not `viewport`
+ * replaces the viewport underneath it too: a variant's `device: "mobile"`
+ * must not inherit the story's 800x600. Otherwise a plain assign.
+ */
+export function layerDevice(under: StoryParams, over: Partial<StoryParams>): StoryParams {
+  const merged: StoryParams = { ...under, ...over };
+  if (over.device !== undefined && over.viewport === undefined) delete merged.viewport;
+  return merged;
+}
+
+/**
  * Merge live params (read from the rendered preview) for one capture.
  *
  * Live params override the manifest — the preview is the story's own
@@ -288,10 +298,12 @@ export function mergeLiveParams(
    *  params changed things. */
   trace?: Trace,
 ): StoryParams {
-  const params: StoryParams = { ...story.params };
-  if (!live) return params;
+  if (!live) return { ...story.params };
   const { variants: _v, colorScheme: _c, ...settings } = live;
-  Object.assign(params, settings, story.variantParams ?? {});
+  const params = layerDevice(
+    layerDevice({ ...story.params }, settings),
+    story.variantParams ?? {},
+  );
   if (story.params.renderer || settings.renderer || story.variantParams?.renderer)
     params.renderer = {
       ...story.params.renderer,
