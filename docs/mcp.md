@@ -122,8 +122,8 @@ RunReport block remains unchanged. Targets outside a
 subset run count as `notCaptured`; if none were captured, no hint is added.
 For a passing target, the hint means the viewport and image geometry were
 compatible and Pixelmatch found zero mismatch pixels under the stated policy.
-For up to two failing targets, a hint may also include `outline` with measured
-target/current border-box positions. It uses a border color from the current
+For up to two failing targets (favoring different viewports), a hint may also
+include `outline` with measured target/current border-box positions. It uses a border color from the current
 capture's DOM sidecar to find matching strokes in both images. It omits the
 field when those strokes are absent, the capture DPR differs from 1, or the
 geometry difference is at most two pixels. The boxes do not identify elements or imply a CSS cause, and they do

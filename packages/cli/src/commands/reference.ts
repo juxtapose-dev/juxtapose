@@ -169,16 +169,32 @@ export async function evaluateReferences(options: {
       `jux: region '${options.regionId}' was not found in this saved comparison; the reference or capture may have changed. Run reference again for current region IDs.`,
     );
   if (options.includeOutlines) {
-    const candidates = states
+    const failing = states
       .filter(
         (state): state is Extract<State, { regions: unknown }> =>
-          state.status === 'fail' && 'regions' in state && state.regions.length > 0,
+          state.status === 'fail' &&
+          'regions' in state &&
+          state.regions.length > 0 &&
+          state.geometry.deviceScaleFactor === 1,
       )
-      .sort((a, b) => (b.mismatchPixels ?? 0) - (a.mismatchPixels ?? 0))
-      .slice(0, 2);
+      .sort((a, b) => (b.mismatchPixels ?? 0) - (a.mismatchPixels ?? 0));
+    // First cover distinct viewports, then spend any remaining slot on the
+    // next-largest failure. Desktop and mobile often have different causes.
+    const candidates: typeof failing = [];
+    const viewports = new Set<string>();
+    for (const state of failing) {
+      const key = JSON.stringify(state.geometry.viewport);
+      if (viewports.has(key)) continue;
+      candidates.push(state);
+      viewports.add(key);
+      if (candidates.length === 2) break;
+    }
+    for (const state of failing) {
+      if (candidates.length === 2) break;
+      if (!candidates.includes(state)) candidates.push(state);
+    }
     for (const state of candidates) {
       if (state.status !== 'fail') continue;
-      if (state.geometry.deviceScaleFactor !== 1) continue;
       try {
         const key = encodeStoryId(state.storyId);
         const [current, structureBytes, target] = await Promise.all([
