@@ -252,7 +252,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Workbench projects (Storybook/Ladle build): capture stories and compare them to approved baselines. Default: stories affected by changes. Returns the `jux run --json` RunReport; when designReferences are configured for captured keys, a second compact text block reports target-versus-current evidence from the saved images, without recapture.',
+      'Workbench projects (Storybook/Ladle build): capture stories and compare them to approved baselines. Default: stories affected by changes. Returns the `jux run --json` RunReport; when designReferences are configured for captured keys, an additional compact text block reports target-versus-current evidence from the saved images, without recapture.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -471,7 +471,7 @@ interface Planned {
  *  measured to help. */
 export const SNAP_SLOTS = 4;
 
-/** Keep the run report as the first, unchanged MCP block. A second bounded
+/** Keep the run report as the first, unchanged MCP block. An additional bounded
  * block gives agents the design-target verdict they would otherwise have to
  * request in another turn. The full reference tool remains available. */
 export async function withDesignReferenceFeedback(
