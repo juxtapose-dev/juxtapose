@@ -10,6 +10,15 @@ the complete `RunReport` remains in the saved run and is available through
 `report` or `run({report: "full"})`. `reference` can compare two saved captures
 on demand. `jux run --json` is unchanged.
 
+The compact `run` response lists up to eight captures needing attention and
+points to `report` for details. A `stale` baseline means its saved image bytes
+match the capture, but its approval commit is outside the current branch's
+ancestry. When every attention item is `stale`, the response says that no
+visual edit or recapture is needed; re-approval is a separate baseline decision.
+If stale captures appear alongside visual failures or unstable captures, the
+response explains the stale status while keeping the detailed-report path for
+the other issues.
+
 The server keeps one browser for the whole session. The first `snap` or `run`
 call acquires it, and every later call reuses it. Where it comes from depends
 on the warm browser:
