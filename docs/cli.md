@@ -14,6 +14,7 @@
 | `jux run --no-recheck`               | the same as `--recheck off`                                                       |
 | `jux check`                          | exit non-zero if anything still needs review — for CI                             |
 | `jux handoff <id>`                   | print an agent-ready prompt for one failing story                                 |
+| `jux reference [name] [--run <id>]`  | compare configured design PNGs with a saved run, without browser capture          |
 | `jux config --explain <id>`          | the effective settings for one story or variant key, and which layer set each     |
 | `jux snap <url>… --as <name>`        | capture a page (or several with `--as-prefix`): pixels + structure, no workbench  |
 | `jux diff <a> <b> --json`            | tier-0 verdict: what changed between two snaps, no browser                        |
@@ -54,6 +55,14 @@ initialization, and discovery may populate its local cache.
 With `--json`, both return `{schema: "juxtapose.selection/v1", count, captures}`.
 Each capture has `storyId`, `title`, `name`, and `baseStoryId` for a variant.
 Approval still uses exact reviewed IDs; run selection globs do not broaden it.
+
+## Compare a saved run with design references
+
+Add named `designReferences` to the project config (see [configuration](configuration.md#design-references)), then run `jux run` once to capture the exact story and variant keys. `jux reference` reads those saved images and compares every configured target; `jux reference mobile --run r1` selects a name and a saved run. It never launches Chrome or changes a baseline. Exit 0 means all targets pass, 1 means a visual mismatch or incompatible geometry, and 3 means a missing or unreadable input.
+
+The default output is a short all-state ledger. `--json` returns `juxtapose.design-reference-set/v1`, including measured pixels, geometry, up to eight region boxes per state, and stable region IDs. `jux reference mobile --region <id> --json` returns one paired target/current PNG crop as base64. A region ID is derived from the image hashes and comparison settings; it remains valid after a process restart while those inputs remain the same.
+
+The design-reference policy is Pixelmatch threshold `0.1` with antialiasing excluded. It is separate from approved-baseline `comparison` settings. A design PNG has no DOM snapshot, so these results report pixel evidence without claiming a CSS cause.
 
 ## Hosted uploads
 

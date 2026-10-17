@@ -291,6 +291,30 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: 'reference',
+    description:
+      'Compare configured named design PNGs with the last saved run; no browser or recapture. Returns a short all-state text ledger by default; set detail to json for measured geometry and bounded region lists. Set region to retrieve one paired target|current PNG crop. Region IDs are bound to the image hashes. Design references have no DOM evidence and use Pixelmatch threshold 0.1, independent of approved-baseline settings.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Optional configured design reference name; omit for all',
+        },
+        region: {
+          type: 'string',
+          description: 'Stable region ID from a prior reference result',
+        },
+        detail: {
+          type: 'string',
+          enum: ['json'],
+          description:
+            'Return the full structured ledger instead of the short text summary',
+        },
+      },
+    },
+  },
+  {
     name: 'explain',
     description:
       "Workbench projects: the settings one story or variant key would be captured with, and which layer each came from (project config, story parameters, a `stories` glob, a variant, live params, this call). Captures nothing. Use it before changing a setting, to see which layer wins. Returns juxtapose.explain/v1; a story id also lists its variants' keys.",
@@ -334,7 +358,7 @@ export const TOOLS: Tool[] = [
 ];
 
 const INSTRUCTIONS =
-  'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops when text evidence cannot settle visual appearance, even if `explained` is "full". For Storybook/Ladle projects use run, check and handoff; explain says which layer set the capture settings of a story. Never approve unless the user asks.';
+  'Visual check for UI edits. Loop: snap the page(s) before editing, edit, snap again under another name, then diff. Read the verdict summary and deltas; request crops when text evidence cannot settle visual appearance, even if `explained` is "full". For Storybook/Ladle projects use run, check and handoff; reference compares configured design PNGs with the saved run without recapture. Explain says which layer set the capture settings of a story. Never approve unless the user asks.';
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -589,6 +613,54 @@ export class McpServer {
                 (await import('./handoff.js')).handoffCommand(story, this.common(), s),
               signal,
             ),
+        };
+      }
+      case 'reference': {
+        const name = str(args, 'name');
+        const region = str(args, 'region');
+        const detail = str(args, 'detail');
+        if (detail !== undefined && detail !== 'json')
+          throw new ArgError("'detail' must be 'json'");
+        return {
+          locks: this.readsRun(),
+          exec: async (signal) => {
+            const { referenceCommand } = await import('./reference.js');
+            const result = await this.invoke(
+              (s) =>
+                referenceCommand(
+                  name,
+                  {
+                    ...this.common(),
+                    json: Boolean(region || detail),
+                    ...(region ? { region } : {}),
+                  },
+                  s,
+                ),
+              signal,
+            );
+            if (region && !result.isError) {
+              const first = result.content[0];
+              if (first?.type === 'text') {
+                const parsed = JSON.parse(first.text) as {
+                  crop?: { regionId: string; pngBase64: string };
+                  [key: string]: unknown;
+                };
+                if (parsed.crop) {
+                  const { pngBase64, regionId } = parsed.crop;
+                  delete parsed.crop;
+                  first.text = detail
+                    ? JSON.stringify({ ...parsed, crop: { regionId } })
+                    : `Design reference crop ${regionId}: target on the left, current capture on the right. Re-run reference for a fresh region ID if either image changed.`;
+                  result.content.push({
+                    type: 'image',
+                    mimeType: 'image/png',
+                    data: pngBase64,
+                  });
+                }
+              }
+            }
+            return result;
+          },
         };
       }
       case 'explain': {

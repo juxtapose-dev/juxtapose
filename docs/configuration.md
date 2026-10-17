@@ -1,5 +1,31 @@
 # Configuration
 
+## Design references
+
+`designReferences` names PNG targets for exact story or variant capture keys.
+They are separate from approved regression baselines:
+
+```json
+{
+  "designReferences": {
+    "checkout-mobile": {
+      "storyId": "checkout--default__mobile",
+      "image": "design/checkout-mobile.png",
+      "viewport": { "width": 390, "height": 844 }
+    }
+  }
+}
+```
+
+The image path must stay inside the project, including after symlink resolution.
+The PNG dimensions must equal `viewport × deviceScaleFactor` (default `1`),
+and the saved capture must have the same viewport. Only viewport captures are
+supported. `jux reference` and the MCP `reference` tool compare against images
+already saved by `jux run`; they never capture or approve. The comparison uses
+Pixelmatch threshold `0.1` and excludes antialiasing, independently of the
+approved-baseline `comparison` setting. Missing captures and geometry mismatches
+are reported explicitly.
+
 `juxtapose.config.json`, or a `juxtapose` key in package.json:
 
 ```json

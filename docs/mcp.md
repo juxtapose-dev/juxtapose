@@ -96,18 +96,36 @@ If `@juxtapose/cli` is already a dev dependency, use `"command": "npx"` with
 3. Call `snap` on the same pages, named `after`.
 4. Call `diff` with `a: "before"` and `b: "after"`. Read `summary` and
    `deltas`.
-5. If `explained` is `"full"`, the deltas account for every changed pixel.
-   Otherwise, call `diff` again with `crops: true` and look at the images.
+5. If the text evidence cannot settle the appearance, call `diff` again with
+   `crops: true` and look at the images. Full structural coverage is spatial
+   overlap, not proof that the new appearance is correct.
 
 For a Storybook or Ladle project with baselines, call `run`, then `handoff`
-for each failing story. Call `approve` only when the user asks you to.
+for each failing story. For a configured design target, call `reference` after
+`run` to compare saved images without recapturing. Call `approve` only when
+the user asks you to.
 
 ## Tools
 
-The server exposes seven tools. Each result's first text block holds the
-command's JSON, unless noted. When the command also printed a warning, such as
+The server exposes eight tools. Each result's first text block holds the
+command's JSON, except `reference`, which defaults to a short text ledger.
+When the command also printed a warning, such as
 an approved story whose structure was not saved, a successful result carries
 it as a second text block. The JSON itself never changes shape.
+
+### reference
+
+Compares the last saved run with configured named design PNGs. No browser is
+opened. Pass `name` to select one target, or omit it for the all-state ledger.
+The default result is a short text ledger; pass `detail: "json"` for
+`juxtapose.design-reference-set/v1` with measured geometry and bounded region
+lists. Pass a returned `region` ID to receive one paired target/current PNG as
+an MCP image block. Region IDs remain valid after an MCP server restart while
+the saved images and config remain the same. If either image changes, an old ID
+is rejected; call `reference` again for current IDs. The ledger has explicit
+pass, fail, incompatible, and error counts. The tool uses Pixelmatch threshold
+`0.1`, independently of approved-baseline comparison settings. Design PNGs
+have no DOM structure evidence.
 
 ### snap
 
