@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import pixelmatch from 'pixelmatch';
-import { computeChangedRegions } from './regions.js';
+import { computeChangedRegions, computeChangedRegionsWithCounts } from './regions.js';
 
 /**
  * Build a diff buffer shaped the way pixelmatch actually emits one: the whole
@@ -60,6 +60,21 @@ describe('computeChangedRegions', () => {
       100,
     );
     expect(regions).toHaveLength(2);
+  });
+
+  it('counts marked pixels per region without changing the legacy boxes', () => {
+    const pixels: [number, number][] = [];
+    for (let y = 1; y < 4; y++) for (let x = 1; x < 4; x++) pixels.push([x, y]);
+    for (let y = 30; y < 38; y++) for (let x = 10; x < 18; x++) pixels.push([x, y]);
+    const diff = buf(30, 50, pixels);
+    expect(computeChangedRegionsWithCounts(diff, 30, 50)).toEqual([
+      { x: 1, y: 1, width: 3, height: 3, changedPixels: 9 },
+      { x: 10, y: 30, width: 8, height: 8, changedPixels: 64 },
+    ]);
+    expect(computeChangedRegions(diff, 30, 50)).toEqual([
+      { x: 1, y: 1, width: 3, height: 3 },
+      { x: 10, y: 30, width: 8, height: 8 },
+    ]);
   });
 
   it('merges clusters within the gap tolerance', () => {

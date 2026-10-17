@@ -123,8 +123,7 @@ If none of the configured targets were captured, the result is an error with
 `outcome: "no-comparison"` in JSON detail, rather than a visual pass.
 The default result is a short text ledger that includes a dominant observed
 target/current color pair when one exists; pass `detail: "json"` for
-`juxtapose.design-reference-set/v1` with measured geometry, sampled visible target/current color pairs, and bounded region
-lists. Pass a returned `region` ID to receive one paired target/current PNG as
+`juxtapose.design-reference-set/v1` with measured geometry, sampled visible target/current color pairs, and up to eight regions ranked by exact changed-pixel count. The short ledger names the largest region and its count. Pass a returned `region` ID to receive one paired target/current PNG as
 an MCP image block. Region IDs remain valid after an MCP server restart while
 the saved images and config remain the same. If either image changes, an old ID
 is rejected; call `reference` again for current IDs. The ledger has explicit

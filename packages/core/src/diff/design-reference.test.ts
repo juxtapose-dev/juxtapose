@@ -115,6 +115,42 @@ describe('compareDesignReference', () => {
     expect(result.visibleColors?.pairs).toEqual([]);
   });
 
+  it('leads with the region containing the most changed pixels', async () => {
+    const f = await fixture();
+    const width = 30;
+    const height = 50;
+    const target = await sharp({
+      create: { width, height, channels: 4, background: '#fff' },
+    })
+      .png()
+      .toBuffer();
+    await writeFile(join(f.root, 'design/card.png'), target);
+    const pixels = Buffer.alloc(width * height * 4, 255);
+    const paint = (x: number, y: number) => {
+      const at = (y * width + x) * 4;
+      pixels[at] = pixels[at + 1] = pixels[at + 2] = 0;
+    };
+    for (let y = 1; y < 4; y++) for (let x = 1; x < 4; x++) paint(x, y);
+    for (let y = 30; y < 38; y++) for (let x = 10; x < 18; x++) paint(x, y);
+    const current = await sharp(pixels, { raw: { width, height, channels: 4 } })
+      .webp({ lossless: true })
+      .toBuffer();
+    const result = await compareDesignReference({
+      projectRoot: f.root,
+      name: 'mobile',
+      reference: { ...f.reference, viewport: { width, height } },
+      current: { ...f.current, image: current, viewport: { width, height } },
+    });
+    expect(result.status).toBe('fail');
+    expect(result.regions).toHaveLength(2);
+    expect(result.regions.map((r) => r.changedPixels)).toEqual([64, 9]);
+    expect(result.regions[0]!.y).toBe(30);
+    expect(result.regions[1]!.y).toBe(1);
+    expect(result.regions.reduce((n, r) => n + r.changedPixels!, 0)).toBe(
+      result.mismatchPixels,
+    );
+  });
+
   it('rejects geometry and capture key mismatches without pixel verdicts', async () => {
     const f = await fixture();
     for (const [current, reason] of [

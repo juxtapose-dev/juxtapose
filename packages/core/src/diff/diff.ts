@@ -11,7 +11,11 @@
 import sharp from 'sharp';
 import pixelmatch from 'pixelmatch';
 import type { ChangedRegion, StoryParams, ProjectConfig } from '../types.js';
-import { computeChangedRegions } from './regions.js';
+import {
+  computeChangedRegions,
+  computeChangedRegionsWithCounts,
+  type CountedRegion,
+} from './regions.js';
 import { visibleColorPairs, type VisibleColorEvidence } from './color-pairs.js';
 
 const DEFAULT_THRESHOLD = 0.1;
@@ -23,6 +27,8 @@ export interface DiffOutput {
   rawMismatchPixels?: number;
   mismatchPercent: number;
   changedRegions: ChangedRegion[];
+  /** Only when requested: regions ranked by exact marked-pixel count. */
+  rankedChangedRegions?: CountedRegion[];
   /** WebP overlay marking changed pixels. Absent when nothing changed. */
   diffImage?: Buffer;
   /** True when dimensions differ — no pixel comparison was possible. */
@@ -109,11 +115,23 @@ export async function diffImages(
     .webp({ lossless: true, effort: 0 })
     .toBuffer();
 
+  const counted = opts.includeVisibleColors
+    ? computeChangedRegionsWithCounts(diff, width, height)
+    : undefined;
   return {
     mismatchPixels,
     rawMismatchPixels,
     mismatchPercent,
-    changedRegions: computeChangedRegions(diff, width, height),
+    changedRegions: counted
+      ? counted.map(({ changedPixels: _changedPixels, ...region }) => region)
+      : computeChangedRegions(diff, width, height),
+    ...(counted
+      ? {
+          rankedChangedRegions: [...counted].sort(
+            (a, b) => b.changedPixels - a.changedPixels || a.y - b.y || a.x - b.x,
+          ),
+        }
+      : {}),
     diffImage,
     dimensionMismatch: false,
     ...(visibleColors ? { visibleColors } : {}),

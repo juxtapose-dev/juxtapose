@@ -34,7 +34,7 @@ export interface DesignReferenceLedger {
   mismatchPixels: number | null;
   mismatchPercent: number | null;
   rawMismatchPixels: number | null;
-  regions: Array<ChangedRegion & { id: string }>;
+  regions: Array<ChangedRegion & { id: string; changedPixels?: number }>;
   /** Sampled co-located colors from visible mismatches, not inferred styles. */
   visibleColors?: VisibleColorEvidence;
   structure: { status: 'unavailable'; reason: 'design-reference-has-no-dom' };
@@ -157,7 +157,7 @@ export async function compareDesignReference(input: {
     mismatchPercent: diff.mismatchPercent,
     rawMismatchPixels: diff.rawMismatchPixels ?? 0,
     ...(diff.visibleColors ? { visibleColors: diff.visibleColors } : {}),
-    regions: diff.changedRegions.map((r, i) => ({
+    regions: (diff.rankedChangedRegions ?? diff.changedRegions).map((r, i) => ({
       ...r,
       id: `${comparisonId.slice(0, 16)}:${i + 1}`,
     })),
