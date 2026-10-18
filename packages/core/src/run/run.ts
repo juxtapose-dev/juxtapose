@@ -10,6 +10,7 @@ import type { RecheckMode } from '../config/schema.js';
 import { DEFAULT_RECHECK } from '../config/schema.js';
 import { NOT_RECHECKED } from '../baseline/approve.js';
 import type { Browser } from '../browser/browser.js';
+import { resolveDevices } from '../browser/devices.js';
 import { captureEnv, encoderChange } from '../capture/env.js';
 import type { Platform } from '../platform.js';
 import type {
@@ -488,6 +489,11 @@ export function poolSettings(
       ? { storyTimeoutMs: opts.config.storyTimeout }
       : {}),
     viewport,
+    devices: resolveDevices(opts.config?.devices),
+    ...(opts.config?.device !== undefined ? { defaultDevice: opts.config.device } : {}),
+    ...(opts.config?.orientation !== undefined
+      ? { defaultOrientation: opts.config.orientation }
+      : {}),
     settleLayers: {
       project: {
         ...(opts.config?.settle ? { settle: opts.config.settle } : {}),
@@ -534,6 +540,8 @@ async function judge(
     // find out what the coordinates are relative to.
     viewport: snapshot.viewport,
     ...(snapshot.layoutViewport ? { layoutViewport: snapshot.layoutViewport } : {}),
+    ...(snapshot.device !== undefined ? { device: snapshot.device } : {}),
+    ...(snapshot.emulation !== undefined ? { emulation: snapshot.emulation } : {}),
     // Never silent: a capture taken at the settle cap says so on every
     // status, a pass included, with what was still pending.
     ...(captureFlags(snapshot).length > 0 ? { flags: captureFlags(snapshot) } : {}),

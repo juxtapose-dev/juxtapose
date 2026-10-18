@@ -162,6 +162,12 @@ export interface Snapshot {
   viewport: Viewport;
   /** Original browser layout viewport, present for full-page captures. */
   layoutViewport?: Viewport;
+  /** The device preset the capture emulated, by its key or alias. Absent
+   *  without one, and without `orientation`. */
+  device?: string;
+  /** Fingerprint of the emulation applied (device, orientation, mobile,
+   *  touch, UA). Absent exactly when nothing was emulated. */
+  emulation?: string;
   capturedAt: string;
   /** Wall time for this story's capture, ms. */
   durationMs: number;
@@ -443,6 +449,9 @@ export interface DiffResult {
   viewport?: Viewport;
   /** Original browser layout viewport for full-page captures. */
   layoutViewport?: Viewport;
+  /** Copied from the Snapshot: the emulated device and its fingerprint. */
+  device?: string;
+  emulation?: string;
   /** Set when the capture or diff threw. status is 'fail' in that case. */
   error?: string;
   /** Set on a 'fail' whose approved image is not on this machine (not in the
