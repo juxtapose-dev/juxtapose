@@ -413,102 +413,113 @@ export async function evaluateReferences(options: {
   if (!inside(reportFile, runDir)) throw new Error('run report escapes the run');
   const report = parseRunReport(await readFile(reportFile, 'utf8'));
   const results = new Map(report.results.map((r) => [r.storyId, r]));
-  const states: State[] = [];
+  const evaluated = new Array<State | undefined>(names.length);
+  const crops = new Array<ReferenceResult['crop']>(names.length);
   const layoutCache = options.layoutCache ?? new ReferenceLayoutCache();
   let notCaptured = 0;
+  let cursor = 0;
+  // Four saved states took 100ms with derived caches cold versus 69ms with
+  // concurrent reads/decode. Bound memory to four targets; CPU work remains
+  // on this thread. Indexed results preserve sorted names despite I/O order.
+  const worker = async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= names.length) return;
+      const name = names[index]!;
+      const reference = references[name] as DesignReferenceSpec;
+      const result = results.get(reference.storyId);
+      // `jux run` often captures only changed stories. A configured target for
+      // another story is outside this comparison, not a broken capture. An
+      // explicit name still reports the absent capture as an error.
+      if ((!result || result.status === 'skip') && !options.name) {
+        notCaptured++;
+        continue;
+      }
+      if (!result || result.status === 'skip' || result.error || !result.viewport) {
+        evaluated[index] = {
+          name,
+          storyId: reference.storyId,
+          status: 'error',
+          error: !result
+            ? 'capture key is absent from the saved run'
+            : (result.error ?? 'saved run has no usable capture for this key'),
+        };
+        continue;
+      }
+      try {
+        const current = await savedFile(
+          runDir,
+          `${encodeStoryId(reference.storyId)}-current.webp`,
+        );
+        const ledger = await compareDesignReference({
+          projectRoot: project,
+          name,
+          reference,
+          current: {
+            storyId: result.storyId, image: current, viewport: result.viewport,
+            ...(result.layoutViewport ? { layoutViewport: result.layoutViewport, captureKind: 'full-page' as const } : {}),
+          },
+          cacheDir: path.join(runDir, 'reference-analysis-v1'),
+        });
+        let layout: Extract<State, { geometry: unknown }>['layout'];
+        if (options.includeLayout && ledger.status === 'fail') {
+          try {
+            const [target, structure] = await Promise.all([
+              readFile(ledger.referenceImage),
+              savedFile(
+                runDir,
+                `${encodeStoryId(reference.storyId)}-current.structure.json.gz`,
+              ),
+            ]);
+            layout = await layoutCache.evaluate({
+              project,
+              reference: target,
+              current,
+              structure,
+              referenceHash: ledger.referenceHash,
+              currentHash: ledger.currentHash,
+            });
+          } catch (error) {
+            layout = {
+              status: 'unavailable',
+              reason: (error instanceof Error ? error.message : String(error)).slice(
+                0,
+                240,
+              ),
+            };
+          }
+        }
+        if (options.regionId) {
+          const region = ledger.regions.find((r) => r.id === options.regionId);
+          if (region) {
+            const target = await readFile(ledger.referenceImage);
+            const [rendered] = await renderCrops(target, current, [region]);
+            if (!rendered) throw new Error('region lies outside the saved images');
+            crops[index] = referenceCrop(region.id, rendered);
+          }
+        }
+        evaluated[index] = {
+          ...ledger,
+          regionCount: ledger.regions.length,
+          regions: ledger.regions.slice(0, 8),
+          ...(layout ? { layout } : {}),
+        };
+      } catch (err) {
+        evaluated[index] = {
+          name,
+          storyId: reference.storyId,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, names.length) }, worker));
+  const states = evaluated.filter((state): state is State => state !== undefined);
+  // Collect crops in name order, matching the serial evaluator's selection
+  // rather than whichever asynchronous request ends last.
   let crop: ReferenceResult['crop'];
-  for (const name of names) {
-    const reference = references[name] as DesignReferenceSpec;
-    const result = results.get(reference.storyId);
-    // `jux run` often captures only changed stories. A configured target for
-    // another story is outside this comparison, not a broken capture. An
-    // explicit name still reports the absent capture as an error.
-    if ((!result || result.status === 'skip') && !options.name) {
-      notCaptured++;
-      continue;
-    }
-    if (!result || result.status === 'skip' || result.error || !result.viewport) {
-      states.push({
-        name,
-        storyId: reference.storyId,
-        status: 'error',
-        error: !result
-          ? 'capture key is absent from the saved run'
-          : (result.error ?? 'saved run has no usable capture for this key'),
-      });
-      continue;
-    }
-    try {
-      const current = await savedFile(
-        runDir,
-        `${encodeStoryId(reference.storyId)}-current.webp`,
-      );
-      const ledger = await compareDesignReference({
-        projectRoot: project,
-        name,
-        reference,
-        current: {
-          storyId: result.storyId,
-          image: current,
-          viewport: result.viewport,
-          ...(result.layoutViewport
-            ? { layoutViewport: result.layoutViewport, captureKind: 'full-page' as const }
-            : {}),
-        },
-        cacheDir: path.join(runDir, 'reference-analysis-v1'),
-      });
-      let layout: Extract<State, { geometry: unknown }>['layout'];
-      if (options.includeLayout && ledger.status === 'fail') {
-        try {
-          const [target, structure] = await Promise.all([
-            readFile(ledger.referenceImage),
-            savedFile(
-              runDir,
-              `${encodeStoryId(reference.storyId)}-current.structure.json.gz`,
-            ),
-          ]);
-          layout = await layoutCache.evaluate({
-            project,
-            reference: target,
-            current,
-            structure,
-            referenceHash: ledger.referenceHash,
-            currentHash: ledger.currentHash,
-          });
-        } catch (error) {
-          layout = {
-            status: 'unavailable',
-            reason: (error instanceof Error ? error.message : String(error)).slice(
-              0,
-              240,
-            ),
-          };
-        }
-      }
-      if (options.regionId) {
-        const region = ledger.regions.find((r) => r.id === options.regionId);
-        if (region) {
-          const target = await readFile(ledger.referenceImage);
-          const [rendered] = await renderCrops(target, current, [region]);
-          if (!rendered) throw new Error('region lies outside the saved images');
-          crop = referenceCrop(region.id, rendered);
-        }
-      }
-      states.push({
-        ...ledger,
-        regionCount: ledger.regions.length,
-        regions: ledger.regions.slice(0, 8),
-        ...(layout ? { layout } : {}),
-      });
-    } catch (err) {
-      states.push({
-        name,
-        storyId: reference.storyId,
-        status: 'error',
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  for (const candidate of crops) if (candidate) crop = candidate;
   if (options.regionId && !crop)
     throw new Error(
       `jux: region '${options.regionId}' was not found in this saved comparison; the reference or capture may have changed. Run reference again for current region IDs.`,
