@@ -110,3 +110,30 @@ autonomous work selection or weaker-model ability. Keep this internal analysis
 unexposed pending a different, justified agent-value question. Do not repeat
 the solved decision to seek a nicer percentage. Artifacts and protocol are in
 `focused-displacement-question-v1`.
+
+## Image-fetch screen and broader opportunity audit
+
+`displacement-image-fetch-v1` removed initial image attachments and gave both
+arms the same saved crops, source and tools. Control fetched two images and
+computed the correct numerical shift, but the budget guard stopped it before a
+final answer or native grade: 12.73s and 16996 last-reported counted tokens.
+The second inference had no cached input; remaining budget could not cover
+another comparable inference. Treatment did not run. This is inconclusive,
+with no replacement run or comparative savings claim.
+
+Following independent review, `displacement-opportunity-v1` freezes ten existing
+mismatching captures across card, billing, settings and website layouts before
+evaluating the helper. All ten have equal extents and nonzero Pixelmatch
+mismatches. Three states yield four independently byte-verified observations:
+two settings states and one website state. Seven states abstain. The website
+uses the previously studied map asset, so it is not a new independent asset.
+
+Trace review does not establish that these facts replace specific agent work.
+Settings agents inspected different form regions; the detected downstream
+shifts identify no upstream CSS cause. The website trace inspected assets
+before writing its implementation, rather than repairing the saved map shift.
+Thus the gate of three actionable inspection-replacement opportunities across
+multiple layouts is not met. No further paid displacement study or MCP/default
+promotion follows. Retain the internal helper; prioritize feedback that already
+shows a mechanism for avoiding extra calls or incorrect edits. The audit uses
+no new model or browser calls and makes no population-level prevalence claim.
