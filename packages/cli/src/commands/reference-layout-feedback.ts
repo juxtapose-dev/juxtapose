@@ -21,6 +21,18 @@ export interface FocusedLayoutFeedback {
   cropRegion?: { x: number; y: number; width: number; height: number };
   issue?: string;
   paint?: FocusedPaintFeedback;
+  /** Co-located pixel observations, never element/color substitutions. */
+  colorSamples?: {
+    provenance: 'measured-from-pixels';
+    basis: string;
+    visibleMismatchSamples: number;
+    pairs: Array<{
+      reference: string;
+      current: string;
+      samples: number;
+    }>;
+  };
+  omittedColorPairs?: number;
   layout: ReferenceLayoutDetail | { status: 'unavailable'; reason: string };
 }
 
@@ -33,6 +45,7 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
   const layout = 'layout' in state ? state.layout : undefined;
   const region =
     state.status === 'fail' && 'regions' in state ? state.regions[0] : undefined;
+  const colors = 'visibleColors' in state ? state.visibleColors : undefined;
   const base = {
     schema: 'juxtapose.target-layout-focus/v1' as const,
     runId: result.runId,
@@ -67,8 +80,34 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
           ? 'Resolve the reported capture or reference issue first; do not infer a visual edit from incompatible inputs.'
           : 'Use source + measurements to propose an edit, then run affected states once. Treat CSS causes as hypotheses. cropRequest covers cropRegion only; JSON provides all saved matches; other omissions can remain. It cannot add PNG target DOM or abstained matches. If cropRequest is absent, no saved crop is available.',
   };
+  // The new directory case requested a 4,984-byte ledger reply for colors after
+  // layout. Reuse those observations here; geometry keeps priority under 3KiB.
+  const finish = (response: FocusedLayoutFeedback): FocusedLayoutFeedback => {
+    if (colors?.pairs.length) {
+      const candidate: FocusedLayoutFeedback = {
+        ...response,
+        colorSamples: {
+          provenance: 'measured-from-pixels',
+          basis: 'co-located pixels; not element matches or CSS substitutions',
+          visibleMismatchSamples: colors.visibleMismatchSamples,
+          pairs: colors.pairs.slice(0, 2).map((pair) => ({
+            reference: colorHex(pair.reference),
+            current: colorHex(pair.current),
+            samples: pair.pixels,
+          })),
+        },
+        omittedColorPairs: Math.max(0, colors.pairs.length - 2),
+      };
+      if (fitsFocusedEvidence(response, candidate))
+        return bounded(candidate);
+      const omitted = { ...response, omittedColorPairs: colors.pairs.length };
+      if (evidenceBytes(omitted) <= FOCUSED_MAX_BYTES)
+        return bounded(omitted);
+    }
+    return bounded(response);
+  };
   if (!layout || !('matches' in layout))
-    return bounded({
+    return finish({
       ...base,
       layout: layout ?? { status: 'unavailable', reason: 'no-layout-evidence' },
     });
@@ -111,7 +150,12 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
     confidenceRules[match.confidenceRule] = rule;
     output.layout.omittedMatches--;
   }
-  return bounded(appendFocusedPaint(output, layout.paint));
+  return finish(appendFocusedPaint(output, layout.paint));
+}
+
+function colorHex(rgba: [number, number, number, number]): string {
+  const values = rgba[3] === 255 ? rgba.slice(0, 3) : rgba;
+  return `#${values.map((value) => value.toString(16).padStart(2, '0')).join('')}`;
 }
 
 function bounded(response: FocusedLayoutFeedback): FocusedLayoutFeedback {

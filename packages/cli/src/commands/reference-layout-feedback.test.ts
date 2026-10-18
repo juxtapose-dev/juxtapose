@@ -147,3 +147,102 @@ test('a complete geometry fact may cross the target while later accepted facts s
   expect(result.layout.matches!.length).toBeLessThan(20);
   expect(JSON.stringify(input)).toBe(saved);
 });
+
+test('requested layout reuses bounded color observations without claiming correspondence', () => {
+  const input = fixture();
+  Object.assign(input.states[0]!, {
+    visibleColors: {
+      sampledPixels: 720000,
+      comparedPixels: 720000,
+      visibleMismatchSamples: 19431,
+      pairs: [
+        {
+          reference: [255, 255, 255, 255],
+          current: [75, 100, 116, 255],
+          pixels: 5070,
+          sharePercent: 26.09,
+        },
+        {
+          reference: [48, 95, 155, 255],
+          current: [255, 255, 255, 255],
+          pixels: 5000,
+          sharePercent: 25.73,
+        },
+        {
+          reference: [255, 255, 255, 255],
+          current: [214, 221, 228, 255],
+          pixels: 900,
+          sharePercent: 4.63,
+        },
+      ],
+    },
+  });
+  const original = JSON.stringify(input);
+  const output = focusedLayoutFeedback(input);
+  expect(output.layout).toEqual((input.states[0] as { layout: unknown }).layout);
+  expect(output.colorSamples).toMatchObject({
+    provenance: 'measured-from-pixels',
+    visibleMismatchSamples: 19431,
+    pairs: [
+      { reference: '#ffffff', current: '#4b6474', samples: 5070 },
+      { reference: '#305f9b', current: '#ffffff', samples: 5000 },
+    ],
+  });
+  expect(output.colorSamples!.basis).toContain(
+    'not element matches or CSS substitutions',
+  );
+  expect(output.omittedColorPairs).toBe(1);
+  expect(Buffer.byteLength(JSON.stringify(output))).toBeLessThanOrEqual(4096);
+  expect(JSON.stringify(input)).toBe(original);
+});
+
+test('missing color evidence stays missing rather than assuming unchanged paint', () => {
+  expect(focusedLayoutFeedback(fixture()).colorSamples).toBeUndefined();
+  expect(focusedLayoutFeedback(fixture()).omittedColorPairs).toBeUndefined();
+});
+
+test('color observations retain alpha rather than claiming opaque paint', () => {
+  const input = fixture();
+  Object.assign(input.states[0]!, {
+    visibleColors: {
+      visibleMismatchSamples: 40,
+      pairs: [{ reference: [48, 95, 155, 128], current: [0, 0, 0, 0], pixels: 40 }],
+    },
+  });
+  expect(focusedLayoutFeedback(input).colorSamples?.pairs).toEqual([
+    { reference: '#305f9b80', current: '#00000000', samples: 40 },
+  ]);
+});
+
+test('color observations never evict geometry near the response limit', () => {
+  let sawBudgetOmission = false;
+  for (let length = 1400; length <= 3000; length += 64) {
+    const input = fixture();
+    const layout = (
+      input.states[0] as unknown as {
+        layout: { matches: Array<{ element: { id: string } }> };
+      }
+    ).layout;
+    layout.matches = layout.matches.slice(0, 1);
+    layout.matches[0]!.element.id = 'x'.repeat(length);
+    const without = focusedLayoutFeedback(input);
+    Object.assign(input.states[0]!, {
+      visibleColors: {
+        visibleMismatchSamples: 40,
+        pairs: [
+          { reference: [48, 95, 155, 255], current: [255, 255, 255, 255], pixels: 40 },
+        ],
+      },
+    });
+    const withColors = focusedLayoutFeedback(input);
+    expect(withColors.layout).toEqual(without.layout);
+    expect(Buffer.byteLength(JSON.stringify(withColors))).toBeLessThanOrEqual(4096);
+    if (
+      !withColors.colorSamples &&
+      'matches' in withColors.layout &&
+      withColors.layout.matches.length
+    )
+      sawBudgetOmission = true;
+  }
+  expect(sawBudgetOmission).toBe(true);
+});

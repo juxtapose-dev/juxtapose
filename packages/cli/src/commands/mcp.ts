@@ -395,7 +395,7 @@ export const TOOLS: Tool[] = [
     // Both team decision replays requested JSON for facts analysis abstained
     // from producing. Distinguish a testable edit from a measured CSS cause.
     description:
-      'Read evidence without recapture; detail=target needs no run. Use source + measurements to propose CSS edits as hypotheses; run affected states to verify. detail=layout with name: geometry; region: one paired PNG crop, padding adds context. Use returned cropRequest directly. detail=json: all saved matches, regions and current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. compare=previous: saved runs, not target progress. Skip exact matches. Render images; never print base64.',
+      'Read evidence without recapture; detail=target needs no run. Use source + measurements to propose CSS edits as hypotheses; run affected states to verify. detail=layout with name: geometry and available pixel colors; region: one paired PNG crop, padding adds context. Use returned cropRequest directly. detail=json: all saved matches, regions and current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. compare=previous: saved runs, not target progress. Skip exact matches. Render images; never print base64.',
     inputSchema: {
       type: 'object',
       properties: {

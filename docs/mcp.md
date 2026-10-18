@@ -190,6 +190,17 @@ For focused target measurements, request
 `juxtapose.target-layout-focus/v1`: one target's status, current capture key,
 painted target/current boxes, current element labels and IDs, confidence rules,
 abstentions, omissions and a `next` instruction for the target's status. When a
+comparison has color evidence, the requested layout result also includes up to
+two `colorSamples` pairs and `omittedColorPairs`. Each pair gives reference/current
+hex colors (`#rrggbb`, or `#rrggbbaa` when translucent) at the same image
+coordinates and a sample count, with pixel
+provenance and the total visible mismatch sample count. These are not matched
+elements or CSS color substitutions: movement can pair paint with background.
+Geometry has priority under the 3 KiB response limit; omitted color pairs remain
+available in JSON detail. Missing `colorSamples` can mean unavailable evidence or
+insufficient response space; it does not mean unchanged paint. No new image
+analysis or capture runs for this field,
+and the default `run` hint does not include it. When a
 changed region exists, `cropRequest` supplies valid `{name, region}` arguments
 for requesting one saved paired crop if appearance remains unresolved. Element
 IDs are not crop IDs. `cropRegion` gives the selected changed-pixel bounds: this
