@@ -17,6 +17,8 @@ export interface ControlGeometryObservation {
   height?: { approved: number; current: number };
   provenance: 'structure';
   confidenceRule: typeof RULE;
+  /** Existing fact extraction omitted this resize as an ancestor follower. */
+  suppressedResize?: true;
 }
 
 /** The billing replay changed field spacing after its textbox resize was
@@ -27,6 +29,10 @@ export interface ControlGeometryObservation {
 export function observeControlGeometry(
   approved: StructureSnapshot,
   current: StructureSnapshot,
+  suppressed: { ids: ReadonlySet<string>; testIds: ReadonlySet<string> } = {
+    ids: new Set(),
+    testIds: new Set(),
+  },
 ) {
   const observations: ControlGeometryObservation[] = [];
   // Identity uniqueness cannot be established when omitted elements might
@@ -100,11 +106,16 @@ export function observeControlGeometry(
       ...(height ? { height } : {}),
       provenance: 'structure',
       confidenceRule: RULE,
+      ...((old.id ? suppressed.ids.has(old.id) : suppressed.testIds.has(old.testId!))
+        ? { suppressedResize: true as const }
+        : {}),
     });
   }
   const observationKey = (value: ControlGeometryObservation) =>
     value.id ? key('id', value.id) : key('testId', value.testId!);
   observations.sort((a, b) => {
+    if (Boolean(a.suppressedResize) !== Boolean(b.suppressedResize))
+      return a.suppressedResize ? -1 : 1;
     const ka = observationKey(a),
       kb = observationKey(b);
     return ka < kb ? -1 : ka > kb ? 1 : 0;

@@ -33,8 +33,7 @@ import {
   type AncestryCheck,
 } from '../baseline/status.js';
 import { decodeStructure } from '../capture/structure.js';
-import { structuralDiff } from '../diff/structural.js';
-import { observeControlGeometry } from '../diff/control-geometry.js';
+import { structuralDiffWithCoverage } from '../diff/structural.js';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
 import { computeGroups } from './groups.js';
 import {
@@ -775,29 +774,17 @@ async function tryStructural(
   }
   try {
     const baseline = await readBaselineStructure(opts.store, story.storyId);
-    const structural = structuralDiff({
+    const { verdict: structural, controlGeometry } = structuralDiffWithCoverage({
       baseline,
       current: snapshot.structure,
       imagesIdentical: false,
+      includeControlGeometry: true,
       ...(pixelsUnavailable ? { pixelsUnavailable } : {}),
       pixels,
       escalate: { command: `jux handoff ${shellQuote(story.storyId)}` },
       ...(cause ? { cause } : {}),
       ...(snapshot.settle ? { settleFlag: settleFlag(snapshot.settle) } : {}),
     });
-    // The billing replay needed the control measurement hidden by ancestor
-    // deduplication. Reuse these already-loaded snapshots; keep the separate
-    // detail outside the compact verdict's 1500-character budget.
-    let controlGeometry: DiffResult['controlGeometry'];
-    if (baseline && !pixels.dimensionMismatch) {
-      try {
-        const measured = observeControlGeometry(baseline, snapshot.structure);
-        if (measured.observations.length || measured.omitted || measured.unavailable)
-          controlGeometry = measured;
-      } catch {
-        // Optional evidence must not discard a valid structural explanation.
-      }
-    }
     return { structural, ...(controlGeometry ? { controlGeometry } : {}) };
   } catch {
     return undefined;

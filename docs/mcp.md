@@ -417,6 +417,9 @@ responsible. No new capture or sidecar read is needed.
 This evidence is absent from compact summaries. Its observation array is capped
 at three items and 1024 UTF-8 bytes, with an explicit `omitted` count. Ambiguous
 identities abstain; truncated snapshots report `unavailable: "truncated-structure"`.
+`suppressedResize: true` marks a size change omitted from ordinary facts because
+it followed its parent and had no other direct fact. These measurements are
+prioritized before the detail budget; this flag is not a claim about a CSS cause.
 Older reports may not contain it. This is approved-baseline evidence, not
 geometry extracted from a PNG design target or a previous-run comparison.
 

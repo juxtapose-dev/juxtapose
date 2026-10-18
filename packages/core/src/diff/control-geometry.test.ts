@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
 import type { StructureElement, StructureSnapshot } from '../types.js';
 import { observeControlGeometry } from './control-geometry.js';
+import { structuralDiffWithCoverage } from './structural.js';
 
 const element = (
   id: string,
@@ -42,6 +43,72 @@ test('keeps measured control sizes even when parent and child shrink together', 
       provenance: 'structure',
     }),
   ]);
+});
+
+test('collects suppressed-resize evidence in the existing structural pass without changing its verdict', () => {
+  const baseline = snapshot([
+    element('field', 80, { tag: 'div', role: undefined }),
+    element('name', 49, { parent: 0 }),
+  ]);
+  const current = snapshot([
+    element('field', 67, { tag: 'div', role: undefined }),
+    element('name', 36, { parent: 0 }),
+  ]);
+  const input = {
+    baseline,
+    current,
+    imagesIdentical: false,
+    pixels: { changedRegions: [], dimensionMismatch: false },
+    escalate: { command: 'report' },
+  };
+  const ordinary = structuralDiffWithCoverage(input);
+  const detailed = structuralDiffWithCoverage({ ...input, includeControlGeometry: true });
+  expect(ordinary).not.toHaveProperty('controlGeometry');
+  expect(detailed.verdict).toEqual(ordinary.verdict);
+  expect(detailed.controlGeometry?.observations[0]).toMatchObject({
+    id: 'name',
+    suppressedResize: true,
+  });
+  current.elements[1]!.styles['padding-top'] = '12px';
+  expect(
+    structuralDiffWithCoverage({ ...input, includeControlGeometry: true }).controlGeometry
+      ?.observations[0],
+  ).not.toHaveProperty('suppressedResize');
+});
+
+test('prioritizes suppressed measurements before the count and byte budgets', () => {
+  const ids = ['a', 'b', 'c', 'z'];
+  const result = observeControlGeometry(
+    snapshot(ids.map((id) => element(id, 49))),
+    snapshot(ids.map((id) => element(id, 36))),
+    { ids: new Set(['z']), testIds: new Set() },
+  );
+  expect(result.observations.map((item) => item.id)).toEqual(['z', 'a', 'b']);
+  expect(result.observations[0]!.suppressedResize).toBe(true);
+  expect(result.omitted).toBe(1);
+  expect(Buffer.byteLength(JSON.stringify(result.observations))).toBeLessThanOrEqual(
+    1024,
+  );
+});
+
+test('adapter context filtering cannot hide a duplicate identity from measured evidence', () => {
+  const baseline = snapshot([
+    element('name', 80, { tag: 'div', role: undefined, path: 'div#name' }),
+    element('name', 49, { parent: 0, path: 'div#name>input#name' }),
+  ]);
+  baseline.contextElementIds = ['name'];
+  const current = structuredClone(baseline);
+  current.elements[0]!.rect.h -= 13;
+  current.elements[1]!.rect.h -= 13;
+  const result = structuralDiffWithCoverage({
+    baseline,
+    current,
+    imagesIdentical: false,
+    includeControlGeometry: true,
+    pixels: { changedRegions: [], dimensionMismatch: false },
+    escalate: { command: 'report' },
+  });
+  expect(result.controlGeometry).toBeUndefined();
 });
 
 test('does not describe movement or unchanged sizes as resizing', () => {
