@@ -274,7 +274,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Capture affected stories and variants together after an edit (Storybook/Ladle or configured URLs). One call returns the baseline verdict, target hint, and optional compareTo checkpoint change; do not repeat them with report or reference. changesFromApproved measures approved→current, not design-target error. The summary includes selected control measurements when they add missing detail. A subset pass does not verify omitted targets. Request report=full only for missing per-state detail.',
+      'Capture affected stories and variants together after an edit (Storybook/Ladle or configured URLs). One call returns the baseline verdict, target hint, and optional compareTo checkpoint change; do not repeat them with report or reference. changesFromApproved measures approved→current, not design-target error. The summary includes selected control measurements when they add missing detail. A subset pass does not verify omitted targets. stories selects exact capture IDs; configured URL viewports have separate IDs. Use all=true to verify every configured state. Request report=full only for missing per-state detail.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -371,7 +371,7 @@ export const TOOLS: Tool[] = [
     // The geometry-sufficient repair still viewed two PNGs alongside its
     // measurement requests. Ask clients to evaluate evidence before more images.
     description:
-      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Request detail=layout with name only for missing geometry. If source and measurements resolve the edit, edit then run; otherwise request region for one paired PNG crop. Do not batch speculative images with measurements. Use detail=json or local image analysis only for a specific fact missing from focused evidence. A passing target hint needs no reference call.',
+      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Request detail=layout with name only for missing geometry. If source and measurements resolve the edit, edit then run; otherwise request region for one paired PNG crop. Do not batch speculative images with measurements. Use returned cropRequest directly when it covers the unresolved question; JSON is unnecessary for that crop. Request detail=json only for a different missing fact. If evidence remains insufficient, name the missing observable. A passing target hint needs no reference call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -717,7 +717,7 @@ export function compactReferenceFeedback(result: ReferenceResult) {
           ? 'Resolve the reported capture or reference compatibility issue before inferring a UI edit. Reuse these reported facts; another image or ledger does not fix incompatible inputs.'
           : result.outcome === 'no-comparison'
             ? 'No target comparison was made. Capture the required target states; do not treat this as a pass or request images to confirm it.'
-            : 'Use returned facts with current source first; mismatch is not a CSS cause. For missing geometry request reference with name and detail=layout. If appearance remains unresolved, request one saved region crop. Use detail=json or local pixel analysis only for a specific missing fact. Do not recapture or reread facts already returned.',
+            : 'Use returned facts with current source first; mismatch is not a CSS cause. For missing geometry request reference with name and detail=layout. If appearance remains unresolved, request one saved region crop. Use a returned cropRequest directly for its region; JSON is only for another missing fact. Do not recapture or reread facts already returned.',
   };
 }
 

@@ -167,6 +167,10 @@ for requesting one saved paired crop if appearance remains unresolved. Element
 IDs are not crop IDs. `cropRegion` gives the selected changed-pixel bounds: this
 is the largest changed region, which may not answer a question about another
 part of the component. Request JSON detail only if a needed region is missing.
+Use the returned `cropRequest` directly when it covers the remaining question;
+JSON detail is unnecessary before requesting that crop. If neither measurements
+nor the crop answer the question, report the missing observable instead of
+silently guessing a target value.
 No `cropRequest` means there is no saved changed-region crop to request. It uses the same cached measurements as JSON detail,
 without computing outlines or repeating hashes, image paths and region metadata.
 The matched observations are selected within a 3 KB response budget; long
@@ -188,7 +192,10 @@ or a custom pixel-analysis script for facts already returned. Reuse source that
 is already in context. A passing target hint needs no confirmation with another
 `reference` or `report` call. After an edit, capture the affected states and
 variants together once; check omitted required states before stopping. These are
-workflow instructions, not a measured time or token saving.
+workflow instructions, not a measured time or token saving. For configured URL
+projects, each viewport entry has its own capture ID: `stories` selects those
+exact IDs rather than automatically adding related viewport entries. Use
+`run({all: true})` when every configured state is required.
 
 Measurements that explain one region do not determine all target styles. Do not
 infer a font size from a painted box height or treat the lowest nonzero mismatch

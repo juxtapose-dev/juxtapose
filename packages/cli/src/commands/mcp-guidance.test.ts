@@ -45,7 +45,9 @@ test('workflow guidance remains with the tool that performs it', () => {
   expect(tool('reference').description).toContain('without recapture');
   expect(tool('reference').description).toContain('detail=layout with name');
   expect(tool('reference').description).toContain('one paired PNG crop');
-  expect(tool('reference').description).toContain('local image analysis');
+  expect(tool('reference').description).toContain('Use returned cropRequest directly');
+  expect(tool('run').description).toContain('configured URL viewports have separate IDs');
+  expect(tool('run').description).toContain('all=true');
   expect(tool('report').description).toContain('saved current-element rect/styles');
   expect(tool('approve').description).toContain('Only when the user asks');
 });
