@@ -237,6 +237,8 @@ export {
   matchLayout as matchTargetLayout,
   fromStructure as targetEvidenceFromStructure,
   type TargetEvidence,
+  type PaintComponentEvidence,
+  type SolidPaintComponent,
   type TargetLayoutResult,
 } from './diff/target-layout/index.js';
 export {

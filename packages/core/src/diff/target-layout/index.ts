@@ -3,6 +3,8 @@ import { styleReader } from '../../capture/structure.js';
 import sharp from 'sharp';
 import { fromPng } from './segment.js';
 import { fromPngStreaming } from './stream.js';
+import type { PaintComponentEvidence } from './paint-components.js';
+export type { PaintComponentEvidence, SolidPaintComponent } from './paint-components.js';
 
 export interface LayoutBox {
   x: number;
@@ -71,12 +73,27 @@ export function fromStructure(snapshot: StructureSnapshot): TargetEvidence {
 
 /** The caller caches this derived evidence by encoded image hash. Keeping
  * RGBA local avoids retaining 16 MB for every 4 MP target in an MCP session. */
-export async function extractTargetEvidence(image: Buffer): Promise<TargetEvidence> {
+export async function extractTargetEvidence(
+  image: Buffer,
+  observePaint?: (
+    image: RgbaImage,
+    evidence: PaintComponentEvidence,
+  ) => void | Promise<void>,
+): Promise<TargetEvidence> {
   const { data, info } = await sharp(image)
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  return fromPng({ data, width: info.width, height: info.height });
+  const rgba = { data, width: info.width, height: info.height };
+  if (!observePaint) return fromPng(rgba);
+  let paint!: PaintComponentEvidence;
+  const layout = fromPng(rgba, (evidence) => {
+    paint = evidence;
+  });
+  // One decode and component scan serves both observations. Only bounded derived
+  // values should escape this callback; the session must not retain full RGBA.
+  await observePaint(rgba, paint);
+  return layout;
 }
 
 /** Opt-in reference analysis for photo-heavy images. Never used by the default

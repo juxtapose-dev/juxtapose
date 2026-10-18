@@ -1,5 +1,6 @@
 import type { EvidenceBlock, RgbaImage, TargetEvidence } from './index.js';
 import { createHash } from 'node:crypto';
+import type { PaintComponentEvidence, SolidPaintComponent } from './paint-components.js';
 
 interface Run {
   start: number;
@@ -9,6 +10,7 @@ interface Run {
 }
 interface Component {
   parent: number;
+  seed: number;
   color: number;
   x0: number;
   x1: number;
@@ -22,7 +24,10 @@ const MAX_BLOCKS = 256;
 /** Exact-color row components are a conservative first producer. A bounded
  * run count makes photographs abstain rather than allocate a pixel index;
  * corpus timings, not large-DOM synthetic tests, decide whether to keep it. */
-export function fromPng(image: RgbaImage): TargetEvidence {
+export function fromPng(
+  image: RgbaImage,
+  observeComponents?: (evidence: PaintComponentEvidence) => void,
+): TargetEvidence {
   const { data, width, height } = image;
   if (
     !Number.isSafeInteger(width) ||
@@ -78,11 +83,19 @@ export function fromPng(image: RgbaImage): TargetEvidence {
       if (color < 0) continue;
       if (nodes.length === MAX_RUNS) {
         result.abstained.complexity = true;
+        observeComponents?.({
+          width,
+          height,
+          components: [],
+          omittedComponents: 0,
+          complexity: true,
+        });
         return result;
       }
       const node = nodes.length;
       nodes.push({
         parent: node,
+        seed: y * width + start,
         color,
         x0: start,
         x1: x,
@@ -108,10 +121,20 @@ export function fromPng(image: RgbaImage): TargetEvidence {
     if (edges >= 2 && (!background || c.area > background.area)) background = c;
   }
   const blocks: EvidenceBlock[] = [];
+  const paint: SolidPaintComponent[] = [];
   for (const c of components) {
     if (c === background || c.area < 16) continue;
     const w = c.x1 - c.x0,
       h = c.y1 - c.y0;
+    // Ready/Delayed pills have only 68–71% exact-fill occupancy. Describe their
+    // complete paint separately; retain the matcher's 80% rectangular rule.
+    if (observeComponents && w >= 24 && h >= 16)
+      paint.push({
+        box: { x: c.x0, y: c.y0, width: w, height: h },
+        fill: [c.color >> 16, (c.color >> 8) & 255, c.color & 255],
+        solidArea: c.area,
+        seed: { x: c.seed % width, y: Math.floor(c.seed / width) },
+      });
     if (w < 4 || h < 4 || c.area / (w * h) < 0.8) {
       result.abstained.nonRectangular++;
       continue;
@@ -133,6 +156,24 @@ export function fromPng(image: RgbaImage): TargetEvidence {
     (a, b) =>
       a.box.y - b.box.y || a.box.x - b.box.x || (b.solidArea ?? 0) - (a.solidArea ?? 0),
   );
+  if (observeComponents) {
+    paint.sort(
+      (a, b) =>
+        a.box.y - b.box.y ||
+        a.box.x - b.box.x ||
+        b.solidArea - a.solidArea ||
+        a.fill[0] - b.fill[0] ||
+        a.fill[1] - b.fill[1] ||
+        a.fill[2] - b.fill[2],
+    );
+    observeComponents({
+      width,
+      height,
+      components: paint.slice(0, MAX_BLOCKS),
+      omittedComponents: Math.max(0, paint.length - MAX_BLOCKS),
+      complexity: false,
+    });
+  }
   result.abstained.omitted = Math.max(0, blocks.length - MAX_BLOCKS);
   result.blocks = blocks
     .slice(0, MAX_BLOCKS)
