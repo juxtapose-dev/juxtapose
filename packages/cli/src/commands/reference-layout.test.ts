@@ -133,7 +133,7 @@ test('a symlinked analysis parent is neither read nor written', async () => {
   expect(await readdir(outside)).toEqual([]);
 });
 
-test('limits emitted geometry facts while retaining a full cached comparison', async () => {
+test('requested detail retains every accepted geometry match in the cached comparison', async () => {
   const project = await root(),
     width = 400,
     height = 100;
@@ -171,8 +171,8 @@ test('limits emitted geometry facts while retaining a full cached comparison', a
     currentHash: hash(current),
     structure: encodeStructure(structure),
   });
-  expect(result.matches).toHaveLength(8);
-  expect(result.omittedMatches).toBe(12);
+  expect(result.matches).toHaveLength(20);
+  expect(result.omittedMatches).toBe(0);
 });
 
 const white = Buffer.from(

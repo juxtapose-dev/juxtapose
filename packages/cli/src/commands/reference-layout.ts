@@ -150,7 +150,7 @@ export class ReferenceLayoutCache {
     const paint = observed ? await observed : undefined;
     const confidenceRules: Record<string, string> = {};
     const ruleIds = new Map<string, string>();
-    const matches = result.matches.slice(0, 8).map((match) => {
+    const matches = result.matches.map((match) => {
       let rule = ruleIds.get(match.confidenceRule);
       if (!rule) {
         rule = `paint-${ruleIds.size + 1}`;
@@ -180,7 +180,7 @@ export class ReferenceLayoutCache {
       ...result,
       confidenceRules,
       matches,
-      omittedMatches: Math.max(0, result.matches.length - 8),
+      omittedMatches: 0,
       ...(paint
         ? {
             paint: {

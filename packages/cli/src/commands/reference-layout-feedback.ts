@@ -1,3 +1,8 @@
+import {
+  fitsFocusedEvidence,
+  evidenceBytes,
+  FOCUSED_MAX_BYTES,
+} from './reference-evidence-budget.js';
 import type { ReferenceResult } from './reference.js';
 import type { ReferenceLayoutDetail } from './reference-layout.js';
 import { appendFocusedPaint, type FocusedPaintFeedback } from './reference-paint.js';
@@ -18,8 +23,6 @@ export interface FocusedLayoutFeedback {
   paint?: FocusedPaintFeedback;
   layout: ReferenceLayoutDetail | { status: 'unavailable'; reason: string };
 }
-
-const MAX_BYTES = 3072;
 
 /** The PNG replay repaired all four states from one 1,776-byte target packet.
  * Keep this explicitly requested: it does not establish default usefulness. */
@@ -62,7 +65,7 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
         ? 'This target passes; do not inspect it again to confirm. Verify any remaining required states and behavior.'
         : state.status === 'error' || state.status === 'incompatible'
           ? 'Resolve the reported capture or reference issue first; do not infer a visual edit from incompatible inputs.'
-          : 'Use source + measurements to propose an edit, then run affected states once. Treat CSS causes as hypotheses. cropRequest covers cropRegion only; JSON may add saved facts; omissions can remain. It cannot add PNG target DOM or abstained matches. If cropRequest is absent, no saved crop is available.',
+          : 'Use source + measurements to propose an edit, then run affected states once. Treat CSS causes as hypotheses. cropRequest covers cropRegion only; JSON provides all saved matches; other omissions can remain. It cannot add PNG target DOM or abstained matches. If cropRequest is absent, no saved crop is available.',
   };
   if (!layout || !('matches' in layout))
     return bounded({
@@ -94,7 +97,7 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
         omittedMatches: output.layout.omittedMatches - 1,
       },
     };
-    if (Buffer.byteLength(JSON.stringify(candidate)) > MAX_BYTES) continue;
+    if (!fitsFocusedEvidence(output, candidate)) continue;
     matches.push(match);
     confidenceRules[match.confidenceRule] = rule;
     output.layout.omittedMatches--;
@@ -103,7 +106,7 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
 }
 
 function bounded(response: FocusedLayoutFeedback): FocusedLayoutFeedback {
-  if (Buffer.byteLength(JSON.stringify(response)) > MAX_BYTES)
+  if (evidenceBytes(response) > FOCUSED_MAX_BYTES)
     throw new Error(
       'Focused layout metadata exceeds response budget; use detail=json for the full ledger',
     );

@@ -1,3 +1,9 @@
+import {
+  fitsFocusedEvidence,
+  evidenceBytes,
+  FOCUSED_TARGET_BYTES,
+  FOCUSED_MAX_BYTES,
+} from './reference-evidence-budget.js';
 import { createHash } from 'node:crypto';
 import type {
   PaintComponentEvidence,
@@ -469,29 +475,46 @@ export function appendFocusedPaint<
   if (!candidates.some((side) => side.length) && !failures && !unavailable.length)
     return packet;
   let result = { ...packet, paint: detail };
-  const fits = (value: unknown) => Buffer.byteLength(JSON.stringify(value)) <= 3072;
-  if (!fits(result))
+  if (evidenceBytes(result) > FOCUSED_TARGET_BYTES)
     result = {
       ...result,
-      next: 'Propose source-grounded edits; verify affected states. CSS causes are hypotheses. Crop covers cropRegion only. JSON may add saved facts/full text; omissions can remain. No PNG target DOM or abstained matches.',
+      next: 'Propose source-grounded edits; verify affected states. CSS causes are hypotheses. Crop covers cropRegion only. JSON provides all saved matches/full text; other omissions can remain. No PNG target DOM or abstained matches.',
     };
-  if (!fits(result)) return packet;
-  for (let i = 0; i < 2; i++)
+  if (evidenceBytes(result) > FOCUSED_MAX_BYTES) return packet;
+  let anchor: T | typeof result = packet;
+  for (let i = 0; i < 2; i++) {
+    const candidate = {
+      ...result,
+      paint: {
+        ...result.paint,
+        target: [...result.paint.target],
+        current: [...result.paint.current],
+        omitted: [...result.paint.omitted] as [number, number],
+      },
+    };
+    let added = false;
+    // The two inventories remain independent. Emit this small observation
+    // block whole so a few bytes do not hide one side of the evidence.
     for (const [side, key] of [
       [0, 'target'],
       [1, 'current'],
     ] as const) {
-      const candidate = candidates[side]?.[i];
-      if (!candidate) continue;
-      detail[key].push(candidate);
-      detail.omitted[side] -= candidate.count;
-      if (!fits(result)) {
-        detail[key].pop();
-        detail.omitted[side] += candidate.count;
-      }
+      const group = candidates[side]?.[i];
+      if (!group) continue;
+      candidate.paint[key].push(group);
+      candidate.paint.omitted[side] -= group.count;
+      added = true;
     }
-  if (!detail.target.length && !detail.current.length && !failures && !unavailable.length)
-    return packet;
+    if (added && fitsFocusedEvidence(anchor, candidate)) {
+      result = candidate;
+      anchor = result;
+    }
+  }
+  if (!result.paint.target.length && !result.paint.current.length) {
+    if ((!failures && !unavailable.length) || !fitsFocusedEvidence(packet, result))
+      return packet;
+  }
+
   // The shorter routing instruction leaves room for omission metadata without
   // evicting a geometry match or its confidence/provenance.
   return result;

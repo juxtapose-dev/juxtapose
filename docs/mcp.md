@@ -198,7 +198,8 @@ nor the crop answer the question, report the missing observable instead of
 silently guessing a target value.
 No `cropRequest` means there is no saved changed-region crop to request. It uses the same cached measurements as JSON detail,
 without computing outlines or repeating hashes, image paths and region metadata.
-The matched observations are selected within a 3 KB response budget; long
+Focused observations target 3 KB and may finish one complete fact or paint
+observation block above that target, up to 4 KB. Further facts remain in JSON; long
 identities are omitted whole rather than truncated. Other target states still
 require verification. This mode requires `name` and cannot be combined with
 `region` or `compare: "previous"`. Use `detail: "json"` for a full ledger or
@@ -230,12 +231,11 @@ not verify a CSS value. Request more evidence for a specific observable that
 would change the edit when the current evidence cannot support a testable
 hypothesis. A saved crop can answer unresolved appearance questions.
 
-Full JSON may add saved measurements, current DOM paths and cached text when
-available; omissions can remain. It cannot supply a PNG target's DOM, prove CSS causation or recover
-matches that analysis abstained from producing. `omittedMatches` counts accepted
-matches left out of the response, including the full ledger's eight-match limit
-as well as the preview's byte limit. It does not promise that every omitted
-match is available in JSON. `abstained` is not another inventory of accepted
+Requested full JSON returns all saved accepted geometry matches, current DOM
+paths and cached text when available; other analysis omissions can remain. It cannot supply a PNG target's DOM, prove CSS causation or recover
+matches that analysis abstained from producing. `omittedMatches` in the focused response counts accepted
+matches left out of that preview. JSON detail has no eight-match cutoff; it
+returns all accepted matches from the existing bounded analysis. `abstained` is not another inventory of accepted
 matches waiting there. Do not repeat a request for an unavailable fact.
 Experimental hypothesis probes are not part of the public tool set. These
 routing boundaries follow the recorded requests in the team decision replay;
@@ -257,7 +257,7 @@ or a saving. Keep collection identical across comparison arms and include its
 output in token measurements. The MCP server does not upload this feedback.
 
 Requested `reference({detail: "json"})` also adds `layout` to failing target
-states when the saved current DOM is available. It contains up to eight
+states when the saved current DOM is available. It contains all accepted
 conservative painted-region matches with target/current boxes, current element
 IDs and short labels. `dx`, `dy`, `dw` and `dh` mean current minus target;
 the boxes describe pixels, not CSS border boxes. Element identity comes from

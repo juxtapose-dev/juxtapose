@@ -67,7 +67,7 @@ test('whole over-budget identities are omitted while shorter following facts sur
       expect.objectContaining({ element: expect.objectContaining({ id: 'field-2' }) }),
     ],
   });
-  expect(Buffer.byteLength(JSON.stringify(output))).toBeLessThanOrEqual(3072);
+  expect(Buffer.byteLength(JSON.stringify(output))).toBeLessThanOrEqual(4096);
 });
 
 test('passing or missing-structure targets do not fabricate measurements', () => {
@@ -113,7 +113,7 @@ test('partial geometry allows a direct edit but does not prescribe guessed targe
   expect(response.next).toContain('Treat CSS causes as hypotheses');
   expect(response.next).toContain('cannot add PNG target DOM or abstained matches');
   expect(response.next).toContain('cropRequest');
-  expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThanOrEqual(3072);
+  expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThanOrEqual(4096);
 });
 
 test('missing region ID does not promise a nonexistent crop or reuse an element ID', () => {
@@ -123,4 +123,27 @@ test('missing region ID does not promise a nonexistent crop or reuse an element 
   expect(response.cropRequest).toBeUndefined();
   expect(response.cropRegion).toBeUndefined();
   expect(response.next).toContain('no saved crop is available');
+});
+
+test('a complete geometry fact may cross the target while later accepted facts stay retrievable', () => {
+  const input = fixture();
+  const layout = (
+    input.states[0] as unknown as {
+      layout: { matches: Array<{ element: { id: string } }>; omittedMatches: number };
+    }
+  ).layout;
+  const original = layout.matches[0]!;
+  layout.matches = Array.from({ length: 20 }, (_, i) => ({
+    ...original,
+    element: { ...original.element, id: `field-${i}` },
+  }));
+  const saved = JSON.stringify(input);
+  const result = focusedLayoutFeedback(input);
+  expect(Buffer.byteLength(JSON.stringify(result))).toBeGreaterThan(3072);
+  expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(4096);
+  expect(result.layout).toMatchObject({
+    omittedMatches: 20 - result.layout.matches!.length,
+  });
+  expect(result.layout.matches!.length).toBeLessThan(20);
+  expect(JSON.stringify(input)).toBe(saved);
 });

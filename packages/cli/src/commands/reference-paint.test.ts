@@ -249,7 +249,7 @@ test('focused projection omits whole long text while full JSON retains it, witho
   expect(focused.layout).toEqual(withoutPaint);
   expect(focused.paint).toBeUndefined();
   expect(JSON.stringify(focused)).not.toContain('x'.repeat(20));
-  expect(Buffer.byteLength(JSON.stringify(focused))).toBeLessThanOrEqual(3072);
+  expect(Buffer.byteLength(JSON.stringify(focused))).toBeLessThanOrEqual(4096);
   expect(layout.paint?.target).toMatchObject({
     regions: [{ text: { full: 'A complete long label ' + 'x'.repeat(80) } }],
   });
@@ -378,5 +378,50 @@ test('paint budget fallback permits verified hypotheses without promising all om
   expect(packet.next).toContain('CSS causes are hypotheses');
   expect(packet.next).toContain('omissions can remain');
   expect(packet.next).toContain('No PNG target DOM or abstained matches');
-  expect(Buffer.byteLength(JSON.stringify(packet))).toBeLessThanOrEqual(3072);
+  expect(Buffer.byteLength(JSON.stringify(packet))).toBeLessThanOrEqual(4096);
+});
+
+test('soft paint packing keeps both inventories across the target and omits the next block accurately', async () => {
+  const f = await fixture(),
+    p = provider();
+  const layout = await new ReferenceLayoutCache(p).evaluate(f);
+  const paint = structuredClone(layout.paint!);
+  for (const role of ['target', 'current'] as const) {
+    const image = paint[role];
+    if (image.status !== 'measured') throw Error('expected measured fixture');
+    const first = image.regions[0]!;
+    image.regions.push({
+      ...first,
+      id: `${role}-other`,
+      box: { ...first.box, x: first.box.x + 40 },
+      fill: [90, 20, 30],
+      cropHash: `${role}-different-paint`,
+      ...(role === 'target'
+        ? { text: { full: 'Other', score: 95 }, textStatus: 'observed' as const }
+        : { elementText: 'Other' }),
+    });
+  }
+  const saved = JSON.stringify(paint);
+  let checked = false;
+  for (let padding = 2000; padding < 3072; padding += 20) {
+    const packet = appendFocusedPaint(
+      { next: 'Use saved facts.', padding: 'x'.repeat(padding) },
+      paint,
+    );
+    const bytes = Buffer.byteLength(JSON.stringify(packet));
+    if (
+      bytes <= 3072 ||
+      packet.paint?.target.length !== 1 ||
+      packet.paint.current.length !== 1
+    )
+      continue;
+    expect(bytes).toBeLessThanOrEqual(4096);
+    expect(packet.paint.omitted).toEqual([1, 1]);
+    expect(packet.paint.target[0]?.count).toBe(1);
+    expect(packet.paint.current[0]?.count).toBe(1);
+    checked = true;
+    break;
+  }
+  expect(checked).toBe(true);
+  expect(JSON.stringify(paint)).toBe(saved);
 });

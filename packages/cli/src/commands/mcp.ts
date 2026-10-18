@@ -384,7 +384,7 @@ export const TOOLS: Tool[] = [
     // Both team decision replays requested JSON for facts analysis abstained
     // from producing. Distinguish a testable edit from a measured CSS cause.
     description:
-      'Read saved evidence without recapture. Default: latest capture versus design target. compare=previous compares saved runs (fromRun, toRun defaults to latest): shared-capture pixel and structural deltas, not target progress. Use source + measurements to propose CSS edits as hypotheses, then run affected states to verify. Request detail=layout with name for missing geometry; region (optionally detail=crop) for one paired PNG crop. Use returned cropRequest directly when relevant. detail=json may add saved facts/current DOM paths; omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. Exact target matches need no confirmation call.',
+      'Read saved evidence without recapture. Default: latest capture versus design target. compare=previous compares saved runs (fromRun, toRun defaults to latest): shared-capture pixel and structural deltas, not target progress. Use source + measurements to propose CSS edits as hypotheses, then run affected states to verify. Request detail=layout with name for missing geometry; region (optionally detail=crop) for one paired PNG crop. Use returned cropRequest directly when relevant. detail=json returns all saved matches/current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. Exact target matches need no confirmation call.',
     inputSchema: {
       type: 'object',
       properties: {
