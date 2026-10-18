@@ -61,7 +61,7 @@ export interface SnapPageResult {
   error?: string;
 }
 
-const DEFAULT_SNAP_VIEWPORT: Viewport = { width: 1280, height: 800 };
+export const DEFAULT_SNAP_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
 /**
  * Capture several URLs with one context and one page, in order.

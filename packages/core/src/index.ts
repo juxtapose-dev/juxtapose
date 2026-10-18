@@ -263,6 +263,7 @@ export { phases, formatPhases, type Phases } from './run/phases.js';
 export {
   snapPage,
   snapPages,
+  DEFAULT_SNAP_VIEWPORT,
   type SnapOptions,
   type SnapResult,
   type SnapPagesOptions,

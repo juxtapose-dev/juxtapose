@@ -26,6 +26,7 @@ import {
   captureFlags,
   VariantConfigError,
   resolveDevice,
+  DEFAULT_SNAP_VIEWPORT,
   resolveDevices,
   UnknownDeviceError,
   type Viewport,
@@ -165,7 +166,7 @@ export async function snapCommand(
   const devices = resolveDevices(config.devices);
   if (flags.device !== undefined) {
     try {
-      resolveDevice({ device: flags.device }, devices, { width: 1280, height: 800 });
+      resolveDevice({ device: flags.device }, devices, DEFAULT_SNAP_VIEWPORT);
     } catch (err) {
       if (!(err instanceof UnknownDeviceError)) throw err;
       io.err(`jux snap: ${err.message}\n`);
@@ -253,6 +254,10 @@ export async function snapCommand(
       // A snap has no story: the flags are the story layer, over the config.
       params: {
         ...(flags['full-page'] ? { fullPage: true } : {}),
+        // The size is a story-layer param too: as snapPages' `viewport` alone it
+        // is only the fallback, which a device would override and an
+        // orientation would rotate.
+        ...(viewport ? { viewport } : {}),
         ...(flags.device !== undefined ? { device: flags.device } : {}),
         ...(flags.orientation !== undefined ? { orientation: flags.orientation } : {}),
         ...(flags['wait-for'] ? { waitForSelector: flags['wait-for'] } : {}),

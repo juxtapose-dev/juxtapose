@@ -91,6 +91,30 @@ test('--orientation sideways is a usage error before a browser', async () => {
   );
 });
 
+test('--viewport is a story-layer size beside --device, not only the fallback', async () => {
+  await snapCommand(
+    [url],
+    { project: project(), as: 'x', device: 'pixel-8', viewport: '412x600' },
+    { io: captureIo(), browser: lent },
+  );
+  expect(seen?.params).toMatchObject({
+    device: 'pixel-8',
+    viewport: { width: 412, height: 600 },
+  });
+});
+
+test('--viewport beside --orientation is not rotated', async () => {
+  await snapCommand(
+    [url],
+    { project: project(), as: 'x', orientation: 'landscape', viewport: '400x300' },
+    { io: captureIo(), browser: lent },
+  );
+  expect(seen?.params).toMatchObject({
+    orientation: 'landscape',
+    viewport: { width: 400, height: 300 },
+  });
+});
+
 test('the retry line repeats --device and --orientation', async () => {
   const io = captureIo();
   const code = await snapCommand(

@@ -665,6 +665,26 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
       viewport: { width: 412, height: 915 },
     });
 
+    const short = await c.call('snap', {
+      url: base,
+      as: 'short',
+      device: 'pixel-8',
+      viewport: { width: 412, height: 600 },
+    });
+    expect(short.isError).toBe(false);
+    expect(JSON.parse(text(short))).toMatchObject({
+      device: 'pixel-8',
+      viewport: { width: 412, height: 600 },
+    });
+
+    const wide = await c.call('snap', {
+      url: base,
+      as: 'wide',
+      orientation: 'landscape',
+      viewport,
+    });
+    expect(JSON.parse(text(wide))).toMatchObject({ viewport });
+
     edited = true;
     const after = await c.call('snap', { url: base, as: 'after', viewport });
     expect(after.isError).toBe(false);
