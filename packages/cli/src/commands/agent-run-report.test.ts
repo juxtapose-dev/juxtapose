@@ -201,6 +201,21 @@ describe('saved MCP run reports', () => {
     });
   });
 
+  test('guidance avoids redundant reads without treating empty or partial runs as complete', () => {
+    const empty = report(0);
+    expect(agentRunSummary(empty).next).toContain('required capture coverage');
+    const partial = report(1);
+    partial.results[0]!.status = 'pass';
+    partial.totalCount = 4;
+    expect(agentRunSummary(partial).next).toContain(
+      'target comparisons and behavior checks',
+    );
+    const failed = report(1);
+    failed.results[0]!.status = 'fail';
+    expect(agentRunSummary(failed).next).toContain('only for missing baseline detail');
+    expect(agentRunSummary(failed).next).toContain('not design-target instructions');
+  });
+
   test('explains exact-match stale baselines without asking for another visual lookup', () => {
     const stale = report(2);
     stale.summary = { pass: 0, fail: 0, new: 0, stale: 2, skip: 0 };
@@ -221,12 +236,12 @@ describe('saved MCP run reports', () => {
     expect(mixed.staleMeaning).toContain(
       'approval commit is outside current branch ancestry',
     );
-    expect(mixed.next).toContain('Call report with story');
+    expect(mixed.next).toContain('only for missing baseline detail');
 
     stale.results[1]!.status = 'stale';
     stale.results[1]!.unstable = { hashes: ['a'], unconfirmed: 'not rechecked' };
     stale.results[1]!.unrechecked = true;
-    expect(agentRunSummary(stale).next).toContain('Call report with story');
+    expect(agentRunSummary(stale).next).toContain('only for missing baseline detail');
   });
 
   test('reads one saved story or full report without browser and refreshes changed reports', async () => {

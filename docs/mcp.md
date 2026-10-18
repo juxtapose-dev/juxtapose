@@ -396,6 +396,13 @@ Set `dryRun: true` to return the selection instead of capturing. It uses the
 same selection rules and response shape as `list`, while retaining run's affected
 analysis when no selectors are supplied. This does not replace the last run.
 
+The summary's `next` guidance asks for additional saved detail only when the
+returned evidence leaves a question. `changesFromApproved` describes a difference
+from the approved baseline, not an instruction to match a design target. A run
+with no listed capture blockers still requires checking requested coverage,
+design targets and behavior before stopping; an empty or partial run is not
+proof of completion.
+
 Compact `changesFromApproved` retains ordinal labels such as `textbox (1st)`
 and `textbox (2nd)` as distinct saved identities. These labels are not guaranteed
 unique CSS selectors. The array contains at most six facts plus an omission

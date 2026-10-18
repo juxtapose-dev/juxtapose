@@ -274,7 +274,11 @@ export function agentRunSummary(report: RunReport, options: SummaryOptions = {})
     // The deduplicated facts subsume the truncated group lines, so only one
     // of the two is sent.
     ...(changes.length
-      ? { changesFromApproved: changes }
+      ? {
+          changesFromApproved: changes,
+          evidence:
+            'structure; approved→current; saved element labels, not guaranteed unique CSS selectors or CSS causes',
+        }
       : groups.length
         ? { groups, omittedGroups: Math.max(0, (report.groups?.length ?? 0) - 3) }
         : {}),
@@ -296,6 +300,8 @@ export function agentRunSummary(report: RunReport, options: SummaryOptions = {})
       : {}),
     next: onlyStaleAttention
       ? 'These stale captures match saved baseline bytes. Their approval commits are outside current branch ancestry; no visual edit, detailed report, or recapture is needed. Re-approval is a separate decision to re-anchor the baselines.'
-      : 'Call report with story for one full result, or detail=full for the saved RunReport. No recapture is needed.',
+      : attention.length === 0
+        ? 'No capture blockers listed. Stop only when required capture coverage, target comparisons and behavior checks pass.'
+        : 'Use the returned evidence first. Request report with story and runId only for missing baseline detail. Baseline changes are not design-target instructions; no recapture is needed.',
   };
 }
