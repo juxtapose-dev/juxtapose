@@ -124,3 +124,25 @@ trial, assert intervention visibility in a supplied compact result/prompt packet
 or use a supplied-catalog replay. No response/default change is promoted from
 this result; the tool wording remains a workflow clarification, not a measured
 optimization. Full design-from-scratch performance is still unestablished.
+
+## Visible-guidance replay and benchmark preflight
+
+`visible-guidance-replay-v1` stops after its first control call: the decision
+selects the correct height edit and saved crop, but uses `run({name})` rather
+than `run({stories})`. The replay omitted tool schemas. Its exact grader rejects
+the call, so no candidate runs and no guidance comparison exists. Sol medium
+uses 5727 counted tokens (17629 input, 12160 cached, 258 output) in 10.103s.
+Keep this as a benchmark defect and inconclusive result, without a paid retry.
+
+Future packet preparation now validates oracle calls against the same schemas
+included in the exact public prompt, hashes that rendering and excludes private
+expected answers. Focused checks reject invalid arguments and absent tools.
+`visible-guidance-packet-v2` passes this preflight with no model/browser calls.
+This is preparation only, not a reason to keep repeating wording experiments.
+
+Image accounting also reads structured image blocks delivered in the rollout,
+including code-mode outputs, rather than relying on MCP-only logs or literal
+call sites. Historical audits confirm two tool images in the geometry session,
+four versus two in the ordering pair, and two versus zero additional tool images
+in the supplied-toolkit typography pair (both initially attached four images).
+Image counts alone do not establish a time or token effect.
