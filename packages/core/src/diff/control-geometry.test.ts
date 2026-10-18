@@ -27,6 +27,163 @@ const snapshot = (elements: StructureElement[]): StructureSnapshot => ({
   elements,
 });
 
+const namedButton = (name: string, h: number): StructureElement =>
+  element('', h, {
+    id: undefined,
+    tag: 'button',
+    role: 'button',
+    name,
+    parent: 0,
+    path: `main>button[name="${name}"]`,
+  });
+const namedFixture = () => ({
+  baseline: snapshot([
+    element('toolbar', 80, { tag: 'div', role: undefined }),
+    namedButton('Ready', 45),
+  ]),
+  current: snapshot([
+    element('toolbar', 74, { tag: 'div', role: undefined }),
+    namedButton('Ready', 39),
+  ]),
+});
+const namedDiff = (
+  pair: ReturnType<typeof namedFixture>,
+  includeControlGeometry = true,
+) =>
+  structuralDiffWithCoverage({
+    ...pair,
+    imagesIdentical: false,
+    includeControlGeometry,
+    pixels: { changedRegions: [], dimensionMismatch: false },
+    escalate: { command: 'report' },
+  });
+
+test('recovers unique named controls only from already suppressed pairs, without changing the verdict', () => {
+  const pair = namedFixture();
+  expect(observeControlGeometry(pair.baseline, pair.current).observations).toEqual([]);
+  const detailed = namedDiff(pair);
+  expect(detailed.verdict).toEqual(namedDiff(pair, false).verdict);
+  expect(detailed.controlGeometry?.observations).toEqual([
+    expect.objectContaining({
+      tag: 'button',
+      role: 'button',
+      name: 'Ready',
+      height: { approved: 45, current: 39 },
+      provenance: 'structure',
+      suppressedResize: true,
+    }),
+  ]);
+  expect(detailed.controlGeometry?.observations[0]).not.toHaveProperty('id');
+  expect(detailed.controlGeometry?.observations[0]?.confidenceRule).toContain(
+    'suppressed structural pair',
+  );
+  pair.current.elements[1]!.styles['padding-top'] = '9px';
+  expect(namedDiff(pair).controlGeometry).toBeUndefined();
+});
+
+test.each([
+  'duplicate-approved',
+  'duplicate-current',
+  'renamed',
+  'role-changed',
+  'id-added',
+  'id-removed',
+  'test-id-conflict',
+  'empty-id',
+  'unnamed',
+  'truncated-approved',
+  'truncated-current',
+  'viewport',
+  'invalid-size',
+])('named suppressed controls abstain on %s', (reason) => {
+  const pair = namedFixture();
+  const old = pair.baseline.elements[1]!,
+    now = pair.current.elements[1]!;
+  if (reason === 'duplicate-approved')
+    pair.baseline.elements.push({ ...old, id: 'other' });
+  if (reason === 'duplicate-current') pair.current.elements.push({ ...now, id: 'other' });
+  if (reason === 'renamed') now.name = 'Dispatch';
+  if (reason === 'role-changed') now.role = 'switch';
+  if (reason === 'id-added') now.id = 'ready';
+  if (reason === 'id-removed') old.id = 'ready';
+  if (reason === 'test-id-conflict') {
+    old.testId = 'old';
+    now.testId = 'new';
+  }
+  if (reason === 'empty-id') old.id = '';
+  if (reason === 'unnamed') old.name = now.name = '';
+  if (reason === 'truncated-approved') pair.baseline.truncated = { kept: 2, total: 3 };
+  if (reason === 'truncated-current') pair.current.truncated = { kept: 2, total: 3 };
+  if (reason === 'viewport') pair.current.viewport.width += 1;
+  if (reason === 'invalid-size') now.rect.h = NaN;
+  expect(namedDiff(pair).controlGeometry?.observations ?? []).toEqual([]);
+});
+
+test('context filtering cannot hide a duplicate named identity', () => {
+  const pair = namedFixture();
+  for (const side of [pair.baseline, pair.current]) {
+    side.elements.push({
+      ...namedButton('Ready', 45),
+      id: 'preview',
+      parent: null,
+      path: 'button#preview',
+    });
+    side.contextElementIds = ['preview'];
+  }
+  expect(namedDiff(pair).controlGeometry).toBeUndefined();
+});
+
+test('sibling insertion and reordering do not transfer named control measurements', () => {
+  const pair = namedFixture();
+  pair.baseline.elements.push(namedButton('Delayed', 55));
+  pair.current.elements.push(namedButton('Delayed', 49));
+  pair.current.elements.splice(1, 0, namedButton('New', 30));
+  pair.current.elements.reverse();
+  // Keep the parent first; reorder just the controls under it.
+  pair.current.elements.unshift(pair.current.elements.pop()!);
+  const result = namedDiff(pair);
+  for (const observation of result.controlGeometry?.observations ?? []) {
+    expect(observation.height).toEqual(
+      observation.name === 'Ready'
+        ? { approved: 45, current: 39 }
+        : { approved: 55, current: 49 },
+    );
+    expect(['Ready', 'Delayed']).toContain(observation.name);
+  }
+  expect(result.controlGeometry?.observations.length).toBeGreaterThan(0);
+});
+
+test('named observations keep whole identities and existing count/UTF-8 bounds', () => {
+  const pair = namedFixture();
+  for (const name of ['Delayed', 'Other', '界'.repeat(500), 'Last']) {
+    pair.baseline.elements.push(namedButton(name, 45));
+    pair.current.elements.push(namedButton(name, 39));
+  }
+  const result = namedDiff(pair).controlGeometry!;
+  expect(result.observations.length).toBeLessThanOrEqual(3);
+  expect(result.omitted).toBe(5 - result.observations.length);
+  expect(Buffer.byteLength(JSON.stringify(result.observations))).toBeLessThanOrEqual(
+    1024,
+  );
+  expect(
+    result.observations.every((observation) => !observation.name?.includes('界')),
+  ).toBe(true);
+  expect(namedDiff(pair).controlGeometry).toEqual(result);
+});
+
+test('no approved structure cannot produce approved named-control dimensions', () => {
+  const { current } = namedFixture();
+  expect(
+    structuralDiffWithCoverage({
+      current,
+      imagesIdentical: false,
+      includeControlGeometry: true,
+      pixels: { changedRegions: [], dimensionMismatch: false },
+      escalate: { command: 'report' },
+    }).controlGeometry,
+  ).toBeUndefined();
+});
+
 test('keeps measured control sizes even when parent and child shrink together', () => {
   const a = snapshot([
     element('field', 80, { tag: 'div', role: undefined }),

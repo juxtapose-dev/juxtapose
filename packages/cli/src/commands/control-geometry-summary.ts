@@ -3,7 +3,8 @@ import type { DiffResult } from '@juxtapose/core';
 const MAX_BYTES = 768;
 const MAX_ITEMS = 3;
 export interface ControlMeasurement {
-  element: { id: string } | { testId: string };
+  element:
+    { id: string } | { testId: string } | { tag: string; role: string; name: string };
   dimension: 'width' | 'height';
   approved: number;
   current: number;
@@ -32,7 +33,9 @@ export function controlGeometrySummary(results: DiffResult[]) {
         ? { id: observation.id }
         : observation.testId
           ? { testId: observation.testId }
-          : undefined;
+          : observation.name && observation.role
+            ? { tag: observation.tag, role: observation.role, name: observation.name }
+            : undefined;
       if (!element) continue;
       for (const dimension of ['height', 'width'] as const) {
         const size = observation[dimension];

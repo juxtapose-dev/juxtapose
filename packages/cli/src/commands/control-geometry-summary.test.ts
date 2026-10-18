@@ -77,3 +77,38 @@ test('bounds multibyte identities and capture lists without silently losing omis
     false,
   );
 });
+
+test('groups exact named-control measurements without expanding the compact budget', () => {
+  const data = ['ready', 'ready-mobile', 'delayed', 'delayed-mobile'].map((key) => {
+    const result = failure(key);
+    result.controlGeometry!.observations = ['Ready', 'Delayed'].map((name) => ({
+      tag: 'button',
+      role: 'button',
+      name,
+      height: { approved: 45, current: 39 },
+      provenance: 'structure',
+      confidenceRule:
+        'suppressed structural pair; unique same tag, role and name in both complete snapshots, without IDs; measured border-box size, not a CSS cause',
+      suppressedResize: true,
+    }));
+    return result;
+  });
+  const result = controlGeometrySummary(data)!;
+  expect(result.items).toEqual(
+    ['Delayed', 'Ready'].map((name) => ({
+      element: { tag: 'button', role: 'button', name },
+      dimension: 'height',
+      approved: 45,
+      current: 39,
+      captures: 'all-failing',
+    })),
+  );
+  expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(768);
+  expect(controlGeometrySummary([...data].reverse())).toEqual(result);
+  for (const capture of data)
+    capture.controlGeometry!.observations[0]!.name = '界'.repeat(500);
+  const bounded = controlGeometrySummary(data)!;
+  expect(bounded.items).toHaveLength(1);
+  expect(bounded.omittedMeasurements).toBe(1);
+  expect(JSON.stringify(bounded)).not.toContain('界');
+});

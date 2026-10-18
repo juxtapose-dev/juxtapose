@@ -24,7 +24,10 @@ import { matchElements } from './structural/match.js';
 import { synthesizeShifts } from './structural/shift.js';
 import { buildChange, buildSummary } from './structural/summary.js';
 import { componentStructure, contextPrefixes } from './structural/context.js';
-import { observeControlGeometry } from './control-geometry.js';
+import {
+  observeControlGeometry,
+  type SuppressedControlResizes,
+} from './control-geometry.js';
 
 export interface StructuralDiffInput {
   baseline?: StructureSnapshot;
@@ -95,7 +98,11 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
     !pixels.dimensionMismatch &&
     baseline.viewport.width === current.viewport.width &&
     baseline.viewport.height === current.viewport.height;
-  const suppressed = { ids: new Set<string>(), testIds: new Set<string>() };
+  const suppressed = {
+    ids: new Set<string>(),
+    testIds: new Set<string>(),
+    namedPairs: [] as NonNullable<SuppressedControlResizes['namedPairs']>[number][],
+  };
 
   // With a truncated side, the elements past the cap exist but were not
   // recorded; reporting them as removed would be a lie the summary already
@@ -110,10 +117,15 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
             current,
             matchElements(baseline, current),
             input.includeControlGeometry
-              ? (index) => {
+              ? (index, currentIndex) => {
                   const element = baseline.elements[index]!;
                   if (element.id) suppressed.ids.add(element.id);
                   else if (element.testId) suppressed.testIds.add(element.testId);
+                  else
+                    suppressed.namedPairs.push([
+                      element,
+                      current.elements[currentIndex]!,
+                    ]);
                 }
               : undefined,
           ).filter(

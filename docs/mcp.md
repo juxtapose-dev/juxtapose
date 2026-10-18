@@ -548,6 +548,13 @@ example, `height: {approved: 49, current: 36}` identifies a measured size change
 not the CSS property that caused it. Typography, padding, or layout may be
 responsible. No new capture or sidecar read is needed.
 
+An ancestor-suppressed control without IDs can also carry its exact `tag`, `role`
+and `name`, when the existing structural pair has the same unique role/name/tag
+in both complete snapshots. Renamed, duplicate or conflicting identities abstain.
+The compact `controlMeasurements` summary groups these measurements across
+captures within its existing three-item/768-byte limit. Names identify saved
+DOM evidence; they do not establish a CSS selector or a PNG target's dimensions.
+
 Full `controlGeometry` detail is not repeated in compact summaries. Its observation array is capped
 at three items and 1024 UTF-8 bytes, with an explicit `omitted` count. Ambiguous
 identities abstain; truncated snapshots report `unavailable: "truncated-structure"`.

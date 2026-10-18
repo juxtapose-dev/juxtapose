@@ -7,16 +7,27 @@ const MAX_OBSERVATIONS = 3;
 const MAX_OBSERVATION_BYTES = 1_024;
 const RULE =
   'unique same DOM id or test ID, with matching tag and role in both snapshots; measured border-box size, not a CSS cause' as const;
+const NAMED_RULE =
+  'suppressed structural pair; unique same tag, role and name in both complete snapshots, without IDs; measured border-box size, not a CSS cause' as const;
+
+export interface SuppressedControlResizes {
+  ids: ReadonlySet<string>;
+  testIds: ReadonlySet<string>;
+  /** Pairs already matched and suppressed by structural fact extraction. */
+  namedPairs?: ReadonlyArray<readonly [StructureElement, StructureElement]>;
+}
 
 export interface ControlGeometryObservation {
   id?: string;
   testId?: string;
   tag: string;
   role?: string;
+  /** Exact saved accessible name, never a truncated selector or guessed identity. */
+  name?: string;
   width?: { approved: number; current: number };
   height?: { approved: number; current: number };
   provenance: 'structure';
-  confidenceRule: typeof RULE;
+  confidenceRule: typeof RULE | typeof NAMED_RULE;
   /** Existing fact extraction omitted this resize as an ancestor follower. */
   suppressedResize?: true;
 }
@@ -29,7 +40,7 @@ export interface ControlGeometryObservation {
 export function observeControlGeometry(
   approved: StructureSnapshot,
   current: StructureSnapshot,
-  suppressed: { ids: ReadonlySet<string>; testIds: ReadonlySet<string> } = {
+  suppressed: SuppressedControlResizes = {
     ids: new Set(),
     testIds: new Set(),
   },
@@ -65,6 +76,43 @@ export function observeControlGeometry(
   };
   const a = index(approved.elements),
     b = index(current.elements);
+  // Shipment's Ready/Delayed controls were already matched, but their 45→39
+  // heights disappeared as ancestor followers because neither had an ID.
+  // Do not reuse arbitrary structural pairs: the matcher also has a tag-only
+  // fallback. Exact globally unique names only validate these suppressed pairs.
+  const namedKey = (element: StructureElement) =>
+    element.role?.trim() && element.name?.trim()
+      ? JSON.stringify([element.tag, element.role, element.name])
+      : undefined;
+  const nameIndex = (elements: StructureElement[]) => {
+    const names = new Map<string, StructureElement | null>();
+    for (const element of elements) {
+      const key = namedKey(element);
+      if (key) names.set(key, names.has(key) ? null : element);
+    }
+    return names;
+  };
+  const named = new Map<StructureElement, StructureElement>();
+  if (suppressed.namedPairs?.length) {
+    const namesA = nameIndex(approved.elements),
+      namesB = nameIndex(current.elements);
+    for (const [old, now] of suppressed.namedPairs) {
+      const key = namedKey(old);
+      if (!key || key !== namedKey(now)) continue;
+      const originalOld = namesA.get(key),
+        originalNow = namesB.get(key);
+      if (!originalOld || !originalNow) continue;
+      // Never bypass an explicit identity, including an ID present on one side
+      // only or an empty attribute. Existing ID/test-ID behavior stays separate.
+      if (
+        [old, now, originalOld, originalNow].some(
+          (element) => element.id !== undefined || element.testId !== undefined,
+        )
+      )
+        continue;
+      named.set(originalOld, originalNow);
+    }
+  }
   let abstained = 0;
   for (const old of approved.elements) {
     if (!CONTROLS.has(old.tag)) continue;
@@ -73,10 +121,11 @@ export function observeControlGeometry(
       : old.testId
         ? key('testId', old.testId)
         : undefined;
-    const now = identity ? b.get(identity) : undefined;
+    const namedNow = !identity ? named.get(old) : undefined;
+    const now = identity ? b.get(identity) : namedNow;
     if (
-      !identity ||
-      a.get(identity) !== old ||
+      (!identity && !namedNow) ||
+      (identity && a.get(identity) !== old) ||
       !now ||
       (old.id && now.id && old.id !== now.id) ||
       (old.testId && now.testId && old.testId !== now.testId) ||
@@ -99,20 +148,29 @@ export function observeControlGeometry(
         : undefined;
     if (!width && !height) continue;
     observations.push({
-      ...(old.id ? { id: old.id } : { testId: old.testId! }),
+      ...(namedNow
+        ? { name: old.name! }
+        : old.id
+          ? { id: old.id }
+          : { testId: old.testId! }),
       tag: old.tag,
       ...(old.role ? { role: old.role } : {}),
       ...(width ? { width } : {}),
       ...(height ? { height } : {}),
       provenance: 'structure',
-      confidenceRule: RULE,
-      ...((old.id ? suppressed.ids.has(old.id) : suppressed.testIds.has(old.testId!))
+      confidenceRule: namedNow ? NAMED_RULE : RULE,
+      ...(namedNow ||
+      (old.id ? suppressed.ids.has(old.id) : suppressed.testIds.has(old.testId!))
         ? { suppressedResize: true as const }
         : {}),
     });
   }
   const observationKey = (value: ControlGeometryObservation) =>
-    value.id ? key('id', value.id) : key('testId', value.testId!);
+    value.name !== undefined
+      ? JSON.stringify(['name', value.tag, value.role, value.name])
+      : value.id
+        ? key('id', value.id)
+        : key('testId', value.testId!);
   observations.sort((a, b) => {
     if (Boolean(a.suppressedResize) !== Boolean(b.suppressedResize))
       return a.suppressedResize ? -1 : 1;
