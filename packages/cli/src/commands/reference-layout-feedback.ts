@@ -62,7 +62,7 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
         ? 'This target passes; do not inspect it again to confirm. Verify any remaining required states and behavior.'
         : state.status === 'error' || state.status === 'incompatible'
           ? 'Resolve the reported capture or reference issue first; do not infer a visual edit from incompatible inputs.'
-          : 'Use measurements with source; if sufficient, edit then run affected states once. cropRequest selects only cropRegion: use it for an unresolved question there, or detail=json for another region. If absent, no saved crop is available. Do not guess unmeasured target styles or repeat returned facts.',
+          : 'Use source + measurements to propose an edit, then run affected states once. Treat CSS causes as hypotheses. cropRequest covers cropRegion only; JSON may add saved facts; omissions can remain. It cannot add PNG target DOM or abstained matches. If cropRequest is absent, no saved crop is available.',
   };
   if (!layout || !('matches' in layout))
     return bounded({

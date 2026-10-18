@@ -381,8 +381,10 @@ export const TOOLS: Tool[] = [
     name: 'reference',
     // The geometry-sufficient repair still viewed two PNGs alongside its
     // measurement requests. Ask clients to evaluate evidence before more images.
+    // Both team decision replays requested JSON for facts analysis abstained
+    // from producing. Distinguish a testable edit from a measured CSS cause.
     description:
-      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Request detail=layout with name only for missing geometry. If source and measurements resolve the edit, edit then run; otherwise request region (optionally detail=crop) for one paired PNG crop. Prefer measurements when sufficient. Use returned cropRequest directly when it covers the unresolved question; JSON is unnecessary for that crop. Request detail=json only for a different missing fact. For extra reads, question names the missing observable. Exact target matches need no confirmation call.',
+      'Read saved evidence without recapture. Default: latest capture versus design target. compare=previous compares saved runs (fromRun, toRun defaults to latest): shared-capture pixel and structural deltas, not target progress. Use source + measurements to propose CSS edits as hypotheses, then run affected states to verify. Request detail=layout with name for missing geometry; region (optionally detail=crop) for one paired PNG crop. Use returned cropRequest directly when relevant. detail=json may add saved facts/current DOM paths; omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. Exact target matches need no confirmation call.',
     inputSchema: {
       type: 'object',
       properties: {

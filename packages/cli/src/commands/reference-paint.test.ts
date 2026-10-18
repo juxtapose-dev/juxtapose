@@ -366,3 +366,17 @@ test('real MCP compact and full requests reuse cached text and keep the default 
     await control.close();
   }
 });
+
+test('paint budget fallback permits verified hypotheses without promising all omitted facts', async () => {
+  const f = await fixture(),
+    p = provider();
+  const layout = await new ReferenceLayoutCache(p).evaluate(f);
+  const packet = appendFocusedPaint({ next: 'x'.repeat(3000) }, layout.paint);
+  expect(packet.paint?.target).not.toHaveLength(0);
+  expect(packet.next).toContain('source-grounded edits');
+  expect(packet.next).toContain('verify affected states');
+  expect(packet.next).toContain('CSS causes are hypotheses');
+  expect(packet.next).toContain('omissions can remain');
+  expect(packet.next).toContain('No PNG target DOM or abstained matches');
+  expect(Buffer.byteLength(JSON.stringify(packet))).toBeLessThanOrEqual(3072);
+});

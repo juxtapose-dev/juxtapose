@@ -222,12 +222,24 @@ projects, each viewport entry has its own capture ID: `stories` selects those
 exact IDs rather than automatically adding related viewport entries. Use
 `run({all: true})` when every configured state is required.
 
-Measurements that explain one region do not determine all target styles. Do not
-infer a font size from a painted box height or treat the lowest nonzero mismatch
-as a verified CSS value. If source and measurements leave several plausible
-values, resolve that specific uncertainty before editing; use one focused crop
-when text evidence is insufficient. Experimental hypothesis probes are not part
-of the public tool set.
+Measurements describe pixels, not CSS causes. Use current source and those
+measurements to form a candidate CSS edit, then verify it against every required
+target state. Treat the inferred cause as a hypothesis, not a measured fact. A
+painted box height does not prove a font size; a nonzero mismatch minimum does
+not verify a CSS value. Request more evidence for a specific observable that
+would change the edit when the current evidence cannot support a testable
+hypothesis. A saved crop can answer unresolved appearance questions.
+
+Full JSON may add saved measurements, current DOM paths and cached text when
+available; omissions can remain. It cannot supply a PNG target's DOM, prove CSS causation or recover
+matches that analysis abstained from producing. `omittedMatches` counts accepted
+matches left out of the response, including the full ledger's eight-match limit
+as well as the preview's byte limit. It does not promise that every omitted
+match is available in JSON. `abstained` is not another inventory of accepted
+matches waiting there. Do not repeat a request for an unavailable fact.
+Experimental hypothesis probes are not part of the public tool set. These
+routing boundaries follow the recorded requests in the team decision replay;
+their effect on completed-task efficiency remains unmeasured.
 
 Call advertised tool names directly when their arguments are known. If a client
 needs a catalog lookup, filter locally and return only the matching names; fetch

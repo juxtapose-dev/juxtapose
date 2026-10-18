@@ -473,7 +473,7 @@ export function appendFocusedPaint<
   if (!fits(result))
     result = {
       ...result,
-      next: 'Use measured facts with source. Use cropRequest for unresolved appearance in cropRegion; detail=json for missing facts or full cached text. Do not guess unmeasured styles or repeat facts.',
+      next: 'Propose source-grounded edits; verify affected states. CSS causes are hypotheses. Crop covers cropRegion only. JSON may add saved facts/full text; omissions can remain. No PNG target DOM or abstained matches.',
     };
   if (!fits(result)) return packet;
   for (let i = 0; i < 2; i++)

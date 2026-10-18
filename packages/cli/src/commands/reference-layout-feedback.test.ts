@@ -109,8 +109,9 @@ test('capture errors retain a bounded reason without another ledger request', ()
 
 test('partial geometry allows a direct edit but does not prescribe guessed target styles', () => {
   const response = focusedLayoutFeedback(fixture());
-  expect(response.next).toContain('if sufficient, edit');
-  expect(response.next).toContain('Do not guess unmeasured target styles');
+  expect(response.next).toContain('propose an edit');
+  expect(response.next).toContain('Treat CSS causes as hypotheses');
+  expect(response.next).toContain('cannot add PNG target DOM or abstained matches');
   expect(response.next).toContain('cropRequest');
   expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThanOrEqual(3072);
 });

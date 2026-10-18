@@ -43,6 +43,13 @@ test('workflow guidance remains with the tool that performs it', () => {
     'restore its source, not the baselines',
   );
   expect(tool('reference').description).toContain('without recapture');
+  expect(tool('reference').description).toContain('CSS edits as hypotheses');
+  expect(tool('reference').description).toContain('run affected states to verify');
+  expect(tool('reference').description).toContain(
+    'cannot add PNG target DOM, prove CSS causes or resolve abstained matches',
+  );
+  expect(tool('reference').description).toContain('observable the tool can supply');
+  expect(tool('reference').description).toContain('omissions can remain');
   expect(tool('reference').description).toContain('detail=layout with name');
   expect(tool('reference').description).toContain('one paired PNG crop');
   expect(tool('reference').description).toContain('Use returned cropRequest directly');
