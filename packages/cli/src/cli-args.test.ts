@@ -107,6 +107,13 @@ describe('jux argument validation', () => {
     }
   });
 
+  it('snap --help lists --viewport, --device and --orientation', () => {
+    const out = jux('snap', '--help').out;
+    expect(out).toContain('--viewport WxH');
+    expect(out).toContain('--device <name>');
+    expect(out).toContain('--orientation portrait|landscape');
+  });
+
   it('per-command help is that command, not the whole manual', () => {
     const run = jux('run', '--help').out;
     expect(run).toContain('--settle-timeout');

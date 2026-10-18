@@ -547,6 +547,26 @@ describe('jux mcp lifecycle', () => {
     await c.close();
   });
 
+  test('an unknown device or orientation is a usage error', async () => {
+    const c = new Client(project);
+    await handshake(c);
+    const r = await c.call('snap', {
+      url: 'http://127.0.0.1:1/',
+      as: 'x',
+      device: 'iphone15',
+    });
+    expect(r.isError).toBe(true);
+    expect(text(r)).toContain('did you mean iphone-15');
+    const bad = await c.call('snap', {
+      url: 'http://127.0.0.1:1/',
+      as: 'x',
+      orientation: 'sideways',
+    });
+    expect(bad.isError).toBe(true);
+    expect(text(bad)).toMatch(/orientation/);
+    await c.close();
+  });
+
   test('error text names tools, not shell commands', async () => {
     const c = new Client(project);
     await handshake(c);
@@ -637,6 +657,33 @@ describe.skipIf(!chrome())('jux mcp against a real page', () => {
     const before = await c.call('snap', { url: base, as: 'before', viewport });
     expect(before.isError).toBe(false);
     expect(JSON.parse(text(before))).toMatchObject({ name: 'before', viewport });
+
+    const phone = await c.call('snap', { url: base, as: 'phone', device: 'pixel-8' });
+    expect(phone.isError).toBe(false);
+    expect(JSON.parse(text(phone))).toMatchObject({
+      device: 'pixel-8',
+      viewport: { width: 412, height: 915 },
+    });
+
+    const short = await c.call('snap', {
+      url: base,
+      as: 'short',
+      device: 'pixel-8',
+      viewport: { width: 412, height: 600 },
+    });
+    expect(short.isError).toBe(false);
+    expect(JSON.parse(text(short))).toMatchObject({
+      device: 'pixel-8',
+      viewport: { width: 412, height: 600 },
+    });
+
+    const wide = await c.call('snap', {
+      url: base,
+      as: 'wide',
+      orientation: 'landscape',
+      viewport,
+    });
+    expect(JSON.parse(text(wide))).toMatchObject({ viewport });
 
     edited = true;
     const after = await c.call('snap', { url: base, as: 'after', viewport });

@@ -28,6 +28,12 @@ import {
 import { configError, fits, validate } from '../config/validate.js';
 import { Type } from '@sinclair/typebox/type';
 import { SettleConfigError } from './config-errors.js';
+import {
+  resolveDevices,
+  type DeviceRegistry,
+  type UserDeviceSpec,
+} from '../browser/devices.js';
+import { lookupDevice } from './device.js';
 import { checkRulePlaceholders } from './network-rules.js';
 import { parsePattern, type UrlPattern } from './url-pattern.js';
 
@@ -198,10 +204,48 @@ export function checkProjectSettle(config: unknown): void {
   const c = validate<{
     network?: NetworkParams;
     stories?: Record<string, { network?: NetworkParams }>;
+    devices?: Record<string, UserDeviceSpec>;
+    device?: string;
   }>(ProjectRuntimeSchema, config, 'project config');
   checkRulePlaceholders(c.network?.rules, 'project config');
   for (const [glob, o] of Object.entries(c.stories ?? {}))
     checkRulePlaceholders(o.network?.rules, `project config: stories '${glob}'`);
+  checkProjectDevices(c, (config as { variants?: unknown }).variants);
+}
+
+/** The project's devices resolve (no cycle, no unknown `extends`, a size for
+ *  each) and the devices it names exist. Unchecked, a cycle surfaced as a
+ *  plain Error from inside `jux snap`: "unexpected failure", exit 3. */
+function checkProjectDevices(
+  c: { devices?: Record<string, UserDeviceSpec>; device?: string },
+  variants: unknown,
+): void {
+  const fail = (where: string, e: unknown): never => {
+    throw new SettleConfigError(
+      `project config: ${where}${e instanceof Error ? e.message : String(e)}`,
+    );
+  };
+  let registry: DeviceRegistry;
+  try {
+    registry = resolveDevices(c.devices);
+  } catch (e) {
+    return fail('', e);
+  }
+  const check = (name: string, where: string): void => {
+    try {
+      lookupDevice(name, registry);
+    } catch (e) {
+      fail(where, e);
+    }
+  };
+  if (c.device !== undefined) check(c.device, '');
+  // `variants` is shape-checked when stories are expanded; here only a
+  // variant's device name is looked up.
+  if (typeof variants !== 'object' || variants === null) return;
+  for (const [name, spec] of Object.entries(variants)) {
+    const device = (spec as { device?: unknown } | null)?.device;
+    if (typeof device === 'string') check(device, `variants.${name}: `);
+  }
 }
 
 export { SettleConfigError };

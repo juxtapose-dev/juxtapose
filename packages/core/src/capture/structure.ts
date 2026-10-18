@@ -189,6 +189,8 @@ export const round = (n: number) => Math.round(n * 100) / 100;
 export function normalizeStructure(
   raw: CdpSnapshot,
   viewport: Viewport,
+  scale = 1,
+  origin: { x: number; y: number } = { x: 0, y: 0 },
 ): StructureSnapshot {
   const doc = raw.documents[0];
   // captureStructure's catch turns this into "no structure", as it did the
@@ -313,6 +315,16 @@ export function normalizeStructure(
   // every laid-out element.
   const rectOf = (row: number): StructureRect => {
     const b = layout.bounds[row]!; // row came from layoutOf
+    // Bounds are CSS document pixels; a zoomed image is not, and a viewport
+    // image starts at the visual viewport's page offset (see fullPageSize,
+    // viewportZoom).
+    if (scale !== 1)
+      return {
+        x: round(((b[0] as number) - origin.x) * scale),
+        y: round(((b[1] as number) - origin.y) * scale),
+        w: round((b[2] as number) * scale),
+        h: round((b[3] as number) * scale),
+      };
     return {
       x: round(b[0] as number),
       y: round(b[1] as number),
@@ -462,7 +474,10 @@ export function normalizeStructure(
     styleCaptureVersion: 2,
     viewport,
     structureHash: hashElements(elements),
-    contentHeight: round(doc.contentHeight ?? viewport.height),
+    // Compared with viewport.height (below-fold), so in the same image pixels.
+    contentHeight: round(
+      doc.contentHeight === undefined ? viewport.height : doc.contentHeight * scale,
+    ),
     elements,
   };
   if (total > elements.length) snapshot.truncated = { kept: elements.length, total };
@@ -763,6 +778,8 @@ export async function captureStructure(
   viewport: Viewport,
   mask: readonly string[],
   timings?: StructureCaptureTimings,
+  scale = 1,
+  origin: { x: number; y: number } = { x: 0, y: 0 },
 ): Promise<StructureSnapshot | undefined> {
   const mark = (sel: string) =>
     queryAllExpression(
@@ -862,7 +879,7 @@ export async function captureStructure(
     }
     const start = timings ? performance.now() : 0;
     try {
-      return normalizeStructure(raw, viewport);
+      return normalizeStructure(raw, viewport, scale, origin);
     } finally {
       if (timings) timings.normalize = performance.now() - start;
     }

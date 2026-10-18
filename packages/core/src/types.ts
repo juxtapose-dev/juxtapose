@@ -162,6 +162,12 @@ export interface Snapshot {
   viewport: Viewport;
   /** Original browser layout viewport, present for full-page captures. */
   layoutViewport?: Viewport;
+  /** The device preset the capture emulated, by its key or alias. Absent
+   *  without one, and without `orientation`. */
+  device?: string;
+  /** Fingerprint of the emulation applied (device, orientation, mobile,
+   *  touch, UA). Absent exactly when nothing was emulated. */
+  emulation?: string;
   capturedAt: string;
   /** Wall time for this story's capture, ms. */
   durationMs: number;
@@ -443,6 +449,9 @@ export interface DiffResult {
   viewport?: Viewport;
   /** Original browser layout viewport for full-page captures. */
   layoutViewport?: Viewport;
+  /** Copied from the Snapshot: the emulated device and its fingerprint. */
+  device?: string;
+  emulation?: string;
   /** Set when the capture or diff threw. status is 'fail' in that case. */
   error?: string;
   /** Set on a 'fail' whose approved image is not on this machine (not in the
@@ -455,6 +464,11 @@ export interface DiffResult {
    *  whatever the pixels are, so the run reports the encoder change and the
    *  fix (re-approve) rather than a regression. */
   baselineEncoder?: string;
+  /** Set on a 'fail' whose baseline was approved on another device: the
+   *  emulation fingerprints, `'default'` for none. The pixels differ because
+   *  the device does, so the run reports the change and the fix (re-approve)
+   *  rather than a regression. */
+  baselineEmulation?: { from: string; to: string };
   /** Tier-0 explanation of a failure. Present only when status is 'fail' and
    *  the current capture produced a structure; never consulted on pass. */
   structural?: StructuralVerdict;
@@ -610,6 +624,10 @@ export interface ApprovalMeta {
   /** Absent on entries approved before this was recorded. Absent must not read
    *  as "matches": an unknown origin is unknown, not current. */
   env?: CaptureEnv;
+  /** Emulation fingerprint of the approved capture (`Snapshot.emulation`).
+   *  Absent for the default device, and on entries approved before it was
+   *  recorded: both read as the default. */
+  emulation?: string;
   /** structureHash of the approved capture's sidecar. Absent when the capture
    *  had no structure, or was approved before sidecars existed. */
   structureHash?: string;

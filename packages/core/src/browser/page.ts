@@ -8,7 +8,8 @@
 // Screenshotter.screenshotPage (coreBundle.js L21258–21370).
 
 import type { Protocol } from 'devtools-protocol';
-import type { Viewport } from './types.js';
+import type { DeviceEmulation, UserAgentMetadata, Viewport } from './types.js';
+import { CHROME_VERSION } from './pins.js';
 import {
   CdpConnection,
   CdpError,
@@ -34,6 +35,18 @@ export class PageCrashedError extends Error {
     super('jux: the page crashed (its renderer process is gone)');
     this.name = 'PageCrashedError';
   }
+}
+
+/** A full-page image's size in pixels; `scale` is the page zoom, present only when not 1. */
+export interface FullPageSize extends Viewport {
+  scale?: number;
+}
+
+/** The visual viewport a viewport capture clips to: page offset in CSS pixels, and zoom. */
+export interface ViewportZoom {
+  scale: number;
+  pageX: number;
+  pageY: number;
 }
 
 /**
@@ -83,15 +96,27 @@ export interface Page {
    */
   setColorScheme?(scheme: 'light' | 'dark'): Promise<void>;
   /**
+   * Resize and emulate a device (mobile metrics, touch, UA), or with
+   * `undefined` go back to the default desktop emulation. Optional so a Page
+   * implemented outside core still type-checks.
+   * @internal Core sets it per capture for `device`/`orientation`; adapters must not.
+   */
+  setEmulation?(
+    viewport: Viewport,
+    emulation: DeviceEmulation | undefined,
+  ): Promise<void>;
+  /**
    * PNG by default. `format: 'webp'` is Chrome's lossless WebP (VP8L, with
    * Chrome's ICC chunk still in it). Core removes that metadata before hashing.
    */
-  fullPageSize?(): Promise<Viewport>;
+  fullPageSize?(): Promise<FullPageSize>;
+  /** The zoom a viewport capture clips by, when mobile emulation zoomed the page; else undefined. */
+  viewportZoom?(): Promise<ViewportZoom | undefined>;
   screenshot(opts?: {
     mask?: string[];
     format?: 'png' | 'webp';
     fullPage?: boolean;
-    captureSize?: Viewport;
+    captureSize?: FullPageSize;
   }): Promise<Buffer>;
   /**
    * Raw CDP on this page's session, for DOMSnapshot.
@@ -267,17 +292,43 @@ const BLOCK_SERVICE_WORKERS_SCRIPT = `
 if (navigator.serviceWorker) navigator.serviceWorker.register = async () => { console.warn('Service Worker registration blocked by Playwright'); };
 `;
 
+// Without a device this is the override every capture has always sent:
+// desktop, landscape, even for a tall viewport. Changing it would move the
+// bytes of every existing baseline.
 const metricsOverride = (
   v: Viewport,
+  emulation?: DeviceEmulation,
 ): Protocol.Emulation.SetDeviceMetricsOverrideRequest => ({
-  mobile: false,
+  mobile: emulation?.mobile ?? false,
   width: v.width,
   height: v.height,
   screenWidth: v.width,
   screenHeight: v.height,
   deviceScaleFactor: 1,
-  screenOrientation: { angle: 0, type: 'landscapePrimary' },
+  screenOrientation: emulation
+    ? {
+        angle: emulation.angle,
+        type:
+          emulation.orientation === 'portrait' ? 'portraitPrimary' : 'landscapePrimary',
+      }
+    : { angle: 0, type: 'landscapePrimary' },
 });
+
+// Metadata without brands gets Chrome's defaults, measured 2026-10-17 on
+// Chrome 151: brands Not=A?Brand 99, HeadlessChrome 151, Chromium 151, and
+// fullVersionList the same with 99.0.0.0 and the full version. A real phone
+// says Google Chrome, and Sec-CH-UA is what phone and bot detection reads, so
+// supply that list in Chrome's order with Google Chrome for HeadlessChrome.
+const CHROME_MAJOR = CHROME_VERSION.split('.')[0]!;
+const chromeBrands = (major: boolean): Protocol.Emulation.UserAgentBrandVersion[] => [
+  { brand: 'Not=A?Brand', version: major ? '99' : '99.0.0.0' },
+  { brand: 'Google Chrome', version: major ? CHROME_MAJOR : CHROME_VERSION },
+  { brand: 'Chromium', version: major ? CHROME_MAJOR : CHROME_VERSION },
+];
+const clientHints = (m: UserAgentMetadata): Protocol.Emulation.UserAgentMetadata =>
+  m.brands
+    ? m
+    : { ...m, brands: chromeBrands(true), fullVersionList: chromeBrands(false) };
 
 // Only the color scheme varies (per-story variants); every other feature is
 // pinned for every capture.
@@ -376,6 +427,8 @@ export const FRESH_RENDERER_URL = 'data:text/html,jux-fresh-renderer';
 export class CdpPage implements Page {
   private currentUrl = 'about:blank';
   private viewport: Viewport;
+  /** The device setEmulation applied; setViewportSize keeps it. */
+  private emulation: DeviceEmulation | undefined;
   private closed = false;
   /**
    * Why the page is unusable, once it is. `goneP` rejects with it at that
@@ -708,19 +761,74 @@ export class CdpPage implements Page {
       viewport.height === this.viewport.height
     )
       return;
-    await this.send('Emulation.setDeviceMetricsOverride', metricsOverride(viewport));
+    await this.send(
+      'Emulation.setDeviceMetricsOverride',
+      metricsOverride(viewport, this.emulation),
+    );
     this.viewport = viewport;
+  }
+
+  // Measured 2026-10-17, Chrome 151 with jux's launch flags: touch emulation
+  // overrides the pinned --blink-settings hover/pointer types per page. After
+  // these four calls and a navigation a page reports (pointer: coarse),
+  // (hover: none), maxTouchPoints 5, ontouchstart, the override UA,
+  // userAgentData.mobile true and portrait-primary; touch/mouse disabled,
+  // userAgent '' and the default metrics restore pointer fine, 0 touch points,
+  // Browser.getVersion's UA, landscape-primary, userAgentData.mobile false and
+  // the default brands. A page that never had a device gets only the metrics
+  // call, so the default path sends what it always has.
+  async setEmulation(
+    viewport: Viewport,
+    emulation: DeviceEmulation | undefined,
+  ): Promise<void> {
+    const previous = this.emulation;
+    await this.send(
+      'Emulation.setDeviceMetricsOverride',
+      metricsOverride(viewport, emulation),
+    );
+    this.viewport = viewport;
+    this.emulation = emulation;
+    if (!emulation && !previous) return;
+    const touch = emulation?.touch ?? false;
+    await this.send(
+      'Emulation.setTouchEmulationEnabled',
+      touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false },
+    );
+    await this.send(
+      'Emulation.setEmitTouchEventsForMouse',
+      touch ? { enabled: true, configuration: 'mobile' } : { enabled: false },
+    );
+    await this.send(
+      'Emulation.setUserAgentOverride',
+      emulation?.userAgent
+        ? {
+            userAgent: emulation.userAgent,
+            ...(emulation.userAgentMetadata && {
+              userAgentMetadata: clientHints(emulation.userAgentMetadata),
+            }),
+          }
+        : { userAgent: '' },
+    );
   }
 
   async setColorScheme(scheme: 'light' | 'dark'): Promise<void> {
     await this.send('Emulation.setEmulatedMedia', emulatedMedia(scheme));
   }
 
-  /** Document capture bounds; does not resize the emulated layout viewport. */
-  async fullPageSize(): Promise<Viewport> {
-    const { cssContentSize } = await this.send('Page.getLayoutMetrics');
-    const width = Math.max(this.viewport.width, Math.ceil(cssContentSize.width));
-    const height = Math.max(this.viewport.height, Math.ceil(cssContentSize.height));
+  /**
+   * Document capture bounds, as image pixels at the page's zoom; does not
+   * resize the emulated layout viewport. Only mobile emulation zooms: a page
+   * with no viewport meta is laid out 980px wide and scaled to fit the device,
+   * so the image is the device's width, as the phone shows it.
+   */
+  async fullPageSize(): Promise<FullPageSize> {
+    const { cssContentSize, visualViewport } = await this.send('Page.getLayoutMetrics');
+    const scale = this.emulation?.mobile ? visualViewport.scale : 1;
+    const width = Math.max(this.viewport.width, Math.ceil(cssContentSize.width * scale));
+    const height = Math.max(
+      this.viewport.height,
+      Math.ceil(cssContentSize.height * scale),
+    );
     if (
       !Number.isSafeInteger(width) ||
       !Number.isSafeInteger(height) ||
@@ -731,7 +839,18 @@ export class CdpPage implements Page {
       throw new Error(
         'jux: full-page capture exceeds safe image bounds (32767px per side, 100 million pixels)',
       );
-    return { width, height };
+    return scale === 1 ? { width, height } : { width, height, scale };
+  }
+
+  // A viewport capture clips by the visual viewport (see screenshot), so a
+  // zoomed page's structure needs the same offset and scale to line up with
+  // the image. Only mobile emulation zooms; without it there is no read.
+  async viewportZoom(): Promise<ViewportZoom | undefined> {
+    if (!this.emulation?.mobile) return undefined;
+    const { visualViewport } = await this.send('Page.getLayoutMetrics');
+    if (visualViewport.scale === 1) return undefined;
+    const { scale, pageX, pageY } = visualViewport;
+    return { scale, pageX, pageY };
   }
 
   /** Screenshotter.screenshotPage: prepare → fonts.ready → mask → getLayoutMetrics → captureScreenshot → cleanup. */
@@ -740,7 +859,7 @@ export class CdpPage implements Page {
       mask?: string[];
       format?: 'png' | 'webp';
       fullPage?: boolean;
-      captureSize?: Viewport;
+      captureSize?: FullPageSize;
     } = {},
   ): Promise<Buffer> {
     const mask = opts.mask ?? [];
@@ -762,7 +881,15 @@ export class CdpPage implements Page {
           ? (opts.captureSize ?? (await this.fullPageSize()))
           : undefined;
         const clip = fullSize
-          ? { x: 0, y: 0, ...fullSize, scale: 1 }
+          ? fullSize.scale === undefined
+            ? { x: 0, y: 0, ...fullSize, scale: 1 }
+            : {
+                x: 0,
+                y: 0,
+                width: fullSize.width / fullSize.scale,
+                height: fullSize.height / fullSize.scale,
+                scale: fullSize.scale,
+              }
           : {
               x: visualViewport.pageX,
               y: visualViewport.pageY,

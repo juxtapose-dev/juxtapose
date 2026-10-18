@@ -60,3 +60,20 @@ export function encoderChange(
   const from = entry.env?.encoder;
   return from === CAPTURE_ENCODER ? undefined : (from ?? 'unrecorded');
 }
+
+/**
+ * The device emulation a baseline entry was approved with, when this capture
+ * used another: the pixels differ because the device does, so the run reports a
+ * device change to re-approve, not a regression. Absent on either side is the
+ * implicit default device, so baselines approved before emulation was recorded
+ * stay on the hash fast path for default captures.
+ */
+export function emulationChange(
+  entry: { emulation?: string } | undefined,
+  current: string | undefined,
+): { from: string; to: string } | undefined {
+  if (!entry) return undefined;
+  const from = entry.emulation ?? 'default';
+  const to = current ?? 'default';
+  return from === to ? undefined : { from, to };
+}

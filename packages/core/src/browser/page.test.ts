@@ -8,11 +8,25 @@ import { CdpConnection, SendTimeoutError, TargetClosedError } from './cdp.js';
 import type { Transport } from './transport.js';
 import { launchChrome, type LaunchedChrome } from './launch.js';
 import { chromeForTests } from './__tests__/helpers.js';
+import { BUILTIN_DEVICES } from './devices.js';
+import type { DeviceEmulation } from './types.js';
 
 const chrome = chromeForTests();
+
+const PIXEL_8 = BUILTIN_DEVICES['pixel-8']!;
+const pixel8Emulation: DeviceEmulation = {
+  mobile: PIXEL_8.mobile,
+  touch: PIXEL_8.touch,
+  orientation: 'portrait',
+  angle: 0,
+  userAgent: PIXEL_8.userAgent,
+  userAgentMetadata: PIXEL_8.userAgentMetadata,
+};
 let server: Server;
 let base: string;
 let browser: Browser;
+/** Each request's `sec-ch-ua` header, by path. */
+const secChUa = new Map<string, string | undefined>();
 
 const PAGES: Record<string, string> = {
   '/tall':
@@ -43,6 +57,7 @@ const PAGES: Record<string, string> = {
 
 beforeAll(async () => {
   server = createServer((req, res) => {
+    secChUa.set(req.url ?? '', req.headers['sec-ch-ua'] as string | undefined);
     if (req.url === '/hang') return; // keep the request open forever
     if (req.url === '/slow-img') {
       setTimeout(() => {
@@ -238,6 +253,71 @@ describe.skipIf(!chrome)('CdpPage', () => {
       const meta = await sharp(await page.screenshot()).metadata();
       expect([meta.format, meta.width, meta.height]).toEqual(['png', 480, 400]);
     }));
+  it('setEmulation applies mobile metrics, touch and UA client hints, and undefined resets them', () =>
+    withPage(async (page) => {
+      type Brand = { brand: string; version: string };
+      const probe = () =>
+        page.evaluate(async () => {
+          const uaData = (
+            navigator as Navigator & {
+              userAgentData: {
+                mobile: boolean;
+                brands: Brand[];
+                getHighEntropyValues(h: string[]): Promise<{ fullVersionList: Brand[] }>;
+              };
+            }
+          ).userAgentData;
+          return {
+            coarse: matchMedia('(pointer: coarse)').matches,
+            fine: matchMedia('(pointer: fine)').matches,
+            hoverNone: matchMedia('(hover: none)').matches,
+            touchPoints: navigator.maxTouchPoints,
+            ua: navigator.userAgent,
+            mobile: uaData.mobile,
+            brands: uaData.brands,
+            fullVersionList: (await uaData.getHighEntropyValues(['fullVersionList']))
+              .fullVersionList,
+            orientation: screen.orientation.type,
+          };
+        });
+      // http://127.0.0.1, not data:: userAgentData exists only in a secure context.
+      await page.goto(`${base}/frame`);
+      const never = await probe();
+      const major = never.brands.find((b) => b.brand === 'Chromium')!.version;
+
+      const viewport = { width: 393, height: 852 };
+      await page.setEmulation!(viewport, pixel8Emulation);
+      await page.goto(`${base}/plain`);
+      const device = await probe();
+      expect(device).toMatchObject({
+        coarse: true,
+        hoverNone: true,
+        touchPoints: 5,
+        ua: PIXEL_8.userAgent,
+        mobile: true,
+        orientation: 'portrait-primary',
+      });
+      // A real Android phone says Google Chrome; HeadlessChrome is a bot tell.
+      for (const list of [device.brands, device.fullVersionList]) {
+        expect(list.map((b) => b.brand)).toContain('Google Chrome');
+        expect(list.map((b) => b.brand)).not.toContain('HeadlessChrome');
+      }
+      expect(device.brands).toContainEqual({ brand: 'Google Chrome', version: major });
+      expect(secChUa.get('/plain')).toContain(`"Google Chrome";v="${major}"`);
+      expect(secChUa.get('/plain')).not.toContain('HeadlessChrome');
+
+      await page.setEmulation!(viewport, undefined);
+      await page.goto(`${base}/frame`);
+      const { userAgent } = await page.send('Browser.getVersion');
+      expect(await probe()).toEqual({
+        ...never,
+        fine: true,
+        touchPoints: 0,
+        ua: userAgent,
+        mobile: false,
+        orientation: 'landscape-primary',
+      });
+    }));
   it('full-page captures preserve the layout viewport and include below-fold DOM at matching coordinates', () =>
     withPage(async (page) => {
       await page.setViewportSize({ width: 480, height: 400 });
@@ -405,6 +485,98 @@ describe.skipIf(!chrome)('Browser over a borrowed connection', () => {
       });
     } finally {
       spy.mockRestore();
+      await ctx.close();
+    }
+  });
+
+  it('setEmulation(undefined) on a page that never had a device sends only the default metrics', async () => {
+    const ctx = await borrowed.newContext({ viewport: { width: 800, height: 600 } });
+    try {
+      const page = await ctx.newPage();
+      const spy = vi.spyOn(launched.connection, 'send');
+      try {
+        await page.setEmulation!({ width: 393, height: 852 }, undefined);
+        expect(spy.mock.calls.map((c) => [c[0], c[1]])).toEqual([
+          [
+            'Emulation.setDeviceMetricsOverride',
+            {
+              mobile: false,
+              width: 393,
+              height: 852,
+              screenWidth: 393,
+              screenHeight: 852,
+              deviceScaleFactor: 1,
+              screenOrientation: { angle: 0, type: 'landscapePrimary' },
+            },
+          ],
+        ]);
+      } finally {
+        spy.mockRestore();
+      }
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it('setEmulation sends metrics, touch, mouse-as-touch and UA in order; setViewportSize keeps the device', async () => {
+    const ctx = await borrowed.newContext({ viewport: { width: 800, height: 600 } });
+    try {
+      const page = await ctx.newPage();
+      const spy = vi.spyOn(launched.connection, 'send');
+      try {
+        await page.setEmulation!(
+          { width: 915, height: 412 },
+          { ...pixel8Emulation, orientation: 'landscape', angle: 90 },
+        );
+        const sent = spy.mock.calls.map((c) => c[0]);
+        expect(sent).toEqual([
+          'Emulation.setDeviceMetricsOverride',
+          'Emulation.setTouchEmulationEnabled',
+          'Emulation.setEmitTouchEventsForMouse',
+          'Emulation.setUserAgentOverride',
+        ]);
+        expect(spy.mock.calls[0]![1]).toMatchObject({
+          mobile: true,
+          width: 915,
+          height: 412,
+          deviceScaleFactor: 1,
+          screenOrientation: { angle: 90, type: 'landscapePrimary' },
+        });
+        expect(spy.mock.calls[1]![1]).toEqual({ enabled: true, maxTouchPoints: 5 });
+        expect(spy.mock.calls[2]![1]).toEqual({ enabled: true, configuration: 'mobile' });
+        expect(spy.mock.calls[3]![1]).toMatchObject({ userAgent: PIXEL_8.userAgent });
+
+        spy.mockClear();
+        await page.setViewportSize({ width: 800, height: 400 });
+        expect(spy.mock.calls.map((c) => [c[0], c[1]])).toEqual([
+          [
+            'Emulation.setDeviceMetricsOverride',
+            expect.objectContaining({
+              mobile: true,
+              width: 800,
+              screenOrientation: { angle: 90, type: 'landscapePrimary' },
+            }),
+          ],
+        ]);
+
+        spy.mockClear();
+        await page.setEmulation!({ width: 800, height: 600 }, undefined);
+        expect(spy.mock.calls.map((c) => [c[0], c[1]])).toEqual([
+          [
+            'Emulation.setDeviceMetricsOverride',
+            expect.objectContaining({
+              mobile: false,
+              screenOrientation: { angle: 0, type: 'landscapePrimary' },
+            }),
+          ],
+          ['Emulation.setTouchEmulationEnabled', { enabled: false }],
+          ['Emulation.setEmitTouchEventsForMouse', { enabled: false }],
+          ['Emulation.setUserAgentOverride', { userAgent: '' }],
+        ]);
+      } finally {
+        spy.mockRestore();
+      }
+    } finally {
       await ctx.close();
     }
   });

@@ -116,7 +116,7 @@ export {
   describeEncoder,
   describeEncoderFailures,
 } from './capture/encoder.js';
-export { encoderChange } from './capture/env.js';
+export { emulationChange, encoderChange } from './capture/env.js';
 // Where each capture setting came from: `jux config --explain`.
 export {
   ProvenanceLog,
@@ -263,6 +263,7 @@ export { phases, formatPhases, type Phases } from './run/phases.js';
 export {
   snapPage,
   snapPages,
+  DEFAULT_SNAP_VIEWPORT,
   type SnapOptions,
   type SnapResult,
   type SnapPagesOptions,
@@ -367,3 +368,13 @@ export { describeVisualEquivalence } from './report/comparison.js';
 
 export { selectStories, discoveryStoryIds } from './capture/story-selection.js';
 export { batchApprovals } from './baseline/manifest-batch.js';
+
+// Device presets: the registry (built-ins plus the project's `devices`) and the
+// check `jux snap` runs on --device before it launches a browser.
+export {
+  BUILTIN_DEVICES,
+  resolveDevices,
+  type DeviceRegistry,
+  type UserDeviceSpec,
+} from './browser/devices.js';
+export { resolveDevice, UnknownDeviceError } from './capture/device.js';

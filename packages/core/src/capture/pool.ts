@@ -83,6 +83,10 @@ export interface PoolOptions {
   onWarning?: (message: string) => void;
   /** Settle options around each story's own; see CaptureDeps. */
   settleLayers?: { project?: SettleLayer; call?: SettleLayer };
+  /** Device presets and the project's defaults; see CaptureDeps. */
+  devices?: CaptureDeps['devices'];
+  defaultDevice?: string;
+  defaultOrientation?: CaptureDeps['defaultOrientation'];
 }
 
 export interface CaptureOutcome {
@@ -172,6 +176,11 @@ export async function* capturePool(
       ...(opts.freshRenderer !== undefined ? { freshRenderer: opts.freshRenderer } : {}),
       ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
       ...(opts.settleLayers ? { settleLayers: opts.settleLayers } : {}),
+      ...(opts.devices ? { devices: opts.devices } : {}),
+      ...(opts.defaultDevice !== undefined ? { defaultDevice: opts.defaultDevice } : {}),
+      ...(opts.defaultOrientation !== undefined
+        ? { defaultOrientation: opts.defaultOrientation }
+        : {}),
       renderers,
     };
 

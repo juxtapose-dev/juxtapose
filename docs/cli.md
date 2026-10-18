@@ -305,6 +305,14 @@ repeatable, `--network-external <allow|block>`, and `--network <json>` (a config
 config's `freshRenderer` for that command: captures reuse each page's renderer,
 which is faster, but a story's pixels can depend on the story captured before it.
 
+`jux snap` takes `--viewport WxH`, `--device <name>` and
+`--orientation portrait|landscape`. `jux snap <url> --as phone --device mobile`
+captures at 393×852 as an iPhone 15 would load the page: mobile layout, touch,
+its user agent. `--orientation landscape` rotates it, and `--viewport` with a
+device overrides only the size. A misspelled device exits 2 with the closest
+names. See [Devices](configuration.md#devices) for the list, your own devices
+and how they layer. Snap output records the `device` and `emulation` it used.
+
 ## Full-document captures (experimental)
 
 `jux snap <url> --as page --viewport 390x844 --full-page` captures the entire

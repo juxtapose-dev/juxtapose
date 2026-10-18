@@ -33,7 +33,7 @@ import {
   type TSchema,
   type TUnsafe,
 } from '@sinclair/typebox/type';
-import type { Viewport } from '../browser/types.js';
+import type { Orientation, Viewport } from '../browser/types.js';
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -49,6 +49,8 @@ export const MAX_SNAP_SLOTS = 16;
 /** Variant names. Underscores are excluded so the `__` key separator can't
  *  occur in a name. */
 export const VARIANT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
+/** Device keys: lowercase kebab-case. */
+export const DEVICE_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** What the run captures a second time to confirm it is stable (#148, #195). */
 export const RECHECK_MODES = ['changed', 'new', 'off'] as const;
@@ -502,9 +504,113 @@ const captureOptions = {
   ),
 };
 
+const DEVICE_ALIASES =
+  'Aliases: `mobile` is iphone-15, `tablet` is ipad, `desktop` is 1280x800 with no emulation.';
+
+const DeviceNameSchema = withText(
+  Type.String({
+    pattern: DEVICE_NAME.source,
+    description: `A device key or alias, built in or from \`devices\`: sets the viewport and emulates the device (mobile layout, touch, user agent). Device scale factor is always 1. ${DEVICE_ALIASES}`,
+  }),
+  { type: 'device must be a device name, got {got}' },
+);
+
+const OrientationSchema = withText(
+  StringEnum(['portrait', 'landscape'] as const, {
+    description:
+      "Rotate a device to 'portrait' or 'landscape'. Defaults to the device's listed shape: taller than wide is portrait.",
+  }),
+  { type: "orientation must be 'portrait' or 'landscape', got {got}" },
+);
+
+// Same trick as ViewportSchema: the browser layer keeps its own Orientation.
+const _orientationMatches: Same<Static<typeof OrientationSchema>, Orientation> = true;
+
+const UserAgentMetadataSchema = Type.Object(
+  {
+    platform: Type.String(),
+    platformVersion: Type.String(),
+    architecture: Type.String(),
+    model: Type.String(),
+    mobile: Type.Boolean(),
+    brands: Type.Optional(
+      Type.Array(
+        Type.Object(
+          { brand: Type.String(), version: Type.String() },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+  },
+  {
+    additionalProperties: false,
+    description: 'Client-hint values behind `navigator.userAgentData`.',
+  },
+);
+
+const UserDeviceSchema = withText(
+  Type.Object(
+    {
+      extends: Type.Optional(
+        Type.String({
+          description:
+            'A built-in or another project device whose fields this one starts from.',
+        }),
+      ),
+      width: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          description: 'CSS pixels, in the listed orientation.',
+        }),
+      ),
+      height: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          description: 'CSS pixels, in the listed orientation.',
+        }),
+      ),
+      mobile: Type.Optional(
+        Type.Boolean({
+          description: 'Mobile layout mode (meta viewport, zoomed-out pages).',
+        }),
+      ),
+      touch: Type.Optional(
+        Type.Boolean({
+          description: 'Touch input: `(pointer: coarse)`, `(hover: none)`.',
+        }),
+      ),
+      userAgent: Type.Optional(Type.String({ description: 'The user agent string.' })),
+      userAgentMetadata: Type.Optional(UserAgentMetadataSchema),
+    },
+    {
+      additionalProperties: false,
+      description:
+        'A project device. Device scale factor is always 1, so there is no field for it.',
+    },
+  ),
+  {
+    type: "device '{name}' must be an object of device settings",
+    unknown: "device '{name}': unknown option '{extra}' (expected {keys})",
+  },
+);
+
+export const DevicesSchema = withText(
+  Type.Record(Type.String({ pattern: DEVICE_NAME.source }), UserDeviceSchema, {
+    additionalProperties: false,
+    description:
+      'Project devices, added to the built-in presets. A key named like a built-in replaces it. Keys are lowercase kebab-case.',
+  }),
+  {
+    type: "'devices' must be an object of named devices",
+    badKey: "device name '{extra}' must be lowercase letters, digits and dashes",
+  },
+);
+
 /** Options only a story (or a variant) sets; not available to `stories`. */
 const storyOnlyOptions = {
   viewport: ViewportSchema,
+  device: DeviceNameSchema,
+  orientation: OrientationSchema,
   animations: StringEnum(['play', 'disabled'] as const, {
     description:
       "CSS animations during capture. Default 'disabled' so spinners don't flake; 'play' lets them run (for stories testing animation).",
@@ -598,6 +704,8 @@ export const VariantRuntimeSchema = Type.Object({
   network: Type.Optional(VARIANT_NETWORK),
   freeze: Type.Optional(VARIANT_FREEZE),
   extends: Type.Optional(EXTENDS),
+  device: Type.Optional(DeviceNameSchema),
+  orientation: Type.Optional(OrientationSchema),
 });
 export const VariantsRuntimeSchema = variantsMap(
   VariantRuntimeSchema,
@@ -754,6 +862,9 @@ const projectChecked = {
     }),
     'delay must be a number of ms, 0 or more',
   ),
+  devices: DevicesSchema,
+  device: DeviceNameSchema,
+  orientation: OrientationSchema,
 };
 
 /** Characters no directory name should carry: C0, DEL and C1 controls, the line

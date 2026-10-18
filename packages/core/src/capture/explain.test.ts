@@ -158,6 +158,64 @@ describe('explainCapture', () => {
     ]);
   });
 
+  it('shows the resolved device, its size and the layer that set it', () => {
+    const config = { variants: { mobile: { device: 'mobile' } } };
+    const stories = [story('a', { viewport: { width: 800, height: 600 } })];
+    const base = explain(stories, 'a', config);
+    const m = explain(stories, 'a__mobile', config);
+    expect(row(base, 'device')).toBeUndefined();
+    expect(row(m, 'device')?.value).toBe('mobile (iphone-15, 393x852 portrait)');
+    expect(src(m, 'device')).toEqual(['variant:mobile (project config)']);
+    expect(row(m, 'viewport')?.value).toEqual({ width: 393, height: 852 });
+    expect(src(m, 'viewport')).toEqual(['variant:mobile (project config)']);
+  });
+
+  it('the viewport row names the device layer when the device sets the size', () => {
+    const e = explain([story('a', { device: 'ipad' })], 'a');
+    expect(row(e, 'viewport')?.value).toEqual({ width: 810, height: 1080 });
+    expect(src(e, 'viewport')).toEqual(src(e, 'device'));
+    expect(src(e, 'viewport')).toEqual(['story']);
+  });
+
+  it('a project device and orientation apply to every story', () => {
+    const e = explain([story('a')], 'a', { device: 'pixel-8', orientation: 'landscape' });
+    expect(row(e, 'device')?.value).toBe('pixel-8 (915x412 landscape)');
+    expect(src(e, 'device')).toEqual(['project']);
+    expect(row(e, 'viewport')?.value).toEqual({ width: 915, height: 412 });
+  });
+
+  // The project viewport is the size when nothing sets a device, so a project
+  // device supplies the size, as captureStory does.
+  it('a project device sizes the capture over the project viewport', () => {
+    const e = explain([story('a')], 'a', {
+      viewport: { width: 800, height: 600 },
+      device: 'pixel-8',
+    });
+    expect(row(e, 'viewport')?.value).toEqual({ width: 412, height: 915 });
+    expect(src(e, 'viewport')).toEqual(['project']);
+    expect(row(e, 'device')?.value).toBe('pixel-8 (412x915 portrait)');
+    expect(src(e, 'device')).toEqual(['project']);
+  });
+
+  it('a project orientation rotates the project viewport', () => {
+    const e = explain([story('a')], 'a', {
+      viewport: { width: 800, height: 600 },
+      orientation: 'portrait',
+    });
+    expect(row(e, 'viewport')?.value).toEqual({ width: 600, height: 800 });
+    expect(row(e, 'orientation')?.value).toBe('portrait');
+    expect(src(e, 'orientation')).toEqual(['project']);
+  });
+
+  it("a story viewport overrides a project device's size", () => {
+    const e = explain([story('a', { viewport: { width: 500, height: 700 } })], 'a', {
+      viewport: { width: 800, height: 600 },
+      device: 'pixel-8',
+    });
+    expect(row(e, 'viewport')?.value).toEqual({ width: 500, height: 700 });
+    expect(src(e, 'viewport')).toEqual(['story']);
+  });
+
   it('says where a project variant was declared', () => {
     const e = explain([story('a')], 'a__tablet', {
       variants: { tablet: { viewport: { width: 768, height: 1024 } } },

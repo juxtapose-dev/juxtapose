@@ -152,7 +152,13 @@ export async function approveCommand(
           store,
           result.storyId,
           image,
-          { commit, approvedBy, approvedAt, env },
+          {
+            commit,
+            approvedBy,
+            approvedAt,
+            env,
+            ...(result.emulation !== undefined ? { emulation: result.emulation } : {}),
+          },
           imagePath,
         );
         approved.push(result.storyId);

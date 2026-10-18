@@ -9,6 +9,9 @@ import { resolveRenderer } from './renderer.js';
 // the order captureStory does.
 
 import type { Page } from '../browser/page.js';
+import { resolveDevices } from '../browser/devices.js';
+import { resolveCaptureDevice, UnknownDeviceError } from './device.js';
+import type { Orientation, Viewport } from '../browser/types.js';
 import { resolveMinDiffPercent, resolveThreshold } from '../diff/diff.js';
 import type { Platform } from '../platform.js';
 import type { RecheckMode } from '../config/schema.js';
@@ -72,6 +75,8 @@ export interface ExplainOptions {
   recheck?: RecheckMode;
 }
 
+const ALIASES: Record<string, true> = { mobile: true, tablet: true, desktop: true };
+
 const PROJECT: Source = { layer: 'project' };
 const DEFAULT: Source[] = [{ layer: 'default' }];
 
@@ -129,6 +134,8 @@ function projectLayer(c: ProjectConfig): SettleLayer & StoryParams {
     ...(c.waitForSelector !== undefined ? { waitForSelector: c.waitForSelector } : {}),
     ...(c.delay !== undefined ? { delay: c.delay } : {}),
     ...(c.viewport ? { viewport: c.viewport } : {}),
+    ...(c.device !== undefined ? { device: c.device } : {}),
+    ...(c.orientation !== undefined ? { orientation: c.orientation } : {}),
     ...(c.threshold !== undefined ? { threshold: c.threshold } : {}),
     ...(c.minDiffPercent !== undefined ? { minDiffPercent: c.minDiffPercent } : {}),
   };
@@ -142,6 +149,58 @@ function valueOf(params: StoryParams, setting: string): unknown {
     cur = (cur as Record<string, unknown>)[part];
   }
   return cur;
+}
+
+/** What the capture will be sized and emulated as, from the resolver
+ *  captureStory uses. `label` is the device as one line (its name, the
+ *  built-in it aliases, its size and orientation), present when a layer sets
+ *  a device; `orientation` when a device or an orientation is set. */
+function describeDevice(
+  params: StoryParams,
+  config: ProjectConfig,
+): { viewport: Viewport; device?: string; orientation?: Orientation; label?: string } {
+  const registry = resolveDevices(config.devices);
+  try {
+    const r = resolveCaptureDevice(
+      params,
+      {
+        devices: registry,
+        ...(config.device !== undefined ? { defaultDevice: config.device } : {}),
+        ...(config.orientation !== undefined
+          ? { defaultOrientation: config.orientation }
+          : {}),
+      },
+      config.viewport ?? DEFAULT_VIEWPORT,
+    );
+    const orientation = r.emulation?.orientation;
+    const view = {
+      viewport: r.viewport,
+      ...(orientation !== undefined ? { orientation } : {}),
+    };
+    if (r.device === undefined) return view;
+    const descriptor = registry.get(r.device);
+    // `mobile` shows the preset it points at: the first key with the same
+    // descriptor that is not itself an alias.
+    const target = [...registry.entries()].find(
+      ([k, d]) => k !== r.device && d === descriptor && !(k in ALIASES),
+    )?.[0];
+    const shape = `${r.viewport.width}x${r.viewport.height} ${orientation}`;
+    return {
+      ...view,
+      device: r.device,
+      label: `${r.device} (${target !== undefined ? `${target}, ` : ''}${shape})`,
+    };
+  } catch (e) {
+    if (e instanceof UnknownDeviceError) {
+      const device = params.device ?? config.device;
+      return {
+        viewport: DEFAULT_VIEWPORT,
+        device: device!,
+        label: `${device} (unknown)`,
+      };
+    }
+    throw e;
+  }
 }
 
 /** The captures of one story: the default one first, then its variants. */
@@ -253,6 +312,7 @@ export function explainCapture(
     ...Object.keys(types).map((k) => `network.external.${k}`),
   ]);
 
+  const deviceView = describeDevice(params, config);
   const fromPre = new Set(PRE_PARAMS);
   const settings: ExplainedSetting[] = [];
   const preValues = new Map<string, unknown>();
@@ -266,7 +326,18 @@ export function explainCapture(
           source = [{ layer: 'live', detail: `variants.${capture.variant}: false` }];
         break;
       case 'viewport':
-        value = params.viewport ?? config.viewport ?? DEFAULT_VIEWPORT;
+        value = deviceView.viewport;
+        // A device-sized viewport came from whoever set the device; a story,
+        // variant or live viewport overrides it and keeps its own source.
+        if (deviceView.device !== undefined && params.viewport === undefined)
+          source = post.sources.get('device');
+        break;
+      case 'device':
+        value = deviceView.label;
+        break;
+      case 'orientation':
+        // The resolved one: a story viewport's shape wins over an orientation.
+        value = deviceView.orientation;
         break;
       case 'settle.timeout':
         value = resolved.timeoutMs;

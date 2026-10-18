@@ -25,6 +25,10 @@ import {
   configWarnings,
   captureFlags,
   VariantConfigError,
+  resolveDevice,
+  DEFAULT_SNAP_VIEWPORT,
+  resolveDevices,
+  UnknownDeviceError,
   type Viewport,
   shellQuote,
 } from '@juxtapose/core';
@@ -44,6 +48,8 @@ export interface SnapFlags extends SettleFlags {
   as?: string;
   'as-prefix'?: string;
   viewport?: string;
+  device?: string;
+  orientation?: string;
   'full-page'?: boolean;
   'wait-for'?: string;
   mask?: string[];
@@ -61,6 +67,9 @@ interface Written {
   structure: string | null;
   viewport: Viewport;
   layoutViewport?: Viewport;
+  /** Present only when a device or orientation was emulated. */
+  device?: string;
+  emulation?: string;
   env: CaptureEnv;
   structureHash: string | null;
   elements: number;
@@ -142,6 +151,29 @@ export async function snapCommand(
   }
   for (const m of configWarnings(config)) io.err(`jux: ${m}\n`);
 
+  // Before the browser, so a misspelled device is a usage error with the
+  // suggestion, not a failed capture per page.
+  if (
+    flags.orientation !== undefined &&
+    flags.orientation !== 'portrait' &&
+    flags.orientation !== 'landscape'
+  ) {
+    io.err(
+      `jux snap: --orientation must be portrait or landscape, got '${flags.orientation}'.\n`,
+    );
+    return EXIT.usage;
+  }
+  const devices = resolveDevices(config.devices);
+  if (flags.device !== undefined) {
+    try {
+      resolveDevice({ device: flags.device }, devices, DEFAULT_SNAP_VIEWPORT);
+    } catch (err) {
+      if (!(err instanceof UnknownDeviceError)) throw err;
+      io.err(`jux snap: ${err.message}\n`);
+      return EXIT.usage;
+    }
+  }
+
   const prefix = flags['as-prefix']
     ? snapName(flags['as-prefix'], flags['as-prefix'])
     : undefined;
@@ -218,9 +250,16 @@ export async function snapCommand(
           ? { freshRenderer: config.freshRenderer }
           : {}),
       ...(viewport ? { viewport } : {}),
+      devices,
       // A snap has no story: the flags are the story layer, over the config.
       params: {
         ...(flags['full-page'] ? { fullPage: true } : {}),
+        // The size is a story-layer param too: as snapPages' `viewport` alone it
+        // is only the fallback, which a device would override and an
+        // orientation would rotate.
+        ...(viewport ? { viewport } : {}),
+        ...(flags.device !== undefined ? { device: flags.device } : {}),
+        ...(flags.orientation !== undefined ? { orientation: flags.orientation } : {}),
         ...(flags['wait-for'] ? { waitForSelector: flags['wait-for'] } : {}),
         ...(flags.mask?.length ? { mask: flags.mask } : {}),
         ...(delay !== undefined ? { delay } : {}),
@@ -330,6 +369,9 @@ export async function snapCommand(
 function retryCommand(url: string, name: string, flags: SnapFlags): string {
   const parts = ['jux', 'snap', shellQuote(url), '--as', shellQuote(name)];
   if (flags.viewport) parts.push('--viewport', shellQuote(flags.viewport));
+  if (flags.device !== undefined) parts.push('--device', shellQuote(flags.device));
+  if (flags.orientation !== undefined)
+    parts.push('--orientation', shellQuote(flags.orientation));
   if (flags['full-page']) parts.push('--full-page');
   if (flags['wait-for']) parts.push('--wait-for', shellQuote(flags['wait-for']));
   for (const m of flags.mask ?? []) parts.push('--mask', shellQuote(m));
@@ -431,6 +473,8 @@ export async function writeSnap(
     structure: s ? sidecar : null,
     viewport: snapshot.viewport,
     ...(snapshot.layoutViewport ? { layoutViewport: snapshot.layoutViewport } : {}),
+    ...(snapshot.device ? { device: snapshot.device } : {}),
+    ...(snapshot.emulation ? { emulation: snapshot.emulation } : {}),
     env,
     structureHash: s?.structureHash ?? null,
     elements: s?.elements.length ?? 0,

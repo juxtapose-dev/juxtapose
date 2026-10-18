@@ -9,7 +9,7 @@ import type { Browser, BrowserContext } from '../browser/browser.js';
 import type { Page } from '../browser/page.js';
 import type { CaptureEnv, Snapshot, StoryParams, Viewport } from '../types.js';
 import { createUrlPlatform } from '../platforms/urls.js';
-import { captureStory } from './capture.js';
+import { captureStory, type CaptureDeps } from './capture.js';
 import { captureEnv } from './env.js';
 import {
   budgetedCapture,
@@ -47,6 +47,8 @@ export interface SnapPagesOptions {
   /** Legacy inverse of renderer.shared; omitted means sharing. See CaptureDeps. */
   freshRenderer?: boolean;
   renderer?: StoryParams['renderer'];
+  /** The project's device presets, for a `device` in `params`. */
+  devices?: CaptureDeps['devices'];
   /** Acquired by the caller (acquireBrowser); not closed here. */
   browser: Browser;
 }
@@ -59,7 +61,7 @@ export interface SnapPageResult {
   error?: string;
 }
 
-const DEFAULT_SNAP_VIEWPORT: Viewport = { width: 1280, height: 800 };
+export const DEFAULT_SNAP_VIEWPORT: Viewport = { width: 1280, height: 800 };
 
 /**
  * Capture several URLs with one context and one page, in order.
@@ -116,6 +118,7 @@ export async function snapPages(
               ...(opts.projectSettle
                 ? { settleLayers: { project: opts.projectSettle } }
                 : {}),
+              ...(opts.devices ? { devices: opts.devices } : {}),
             },
             viewport,
           ),

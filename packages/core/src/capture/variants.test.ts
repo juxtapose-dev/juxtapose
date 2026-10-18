@@ -268,6 +268,65 @@ describe('mergeLiveParams', () => {
   });
 });
 
+describe('device layering', () => {
+  const vp = { width: 800, height: 600 };
+
+  it('a variant that sets device drops the story viewport', () => {
+    const out = expandVariants([
+      story('s', { viewport: vp, variants: { mobile: { device: 'mobile' } } }),
+    ]);
+    const params = byKey(out, 's__mobile').params;
+    expect(params.device).toBe('mobile');
+    expect(params).not.toHaveProperty('viewport');
+    expect(byKey(out, 's').params.viewport).toEqual(vp);
+  });
+
+  it('a variant with both device and viewport keeps both', () => {
+    const own = { width: 400, height: 700 };
+    const out = expandVariants([
+      story('s', {
+        viewport: vp,
+        variants: { mobile: { device: 'mobile', viewport: own } },
+      }),
+    ]);
+    expect(byKey(out, 's__mobile').params).toMatchObject({
+      device: 'mobile',
+      viewport: own,
+    });
+  });
+
+  it('an extending variant that sets device drops the extended viewport', () => {
+    const out = expandVariants([
+      story('s', {
+        variants: {
+          a: { viewport: vp },
+          b: { extends: 'a', device: 'mobile' },
+          c: { extends: 'a', device: 'mobile', viewport: { width: 400, height: 700 } },
+        },
+      }),
+    ]);
+    const b = byKey(out, 's__b').params;
+    expect(b.device).toBe('mobile');
+    expect(b).not.toHaveProperty('viewport');
+    expect(byKey(out, 's__c').params).toMatchObject({
+      device: 'mobile',
+      viewport: { width: 400, height: 700 },
+    });
+  });
+
+  it('live viewport does not survive under a variant that sets device', () => {
+    const out = expandVariants([story('s', { variants: { m: { device: 'mobile' } } })]);
+    const merged = mergeLiveParams(byKey(out, 's__m'), { viewport: vp });
+    expect(merged.device).toBe('mobile');
+    expect(merged).not.toHaveProperty('viewport');
+  });
+
+  it('a live device replaces the story viewport', () => {
+    const merged = mergeLiveParams(story('s', { viewport: vp }), { device: 'tablet' });
+    expect(merged).toEqual({ device: 'tablet' });
+  });
+});
+
 describe('selectByStoryId', () => {
   const all = expandVariants([story('a'), story('b')], { dark: {}, mobile: {} });
 

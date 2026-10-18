@@ -4,8 +4,15 @@ import { resolveRenderer } from './renderer.js';
 // each step exists. Because pass/fail is a byte-exact hash, every source of
 // nondeterminism left in this path becomes a false failure somewhere.
 
-import { emulatedMedia, FRESH_RENDERER_URL, type Page } from '../browser/page.js';
+import {
+  emulatedMedia,
+  FRESH_RENDERER_URL,
+  type FullPageSize,
+  type Page,
+} from '../browser/page.js';
 import { assertCssSelector } from '../browser/selectors.js';
+import type { DeviceRegistry } from '../browser/devices.js';
+import type { Orientation } from '../browser/types.js';
 import type { Platform } from '../platform.js';
 import type {
   CaptureTimings,
@@ -39,6 +46,7 @@ import { applyFreeze, freezeChanged, resolveFreeze } from './freeze.js';
 import { captureStructure, type StructureCaptureTimings } from './structure.js';
 import { canonicalWebp } from './encoder.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
+import { resolveCaptureDevice, type ResolvedDevice } from './device.js';
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 2000;
 
@@ -102,11 +110,18 @@ export interface CaptureDeps {
   /** Settle options from outside the story: the project config below the
    *  story's own params, the call (CLI flags, MCP arguments) above them. */
   settleLayers?: { project?: SettleLayer; call?: SettleLayer };
+  /** Device presets a `device` param names. Default: the built-ins. */
+  devices?: DeviceRegistry;
+  /** The project's `device` and `orientation`, below the story's own. */
+  defaultDevice?: string;
+  defaultOrientation?: Orientation;
 }
 
 /** Per-page memo: skip work that only needs doing once per page. */
 const styleInjected = new WeakSet<Page>();
-const pageViewport = new WeakMap<Page, string>();
+/** The size and emulation last applied to a page; `fingerprint` is undefined
+ *  for the default desktop emulation. */
+const pageEmulation = new WeakMap<Page, { key: string; fingerprint?: string }>();
 const pageColorScheme = new WeakMap<Page, ColorScheme>();
 /** The capture last shown on a page: its key and its platform story id. */
 const pageCapture = new WeakMap<Page, { key: string; base: string }>();
@@ -187,7 +202,10 @@ async function captureStoryDocument(
     deps.forceFreshRenderer,
     deps.forceResourceCache,
   );
-  const effectiveViewport = params.viewport ?? viewport;
+  // Before navigation: the UA override has to be in place for the story's
+  // own document request. An unknown device fails this story, not the run.
+  const resolved = resolveCaptureDevice(params, deps, viewport);
+  const effectiveViewport = resolved.viewport;
   const timeoutMs = params.captureTimeout ?? DEFAULT_CAPTURE_TIMEOUT_MS;
   // Every platform call gets the platform's own id; the variant capture key
   // means nothing to Storybook or Ladle.
@@ -208,7 +226,10 @@ async function captureStoryDocument(
   // documents created after it is installed.
   const idle = await installIdleDetector(page);
 
-  await ensureViewport(page, effectiveViewport);
+  // Read before it is applied: the warm decision below compares against what
+  // the page's document was loaded under.
+  const emulationChanged = pageEmulation.get(page)?.fingerprint !== resolved.fingerprint;
+  await ensureEmulation(page, resolved);
 
   // Only a variant sets a scheme: a default capture resets to light, which is
   // what stops a pooled page carrying a dark variant's scheme into the next
@@ -231,6 +252,10 @@ async function captureStoryDocument(
   // And another capture of the same story (default -> mobile): the platform
   // sees its story already rendered and "switches" without re-rendering, so
   // the variant would be captured from the previous capture's layout.
+  //
+  // And another device: a warm switch keeps the document, so the UA and
+  // client hints it was requested with, and the story would be captured
+  // half-emulated.
   const previous = pageCapture.get(page);
   const sameStoryOtherCapture =
     previous !== undefined && previous.base === id && previous.key !== story.storyId;
@@ -242,6 +267,7 @@ async function captureStoryDocument(
     warmPages.get(page) === deps.baseUrl &&
     !schemeChanged &&
     !sameStoryOtherCapture &&
+    !emulationChanged &&
     !(params.animations === 'play' && styleInjected.has(page)) &&
     // A warm switch keeps the document, and with it the clock and random
     // streams that document booted with.
@@ -287,7 +313,10 @@ async function captureStoryDocument(
     await page.goto(FRESH_RENDERER_URL);
     acc.freshRenderer = performance.now() - tFresh;
     warmPages.delete(page);
-  } else if ((schemeChanged || sameStoryOtherCapture) && warmPages.has(page)) {
+  } else if (
+    (schemeChanged || sameStoryOtherCapture || emulationChanged) &&
+    warmPages.has(page)
+  ) {
     await page.goto('about:blank');
     warmPages.delete(page);
   }
@@ -382,6 +411,7 @@ async function captureStoryDocument(
   phase('live params');
   const tLive = performance.now();
   const live = await deps.platform.readLiveParams?.(page, id);
+  let current = resolved;
   if (live) {
     Object.assign(params, mergeLiveParams(story, live));
     resolveComparison(undefined, params.comparison);
@@ -391,12 +421,22 @@ async function captureStoryDocument(
       deps.forceFreshRenderer,
       deps.forceResourceCache,
     );
+    // A live device (or orientation) is applied like a live renderer: the UA
+    // belongs to the navigation, so the story is captured again under it
+    // rather than resized into a half-emulated page.
+    current = resolveCaptureDevice(params, deps, viewport);
+    const deviceChanged = current.fingerprint !== resolved.fingerprint;
     if (
+      deviceChanged ||
       liveRenderer.shared !== renderer.shared ||
       liveRenderer.clearResourceCache !== renderer.clearResourceCache
     ) {
       if (deps.rendererRecaptured)
-        throw new Error('renderer settings changed during live-parameter recapture');
+        throw new Error(
+          deviceChanged
+            ? 'device emulation changed during live-parameter recapture'
+            : 'renderer settings changed during live-parameter recapture',
+        );
       const recaptured = await captureStory(
         page,
         { ...story, params },
@@ -439,10 +479,10 @@ async function captureStoryDocument(
     // Viewport is the one param that cannot be applied retroactively — the
     // story has already laid out. Re-set it and let the platform settle
     // again, so a story declaring its own viewport is captured at that size
-    // rather than the project default.
-    const liveViewport = params.viewport;
-    if (liveViewport && !sameViewport(liveViewport, effectiveViewport)) {
-      await ensureViewport(page, liveViewport);
+    // rather than the project default. Through the resolved device, so a
+    // live viewport under a device keeps its emulation.
+    if (!sameViewport(current.viewport, effectiveViewport)) {
+      await ensureEmulation(page, current);
       await deps.platform.settle(page, { ...ctx, params });
     }
   }
@@ -472,7 +512,7 @@ async function captureStoryDocument(
   // document should fail the story without spending its whole budget first.
   if (fullPage && !page.fullPageSize)
     throw new Error('jux: this browser driver does not support full-page capture');
-  const layoutViewport = params.viewport ?? effectiveViewport;
+  const layoutViewport = current.viewport;
 
   phase('waitForSelector');
   // Settle must never throw on timeout (a slow story is a reviewable diff),
@@ -572,7 +612,11 @@ async function captureStoryDocument(
   // Structure from the same frame the screenshot is about to take: after the
   // paint barrier, before the shutter, with nothing in between that could
   // mutate the page.
-  const effective = fullPage ? await page.fullPageSize!() : layoutViewport;
+  const size: FullPageSize = fullPage ? await page.fullPageSize!() : layoutViewport;
+  const { scale: fullPageScale = 1, ...effective } = size;
+  const zoom = fullPage ? undefined : await page.viewportZoom?.();
+  const scale = zoom?.scale ?? fullPageScale;
+  const origin = zoom ? { x: zoom.pageX, y: zoom.pageY } : { x: 0, y: 0 };
   phase('structure capture');
   const tStructure = performance.now();
   const structureEnabled =
@@ -582,7 +626,14 @@ async function captureStoryDocument(
       ? { mark: 0, snapshot: 0, verify: 0, normalize: 0, cleanup: 0 }
       : undefined;
   const structure = structureEnabled
-    ? await captureStructure(page, effective, params.mask ?? [], structureTimings)
+    ? await captureStructure(
+        page,
+        effective,
+        params.mask ?? [],
+        structureTimings,
+        scale,
+        origin,
+      )
     : undefined;
   if (structure && fullPage) structure.layoutViewport = layoutViewport;
   if (structure && deps.platform.structureContextIds?.length) {
@@ -598,7 +649,7 @@ async function captureStoryDocument(
   const shot = await page.screenshot({
     ...(params.mask?.length ? { mask: params.mask } : {}),
     format: 'webp',
-    ...(fullPage ? { fullPage: true, captureSize: effective } : {}),
+    ...(fullPage ? { fullPage: true, captureSize: size } : {}),
   });
   const screenshotMs = performance.now() - tShot;
 
@@ -646,6 +697,8 @@ async function captureStoryDocument(
     // region area as a fraction of it.
     viewport: effective,
     ...(fullPage ? { layoutViewport } : {}),
+    ...(current.device !== undefined ? { device: current.device } : {}),
+    ...(current.fingerprint !== undefined ? { emulation: current.fingerprint } : {}),
     renderer,
     ...(params.comparison ? { comparison: params.comparison } : {}),
     capturedAt: new Date().toISOString(),
@@ -729,12 +782,30 @@ function liveOverrideDiffers(story: StoryManifest, live: StoryParams): boolean {
 const sameViewport = (a: Viewport, b: Viewport) =>
   a.width === b.width && a.height === b.height;
 
-/** Setting the viewport is a CDP round-trip; skip it when nothing changed. */
-async function ensureViewport(page: Page, viewport: Viewport): Promise<void> {
-  const key = `${viewport.width}x${viewport.height}`;
-  if (pageViewport.get(page) === key) return;
-  await page.setViewportSize(viewport);
-  pageViewport.set(page, key);
+/**
+ * Setting the viewport and emulation are CDP round-trips; skip them when
+ * nothing changed. Under the same emulation a size change is only a resize,
+ * which keeps the emulation, and a page that never had a device goes through
+ * setViewportSize exactly as before devices existed.
+ */
+async function ensureEmulation(page: Page, resolved: ResolvedDevice): Promise<void> {
+  const { width, height } = resolved.viewport;
+  const key = `${width}x${height}|${resolved.fingerprint ?? 'default'}`;
+  const current = pageEmulation.get(page);
+  if (current?.key === key) return;
+  if (current?.fingerprint === resolved.fingerprint) {
+    await page.setViewportSize(resolved.viewport);
+  } else if (page.setEmulation) {
+    await page.setEmulation(resolved.viewport, resolved.emulation);
+  } else if (resolved.emulation) {
+    throw new Error('jux: this browser driver does not support device emulation');
+  } else {
+    await page.setViewportSize(resolved.viewport);
+  }
+  pageEmulation.set(page, {
+    key,
+    ...(resolved.fingerprint !== undefined ? { fingerprint: resolved.fingerprint } : {}),
+  });
 }
 
 /** Media emulation is a CDP round-trip too; skip it when nothing changed. */

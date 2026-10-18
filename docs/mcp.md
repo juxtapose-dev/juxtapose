@@ -197,19 +197,21 @@ have no DOM structure evidence.
 Captures pages, pixels and structure, under a name. Same result as
 `jux snap --json`.
 
-| Argument   | Type                | Description                                                     |
-| ---------- | ------------------- | --------------------------------------------------------------- |
-| `url`      | string              | One `http(s)` URL. Requires `as`.                               |
-| `as`       | string              | The snap name for `url`.                                        |
-| `urls`     | string[]            | Several URLs. Requires `asPrefix`.                              |
-| `asPrefix` | string              | Name prefix for `urls`. Snaps are named `<prefix>-<slug>`.      |
-| `viewport` | `{ width, height }` | CSS pixels, each 1 to 10000. Default 1280×800.                  |
-| `waitFor`  | string              | CSS selector to wait for before capturing.                      |
-| `delay`    | integer             | Fixed extra wait after settling, in ms. Last resort.            |
-| `settle`   | object              | Settle options for this call. See below.                        |
-| `network`  | object              | `{ external: "allow" \| "block" }`: block third-party requests. |
-| `mask`     | string[]            | CSS selectors to blank, such as clocks or random data.          |
-| `project`  | string              | Project directory: the server's `--project` or inside it.       |
+| Argument      | Type                          | Description                                                                                                                           |
+| ------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`         | string                        | One `http(s)` URL. Requires `as`.                                                                                                     |
+| `as`          | string                        | The snap name for `url`.                                                                                                              |
+| `urls`        | string[]                      | Several URLs. Requires `asPrefix`.                                                                                                    |
+| `asPrefix`    | string                        | Name prefix for `urls`. Snaps are named `<prefix>-<slug>`.                                                                            |
+| `viewport`    | `{ width, height }`           | CSS pixels, each 1 to 10000. Default 1280×800.                                                                                        |
+| `device`      | string                        | Device preset: size, touch, user agent. A key like `pixel-8`, an alias, or a project device. See [Devices](configuration.md#devices). |
+| `orientation` | `"portrait"` \| `"landscape"` | Rotate the viewport. Default is the device's listed shape.                                                                            |
+| `waitFor`     | string                        | CSS selector to wait for before capturing.                                                                                            |
+| `delay`       | integer                       | Fixed extra wait after settling, in ms. Last resort.                                                                                  |
+| `settle`      | object                        | Settle options for this call. See below.                                                                                              |
+| `network`     | object                        | `{ external: "allow" \| "block" }`: block third-party requests.                                                                       |
+| `mask`        | string[]                      | CSS selectors to blank, such as clocks or random data.                                                                                |
+| `project`     | string                        | Project directory: the server's `--project` or inside it.                                                                             |
 
 Pass either `url` with `as` or `urls` with `asPrefix`.
 
@@ -219,7 +221,7 @@ hung URLs therefore holds its name lock and snap slot for about N × 30 s; other
 tools and snaps under other names are not blocked.
 
 Result: for one `url`, the snap object (`name`, `image`, `structure`,
-`viewport`, `env`, `structureHash`, `elements`, `durationMs`). For `urls`,
+`viewport`, `device` and `emulation` when one was used, `env`, `structureHash`, `elements`, `durationMs`). For `urls`,
 `{ prefix, snaps }`, where a page that failed is `{ url, error }`. A snap
 captured at the settle cap also has `flags: ["settle-timeout"]` (or
 `["settle-fallback"]` when the wait couldn't run) and

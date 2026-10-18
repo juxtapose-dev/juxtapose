@@ -58,7 +58,7 @@ are reported explicitly.
 }
 ```
 
-Also accepted: `buildDir` and `origin` (the CLI flags' defaults), `threshold`,
+Also accepted: `devices`, `device` and `orientation` (see [Devices](#devices)), `buildDir` and `origin` (the CLI flags' defaults), `threshold`,
 `minDiffPercent`, `waitForSelector`, `delay`, `settle`, `network` and `freeze` as project-wide
 versions of the per-story options below, and `warmSwitch` — off by default, and best left there: it is ~4x faster but
 does not reproduce cold-load pixels exactly, which under a byte-exact hash
@@ -124,6 +124,120 @@ Review the diffs before approving. `jux run` labels affected failures as
 The manifest's `env.encoder` records `chrome-webp-lossless`; the Chrome version
 is recorded separately. A configured Pixelmatch policy can accept equivalent
 pixels across the encoder change, but leaves the old approved baseline intact.
+
+## Devices
+
+A `device` sets the viewport and emulates the device: mobile layout (so
+`<meta name="viewport">` applies), touch (`ontouchstart`, `maxTouchPoints`,
+`(pointer: coarse)`, `(hover: none)`), the user agent and, for Android, its
+client hints. It is accepted wherever `viewport` is: `--device` on `jux snap`,
+the MCP `snap` tool, project config, `parameters.juxtapose` / `meta.juxtapose`,
+URL entries' `params` and variants (not `stories` overrides). Nothing fans out:
+a story is captured on one device unless you declare variants.
+
+Device scale factor is always 1, so an image is 1 px per CSS px.
+
+| Device                     | Size (portrait) |
+| -------------------------- | --------------- |
+| `iphone-se`                | 375×667         |
+| `iphone-15`, `iphone-16`   | 393×852         |
+| `iphone-15-pro-max`        | 430×932         |
+| `iphone-16-pro-max`        | 440×956         |
+| `pixel-7`, `pixel-8`       | 412×915         |
+| `pixel-8-pro`              | 448×998         |
+| `galaxy-s24`, `galaxy-a55` | 360×780         |
+| `ipad-mini`                | 744×1133        |
+| `ipad`                     | 810×1080        |
+| `ipad-pro-13`              | 1032×1376       |
+| `galaxy-tab-s9`            | 800×1280        |
+
+Aliases: `mobile` is `iphone-15`, `tablet` is `ipad`, and `desktop` is
+1280×800 with no emulation beyond the size (no user agent override, not
+mobile, no touch). Android user agents name the Chrome version jux pins.
+
+`orientation` is `portrait` or `landscape`, accepted everywhere `device` is
+(`--orientation` on snap). A device's listed shape is its default: taller than
+wide is portrait, anything else landscape. The other orientation swaps width
+and height, and the page is told: `screen.orientation` and `(orientation: …)`
+agree with the size. Phones and tablets report `landscapePrimary` at 90°;
+`desktop` reports 0°.
+
+Add your own under `devices`, from scratch or `extends` a built-in or an
+earlier project device. Keys are lowercase letters, digits and dashes. A key
+named like a built-in replaces it for this project, which is how you repoint
+`mobile`:
+
+```json
+{
+  "devices": {
+    "kiosk": { "width": 1080, "height": 1920, "touch": true },
+    "mobile": { "extends": "pixel-8" }
+  },
+  "device": "kiosk",
+  "orientation": "portrait"
+}
+```
+
+Fields are `width`, `height`, `mobile`, `touch`, `userAgent`, `userAgentMetadata`
+and `extends`. There is no scale factor field.
+
+An unknown name is an error that suggests the closest keys:
+`unknown device 'iphone15'; did you mean iphone-15?`. `jux snap` reports it as
+a usage error before it launches a browser.
+
+### Precedence
+
+Layers are the project config, then story parameters, then a variant. For each:
+
+- The project `viewport` is the size used when no layer sets a device.
+- A `device` at any layer, the project's included, sets the size and all of
+  the emulation.
+- A story, variant or live `viewport` overrides only a device's size; the
+  device's emulation stays. `{ "device": "pixel-8", "viewport": { "width": 412, "height": 600 } }`
+  is a short Pixel.
+- A `device` at a higher layer replaces a lower layer's `viewport` too.
+- `orientation` layers on its own. The project's is a fallback for any layer.
+
+With no `device` and no `orientation` anywhere, a capture is exactly what it was
+before devices existed. `jux snap` reads the project's `devices`, but not its
+`device`, `viewport` or `variants`: its flags are the whole request.
+
+`jux config --explain <story>` shows a `device` row with the resolved device,
+its size and the layer that set it, for example
+`mobile (iphone-15, 393x852 portrait)` from `variant:mobile (project config)`.
+
+### Variants
+
+To capture more than one device, name variants. Each one is captured as
+`<story>__<name>` and merges over the story's parameters:
+
+```json
+{
+  "variants": {
+    "mobile": { "device": "mobile" },
+    "tablet-landscape": { "device": "tablet", "orientation": "landscape" }
+  }
+}
+```
+
+### What this is not
+
+A device preset is Chrome emulating the device's viewport, user agent and
+touch. It is not Safari: an `iphone-*` capture uses Chrome's rendering, fonts
+and form controls, and shows no notch, safe-area insets or browser toolbars.
+Server-side user-agent sniffing, client hints, touch and pointer media queries
+and `'ontouchstart' in window` checks see the phone. WebKit-only behavior does
+not.
+
+A page with no `<meta name="viewport">` lays out about 980 px wide and is
+scaled down to fit, as it is on a phone; the capture shows that.
+
+### Changing a device
+
+A baseline records the emulation it was approved with. Capture on another
+device, orientation, or user agent and the story fails and `jux run` labels it
+`(previous device emulation)`, as it labels a `(previous encoder)`. Review the
+diff and re-approve with `jux approve`.
 
 ## Visual equivalence
 
@@ -300,6 +414,7 @@ Per-story options go through the platform's own parameter mechanism
 | ------------------------------ | --------------------------------------------------- |
 | `skip`                         | never capture this story                            |
 | `viewport`                     | override the capture size                           |
+| `device` / `orientation`       | emulate a device preset (see [Devices](#devices))   |
 | `animations: 'play'`           | let animations run (for stories testing animation)  |
 | `captureAfterPlay`             | screenshot after interactions, not at first render  |
 | `waitForSelector`              | wait for async content juxtapose can't detect       |

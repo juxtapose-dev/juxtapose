@@ -148,3 +148,22 @@ test('the repo-backed store preserves structure evidence in readable files', asy
   await approveCapture(store, 'a', Buffer.from('img'), meta, image);
   expect(JSON.parse((await store.getStructure('a'))!.toString())).toEqual(structure);
 });
+
+test('approval persists the emulation fingerprint, and omits the key without one', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'jux-emu-'));
+  const store = new GitBaselineStore({ projectRoot: root });
+  const image = await runImage();
+  await approveCapture(
+    store,
+    'm',
+    Buffer.from('img'),
+    { ...meta, emulation: 'portrait|m1t1|ua:ab' },
+    image,
+  );
+  await approveCapture(store, 'd', Buffer.from('img2'), meta, image);
+  const { baselines } = JSON.parse(
+    await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8'),
+  );
+  expect(baselines.m.emulation).toBe('portrait|m1t1|ua:ab');
+  expect('emulation' in baselines.d).toBe(false);
+});
