@@ -65,3 +65,22 @@ fast green path and do not promote automatic probing on every mismatch.
 Artifacts: `juxtapose-experiments/iteration-billing/probe-agent-v1` and
 `probe-agent-toolkit-v1`, including archived controllers, runtime checks, raw
 rollouts/usage, proposed values, native measurements and independent grades.
+
+## No initial screenshots: incomplete feasibility trial
+
+`probe-agent-noimages-v1` removes all four initial image attachments while
+retaining source, saved evidence, local PNGs and on-demand image tools. One
+candidate session requests layout evidence and proposes nine heading values,
+but its native probe command fails before an edit. The monitor stops the trial;
+independent grading remains 0/2 visual and 4/4 behavior. Last-reported usage is
+4478 counted tokens plus 12160 cached input, with final billing incomplete.
+This is inconclusive, not evidence of an image-free repair or savings.
+
+No paid retry is made. A separate native-only replay of the same proposals
+finds exact RGBA matches for both targets. The original error is not explained:
+the adapter discarded native diagnostic output. Future calls now preserve exit,
+signal, stdout and stderr, while controllers retain incomplete outcomes without
+inventing phase timings. Three focused checks pass; two real native captures
+also verify exact matches and preserved expected new-baseline exit-1 output.
+Frozen study controllers and raw logs remain unchanged. Image-free efficacy and
+production robustness are still open gates.
