@@ -23,6 +23,7 @@ export class SavedElementCache {
     story: string,
     query: ElementQuery,
     properties?: string[],
+    ancestor?: ElementQuery,
   ): Promise<
     | ElementInspection
     | { schema: 'juxtapose.current-element/v1'; status: 'unavailable'; reason: string }
@@ -61,6 +62,6 @@ export class SavedElementCache {
     this.entries.delete(file);
     this.entries.set(file, entry);
     if (this.entries.size > 8) this.entries.delete(this.entries.keys().next().value!);
-    return inspectStructureElement(await entry.snapshot, query, properties);
+    return inspectStructureElement(await entry.snapshot, query, properties, ancestor);
   }
 }

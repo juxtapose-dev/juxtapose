@@ -76,11 +76,14 @@ export function inspectStructureElement(
   snapshot: StructureSnapshot,
   query: ElementQuery,
   properties: readonly string[] = DEFAULT_PROPERTIES,
+  ancestor?: ElementQuery,
 ): ElementInspection {
   if (!isElementQuery(query))
     throw new Error(
       'element must contain exact id, testId, tag, role, name or text fields',
     );
+  if (ancestor !== undefined && !isElementQuery(ancestor))
+    throw new Error('ancestor must contain exact saved element fields');
   checkElementProperties(properties);
   const base: Base = {
     schema: 'juxtapose.current-element/v1',
@@ -109,6 +112,34 @@ export function inspectStructureElement(
     found = i;
   }
   if (found === undefined) return { ...base, status: 'not-found' };
+  if (ancestor !== undefined) {
+    // The sessions audit found repeated cards inaccessible despite saved box/grid
+    // facts. Walk parent indices from a unique title; no full DOM index is needed.
+    let cursor = found;
+    let matched = false;
+    for (let depth = 0; depth < 64; depth++) {
+      const parent = snapshot.elements[cursor]!.parent;
+      if (parent === null || parent === undefined)
+        return { ...base, status: 'not-found' };
+      if (!Number.isInteger(parent) || parent < 0 || parent >= cursor)
+        return { ...base, status: 'unavailable', reason: 'invalid-parent-chain' };
+      cursor = parent;
+      const candidate = snapshot.elements[cursor]!;
+      if (
+        Object.entries(ancestor).every(([key, value]) =>
+          key === 'tag'
+            ? candidate.tag.toLowerCase() === value.toLowerCase()
+            : candidate[key as keyof ElementQuery] === value,
+        )
+      ) {
+        found = cursor;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched)
+      return { ...base, status: 'unavailable', reason: 'ancestor-depth-limit' };
+  }
   const { tag, id, testId, role, name, text, rect } = snapshot.elements[found]!;
   const element = {
     tag,

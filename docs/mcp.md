@@ -615,6 +615,25 @@ To inspect one element's captured current styles without a browser, use:
 }
 ```
 
+For a repeated card, anchor the lookup to a unique title and request its nearest
+matching ancestor:
+
+```json
+{
+  "story": "sessions--upcoming",
+  "element": { "text": "Building accessible forms" },
+  "ancestor": { "tag": "article" },
+  "properties": ["padding-top", "gap", "grid-template-columns"]
+}
+```
+
+`ancestor` uses the same exact fields as `element`. It searches strict parents
+(up to 64), returning the nearest match. The anchor must be unique; an ambiguous
+anchor still abstains. No matching parent returns `not-found`; excessive depth
+or an invalid parent chain returns `unavailable`. Returned values describe the
+saved current ancestor, never the reference image or a CSS cause. This reuses
+the saved snapshot and does not capture again.
+
 `element` is an exact-field query, not a CSS selector. Supported fields are `id`,
 `testId`, `tag`, `role`, `name` and `text`; supplied fields must all match. Tag
 matching ignores case; other fields match the captured strings exactly. For
@@ -672,6 +691,7 @@ geometry extracted from a PNG design target or a previous-run comparison.
 | `detail`     | string   | `"summary"` (default), `"full"` or `"runs"`.                                                          |
 | `element`    | object   | With `story`: exact saved element fields.                                                             |
 | `properties` | string[] | With `element`: 1–12 CSS property names; uncaptured properties are listed in `unavailableProperties`. |
+| `ancestor` | object | With `element`: nearest matching strict saved ancestor. |
 
 Structure capture version 3 records computed `grid-template-areas` and classifies
 its changes as layout evidence. `report` element properties can return this

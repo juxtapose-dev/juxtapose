@@ -333,7 +333,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'report',
     description:
-      'Read saved baseline evidence without capture; question names the missing fact. Default: bounded summary; story: one full capture result, including available controlGeometry (measured approved/current control sizes, not CSS causes); detail=full: complete RunReport; detail=runs: saved run IDs, newest first. Select a story for unclear control dimensions. With story and element, inspect unique saved current-element rect/styles; properties selects CSS values. Request only missing facts. runId selects an older saved run.',
+      'Saved evidence, no capture. Default: summary; story: full result with available approved/current controlGeometry; detail=full: RunReport; detail=runs: newest run IDs. element inspects saved current-element rect/styles; ancestor selects its enclosing element. Request only missing facts; measurements are not CSS causes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -349,7 +349,17 @@ export const TOOLS: Tool[] = [
             ELEMENT_QUERY_FIELDS.map((key) => [key, { type: 'string', pattern: '\\S' }]),
           ),
           description:
-            'With story: exact saved current-element fields (AND); ambiguous or truncated snapshots abstain. Not a live CSS selector.',
+            'With story: exact saved fields (AND). Ambiguous/truncated: abstain. Not CSS.',
+        },
+        ancestor: {
+          type: 'object',
+          minProperties: 1,
+          additionalProperties: false,
+          properties: Object.fromEntries(
+            ELEMENT_QUERY_FIELDS.map((key) => [key, { type: 'string' }]),
+          ),
+          description:
+            'With unique element: nearest matching strict ancestor (max 64 parents); e.g. title → article.',
         },
         properties: {
           type: 'array',
@@ -940,6 +950,11 @@ export class McpServer {
           throw new ArgError(
             'element must contain exact id, testId, tag, role, name or text fields',
           );
+        const ancestor = args['ancestor'];
+        if (ancestor !== undefined && !isElementQuery(ancestor))
+          throw new ArgError('ancestor must contain exact saved element fields');
+        if (ancestor !== undefined && element === undefined)
+          throw new ArgError('ancestor requires element');
         const properties = args['properties'];
         if (properties !== undefined) checkElementProperties(properties);
         if (element !== undefined && !story) throw new ArgError('element requires story');
@@ -981,6 +996,7 @@ export class McpServer {
                       story,
                       element,
                       properties,
+                      ancestor,
                     )),
                   }
                 : result;

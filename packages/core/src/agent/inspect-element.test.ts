@@ -140,3 +140,66 @@ test('uncaptured CSS values preserve known measurements without inventing defaul
     inspectStructureElement(snapshot(), { tag: 'h1' }, ['color; display:none']),
   ).toThrow('CSS property names');
 });
+
+test('unique descendant selects nearest strict ancestor without choosing among duplicate anchors', () => {
+  const s = snapshot();
+  const template = s.elements[0]!;
+  s.elements = [
+    { ...template, tag: 'article', parent: null, id: 'outer', styles: {} },
+    {
+      ...template,
+      tag: 'article',
+      parent: 0,
+      id: 'inner',
+      styles: { 'padding-top': '16px' },
+    },
+    {
+      ...template,
+      tag: 'strong',
+      parent: 1,
+      id: 'title',
+      text: 'Unique title',
+      styles: {},
+    },
+    { ...template, tag: 'article', parent: null, id: 'other', styles: {} },
+  ];
+  const query = { text: 'Unique title' };
+  const read = () =>
+    inspectStructureElement(s, query, ['padding-top'], { tag: 'ARTICLE' });
+  expect(read()).toMatchObject({
+    status: 'measured',
+    element: { id: 'inner' },
+    styles: { 'padding-top': '16px' },
+  });
+  expect(
+    inspectStructureElement(s, { id: 'inner' }, ['padding-top'], { tag: 'article' }),
+  ).toMatchObject({ status: 'measured', element: { id: 'outer' } });
+  expect(
+    inspectStructureElement(s, query, ['padding-top'], { tag: 'aside' }),
+  ).toMatchObject({ status: 'not-found' });
+  s.elements[2]!.parent = 2;
+  expect(read()).toMatchObject({ status: 'unavailable', reason: 'invalid-parent-chain' });
+  s.elements[2]!.parent = 1;
+  s.elements.push({ ...s.elements[2]! });
+  expect(read()).toMatchObject({ status: 'ambiguous' });
+  s.truncated = { kept: 5, total: 6 };
+  expect(read()).toMatchObject({ status: 'unavailable', reason: 'truncated-structure' });
+});
+
+test('ancestor search bounds pathological depth and validates query', () => {
+  const s = snapshot();
+  const template = s.elements[0]!;
+  s.elements = Array.from({ length: 67 }, (_, i) => ({
+    ...template,
+    tag: i === 0 ? 'article' : 'div',
+    id: String(i),
+    parent: i === 0 ? null : i - 1,
+    styles: {},
+  }));
+  expect(
+    inspectStructureElement(s, { id: '66' }, ['padding-top'], { tag: 'article' }),
+  ).toMatchObject({ status: 'unavailable', reason: 'ancestor-depth-limit' });
+  expect(() => inspectStructureElement(s, { id: '66' }, ['padding-top'], {})).toThrow(
+    'ancestor',
+  );
+});

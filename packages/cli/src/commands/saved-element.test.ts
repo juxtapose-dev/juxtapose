@@ -165,3 +165,35 @@ test('concurrent MCP element queries share the initial report read too', async (
     await server.close();
   }
 });
+
+test('MCP forwards ancestor lookup and rejects unanchored requests', async () => {
+  const f = await fixture();
+  const title = f.s.elements.find((e) => e.tag === 'h1')!;
+  const parent = f.s.elements[title.parent!]!;
+  const server = new McpServer({ project: f.project, chrome: '/not-a-browser' });
+  try {
+    const response = await server.call('report', {
+      runId: 'r1',
+      story: 'card--default',
+      element: { tag: 'h1' },
+      ancestor: { tag: parent.tag },
+      properties: ['padding-top'],
+    });
+    expect(response.isError).toBe(false);
+    const content = response.content[0];
+    expect(JSON.parse(content?.type === 'text' ? content.text : '{}')).toMatchObject({
+      status: 'measured',
+      element: { rect: parent.rect, tag: parent.tag },
+    });
+    for (const args of [
+      { ancestor: { tag: 'article' } },
+      { element: { tag: 'h1' }, ancestor: {} },
+    ]) {
+      expect(
+        (await server.call('report', { story: 'card--default', ...args })).isError,
+      ).toBe(true);
+    }
+  } finally {
+    await server.close();
+  }
+});
