@@ -347,7 +347,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'reference',
     description:
-      'Read saved image evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, and toRun defaulting to the latest) for every capture both saved: changed pixels plus observed structural changes (property old→new, resizes). Use it against a checkpoint run ID to see what later edits changed; it does not measure progress toward the target. Set detail=json for regions, deltas and conservative target paint geometry, or region for one paired PNG crop. A passing target run hint needs no reference call.',
+      'Read saved image evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, and toRun defaulting to the latest) for every capture both saved: changed pixels plus observed structural changes (property old→new, resizes). Use it against a checkpoint run ID to see what later edits changed; it does not measure progress toward the target. Set detail=layout with name for focused target paint measurements; detail=json returns regions and the full ledger, or region for one paired PNG crop. A passing target run hint needs no reference call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -375,9 +375,9 @@ export const TOOLS: Tool[] = [
         },
         detail: {
           type: 'string',
-          enum: ['json'],
+          enum: ['json', 'layout'],
           description:
-            'Return the full structured ledger instead of the short text summary',
+            'json: full ledger. layout: focused painted-region measurements for one named target; excludes crops and checkpoint comparisons.',
         },
       },
     },
@@ -426,7 +426,7 @@ export const TOOLS: Tool[] = [
 ];
 
 const INSTRUCTIONS =
-  "For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, use the returned run summary and design-reference hint. changesFromApproved measures approved→current, not design-target error. Element labels are saved identities, not guaranteed unique CSS selectors; measurements do not identify CSS causes. Ordinals count same-labelled elements in captured document order. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference detail=json for saved measurements or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. Local image scripts remain useful when Jux lacks the needed fact. One run returns the baseline verdict and target result; add compareTo=<checkpoint> for the saved pixel/structure change in that call. Do not repeat these with report or reference. Optional progress identifies each target’s bestRun; record it as a checkpoint (report detail=runs lists saved IDs). Stop only when all required states and checks pass, including targets outside subset runs. To roll back, restore that checkpoint's source, not the baselines. Use check for review blockers, explain for capture settings, and never approve unless the user asks.";
+  "For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, use the returned run summary and design-reference hint. changesFromApproved measures approved→current, not design-target error. Element labels are saved identities, not guaranteed unique CSS selectors; measurements do not identify CSS causes. Ordinals count same-labelled elements in captured document order. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference with name and detail=layout for saved target measurements, detail=json for full detail, or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. Local image scripts remain useful when Jux lacks the needed fact. One run returns the baseline verdict and target result; add compareTo=<checkpoint> for the saved pixel/structure change in that call. Do not repeat these with report or reference. Optional progress identifies each target’s bestRun; record it as a checkpoint (report detail=runs lists saved IDs). Stop only when all required states and checks pass, including targets outside subset runs. To roll back, restore that checkpoint's source, not the baselines. Use check for review blockers, explain for capture settings, and never approve unless the user asks.";
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -686,7 +686,7 @@ export function compactReferenceFeedback(result: ReferenceResult) {
     guidance:
       result.outcome === 'pass'
         ? 'Each listed captured target has compatible geometry and zero Pixelmatch mismatch pixels under the stated policy; all captured targets pass. Use the accompanying run summary for baseline and flake verdicts; no reference call is needed. Stop only when all required states and behavior checks pass. NotCaptured targets were not checked.'
-        : 'Observed target/current pixels, not inferred CSS causes. Use these facts for the next edit. If a specific uncertainty remains, call reference with detail=json for saved geometry or a region ID for one paired crop; neither needs recapture.',
+        : 'Target mismatch is not a CSS cause. Request reference with name and detail=layout for focused paint measurements, detail=json for the full ledger, or a region ID for one paired crop. Saved evidence; no recapture needed.',
   };
 }
 
@@ -899,8 +899,12 @@ export class McpServer {
         const detail = str(args, 'detail');
         const compare = str(args, 'compare') ?? 'target';
         const fromRun = str(args, 'fromRun');
-        if (detail !== undefined && detail !== 'json')
-          throw new ArgError("'detail' must be 'json'");
+        if (detail !== undefined && detail !== 'json' && detail !== 'layout')
+          throw new ArgError("'detail' must be 'json' or 'layout'");
+        if (detail === 'layout' && (!name || region || compare !== 'target'))
+          throw new ArgError(
+            "'detail=layout' requires a named target without region or compare=previous",
+          );
         if (compare !== 'target' && compare !== 'previous')
           throw new ArgError("'compare' must be 'target' or 'previous'");
         if (compare === 'previous' && !fromRun)
@@ -1001,6 +1005,25 @@ export class McpServer {
                   data: crop.png.toString('base64'),
                 });
               return { content, isError: false };
+            }
+            if (detail === 'layout') {
+              if (signal?.aborted) return errorResult(CANCELLED);
+              const { evaluateReferences } = await import('./reference.js');
+              const { focusedLayoutFeedback } =
+                await import('./reference-layout-feedback.js');
+              const evidence = await evaluateReferences({
+                project: this.project,
+                name,
+                includeLayout: true,
+                layoutCache: this.layouts,
+              });
+              return {
+                content: [
+                  { type: 'text', text: JSON.stringify(focusedLayoutFeedback(evidence)) },
+                ],
+                isError:
+                  evidence.outcome === 'error' || evidence.outcome === 'no-comparison',
+              };
             }
             const { referenceCommand } = await import('./reference.js');
             const result = await this.invoke(

@@ -315,3 +315,23 @@ test('compact target errors retain status and bound diagnostic text', () => {
     },
   ]);
 });
+
+test('focused layout requires one target and rejects crops or checkpoint mode', async () => {
+  const server = new McpServer();
+  try {
+    for (const args of [
+      { detail: 'layout' },
+      { detail: 'layout', name: 'desktop', region: 'region-1' },
+      { detail: 'layout', name: 'desktop', compare: 'previous', fromRun: 'r1' },
+    ]) {
+      const result = await server.call('reference', args);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('requires a named target'),
+      });
+    }
+  } finally {
+    await server.close();
+  }
+});

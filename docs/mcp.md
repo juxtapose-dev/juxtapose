@@ -155,6 +155,20 @@ causes. Up to two failing targets, favoring distinct viewports, may contain
 `outline` in `reference({detail: "json"})`. These diagnostics never affect the
 Pixelmatch verdict.
 
+For focused target measurements, request
+`reference({name: "desktop-default", detail: "layout"})`. It returns
+`juxtapose.target-layout-focus/v1`: one target's status, current capture key,
+painted target/current boxes, current element identities, confidence rules,
+abstentions and omissions. It uses the same cached measurements as JSON detail,
+without computing outlines or repeating hashes, image paths and region metadata.
+The matched observations are selected within a 3 KB response budget; long
+identities are omitted whole rather than truncated. Other target states still
+require verification. This mode requires `name` and cannot be combined with
+`region` or `compare: "previous"`. Use `detail: "json"` for a full ledger or
+missing measurements, and `region` for a saved paired crop when appearance
+remains uncertain. Passing or unsupported targets return explicit unavailable
+measurement status rather than invented geometry.
+
 Requested `reference({detail: "json"})` also adds `layout` to failing target
 states when the saved current DOM is available. It contains up to eight
 conservative painted-region matches with target/current boxes, current element

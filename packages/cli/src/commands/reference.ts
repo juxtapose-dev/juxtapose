@@ -393,7 +393,7 @@ export async function evaluateReferences(options: {
   run?: string;
   name?: string;
   regionId?: string;
-  /** MCP run hints only: up to two high-mismatch states, without recapture. */
+  /** Requested diagnostics: up to two high-mismatch states, without recapture. */
   includeOutlines?: boolean;
   /** Requested JSON detail only; never computes evidence for a passing target. */
   includeLayout?: boolean;
