@@ -96,17 +96,20 @@ export async function savedRuns(project: string) {
   };
 }
 
+type CachedReport = {
+  signature: string;
+  report: RunReport;
+  byStory: Map<string, DiffResult>;
+  summary: ReturnType<typeof agentRunSummary>;
+};
+
 /** Parsed reports are shared by repeated story/full lookups in one MCP session. */
 export class SavedReportCache {
   constructor(private readonly options: SummaryOptions = {}) {}
-  private readonly reports = new Map<
+  private readonly reports = new Map<string, CachedReport>();
+  private readonly pending = new Map<
     string,
-    {
-      signature: string;
-      report: RunReport;
-      byStory: Map<string, DiffResult>;
-      summary: ReturnType<typeof agentRunSummary>;
-    }
+    { signature: string; load: Promise<CachedReport> }
   >();
 
   private async entry(project: string, runId?: string) {
@@ -119,18 +122,33 @@ export class SavedReportCache {
       this.reports.set(file, cached);
       return cached;
     }
-    const report = parseRunReport(await readFile(file, 'utf8'), file);
-    this.reports.delete(file);
-    const entry = {
-      signature,
-      report,
-      byStory: new Map(report.results.map((result) => [result.storyId, result])),
-      summary: agentRunSummary(report, this.options),
-    };
-    this.reports.set(file, entry);
-    if (this.reports.size > MAX_CACHED_REPORTS)
-      this.reports.delete(this.reports.keys().next().value!);
-    return entry;
+    const pending = this.pending.get(file);
+    if (pending?.signature === signature) return pending.load;
+    // Three simultaneous element queries read/parsed the same report three
+    // times on a cold cache. Share that work as well as the structure sidecar.
+    const load: Promise<CachedReport> = readFile(file, 'utf8').then((raw) => {
+      const report = parseRunReport(raw, file);
+      const entry = {
+        signature,
+        report,
+        byStory: new Map(report.results.map((result) => [result.storyId, result])),
+        summary: agentRunSummary(report, this.options),
+      };
+      // An older in-flight read must not replace a newer file revision.
+      if (this.pending.get(file)?.load === load) {
+        this.reports.delete(file);
+        this.reports.set(file, entry);
+        if (this.reports.size > MAX_CACHED_REPORTS)
+          this.reports.delete(this.reports.keys().next().value!);
+      }
+      return entry;
+    });
+    this.pending.set(file, { signature, load });
+    try {
+      return await load;
+    } finally {
+      if (this.pending.get(file)?.load === load) this.pending.delete(file);
+    }
   }
 
   async get(project: string, runId?: string): Promise<RunReport> {

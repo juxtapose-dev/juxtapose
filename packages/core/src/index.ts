@@ -385,3 +385,11 @@ export {
   type UserDeviceSpec,
 } from './browser/devices.js';
 export { resolveDevice, UnknownDeviceError } from './capture/device.js';
+export {
+  inspectStructureElement,
+  isElementQuery,
+  checkElementProperties,
+  ELEMENT_QUERY_FIELDS,
+  type ElementQuery,
+  type ElementInspection,
+} from './agent/inspect-element.js';

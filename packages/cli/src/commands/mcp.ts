@@ -20,6 +20,9 @@ import { createInterface } from 'node:readline';
 import path from 'node:path';
 import {
   acquireBrowser,
+  isElementQuery,
+  checkElementProperties,
+  ELEMENT_QUERY_FIELDS,
   freezeImages,
   checkNetwork,
   checkSettle,
@@ -39,6 +42,7 @@ import { isRecord } from '../guards.js';
 import { loadConfig } from '../context.js';
 import { captureIo, type Session } from '../io.js';
 import { latestRunDir } from '../run-dir.js';
+import { SavedElementCache } from './saved-element.js';
 import {
   EXCLUSIVE,
   Scheduler,
@@ -318,13 +322,31 @@ export const TOOLS: Tool[] = [
   {
     name: 'report',
     description:
-      'Read a saved Storybook/Ladle run without capture. Default: bounded summary; story: one full capture result, including available controlGeometry (measured approved/current control sizes, not CSS causes); detail=full: complete RunReport; detail=runs: saved run IDs, newest first. Request one story when wrapper resize facts leave control dimensions unclear. runId selects an older saved run.',
+      'Read a saved Storybook/Ladle run without capture. Default: bounded summary; story: one full capture result, including available controlGeometry (measured approved/current control sizes, not CSS causes); detail=full: complete RunReport; detail=runs: saved run IDs, newest first. Request one story when wrapper resize facts leave control dimensions unclear. With story and element, inspect unique saved current-element rect/styles; optional properties narrows the captured values. Use only when current computed values are unclear. runId selects an older saved run.',
     inputSchema: {
       type: 'object',
       properties: {
         runId: { type: 'string', description: 'Saved run ID (default latest)' },
         story: { type: 'string', description: 'Exact capture key for one result' },
         detail: { type: 'string', enum: ['summary', 'full', 'runs'] },
+        element: {
+          type: 'object',
+          minProperties: 1,
+          additionalProperties: false,
+          properties: Object.fromEntries(
+            ELEMENT_QUERY_FIELDS.map((key) => [key, { type: 'string' }]),
+          ),
+          description:
+            'With story: exact saved current-element fields (AND); ambiguous or truncated snapshots abstain. Not a live CSS selector.',
+        },
+        properties: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          maxItems: 12,
+          description:
+            'With element: captured computed properties to return; default typography and vertical margins. No live query.',
+        },
       },
     },
   },
@@ -426,7 +448,7 @@ export const TOOLS: Tool[] = [
 ];
 
 const INSTRUCTIONS =
-  "For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, use the returned run summary and design-reference hint. changesFromApproved measures approved→current, not design-target error. Element labels are saved identities, not guaranteed unique CSS selectors; measurements do not identify CSS causes. Ordinals count same-labelled elements in captured document order. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference with name and detail=layout for saved target measurements, detail=json for full detail, or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. Local image scripts remain useful when Jux lacks the needed fact. One run returns the baseline verdict and target result; add compareTo=<checkpoint> for the saved pixel/structure change in that call. Do not repeat these with report or reference. Optional progress identifies each target’s bestRun; record it as a checkpoint (report detail=runs lists saved IDs). Stop only when all required states and checks pass, including targets outside subset runs. To roll back, restore that checkpoint's source, not the baselines. Use check for review blockers, explain for capture settings, and never approve unless the user asks.";
+  "For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, use the returned run summary and design-reference hint. changesFromApproved measures approved→current, not design-target error. Element labels are saved identities, not guaranteed unique CSS selectors; measurements do not identify CSS causes. Ordinals count same-labelled elements in captured document order. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference with name and detail=layout for saved target measurements, detail=json for full detail, or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. For unclear current computed styles, use report with story and exact element fields; it reads the saved capture. Local image scripts remain useful when Jux lacks the needed fact. One run returns the baseline verdict and target result; add compareTo=<checkpoint> for the saved pixel/structure change in that call. Do not repeat these with report or reference. Optional progress identifies each target’s bestRun; record it as a checkpoint (report detail=runs lists saved IDs). Stop only when all required states and checks pass, including targets outside subset runs. To roll back, restore that checkpoint's source, not the baselines. Use check for review blockers, explain for capture settings, and never approve unless the user asks.";
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -699,6 +721,7 @@ export class McpServer {
   private readonly project: string;
   private readonly scheduler: Scheduler;
   private readonly reports: SavedReportCache;
+  private readonly elements = new SavedElementCache();
   private readonly controlMeasurements: boolean;
   private readonly layouts = new ReferenceLayoutCache();
   /** Saved runs are immutable. Bound repeated previous/current analysis in
@@ -830,6 +853,16 @@ export class McpServer {
         const runId = str(args, 'runId');
         const story = str(args, 'story');
         const detail = str(args, 'detail');
+        const element = args['element'];
+        if (element !== undefined && !isElementQuery(element))
+          throw new ArgError(
+            'element must contain exact id, testId, tag, role, name or text fields',
+          );
+        const properties = args['properties'];
+        if (properties !== undefined) checkElementProperties(properties);
+        if (element !== undefined && !story) throw new ArgError('element requires story');
+        if (properties !== undefined && element === undefined)
+          throw new ArgError('properties requires element');
         if (story === '') throw new ArgError("'story' must be a non-empty capture key");
         if (
           detail !== undefined &&
@@ -856,15 +889,32 @@ export class McpServer {
               );
               if (!result)
                 return errorResult(`jux: story '${story}' is not in run ${report.runId}`);
-              data = result;
+              data = element
+                ? {
+                    runId: report.runId,
+                    storyId: story,
+                    ...(await this.elements.lookup(
+                      this.project,
+                      report.runId,
+                      story,
+                      element,
+                      properties,
+                    )),
+                  }
+                : result;
             } else {
               data =
                 detail === 'full'
                   ? await this.reports.get(this.project, runId)
                   : await this.reports.summary(this.project, runId);
             }
+            const text = JSON.stringify(data);
+            if (element && Buffer.byteLength(text) > 4096)
+              return errorResult(
+                'jux: saved element response exceeds the 4096-byte budget',
+              );
             return {
-              content: [{ type: 'text', text: JSON.stringify(data) }],
+              content: [{ type: 'text', text }],
               isError: false,
             };
           },

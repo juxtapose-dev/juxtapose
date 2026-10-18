@@ -461,6 +461,42 @@ run; otherwise the latest is used. `story` and `detail: "full"` are exclusive.
 The server keeps a small cache of parsed reports and checks for saved-file
 changes before reusing one.
 
+To inspect one element's captured current styles without a browser, use:
+
+```json
+{
+  "story": "billing-card--default__mobile",
+  "runId": "<saved-run-id>",
+  "element": { "id": "display-name" },
+  "properties": ["font-size", "line-height", "padding-top"]
+}
+```
+
+`element` is an exact-field query, not a CSS selector. Supported fields are `id`,
+`testId`, `tag`, `role`, `name` and `text`; supplied fields must all match. Tag
+matching ignores case; other fields match the captured strings exactly. For
+example, `{ "tag": "h1" }` works only when that capture has one matching heading.
+Unchanged duplicates count. Ambiguous, missing or truncated evidence returns an
+explicit status instead of choosing an element.
+
+This returns `juxtapose.current-element/v1`, the saved run/capture IDs, structure
+hash, matched identity, border-box `rect` and captured computed values. Defaults
+are font family, size, weight, line height, letter spacing and vertical margins.
+`properties` selects 1–12 captured properties. CSS width/height are not collected;
+use `rect` for border-box dimensions. Later-added properties are marked in
+`unavailableProperties` for old captures rather than filled with invented values.
+A 3 KB element payload budget omits whole oversized style values and reports
+`omittedStyles`; identities are never truncated. The MCP envelope is capped at
+4 KB. Values describe the saved current capture time; target values and CSS-rule
+locations require other evidence.
+
+The server caches at most eight decoded current structures, shares a read across concurrent
+requests, and checks file metadata before reuse. A saved-file change invalidates the
+cache. Source files and images are not read for this lookup. Use it when a
+specific current computed value is unclear; avoid requesting it to repeat values
+already supplied. The core SDK exports `inspectStructureElement`, `ElementQuery`
+and `ElementInspection` for the same pure snapshot operation.
+
 First use any `controlMeasurements` in the compact summary. If a wrapper resize
 still leaves the control dimensions unclear, request one
 `report({story: "form--default", runId: "<saved-run>"})`. A failed capture may
@@ -479,11 +515,13 @@ prioritized before the detail budget; this flag is not a claim about a CSS cause
 Older reports may not contain it. This is approved-baseline evidence, not
 geometry extracted from a PNG design target or a previous-run comparison.
 
-| Argument | Type   | Description                        |
-| -------- | ------ | ---------------------------------- |
-| `runId`  | string | Saved run ID (default latest).     |
-| `story`  | string | Exact capture key to inspect.      |
-| `detail` | string | `"summary"` (default) or `"full"`. |
+| Argument     | Type     | Description                                        |
+| ------------ | -------- | -------------------------------------------------- |
+| `runId`      | string   | Saved run ID (default latest).                     |
+| `story`      | string   | Exact capture key to inspect.                      |
+| `detail`     | string   | `"summary"` (default), `"full"` or `"runs"`.       |
+| `element`    | object   | With `story`: exact saved element fields.          |
+| `properties` | string[] | With `element`: 1–12 captured computed properties. |
 
 ### check
 
