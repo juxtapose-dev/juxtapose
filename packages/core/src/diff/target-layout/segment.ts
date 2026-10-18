@@ -143,7 +143,10 @@ export function fromPng(image: RgbaImage): TargetEvidence {
 /** The first 30 real pairs yielded only 12 geometry facts: blank repeated
  * controls correctly abstained. Unchanged inner paint can distinguish some
  * repeated fills without OCR. Exact bytes deliberately reject font/AA drift. */
-function contentFingerprint(image: RgbaImage, c: Component): EvidenceBlock['content'] {
+export function contentFingerprint(
+  image: RgbaImage,
+  c: Pick<Component, 'x0' | 'x1' | 'y0' | 'y1' | 'color'>,
+): EvidenceBlock['content'] {
   const w = c.x1 - c.x0,
     h = c.y1 - c.y0;
   if (w < 24 || h < 24) return undefined;

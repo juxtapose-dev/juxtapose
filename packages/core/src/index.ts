@@ -233,6 +233,7 @@ export {
 export { diffImages } from './diff/diff.js';
 export {
   extractTargetEvidence,
+  extractTargetEvidenceStreaming,
   matchLayout as matchTargetLayout,
   fromStructure as targetEvidenceFromStructure,
   type TargetEvidence,

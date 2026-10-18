@@ -12,6 +12,24 @@ than 80% rectangular occupancy, and excess blocks beyond 256. At 40,000 runs it
 abstains from the image altogether. This bounds memory on photographs without
 building a full pixel index.
 
+`extractTargetEvidenceStreaming(encodedImage)` is a separate opt-in producer.
+It finalizes exact-color connected components after their last occupied row,
+retaining only live row components and bounded candidate output. A photo-heavy
+1280×900 reference has 234780 runs but at most 797 simultaneously live roots:
+the original producer abstains; streaming recovers 96 paint blocks. The selected
+reference-only study packet contains eight substantial regions. Streaming keeps
+all pixel runs and the same inner-paint fingerprints; it does not use short-run
+or color filtering. Candidate and per-row limits still fail closed.
+
+This producer is not wired to the default extractor, matcher or MCP response.
+Complete evidence matches the original algorithm with a raised offline run
+budget on six reference images. Decode plus streaming takes about 23ms median
+on that desktop reference in a local alternating-order test; the raised-budget
+original takes about 16ms. This is a coverage/memory strategy, not an established
+analysis-speed or agent-efficiency win. Agent usefulness and matcher precision
+on the recovered regions remain separate gates. Caller caches must distinguish
+producer identity; do not reuse the existing default image-evidence cache keys.
+
 `matchLayout` first requires equal image/DOM viewport extents (DPR 1). It matches
 exact fill colors (a deliberately stricter subset of DeltaE <=3), exact inner
 paint fingerprints when present, mutual best assignments with a second-best

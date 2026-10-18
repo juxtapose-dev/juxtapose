@@ -2,6 +2,7 @@ import type { StructureSnapshot } from '../../types.js';
 import { styleReader } from '../../capture/structure.js';
 import sharp from 'sharp';
 import { fromPng } from './segment.js';
+import { fromPngStreaming } from './stream.js';
 
 export interface LayoutBox {
   x: number;
@@ -76,6 +77,18 @@ export async function extractTargetEvidence(image: Buffer): Promise<TargetEviden
     .raw()
     .toBuffer({ resolveWithObject: true });
   return fromPng({ data, width: info.width, height: info.height });
+}
+
+/** Opt-in reference analysis for photo-heavy images. Never used by the default
+ * matcher: recovery of paint components is not proof of DOM match precision. */
+export async function extractTargetEvidenceStreaming(
+  image: Buffer,
+): Promise<TargetEvidence> {
+  const { data, info } = await sharp(image)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return fromPngStreaming({ data, width: info.width, height: info.height });
 }
 
 export { fromPng };
