@@ -146,3 +146,34 @@ call sites. Historical audits confirm two tool images in the geometry session,
 four versus two in the ordering pair, and two versus zero additional tool images
 in the supplied-toolkit typography pair (both initially attached four images).
 Image counts alone do not establish a time or token effect.
+
+## Other properties and coupled hypotheses: native-only gates
+
+`css-probe-contact-v1` tests static initial-state DOM from the public
+agent-authored contact form, rather than the planner typography fixture.
+Spacing-only and height-only mutations each yield the unique correct value
+with RGBA equality across desktop and mobile. Six-capture batches take
+725ms and 706ms locally; these are single measurements, not agent savings.
+Repeated requests reuse results and preserve source. No model calls occur.
+
+A coupled spacing/height mutation exposes a scalar ranking limitation. With
+height still wrong, true gap20 leaves 7444/6106 mismatches (desktop/mobile),
+whereas incorrect gap24 leaves only 4414/3636. The minimum compensates for
+another defect. The adapter correctly returns no exact value; this does not
+show an agent would follow the misleading ranking.
+
+`joint-css-hypotheses-v1` evaluates four explicit two-property sets across
+both states, with no generated search. Only joint gap20/height44 passes both
+states and is independently RGBA equal. Omitting it yields no-match; alias
+IDs for equivalent passing overrides remain ambiguous. Repeated/reordered
+requests reuse saved measurements. One eight-capture native batch takes
+1065ms locally; no model calls. Three contract checks cover bounds, canonical
+identity dependencies, all-state completeness, ambiguity and distinct
+policy-pass/RGBA evidence.
+
+This validates a bounded hypothesis-measurement contract, not agent value.
+The controller supplied the correct hypothesis. Keep this static prototype
+on demand and internal: no new MCP tool/default, live Storybook support,
+automatic CSS cause, optimization loop or acceptance change. A future agent
+gate must require agent-chosen hypotheses and equal independently verified
+quality, with a feasible budget that does not depend on cached prefixes.
