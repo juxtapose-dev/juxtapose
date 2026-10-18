@@ -396,6 +396,15 @@ Set `dryRun: true` to return the selection instead of capturing. It uses the
 same selection rules and response shape as `list`, while retaining run's affected
 analysis when no selectors are supplied. This does not replace the last run.
 
+Compact `changesFromApproved` retains ordinal labels such as `textbox (1st)`
+and `textbox (2nd)` as distinct saved identities. These labels are not guaranteed
+unique CSS selectors. The array contains at most six facts plus an omission
+marker, within 800 UTF-8 bytes including capture labels. Facts longer than 240
+characters are omitted whole and counted in `omittedLongObservations`; full
+saved results retain them. A `+N more` marker counts eligible grouped facts
+excluded by the count or byte budget. Request a specific saved story only when
+its missing detail is needed.
+
 Compact `run` and `report` summaries may include `controlMeasurements` when
 ancestor deduplication hid a native-control resize and the element has no other
 direct fact. Each item identifies a DOM ID or test ID, the measured dimension,

@@ -157,6 +157,7 @@ function priority(result: DiffResult): number {
 }
 
 const MAX_CHANGES = 6;
+const MAX_CHANGE_BYTES = 800;
 /** Up to this many failing captures, a change seen in one is still listed:
  *  it is usually a different viewport or state of the same page (a mobile-only
  *  grid). Beyond it, single-capture changes are noise a handoff can name. */
@@ -174,7 +175,8 @@ const px = (n: number) => (n > 0 ? `+${n}` : `${n}`);
  *  changed computed properties, and resizes that repeat. Each verdict stores a
  *  budgeted prefix of its deltas, so a count is "listed in", not "affected".
  *  It states what the structure sidecars measured, not which rule caused it. */
-export function observedChanges(results: DiffResult[]): string[] {
+function observedChangeSummary(results: DiffResult[]) {
+  let omittedLongObservations = 0;
   const failing = results.filter(
     (r) => r.status === 'fail' && !r.error && r.structural?.deltas.length,
   );
@@ -183,7 +185,7 @@ export function observedChanges(results: DiffResult[]): string[] {
   for (const r of failing) {
     const own = new Set<string>();
     for (const d of r.structural!.deltas) {
-      const el = 'el' in d ? d.el.replace(/ \(\d+(?:st|nd|rd|th)\)$/, '') : '';
+      const el = 'el' in d ? d.el : '';
       let text: string;
       if (d.kind === 'style') text = `${el} ${d.prop} ${hex(d.from)}→${hex(d.to)}`;
       else if (d.kind === 'resized' && !CONTAINER_LABELS.has(el))
@@ -191,6 +193,11 @@ export function observedChanges(results: DiffResult[]): string[] {
           .filter(Boolean)
           .join(' ')}px`;
       else continue;
+      // Keep a measurement intact; long selectors/values belong in the saved result.
+      if (text.length > 240) {
+        omittedLongObservations++;
+        continue;
+      }
       if (own.has(text)) continue;
       own.add(text);
       const entry = found.get(text) ?? { style: d.kind === 'style', ids: [] };
@@ -206,17 +213,30 @@ export function observedChanges(results: DiffResult[]): string[] {
         b.ids.length - a.ids.length ||
         (ta < tb ? -1 : ta > tb ? 1 : 0),
     );
-  const lines = listed.slice(0, MAX_CHANGES).map(([text, e]) => {
+  const lines: string[] = [];
+  let omitted = 0;
+  for (const [text, e] of listed) {
     const where =
       e.ids.length === failing.length
         ? `all ${failing.length}`
         : e.ids.length <= 2
           ? e.ids.join(', ')
           : `${e.ids.length}/${failing.length}`;
-    return `${text} (${where})`;
-  });
-  if (listed.length > MAX_CHANGES) lines.push(`+${listed.length - MAX_CHANGES} more`);
-  return lines;
+    const line = `${text} (${where})`;
+    // Reserve 32 bytes for the omission marker, including JSON punctuation.
+    if (
+      lines.length < MAX_CHANGES &&
+      Buffer.byteLength(JSON.stringify([...lines, line])) <= MAX_CHANGE_BYTES - 32
+    )
+      lines.push(line);
+    else omitted++;
+  }
+  if (omitted) lines.push(`+${omitted} more`);
+  return { lines, omittedLongObservations };
+}
+
+export function observedChanges(results: DiffResult[]): string[] {
+  return observedChangeSummary(results).lines;
 }
 
 /** Bounded MCP overview. Full evidence remains in the saved report. */
@@ -225,7 +245,9 @@ export function agentRunSummary(report: RunReport, options: SummaryOptions = {})
     options.controlMeasurements !== false
       ? controlGeometrySummary(report.results)
       : undefined;
-  const changes = observedChanges(report.results);
+  const { lines: changes, omittedLongObservations } = observedChangeSummary(
+    report.results,
+  );
   const attention = report.results.filter((r) => priority(r) < 5);
   const onlyStaleAttention =
     attention.length > 0 &&
@@ -256,6 +278,7 @@ export function agentRunSummary(report: RunReport, options: SummaryOptions = {})
       : groups.length
         ? { groups, omittedGroups: Math.max(0, (report.groups?.length ?? 0) - 3) }
         : {}),
+    ...(omittedLongObservations ? { omittedLongObservations } : {}),
     attention: attention.slice(0, MAX_STORIES).map((r) => ({
       storyId: r.storyId,
       status: r.status,

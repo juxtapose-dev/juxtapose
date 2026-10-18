@@ -121,8 +121,56 @@ describe('saved MCP run reports', () => {
         'main>section>form gap 20px→12px (all 3)',
         'button[name="Save details"] background-color #285bc4→#1b773f (other)',
         'div.address-grid grid-template-columns 266px→125px 125px (card__mobile)',
-        'div.field resized h-8px (all 3)',
       ]);
+    });
+
+    test('keeps ordinal element identities distinct and leaves long facts intact on demand', () => {
+      const lines = observedChanges([
+        withDeltas('desktop', [
+          style('textbox (1st)', 'height', '44px', '36px'),
+          style('textbox (2nd)', 'height', '44px', '36px'),
+          style('x'.repeat(300), 'height', '44px', '36px'),
+        ]),
+      ] as RunReport['results']);
+      expect(lines).toEqual([
+        'textbox (1st) height 44px→36px (all 1)',
+        'textbox (2nd) height 44px→36px (all 1)',
+      ]);
+    });
+
+    test('signals long observations without modifying saved evidence', () => {
+      const value = report(1);
+      const delta = style('x'.repeat(300), 'height', '44px', '36px');
+      value.results[0] = withDeltas('story-0', [delta]) as RunReport['results'][number];
+      const original = JSON.stringify(value);
+      const summary = agentRunSummary(value);
+      expect(summary.omittedLongObservations).toBe(1);
+      expect(summary.changesFromApproved).toBeUndefined();
+      expect(JSON.stringify(value)).toBe(original);
+      expect(agentRunSummary(report(1)).omittedLongObservations).toBeUndefined();
+    });
+
+    test('retains a fourth repair fact while bounding UTF-8 output including capture IDs', () => {
+      const values = [
+        gap,
+        green,
+        style('grid', 'grid-template-columns', '266px', '125px 125px'),
+        resized('field', 0, -13),
+      ];
+      const lines = observedChanges([
+        withDeltas('desktop', values),
+        withDeltas('mobile', values),
+      ] as RunReport['results']);
+      expect(lines).toHaveLength(4);
+      expect(lines).toContain('field resized h-13px (all 2)');
+      const longIds = observedChanges([
+        withDeltas('界'.repeat(200), [gap]),
+        withDeltas('文'.repeat(200), [gap]),
+        withDeltas('other', [green]),
+      ] as RunReport['results']);
+      expect(Buffer.byteLength(JSON.stringify(longIds))).toBeLessThanOrEqual(800);
+      expect(longIds).toContain('+1 more');
+      expect(longIds.some((line) => line.includes('background-color'))).toBe(true);
     });
 
     test('stays bounded and drops single-capture noise in a large run', () => {
