@@ -250,3 +250,68 @@ test('300 target states stay bounded with progress and passing keys', () => {
   expect(compact.omittedPassed).toBe(142);
   expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(5000);
 });
+
+test('compact target feedback excludes ambiguous raw diagnostics', () => {
+  const result = {
+    runId: 'r1',
+    outcome: 'fail',
+    policy: { method: 'pixelmatch', threshold: 0.1, includeAA: false },
+    summary: { pass: 0, fail: 1, incompatible: 0, error: 0, notCaptured: 0 },
+    states: [
+      {
+        name: 'mobile',
+        storyId: 'form__mobile',
+        status: 'fail',
+        mismatchPixels: 100,
+        mismatchPercent: 1,
+        regions: [],
+        visibleColors: {
+          pairs: [
+            { reference: '#ffffff', current: '#000000', pixels: 100, sharePercent: 100 },
+          ],
+        },
+        outline: {
+          targetBoxes: Array(100).fill({ x: 0, y: 0, width: 100, height: 100 }),
+        },
+      },
+    ],
+  } as unknown as ReferenceResult;
+  const text = JSON.stringify(compactReferenceFeedback(result));
+  expect(text).not.toContain('observedColorPair');
+  expect(text).not.toContain('targetBoxes');
+  expect(Buffer.byteLength(text)).toBeLessThan(800);
+});
+
+test('compact target errors retain status and bound diagnostic text', () => {
+  const result = {
+    runId: 'r1',
+    outcome: 'fail',
+    policy: { method: 'pixelmatch', threshold: 0.1, includeAA: false },
+    summary: { pass: 0, fail: 0, error: 1, incompatible: 1, notCaptured: 0 },
+    states: [
+      {
+        name: 'broken',
+        storyId: 'card--broken',
+        status: 'error',
+        error: 'x'.repeat(2000),
+      },
+      {
+        name: 'different',
+        storyId: 'card--different',
+        status: 'incompatible',
+        reason: 'y'.repeat(2000),
+      },
+    ],
+  } as unknown as ReferenceResult;
+  const compact = compactReferenceFeedback(result);
+  expect(compact.counts).toEqual(result.summary);
+  expect(compact.states).toEqual([
+    { name: 'broken', key: 'card--broken', status: 'error', error: 'x'.repeat(240) },
+    {
+      name: 'different',
+      key: 'card--different',
+      status: 'incompatible',
+      reason: 'y'.repeat(240),
+    },
+  ]);
+});

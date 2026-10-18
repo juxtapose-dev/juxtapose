@@ -146,13 +146,14 @@ complete saved result. Targets outside a
 subset run count as `notCaptured`; if none were captured, no hint is added.
 For a passing target, the hint means the viewport and image geometry were
 compatible and Pixelmatch found zero mismatch pixels under the stated policy.
-For up to two failing targets (favoring different viewports), a hint may also
-include `outline` with measured target/current border-box positions. It uses a border color from the current
-capture's DOM sidecar to find matching strokes in both images. It omits the
-field when those strokes are absent, the capture DPR differs from 1, or the
-geometry difference is at most two pixels. The boxes do not identify elements or imply a CSS cause, and they do
-not affect the Pixelmatch verdict. Read this compact observation before
-requesting the full reference ledger or a crop.
+Default run hints contain verdicts, mismatch counts, largest-region IDs and any
+requested progress. Sampled color pairs and experimental outline measurements
+are available in requested detail rather than the default hint. Outline
+measurements use a border color from the current DOM sidecar to find matching
+strokes in both images; the boxes do not establish element identity or CSS
+causes. Up to two failing targets, favoring distinct viewports, may contain
+`outline` in `reference({detail: "json"})`. These diagnostics never affect the
+Pixelmatch verdict.
 
 Requested `reference({detail: "json"})` also adds `layout` to failing target
 states when the saved current DOM is available. It contains up to eight

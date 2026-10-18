@@ -570,7 +570,6 @@ export async function withDesignReferenceFeedback(
     const result = await evaluateReferences({
       project,
       run: runId,
-      includeOutlines: true,
     });
     if (result.outcome === 'no-comparison') return run;
     if (options.progress) {
@@ -638,16 +637,15 @@ export function compactReferenceFeedback(result: ReferenceResult) {
         name: state.name,
         key: state.storyId,
         status: state.status,
-        error: state.error,
+        error: state.error.slice(0, 240),
       };
     if (state.status === 'incompatible')
       return {
         name: state.name,
         key: state.storyId,
         status: state.status,
-        reason: state.reason,
+        reason: state.reason?.slice(0, 240),
       };
-    const dominant = state.visibleColors?.pairs[0];
     return {
       name: state.name,
       key: state.storyId,
@@ -668,16 +666,6 @@ export function compactReferenceFeedback(result: ReferenceResult) {
             },
           }
         : {}),
-      ...(dominant && dominant.pixels >= 32 && dominant.sharePercent >= 50
-        ? {
-            observedColorPair: {
-              reference: dominant.reference,
-              current: dominant.current,
-              sharePercent: dominant.sharePercent,
-            },
-          }
-        : {}),
-      ...(state.outline ? { outline: state.outline } : {}),
     };
   });
   return {

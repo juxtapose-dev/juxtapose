@@ -621,6 +621,7 @@ export async function referenceCommand(
       ...(name ? { name } : {}),
       ...(flags.region ? { regionId: flags.region } : {}),
       includeLayout: Boolean(flags.json && !flags.region),
+      includeOutlines: Boolean(flags.json && !flags.region),
       ...(layoutCache ? { layoutCache } : {}),
     });
     if (flags.json) {
