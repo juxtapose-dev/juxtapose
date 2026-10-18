@@ -4,7 +4,12 @@ import { resolveRenderer } from './renderer.js';
 // each step exists. Because pass/fail is a byte-exact hash, every source of
 // nondeterminism left in this path becomes a false failure somewhere.
 
-import { emulatedMedia, FRESH_RENDERER_URL, type Page } from '../browser/page.js';
+import {
+  emulatedMedia,
+  FRESH_RENDERER_URL,
+  type FullPageSize,
+  type Page,
+} from '../browser/page.js';
 import { assertCssSelector } from '../browser/selectors.js';
 import { resolveDevices, type DeviceRegistry } from '../browser/devices.js';
 import type { Orientation } from '../browser/types.js';
@@ -610,7 +615,8 @@ async function captureStoryDocument(
   // Structure from the same frame the screenshot is about to take: after the
   // paint barrier, before the shutter, with nothing in between that could
   // mutate the page.
-  const effective = fullPage ? await page.fullPageSize!() : layoutViewport;
+  const size: FullPageSize = fullPage ? await page.fullPageSize!() : layoutViewport;
+  const { scale = 1, ...effective } = size;
   phase('structure capture');
   const tStructure = performance.now();
   const structureEnabled =
@@ -620,7 +626,7 @@ async function captureStoryDocument(
       ? { mark: 0, snapshot: 0, verify: 0, normalize: 0, cleanup: 0 }
       : undefined;
   const structure = structureEnabled
-    ? await captureStructure(page, effective, params.mask ?? [], structureTimings)
+    ? await captureStructure(page, effective, params.mask ?? [], structureTimings, scale)
     : undefined;
   if (structure && fullPage) structure.layoutViewport = layoutViewport;
   if (structure && deps.platform.structureContextIds?.length) {
@@ -636,7 +642,7 @@ async function captureStoryDocument(
   const shot = await page.screenshot({
     ...(params.mask?.length ? { mask: params.mask } : {}),
     format: 'webp',
-    ...(fullPage ? { fullPage: true, captureSize: effective } : {}),
+    ...(fullPage ? { fullPage: true, captureSize: size } : {}),
   });
   const screenshotMs = performance.now() - tShot;
 

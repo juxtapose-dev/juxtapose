@@ -37,6 +37,11 @@ export class PageCrashedError extends Error {
   }
 }
 
+/** A full-page image's size in pixels; `scale` is the page zoom, present only when not 1. */
+export interface FullPageSize extends Viewport {
+  scale?: number;
+}
+
 /**
  * The page a platform adapter drives: the public adapter API, exported from
  * `@juxtapose/core`. Adapters receive it in `showStory`, `settle`,
@@ -97,12 +102,12 @@ export interface Page {
    * PNG by default. `format: 'webp'` is Chrome's lossless WebP (VP8L, with
    * Chrome's ICC chunk still in it). Core removes that metadata before hashing.
    */
-  fullPageSize?(): Promise<Viewport>;
+  fullPageSize?(): Promise<FullPageSize>;
   screenshot(opts?: {
     mask?: string[];
     format?: 'png' | 'webp';
     fullPage?: boolean;
-    captureSize?: Viewport;
+    captureSize?: FullPageSize;
   }): Promise<Buffer>;
   /**
    * Raw CDP on this page's session, for DOMSnapshot.
@@ -801,11 +806,20 @@ export class CdpPage implements Page {
     await this.send('Emulation.setEmulatedMedia', emulatedMedia(scheme));
   }
 
-  /** Document capture bounds; does not resize the emulated layout viewport. */
-  async fullPageSize(): Promise<Viewport> {
-    const { cssContentSize } = await this.send('Page.getLayoutMetrics');
-    const width = Math.max(this.viewport.width, Math.ceil(cssContentSize.width));
-    const height = Math.max(this.viewport.height, Math.ceil(cssContentSize.height));
+  /**
+   * Document capture bounds, as image pixels at the page's zoom; does not
+   * resize the emulated layout viewport. Only mobile emulation zooms: a page
+   * with no viewport meta is laid out 980px wide and scaled to fit the device,
+   * so the image is the device's width, as the phone shows it.
+   */
+  async fullPageSize(): Promise<FullPageSize> {
+    const { cssContentSize, visualViewport } = await this.send('Page.getLayoutMetrics');
+    const scale = this.emulation?.mobile ? visualViewport.scale : 1;
+    const width = Math.max(this.viewport.width, Math.ceil(cssContentSize.width * scale));
+    const height = Math.max(
+      this.viewport.height,
+      Math.ceil(cssContentSize.height * scale),
+    );
     if (
       !Number.isSafeInteger(width) ||
       !Number.isSafeInteger(height) ||
@@ -816,7 +830,7 @@ export class CdpPage implements Page {
       throw new Error(
         'jux: full-page capture exceeds safe image bounds (32767px per side, 100 million pixels)',
       );
-    return { width, height };
+    return scale === 1 ? { width, height } : { width, height, scale };
   }
 
   /** Screenshotter.screenshotPage: prepare → fonts.ready → mask → getLayoutMetrics → captureScreenshot → cleanup. */
@@ -825,7 +839,7 @@ export class CdpPage implements Page {
       mask?: string[];
       format?: 'png' | 'webp';
       fullPage?: boolean;
-      captureSize?: Viewport;
+      captureSize?: FullPageSize;
     } = {},
   ): Promise<Buffer> {
     const mask = opts.mask ?? [];
@@ -847,7 +861,15 @@ export class CdpPage implements Page {
           ? (opts.captureSize ?? (await this.fullPageSize()))
           : undefined;
         const clip = fullSize
-          ? { x: 0, y: 0, ...fullSize, scale: 1 }
+          ? fullSize.scale === undefined
+            ? { x: 0, y: 0, ...fullSize, scale: 1 }
+            : {
+                x: 0,
+                y: 0,
+                width: fullSize.width / fullSize.scale,
+                height: fullSize.height / fullSize.scale,
+                scale: fullSize.scale,
+              }
           : {
               x: visualViewport.pageX,
               y: visualViewport.pageY,

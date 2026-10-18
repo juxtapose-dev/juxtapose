@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
+import sharp from 'sharp';
 import { Browser, type BrowserContext } from '../browser/browser.js';
 import { chromeForTests } from '../browser/__tests__/helpers.js';
 import { createUrlPlatform } from '../platforms/urls.js';
@@ -20,6 +21,13 @@ document.getElementById('out').textContent = [
   navigator.userAgent.replace(/(.{30})/g, '$1\\n'),
 ].join('\\n');
 </script>`;
+
+// A desktop-only layout: 980px wide, taller than any phone, with a marker at
+// half its width. Without a viewport meta a phone lays it out 980px wide and
+// zooms out to fit; with one at initial-scale 1 it overflows at scale 1.
+const wide = (meta: string) => `<!doctype html>${meta}
+<body style="margin:0;width:980px;height:3000px;background:#fff">
+<div id="mark" style="position:absolute;top:100px;left:490px;width:100px;height:100px;background:#f00"></div>`;
 
 interface Seen {
   path: string;
@@ -42,7 +50,13 @@ beforeAll(async () => {
       });
     }
     res.writeHead(200, { 'content-type': 'text/html' });
-    res.end(PAGE);
+    res.end(
+      req.url === '/wide'
+        ? wide('')
+        : req.url === '/wide-meta'
+          ? wide('<meta name="viewport" content="width=device-width, initial-scale=1">')
+          : PAGE,
+    );
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -184,5 +198,50 @@ describe.skipIf(!chrome)('device emulation in capture', () => {
     expect(seen.map((s) => mobileUa(s.ua))).toEqual([false, true]);
     expect(seen[1]!.ua).toContain('iPhone');
     expect(reads).toBe(2);
+  }, 30_000);
+
+  it('captures a page with no viewport meta zoomed out, as the phone shows it', async () => {
+    const platform = createUrlPlatform([{ id: 'w', url: `${base}/wide` }]);
+    const s = await story(platform, { device: 'iphone-15', fullPage: true });
+    const [snap, again] = await withPage(async (page) => [
+      await captureStory(page, s, { platform, baseUrl: base }, viewport),
+      await captureStory(page, s, { platform, baseUrl: base }, viewport),
+    ]);
+    expect(sha(again!.image)).toBe(sha(snap!.image));
+    const scale = 393 / 980;
+    const { info } = await sharp(snap!.image).toBuffer({ resolveWithObject: true });
+    expect(Math.abs(info.width - 393)).toBeLessThanOrEqual(1);
+    expect(Math.abs(info.height - 3000 * scale)).toBeLessThanOrEqual(1);
+    expect(snap?.viewport).toEqual({ width: info.width, height: info.height });
+    expect(snap?.layoutViewport).toEqual({ width: 393, height: 852 });
+    // In image pixels like the rects: nothing was left below the fold.
+    expect(snap!.structure!.contentHeight).toBeLessThanOrEqual(info.height);
+    const mark = snap?.structure?.elements.find((e) => e.id === 'mark');
+    expect(Math.abs(mark!.rect.x - 490 * scale)).toBeLessThanOrEqual(2);
+    expect(Math.abs(mark!.rect.y - 100 * scale)).toBeLessThanOrEqual(2);
+    expect(Math.abs(mark!.rect.w - 100 * scale)).toBeLessThanOrEqual(2);
+    // The marker's centre is red in the image, where the rect says it is.
+    const { data } = await sharp(snap!.image).raw().toBuffer({ resolveWithObject: true });
+    const cx = Math.round(mark!.rect.x + mark!.rect.w / 2);
+    const cy = Math.round(mark!.rect.y + mark!.rect.h / 2);
+    const at = (cy * info.width + cx) * info.channels;
+    expect([...data.subarray(at, at + 3)]).toEqual([255, 0, 0]);
+  }, 30_000);
+
+  it('captures the same page with a viewport meta at scale 1', async () => {
+    const platform = createUrlPlatform([{ id: 'w', url: `${base}/wide-meta` }]);
+    const snap = await withPage(async (page) =>
+      captureStory(
+        page,
+        await story(platform, { device: 'iphone-15', fullPage: true }),
+        { platform, baseUrl: base },
+        viewport,
+      ),
+    );
+    const { info } = await sharp(snap!.image).toBuffer({ resolveWithObject: true });
+    expect(snap?.viewport).toEqual({ width: 980, height: 3000 });
+    expect([info.width, info.height]).toEqual([980, 3000]);
+    const mark = snap?.structure?.elements.find((e) => e.id === 'mark');
+    expect(mark?.rect).toEqual({ x: 490, y: 100, w: 100, h: 100 });
   }, 30_000);
 });
