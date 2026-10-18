@@ -647,6 +647,8 @@ function savedChangeText(change: ReferenceChangeResult): string {
   ].join('\n');
 }
 
+// Across 11 saved shipment/contact runs, omitting region bounds and repeated
+// guidance cuts hint JSON by 19–27%. Full bounds remain in requested detail.
 export function compactReferenceFeedback(result: ReferenceResult) {
   const affected = result.states.filter((state) => state.status !== 'pass');
   const passed = result.states.filter((state) => state.status === 'pass');
@@ -685,10 +687,6 @@ export function compactReferenceFeedback(result: ReferenceResult) {
             largestRegion: {
               id: state.regions[0].id,
               pixels: state.regions[0].changedPixels,
-              x: state.regions[0].x,
-              y: state.regions[0].y,
-              width: state.regions[0].width,
-              height: state.regions[0].height,
             },
           }
         : {}),
@@ -711,13 +709,13 @@ export function compactReferenceFeedback(result: ReferenceResult) {
     omittedPassed: Math.max(0, passed.length - 8),
     guidance:
       result.outcome === 'pass'
-        ? 'Captured targets have compatible geometry and zero Pixelmatch mismatch pixels; no reference call is needed. Do not repeat this verdict with report. Use the run summary for baseline and flake verdicts. Stop only when all required states and behavior checks pass. NotCaptured targets were not checked.'
+        ? 'Captured targets pass the stated policy; no reference call is needed. Check remaining required states and behavior. NotCaptured is unverified.'
         : result.outcome === 'error' ||
             affected.some((state) => state.status === 'incompatible')
-          ? 'Resolve the reported capture or reference compatibility issue before inferring a UI edit. Reuse these reported facts; another image or ledger does not fix incompatible inputs.'
+          ? 'Resolve the capture/reference issue before inferring a UI edit; images cannot resolve incompatible inputs.'
           : result.outcome === 'no-comparison'
-            ? 'No target comparison was made. Capture the required target states; do not treat this as a pass or request images to confirm it.'
-            : 'Use returned facts with current source first; mismatch is not a CSS cause. For missing geometry request reference with name and detail=layout. If appearance remains unresolved, request one saved region crop. Use a returned cropRequest directly for its region; JSON is only for another missing fact. Do not recapture or reread facts already returned.',
+            ? 'No target comparison. Capture required states; this is not a pass.'
+            : 'Use facts + source. Missing geometry: reference(name, detail=layout). Unresolved appearance: saved region crop. Do not recapture unchanged code.',
   };
 }
 

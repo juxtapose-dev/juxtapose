@@ -149,7 +149,10 @@ subset run count as `notCaptured`; if none were captured, no hint is added.
 For a passing target, the hint means the viewport and image geometry were
 compatible and Pixelmatch found zero mismatch pixels under the stated policy.
 Default run hints contain verdicts, mismatch counts, largest-region IDs and any
-requested progress. Sampled color pairs and experimental outline measurements
+requested progress. Region bounds are omitted; request `reference({detail: "json"})`
+for bounds or `reference({name, region})` for a saved paired crop. The policy and
+state counts remain explicit; a subset pass does not verify omitted targets.
+Sampled color pairs and experimental outline measurements
 are available in requested detail rather than the default hint. Outline
 measurements use a border color from the current DOM sidecar to find matching
 strokes in both images; the boxes do not establish element identity or CSS

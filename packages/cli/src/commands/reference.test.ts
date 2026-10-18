@@ -176,11 +176,11 @@ test('a run result gains bounded design feedback without changing its report blo
     omittedPassed: 0,
   });
   expect(hint.states[0].largestRegion.id).toMatch(/^[a-f0-9]+:\d+$/);
-  expect(hint.states[0].largestRegion).toMatchObject({
-    x: expect.any(Number),
-    y: expect.any(Number),
-    width: expect.any(Number),
-    height: expect.any(Number),
+  expect(Object.keys(hint.states[0].largestRegion).sort()).toEqual(['id', 'pixels']);
+  // The compact hint routes inspection; requested detail keeps the actual box.
+  const detail = await evaluateReferences({ project: f.root });
+  expect(detail.states[0]).toMatchObject({
+    regions: [expect.objectContaining({ x: 0, y: 0, width: 12, height: 8 })],
   });
 });
 
@@ -207,9 +207,8 @@ test('a passing run lists the target keys without inviting a second reference ca
     omittedPassed: 0,
   });
   expect(hint.guidance).toContain('no reference call is needed');
-  expect(hint.guidance).toContain(
-    'compatible geometry and zero Pixelmatch mismatch pixels',
-  );
+  expect(hint.policy).toEqual({ method: 'pixelmatch', threshold: 0.1, includeAA: false });
+  expect(hint.guidance).toContain('NotCaptured is unverified');
 });
 
 test('empty and unrelated runs do not add design feedback', async () => {
