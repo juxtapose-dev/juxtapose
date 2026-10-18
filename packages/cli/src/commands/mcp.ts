@@ -283,7 +283,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Capture affected stories and variants together after an edit (Storybook/Ladle or configured URLs). One call returns the baseline verdict, target hint, and optional compareTo checkpoint change; do not repeat them with report or reference. changesFromApproved measures approved→current, not design-target error. The summary includes selected control measurements when they add missing detail. A subset pass does not verify omitted targets. stories selects exact capture IDs; configured URL viewports have separate IDs. Use all=true to verify every configured state. Request report=full only for missing per-state detail.',
+      'After editing, capture affected stories and variants together (Storybook/Ladle or URLs). One call returns the baseline verdict, target hint, and optional compareTo checkpoint change; do not repeat them with report or reference. changesFromApproved measures approved→current, not design-target error. Includes selective control measurements. A subset pass does not verify omitted targets. stories selects exact capture IDs; configured URL viewports have separate IDs. Use all=true to verify every configured state. Use report=full for missing state detail. rgbaStates counts decoded-pixel equality independently of policy.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -675,6 +675,22 @@ function savedChangeText(change: ReferenceChangeResult): string {
 // Across 11 saved shipment/contact runs, omitting region bounds and repeated
 // guidance cuts hint JSON by 19–27%. Full bounds remain in requested detail.
 export function compactReferenceFeedback(result: ReferenceResult) {
+  // The exact-quality pilot requested a separate baseline report after target
+  // passes because raw equality was hidden. Reuse counts already in ledgers;
+  // aggregate every state, including those omitted from the bounded key lists.
+  const rgbaStates = { equal: 0, different: 0, unverified: result.summary.notCaptured };
+  for (const state of result.states) {
+    const raw = 'rawMismatchPixels' in state ? state.rawMismatchPixels : null;
+    if (
+      (state.status === 'pass' || state.status === 'fail') &&
+      typeof raw === 'number' &&
+      Number.isSafeInteger(raw) &&
+      raw >= 0
+    ) {
+      if (raw === 0) rgbaStates.equal++;
+      else rgbaStates.different++;
+    } else rgbaStates.unverified++;
+  }
   const affected = result.states.filter((state) => state.status !== 'pass');
   const passed = result.states.filter((state) => state.status === 'pass');
   affected.sort((a, b) => {
@@ -723,6 +739,7 @@ export function compactReferenceFeedback(result: ReferenceResult) {
     outcome: result.outcome,
     policy: result.policy,
     counts: result.summary,
+    rgbaStates,
     states,
     omittedAffected: affected.length - states.length,
     passed: passed.slice(0, 8).map((state) => ({
@@ -734,7 +751,9 @@ export function compactReferenceFeedback(result: ReferenceResult) {
     omittedPassed: Math.max(0, passed.length - 8),
     guidance:
       result.outcome === 'pass'
-        ? 'Captured targets pass the stated policy; no reference call is needed. Check remaining required states and behavior. NotCaptured is unverified.'
+        ? rgbaStates.different === 0 && rgbaStates.unverified === 0
+          ? 'Captured targets pass the stated policy; no reference call is needed. Check remaining required states and behavior. NotCaptured is unverified.'
+          : 'Policy verification is complete. Exact tasks require no different or unverified rgbaStates. Use saved target evidence for differences, capture missing states, and check behavior.'
         : result.outcome === 'error' ||
             affected.some((state) => state.status === 'incompatible')
           ? 'Resolve the capture/reference issue before inferring a UI edit; images cannot resolve incompatible inputs.'

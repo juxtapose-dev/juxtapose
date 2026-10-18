@@ -241,11 +241,13 @@ test('300 target states stay bounded with progress and passing keys', () => {
       name: `target-${i}`,
       storyId: `card--${i}`,
       status: i < 150 ? 'fail' : 'pass',
+      rawMismatchPixels: i < 150 ? 1 : 0,
     })),
   } as ReferenceResult;
   const compact = compactReferenceFeedback(result);
   expect(compact.states).toHaveLength(8);
   expect(compact.passed).toHaveLength(8);
+  expect(compact.rgbaStates).toEqual({ equal: 150, different: 150, unverified: 1 });
   expect(compact.omittedAffected).toBe(142);
   expect(compact.omittedPassed).toBe(142);
   expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(5000);
@@ -333,5 +335,63 @@ test('focused layout requires one target and rejects crops or checkpoint mode', 
     }
   } finally {
     await server.close();
+  }
+});
+
+test('decoded equality stays separate from tolerant passes and unknown inputs', () => {
+  const result = {
+    runId: 'r1',
+    outcome: 'fail',
+    policy: { method: 'pixelmatch', threshold: 0.1, includeAA: false },
+    summary: { pass: 3, fail: 0, incompatible: 1, error: 1, notCaptured: 2 },
+    states: [
+      { name: 'exact', storyId: 'a', status: 'pass', rawMismatchPixels: 0, regions: [] },
+      {
+        name: 'tolerated',
+        storyId: 'b',
+        status: 'pass',
+        rawMismatchPixels: 7782,
+        regions: [],
+      },
+      { name: 'old-ledger', storyId: 'c', status: 'pass', regions: [] },
+      {
+        name: 'bad-extent',
+        storyId: 'd',
+        status: 'incompatible',
+        rawMismatchPixels: null,
+      },
+      { name: 'broken', storyId: 'e', status: 'error', error: 'missing capture' },
+    ],
+  } as unknown as ReferenceResult;
+  const compact = compactReferenceFeedback(result);
+  expect(compact.rgbaStates).toEqual({ equal: 1, different: 1, unverified: 5 });
+  expect(compact.counts).toEqual(result.summary);
+  expect(compact.policy).toEqual(result.policy);
+});
+
+test('policy passes do not discourage needed exact-target investigation', () => {
+  const result = {
+    runId: 'r1',
+    outcome: 'pass',
+    policy: { method: 'pixelmatch', threshold: 0.1, includeAA: false },
+    summary: { pass: 1, fail: 0, incompatible: 0, error: 0, notCaptured: 0 },
+    states: [
+      {
+        name: 'tolerated',
+        storyId: 'a',
+        status: 'pass',
+        rawMismatchPixels: 7782,
+        regions: [],
+      },
+    ],
+  } as unknown as ReferenceResult;
+  for (const raw of [7782, null]) {
+    const compact = compactReferenceFeedback({
+      ...result,
+      states: [{ ...result.states[0]!, rawMismatchPixels: raw }],
+    } as ReferenceResult);
+    expect(compact.guidance).toContain('Exact tasks');
+    expect(compact.guidance).toContain('saved target evidence');
+    expect(compact.guidance).not.toContain('no reference call is needed');
   }
 });

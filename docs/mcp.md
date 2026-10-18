@@ -158,6 +158,13 @@ complete saved result. Targets outside a
 subset run count as `notCaptured`; if none were captured, no hint is added.
 For a passing target, the hint means the viewport and image geometry were
 compatible and Pixelmatch found zero mismatch pixels under the stated policy.
+The separate `rgbaStates` counts exact decoded-pixel equality across all configured
+reference states, including those omitted from the bounded lists. For example,
+`{"equal":4,"different":0,"unverified":0}` means four exact RGBA matches.
+A toleranced pass may still count as `different`; errors, incompatible or missing
+captures, and unavailable raw counts remain `unverified`. These observations do
+not change Pixelmatch verdicts. Use these returned counts instead of another
+report call to ask whether policy passes are also exact.
 Default run hints contain verdicts, mismatch counts, largest-region IDs and any
 requested progress. Region bounds are omitted; request `reference({detail: "json"})`
 for bounds or `reference({name, region})` for a saved paired crop. The policy and

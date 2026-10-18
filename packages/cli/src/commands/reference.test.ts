@@ -198,6 +198,7 @@ test('a run result gains bounded design feedback without changing its report blo
     passed: [{ name: 'mobile', key: f.mobile }],
     omittedPassed: 0,
   });
+  expect(hint.rgbaStates).toEqual({ equal: 1, different: 1, unverified: 0 });
   expect(hint.states[0].largestRegion.id).toMatch(/^[a-f0-9]+:\d+$/);
   expect(Object.keys(hint.states[0].largestRegion).sort()).toEqual(['id', 'pixels']);
   // The compact hint routes inspection; requested detail keeps the actual box.
