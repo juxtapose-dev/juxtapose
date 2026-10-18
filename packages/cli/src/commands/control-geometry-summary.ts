@@ -10,7 +10,7 @@ export interface ControlMeasurement {
   captures: string[] | 'all-failing';
 }
 
-/** Experimental inline candidate, not part of the default MCP response.
+/** Selective inline measurements that fill gaps in the compact MCP response.
  * A saved-detail request cost one round trip in the billing decision pair;
  * padding/typography controls benefited from no extra geometry. Only selected
  * ancestor-suppressed measurements enter this bounded cross-capture summary.

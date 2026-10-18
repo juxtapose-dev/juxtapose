@@ -3,4 +3,4 @@
 '@juxtapose/cli': patch
 ---
 
-Save bounded approved/current control-size measurements alongside failed capture reports, reusing loaded structure snapshots. MCP story detail exposes the measurements without recapture; compact summaries and acceptance policy remain unchanged. Document how to request and interpret the evidence.
+Include selected approved/current control dimensions in compact MCP run summaries when ancestor deduplication hides the measurement and no direct fact is available. Group identical measurements across captures, preserve their scope, and cap the block at three items and 768 bytes. Full story reports retain bounded measured detail. Reuse the existing structural matching pass and loaded snapshots; leave visual acceptance unchanged.

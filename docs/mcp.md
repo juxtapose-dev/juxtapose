@@ -396,6 +396,20 @@ Set `dryRun: true` to return the selection instead of capturing. It uses the
 same selection rules and response shape as `list`, while retaining run's affected
 analysis when no selectors are supplied. This does not replace the last run.
 
+Compact `run` and `report` summaries may include `controlMeasurements` when
+ancestor deduplication hid a native-control resize and the element has no other
+direct fact. Each item identifies a DOM ID or test ID, the measured dimension,
+`approved` and `current` values, and the capture keys where it was observed.
+`captures: "all-failing"` means every failing capture in this saved run—not every
+story in the project. Identical measurements are grouped across captures.
+
+This block is limited to three items and 768 UTF-8 bytes. `omittedMeasurements`
+counts grouped measurements that did not fit; `unlistedDetailObservations` counts
+observations already omitted from saved per-story detail. Neither count implies
+that the displayed evidence is insufficient for the next edit. Request more
+detail only for a specific unanswered question. Dimensions describe border boxes,
+not CSS causes. No block is emitted when no qualifying measurement is available.
+
 ### report
 
 Reads a saved run without launching a browser or capturing again. With no
@@ -406,7 +420,8 @@ run; otherwise the latest is used. `story` and `detail: "full"` are exclusive.
 The server keeps a small cache of parsed reports and checks for saved-file
 changes before reusing one.
 
-When a wrapper resize does not explain which control changed, request one
+First use any `controlMeasurements` in the compact summary. If a wrapper resize
+still leaves the control dimensions unclear, request one
 `report({story: "form--default", runId: "<saved-run>"})`. A failed capture may
 include `controlGeometry`: measured approved/current border-box widths and
 heights for native controls with unique matching DOM IDs or test IDs. For
@@ -414,7 +429,7 @@ example, `height: {approved: 49, current: 36}` identifies a measured size change
 not the CSS property that caused it. Typography, padding, or layout may be
 responsible. No new capture or sidecar read is needed.
 
-This evidence is absent from compact summaries. Its observation array is capped
+Full `controlGeometry` detail is not repeated in compact summaries. Its observation array is capped
 at three items and 1024 UTF-8 bytes, with an explicit `omitted` count. Ambiguous
 identities abstain; truncated snapshots report `unavailable: "truncated-structure"`.
 `suppressedResize: true` marks a size change omitted from ordinary facts because
@@ -422,7 +437,6 @@ it followed its parent and had no other direct fact. These measurements are
 prioritized before the detail budget; this flag is not a claim about a CSS cause.
 Older reports may not contain it. This is approved-baseline evidence, not
 geometry extracted from a PNG design target or a previous-run comparison.
-
 
 | Argument | Type   | Description                        |
 | -------- | ------ | ---------------------------------- |

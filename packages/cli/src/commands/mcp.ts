@@ -270,7 +270,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Capture affected stories and variants after an edit. One call returns the baseline verdict, target hint, and optional compareTo checkpoint change. Do not repeat these with report or reference. Stop when all required captures and checks pass. report=full returns all results.',
+      'Capture affected stories and variants after an edit. One call returns the baseline verdict, target hint, and optional compareTo checkpoint change. The default summary includes selected control measurements when they add missing detail. Do not repeat these with report or reference. Stop when all required captures and checks pass. Request report=full only for missing per-state detail.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -729,7 +729,7 @@ export class McpServer {
     } = {},
   ) {
     this.freezeImages = opts.freezeImages;
-    this.controlMeasurements = opts.controlMeasurements ?? false;
+    this.controlMeasurements = opts.controlMeasurements ?? true;
     this.reports = new SavedReportCache({
       controlMeasurements: this.controlMeasurements,
     });

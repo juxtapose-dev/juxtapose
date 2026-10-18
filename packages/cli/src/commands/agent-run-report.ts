@@ -5,7 +5,7 @@ import { latestRunDir } from '../run-dir.js';
 import { controlGeometrySummary } from './control-geometry-summary.js';
 
 interface SummaryOptions {
-  /** Internal benchmark switch; normal MCP output keeps this disabled. */
+  /** Internal benchmark override; selective measurements are enabled by default. */
   controlMeasurements?: boolean;
 }
 
@@ -221,9 +221,10 @@ export function observedChanges(results: DiffResult[]): string[] {
 
 /** Bounded MCP overview. Full evidence remains in the saved report. */
 export function agentRunSummary(report: RunReport, options: SummaryOptions = {}) {
-  const controlMeasurements = options.controlMeasurements
-    ? controlGeometrySummary(report.results)
-    : undefined;
+  const controlMeasurements =
+    options.controlMeasurements !== false
+      ? controlGeometrySummary(report.results)
+      : undefined;
   const changes = observedChanges(report.results);
   const attention = report.results.filter((r) => priority(r) < 5);
   const onlyStaleAttention =

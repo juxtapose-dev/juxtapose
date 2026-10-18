@@ -1,42 +1,27 @@
-# Approved/current control geometry research
+# Selective control geometry evidence
 
-Status: experimental observer integrated into saved failed-capture detail on this branch; not promoted into compact MCP summaries. No new capture, no image decode, no native dependency, no acceptance change.
+Status: enabled in compact MCP summaries on this feature branch. Not pushed or released. Visual acceptance, structural verdicts and signatures are unchanged.
 
-Evidence: on the cleaned billing fixture, a tool-free compact-response replay changed label/input spacing when given only a wrapper resize delta. It passed behavior but failed all four visuals. Adding a measured textbox height (49→36, from unique matching DOM ID) produced 28/28 behavior and 4/4 visual passes in one subsequent replay. This is an information-value signal, not a statistical performance claim.
+## Problem and implementation
 
-The existing ancestor-following suppression remains unchanged. `packages/core/src/diff/control-geometry.ts` provides separate conservative observations, capped at three observations and 1024 serialized UTF-8 bytes, sorted by explicit identity. It requires equal viewports and unique matching DOM IDs or test IDs, tags, and roles across both snapshots. Oversized observations are omitted whole and counted. It only covers native input, textarea, select and button elements. Controls without either explicit identity and custom ARIA controls are not covered. It describes border-box dimensions, not CSS properties or causality.
+Ancestor geometry deduplication hid an input resize in the billing fixture. A compact-response replay changed field spacing incorrectly. Automatically adding the measured input height produced the correct repair. Padding and typography controls showed that extra geometry is redundant when a direct style fact already describes the change.
 
-Before promotion: validate real captured sidecars beyond billing, check duplicate-ID and ID-reuse cases, measure response bytes and cost, test whether the new information avoids extra calls in a full loop with the same browser comparator control. Do not replace the existing compact default with this prototype yet.
+The existing matcher/fact pass collects resizes suppressed as parent followers with no other direct fact. The control observer requires a unique DOM ID or test ID, matching tag/role, complete snapshots and compatible viewports. It validates identities against original snapshots so adapter context filtering cannot hide duplicates. Measurements describe border boxes, never CSS causes. Conservative selection may miss useful measurements when another direct fact exists.
 
-Checks: fifteen focused tests, core no-emit typecheck, focused ESLint. No full browser suite or determinism rerun: capture is untouched and the observer is not invoked by production code.
+Failure reports save up to three measured observations within 1024 UTF-8 bytes, prioritizing selected measurements before budgeting. Compact summaries group selected dimensions across captures, preserve explicit approved/current values and scope, and cap the block at three items/768 bytes. Omission counts are explicit. Older reports without the evidence remain readable and emit no block. Detailed report reads use saved data; there is no additional capture or sidecar read. The run path uses the existing matching pass.
 
-Offline coverage audit: 35 saved pairs, all self-comparisons clear. Structural corpus has 21 button appearances with no IDs, therefore no observations; Settings has 36 identified controls across 10 pairs but no changed-size positive. Billing yields 8 observations and 2 omitted across 4 states. Only billing validates positive behavior so far. 35-pair in-memory batch p95 0.0703ms, excluding I/O. Keep experimental; no default promotion or broader agent-benefit claim. Full artifacts: juxtapose-experiments/iteration-billing/control-geometry-offline-v1/.
+## Evidence
 
-Explicit test-ID extension: the existing structural matcher prioritizes DOM IDs,
-then test IDs. The captured corpus button has `data-testid="save"`; using that
-unique explicit identity recovers six actual size changes (padding, font size,
-font weight, line height, letter spacing, and text). Other corpus changes yield
-no size observations. No positional, class, or accessible-name fallback added.
-Duplicate identities anywhere in a snapshot and conflicting explicit identities
-still abstain. All 35 identity controls remain clear. Across 35 in-memory pairs,
-p95 was 0.199ms in 100 batches, excluding I/O. Settings still supplies no changed-
-size positive. Evidence remains experimental and not in default MCP output.
-Artifacts: control-geometry-offline-v2 includes the tested implementation snapshot.
+- 35 saved pairs: enabling collection leaves all structural verdicts identical. The selector retains eight billing measurements and excludes six redundant corpus measurements. Settings supplies no identified changed-size positive.
+- Held-out padding/line-height repairs: both existing and augmented feedback yield identical correct patches, all four pixel comparisons pass, no fixed dimensions introduced. Extra geometry adds 180 counted tokens without benefit.
+- Scoped compact replay: 574-byte block, zero extra tool calls, 28/28 behavior and 4/4 visuals, 4442 counted tokens.
+- Two order-reversed full-loop pairs, Sol medium: all four sessions pass 28/28 behavior and 4/4 visuals. Mean model-process time 30.666→22.918s; counted uncached input plus output 12066→9002.5; model calls 5.5→4. Treatment avoids a pre-edit report in both pairs. Discovery behavior also varies, so this is not a general 25% claim or an isolated latency estimate for one tool call.
+- Real browser/MCP preflight verifies all four states, saved-detail reuse after restart, and exact same-build control/treatment parity except the 574-byte block.
 
-Byte-budget audit (v3): all 35 saved pairs preserve the v2 observations and omission counts; multibyte adversarial IDs exercise the new bound. The byte limit applies to the observation array, not the surrounding response envelope. Full artifacts: control-geometry-offline-v3. No additional model spend.
+Artifacts live in juxtapose-experiments/iteration-billing: SELECTIVE-CONTROL-FULL-RESULTS.md, selective-control-full-v1/v2, control-geometry-heldout-v1, scoped-control-decision-v1, control-geometry-selective-v2, compact-control-summary-v1 and control-geometry-browser-preflight-v2. Invalid decision trials are excluded from savings.
 
-Automatic-selection replay: the first failing attention item, processed by this observer with no element override, added 428 bytes and produced a patch passing 28/28 behavior and 4/4 visuals. Counted spend 4,259; process 8.411s. This is one tool-free replay, not a full-loop speed claim. Evidence: compact-automatic-control-replay-v1/RESULTS.md.
+## Verification and limits
 
-Truncation guard: either truncated snapshot now returns unavailable=truncated-structure and no observations. Identity uniqueness cannot be established over an omitted suffix. Two focused cases cover each side. This preserves the requirement to abstain instead of guessing.
+Focused observer, fact, run-path, summary and MCP tests cover identity ambiguity, truncated structures, adapter context collisions, multibyte bounds, selection before budgeting, capture scope, unchanged verdicts and green paths. Real captures and independent fixed-policy visual/behavior grading validate the evaluated fixture. Workspace build, typecheck and lint pass. The full serial Vitest run passes 154 files: 2016 tests passed, 3 skipped (230.13 seconds). The normal CLI MCP entry point emits the default block without a constructor override. Synthetic 300/1000-capture summaries stay at 1950/1962 bytes, with a 248-byte measurement block; this smoke check uses no model calls or captures (`default-control-summary-v1/result.json`). No capture implementation changed; a new determinism run was not required for this promotion.
 
-Integration constraint found during review: structural verdicts have an existing 1500-character bound. Do not append this evidence to that verdict or displace existing facts. A requested-detail envelope should carry it separately and label the comparison direction (approved/current vs earlier/later). Summary and detail must not collide in saved comparison caches.
-
-Saved detail integration: run failure analysis reuses its decoded approved and current snapshots, persists a separate controlGeometry field beside structural, and exposes it through the existing report({story}) request. Structural verdict budgeting and signatures stay unchanged. MCP regression tests verify detail visibility and summary omission; the run-path test checks a single sidecar read with renderer retries and rechecks disabled. Real capture-to-MCP preflight now passes; full agent-loop validation remains outstanding.
-
-Browser preflight: control-geometry-browser-preflight-v1 captured all four billing states with product commit 67254af. Measurements persisted and returned identically after MCP restart; saved image mtimes were unchanged by report requests. Per-story evidence was 319–891 bytes and absent from the 1183-byte compact summary. No paid model calls. This proves transport/reuse, not agent-loop savings.
-
-Selective collection integration: optional structural analysis collects parent-following identities in its existing matcher/fact pass, marks validated control observations suppressedResize, and prioritizes them before the count/byte budget. Identity checks use unfiltered snapshots, preserving collisions on adapter context wrappers. All 35 saved verdicts remain identical with collection enabled; selected counts are billing 8, corpus 0, Settings 0. 120 focused tests pass. Compact summaries remain unchanged.
-
-Same-build experiment switch: internal McpServer constructor option controlMeasurements toggles the candidate block consistently for run and cached report summaries. Public tool schemas/instructions/defaults are unchanged. Browser preflight v2 validates four captures and exact control/treatment parity after removing the 574-byte block. Full repair-session evaluation is next.
-
-Two order-reversed full repair pairs now pass at equal quality (28/28 behavior, 4/4 visuals each). Mean model-process time 30.666→22.918s, counted tokens 12,066→9,002.5, model calls 5.5→4. Treatment avoided a pre-edit report in both pairs; shell/discovery behavior also varied. Scope is one fixture/model, not general savings. Evidence: iteration-billing/SELECTIVE-CONTROL-FULL-RESULTS.md.
+Only one model and one full-loop fixture have been tested. PNG-only targets have no approved DOM evidence. Custom ARIA controls and controls without explicit identities are not covered. Additional evidence is not a verdict or a suggested CSS edit. The internal constructor override is retained only to reproduce controlled benchmark comparisons; it is not a new public MCP argument.
