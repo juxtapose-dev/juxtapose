@@ -274,7 +274,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Capture affected stories and variants after an edit. One call returns the baseline verdict, target hint, and optional compareTo checkpoint change. The default summary includes selected control measurements when they add missing detail. Do not repeat these with report or reference. Stop when all required captures and checks pass. Request report=full only for missing per-state detail.',
+      'Capture affected stories and variants together after an edit (Storybook/Ladle or configured URLs). One call returns the baseline verdict, target hint, and optional compareTo checkpoint change; do not repeat them with report or reference. changesFromApproved measures approved→current, not design-target error. The summary includes selected control measurements when they add missing detail. A subset pass does not verify omitted targets. Request report=full only for missing per-state detail.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -287,7 +287,7 @@ export const TOOLS: Tool[] = [
         progress: {
           type: 'boolean',
           description:
-            'Opt-in target pixel trend and bestRun among the newest 20 saved runs; off by default. Record bestRun as a checkpoint.',
+            'Opt-in target pixel trend and bestRun among the newest 20 saved runs; off by default. Record bestRun as a checkpoint. To roll back, restore its source, not the baselines.',
         },
         feedback: {
           type: 'string',
@@ -369,7 +369,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'reference',
     description:
-      'Read saved image evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, and toRun defaulting to the latest) for every capture both saved: changed pixels plus observed structural changes (property old→new, resizes). Use it against a checkpoint run ID to see what later edits changed; it does not measure progress toward the target. Set detail=layout with name for focused target paint measurements; detail=json returns regions and the full ledger, or region for one paired PNG crop. A passing target run hint needs no reference call.',
+      'Read saved image evidence for a remaining question, without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, and toRun defaulting to the latest) for every capture both saved: changed pixels plus observed structural changes (property old→new, resizes). Use it against a checkpoint run ID to see what later edits changed; it does not measure progress toward the target. Set detail=layout with name for focused target paint measurements; detail=json returns regions and the full ledger, or region for one paired PNG crop. A passing target run hint needs no reference call. Use local image analysis only for facts the saved evidence lacks.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -447,8 +447,10 @@ export const TOOLS: Tool[] = [
   },
 ];
 
+// In a real Codex discovery packet, the client repeated 1567 bytes of server
+// guidance on 12 tools (17,237 redundant bytes). Keep workflows on their tools.
 const INSTRUCTIONS =
-  "For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, use the returned run summary and design-reference hint. changesFromApproved measures approved→current, not design-target error. Element labels are saved identities, not guaranteed unique CSS selectors; measurements do not identify CSS causes. Ordinals count same-labelled elements in captured document order. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference with name and detail=layout for saved target measurements, detail=json for full detail, or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. For unclear current computed styles, use report with story and exact element fields; it reads the saved capture. Local image scripts remain useful when Jux lacks the needed fact. One run returns the baseline verdict and target result; add compareTo=<checkpoint> for the saved pixel/structure change in that call. Do not repeat these with report or reference. Optional progress identifies each target’s bestRun; record it as a checkpoint (report detail=runs lists saved IDs). Stop only when all required states and checks pass, including targets outside subset runs. To roll back, restore that checkpoint's source, not the baselines. Use check for review blockers, explain for capture settings, and never approve unless the user asks.";
+  'Use saved starting evidence, edit, then capture. Labels are saved identities, not unique CSS selectors; measurements do not identify CSS causes. Ordinals count same labels in captured document order. Stop only when all required states, targets and behavior checks pass. Never approve unless the user asks.';
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
