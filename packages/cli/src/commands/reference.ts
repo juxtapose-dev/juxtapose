@@ -296,9 +296,10 @@ export async function evaluateReferenceChange(options: {
         });
         continue;
       }
-      const regions = (diff.rankedChangedRegions ?? diff.changedRegions)
-        .slice(0, 8)
-        .map((r, i) => ({ ...r, id: `${comparisonId.slice(0, 16)}:${i + 1}` }));
+      const regions = (diff.rankedChangedRegions ?? diff.changedRegions).map((r, i) => ({
+        ...r,
+        id: `${comparisonId.slice(0, 16)}:${i + 1}`,
+      }));
       if (options.regionId) {
         const region = regions.find((r) => r.id === options.regionId);
         if (region) {
@@ -501,7 +502,7 @@ export async function evaluateReferences(options: {
         evaluated[index] = {
           ...ledger,
           regionCount: ledger.regions.length,
-          regions: ledger.regions.slice(0, 8),
+          regions: ledger.regions,
           ...(layout ? { layout } : {}),
         };
       } catch (err) {

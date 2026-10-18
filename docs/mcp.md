@@ -234,8 +234,10 @@ hypothesis. A saved crop can answer unresolved appearance questions.
 Requested full JSON returns all saved accepted geometry matches, current DOM
 paths and cached text when available; other analysis omissions can remain. It cannot supply a PNG target's DOM, prove CSS causation or recover
 matches that analysis abstained from producing. `omittedMatches` in the focused response counts accepted
-matches left out of that preview. JSON detail has no eight-match cutoff; it
-returns all accepted matches from the existing bounded analysis. `abstained` is not another inventory of accepted
+matches left out of that preview. JSON detail has no eight-match or eight-region cutoff; it
+returns all accepted matches and changed regions from the existing bounded
+analysis. Region IDs stay valid beyond the eighth region for both target and
+checkpoint comparisons. `abstained` is not another inventory of accepted
 matches waiting there. Do not repeat a request for an unavailable fact.
 Experimental hypothesis probes are not part of the public tool set. These
 routing boundaries follow the recorded requests in the team decision replay;

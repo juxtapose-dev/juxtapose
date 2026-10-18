@@ -10,6 +10,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { encodeStoryId, encodeStructure, type StructureSnapshot } from '@juxtapose/core';
 import { captureIo } from '../io.js';
 import {
@@ -755,6 +756,97 @@ test('compare=previous checks any two saved runs as checkpoints, with structure 
     });
     const misuse = await server.call('reference', { toRun: 'r2' });
     expect(misuse.isError).toBe(true);
+  } finally {
+    await server.close();
+  }
+});
+
+// The deployment agent needed another mobile region, but requested full JSON
+// still exposed only eight. Exercise real disconnected pixel differences and
+// retrieval beyond that projection cutoff without opening a browser.
+test('requested JSON exposes every computed region and a ninth crop for targets and checkpoints', async () => {
+  const f = await fixture();
+  const require = createRequire(import.meta.url);
+  const sharp = createRequire(require.resolve('@juxtapose/core/package.json'))('sharp');
+  const width = 400,
+    height = 180;
+  const svg = (rectangles: boolean) =>
+    Buffer.from(
+      `<svg width="${width}" height="${height}"><rect width="100%" height="100%" fill="white"/>${rectangles ? Array.from({ length: 12 }, (_, i) => `<rect x="${10 + (i % 6) * 60}" y="${10 + Math.floor(i / 6) * 80}" width="20" height="20" fill="black"/>`).join('') : ''}</svg>`,
+    );
+  const target = await sharp(svg(false)).png().toBuffer();
+  const current = await sharp(svg(true)).webp({ lossless: true }).toBuffer();
+  await writeFile(path.join(f.root, 'design/target.png'), target);
+  await writeFile(
+    path.join(f.run, 'images', `${encodeStoryId(f.desktop)}-current.webp`),
+    current,
+  );
+  const report = {
+    runId: 'r1',
+    results: [{ storyId: f.desktop, status: 'fail', viewport: { width, height } }],
+  };
+  await writeFile(path.join(f.run, 'report.json'), JSON.stringify(report));
+  await writeFile(
+    path.join(f.root, 'juxtapose.config.json'),
+    JSON.stringify({
+      designReferences: {
+        desktop: {
+          storyId: f.desktop,
+          image: 'design/target.png',
+          viewport: { width, height },
+        },
+      },
+    }),
+  );
+  const io = captureIo();
+  expect(await referenceCommand('desktop', { project: f.root, json: true }, { io })).toBe(
+    1,
+  );
+  const result = JSON.parse(io.stdout());
+  expect(result.states[0].regions).toHaveLength(12);
+  expect(result.states[0].regionCount).toBe(12);
+  const ninth = result.states[0].regions[8].id;
+  const server = new McpServer({ project: f.root, chrome: '/not-a-browser' });
+  try {
+    const crop = await server.call('reference', {
+      name: 'desktop',
+      region: ninth,
+      detail: 'crop',
+    });
+    expect(crop.isError).toBe(false);
+    expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+    const before = path.join(f.runs, 'r0');
+    await mkdir(path.join(before, 'images'), { recursive: true });
+    await writeFile(
+      path.join(before, 'images', `${encodeStoryId(f.desktop)}-current.webp`),
+      await sharp(target).webp({ lossless: true }).toBuffer(),
+    );
+    await writeFile(
+      path.join(before, 'report.json'),
+      JSON.stringify({ ...report, runId: 'r0' }),
+    );
+    const checkpoint = await evaluateReferenceChange({
+      project: f.root,
+      fromRun: 'r0',
+      toRun: 'r1',
+      name: 'desktop',
+    });
+    expect(checkpoint.states[0]).toMatchObject({
+      status: 'changed',
+      regions: expect.any(Array),
+    });
+    const state = checkpoint.states[0] as { regions: Array<{ id: string }> };
+    expect(state.regions).toHaveLength(12);
+    const saved = await server.call('reference', {
+      name: 'desktop',
+      compare: 'previous',
+      fromRun: 'r0',
+      toRun: 'r1',
+      region: state.regions[8]!.id,
+      detail: 'crop',
+    });
+    expect(saved.isError).toBe(false);
+    expect(saved.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
   } finally {
     await server.close();
   }
