@@ -59,3 +59,17 @@ Preserve existing geometry/confidence/crop navigation and the3072-byte focused
 response bound. Expose full experimental detail only on demand; geometry takes
 priority. Keep the legitimate mobile layout crop: the word-box prototype omitted
 the requested action and mixed adjacent rows, so it did not replace that crop.
+
+## Text projection requirement
+
+Keep the complete validated OCR result in the derived cache, separate from its
+compact response projection. Focused responses should return only a few short
+observations near useful deltas, with omission counts. Omit an overlong label
+whole rather than creating a misleading partial identity. An explicit MCP
+request should retrieve full cached text for a selected saved region without
+rerunning OCR or recapturing. Full means all text already extracted for that
+region, not automatic OCR of the whole page. The accessor is not implemented yet.
+
+Use per-call `question` notes to distinguish missing measured facts from duplicate
+reads or legitimate layout crops. They guide feature selection; they are not
+proof that each read was needed or that the instrumentation alone saves tokens.
