@@ -11,7 +11,7 @@ import {
   type Page,
 } from '../browser/page.js';
 import { assertCssSelector } from '../browser/selectors.js';
-import { resolveDevices, type DeviceRegistry } from '../browser/devices.js';
+import type { DeviceRegistry } from '../browser/devices.js';
 import type { Orientation } from '../browser/types.js';
 import type { Platform } from '../platform.js';
 import type {
@@ -46,7 +46,7 @@ import { applyFreeze, freezeChanged, resolveFreeze } from './freeze.js';
 import { captureStructure, type StructureCaptureTimings } from './structure.js';
 import { canonicalWebp } from './encoder.js';
 import { deepEqual, mergeLiveParams, platformStoryId } from './variants.js';
-import { resolveDevice, type ResolvedDevice } from './device.js';
+import { resolveCaptureDevice, type ResolvedDevice } from './device.js';
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 2000;
 
@@ -116,9 +116,6 @@ export interface CaptureDeps {
   defaultDevice?: string;
   defaultOrientation?: Orientation;
 }
-
-/** Built-in presets, for callers that pass no `devices`. */
-let builtinDevices: DeviceRegistry | undefined;
 
 /** Per-page memo: skip work that only needs doing once per page. */
 const styleInjected = new WeakSet<Page>();
@@ -784,26 +781,6 @@ function liveOverrideDiffers(story: StoryManifest, live: StoryParams): boolean {
 
 const sameViewport = (a: Viewport, b: Viewport) =>
   a.width === b.width && a.height === b.height;
-
-/** The capture's device from its params and the project defaults; the
- *  story's orientation wins over the project's. */
-function resolveCaptureDevice(
-  params: StoryParams,
-  deps: CaptureDeps,
-  fallback: Viewport,
-): ResolvedDevice {
-  const orientation = params.orientation ?? deps.defaultOrientation;
-  return resolveDevice(
-    {
-      ...(params.device !== undefined ? { device: params.device } : {}),
-      ...(params.viewport !== undefined ? { viewport: params.viewport } : {}),
-      ...(orientation !== undefined ? { orientation } : {}),
-    },
-    deps.devices ?? (builtinDevices ??= resolveDevices()),
-    fallback,
-    deps.defaultDevice,
-  );
-}
 
 /**
  * Setting the viewport and emulation are CDP round-trips; skip them when

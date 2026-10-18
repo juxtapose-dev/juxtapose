@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { defaultOrientation } from '../browser/devices.js';
+import { defaultOrientation, resolveDevices } from '../browser/devices.js';
 import type { DeviceRegistry } from '../browser/devices.js';
 import type {
   DeviceDescriptor,
@@ -124,4 +124,44 @@ export function resolveDevice(
     ...(device !== undefined && { device }),
     fingerprint: emulationFingerprint(emulation),
   };
+}
+
+/** The project's side of a capture's device: its registry and defaults. */
+export interface CaptureDeviceDefaults {
+  /** Default: the built-ins. */
+  devices?: DeviceRegistry;
+  /** The project's `device` and `orientation`, below the story's own. */
+  defaultDevice?: string;
+  defaultOrientation?: Orientation;
+}
+
+/** Built-in presets, for callers that pass no `devices`. */
+let builtinDevices: DeviceRegistry | undefined;
+
+/**
+ * The capture's device from its params and the project defaults. The one
+ * place the precedence lives: captureStory captures with it and
+ * `jux config --explain` reports it, so they cannot disagree.
+ *
+ * `fallback` (the project viewport) is the size only when no layer sets a
+ * device: a device at any layer, the project's included, supplies the size,
+ * and a story, variant or live `viewport` overrides that. The story's
+ * orientation wins over the project's.
+ */
+export function resolveCaptureDevice(
+  params: Pick<StoryParams, 'device' | 'orientation' | 'viewport'>,
+  defaults: CaptureDeviceDefaults,
+  fallback: Viewport,
+): ResolvedDevice {
+  const orientation = params.orientation ?? defaults.defaultOrientation;
+  return resolveDevice(
+    {
+      ...(params.device !== undefined ? { device: params.device } : {}),
+      ...(params.viewport !== undefined ? { viewport: params.viewport } : {}),
+      ...(orientation !== undefined ? { orientation } : {}),
+    },
+    defaults.devices ?? (builtinDevices ??= resolveDevices()),
+    fallback,
+    defaults.defaultDevice,
+  );
 }

@@ -10,7 +10,8 @@ import { resolveRenderer } from './renderer.js';
 
 import type { Page } from '../browser/page.js';
 import { resolveDevices } from '../browser/devices.js';
-import { resolveDevice, UnknownDeviceError } from './device.js';
+import { resolveCaptureDevice, UnknownDeviceError } from './device.js';
+import type { Orientation, Viewport } from '../browser/types.js';
 import { resolveMinDiffPercent, resolveThreshold } from '../diff/diff.js';
 import type { Platform } from '../platform.js';
 import type { RecheckMode } from '../config/schema.js';
@@ -150,43 +151,54 @@ function valueOf(params: StoryParams, setting: string): unknown {
   return cur;
 }
 
-/** The resolved device as one line: its name, the built-in it aliases, its
- *  size and orientation. Undefined when no layer sets a device or orientation. */
+/** What the capture will be sized and emulated as, from the resolver
+ *  captureStory uses. `label` is the device as one line (its name, the
+ *  built-in it aliases, its size and orientation), present when a layer sets
+ *  a device; `orientation` when a device or an orientation is set. */
 function describeDevice(
   params: StoryParams,
   config: ProjectConfig,
-): { viewport: { width: number; height: number }; label?: string } | undefined {
-  const device = params.device ?? config.device;
-  const orientation = params.orientation ?? config.orientation;
-  if (device === undefined && orientation === undefined) return undefined;
+): { viewport: Viewport; device?: string; orientation?: Orientation; label?: string } {
   const registry = resolveDevices(config.devices);
-  const own =
-    params.viewport ?? (params.device !== undefined ? undefined : config.viewport);
   try {
-    const r = resolveDevice(
+    const r = resolveCaptureDevice(
+      params,
       {
-        ...(device !== undefined ? { device } : {}),
-        ...(orientation !== undefined ? { orientation } : {}),
-        ...(own ? { viewport: own } : {}),
+        devices: registry,
+        ...(config.device !== undefined ? { defaultDevice: config.device } : {}),
+        ...(config.orientation !== undefined
+          ? { defaultOrientation: config.orientation }
+          : {}),
       },
-      registry,
-      DEFAULT_VIEWPORT,
+      config.viewport ?? DEFAULT_VIEWPORT,
     );
-    if (device === undefined) return { viewport: r.viewport };
-    const descriptor = registry.get(device);
+    const orientation = r.emulation?.orientation;
+    const view = {
+      viewport: r.viewport,
+      ...(orientation !== undefined ? { orientation } : {}),
+    };
+    if (r.device === undefined) return view;
+    const descriptor = registry.get(r.device);
     // `mobile` shows the preset it points at: the first key with the same
     // descriptor that is not itself an alias.
     const target = [...registry.entries()].find(
-      ([k, d]) => k !== device && d === descriptor && !(k in ALIASES),
+      ([k, d]) => k !== r.device && d === descriptor && !(k in ALIASES),
     )?.[0];
-    const shape = `${r.viewport.width}x${r.viewport.height} ${r.emulation?.orientation}`;
+    const shape = `${r.viewport.width}x${r.viewport.height} ${orientation}`;
     return {
-      viewport: r.viewport,
-      label: `${device} (${target !== undefined ? `${target}, ` : ''}${shape})`,
+      ...view,
+      device: r.device,
+      label: `${r.device} (${target !== undefined ? `${target}, ` : ''}${shape})`,
     };
   } catch (e) {
-    if (e instanceof UnknownDeviceError)
-      return { viewport: DEFAULT_VIEWPORT, label: `${device} (unknown)` };
+    if (e instanceof UnknownDeviceError) {
+      const device = params.device ?? config.device;
+      return {
+        viewport: DEFAULT_VIEWPORT,
+        device: device!,
+        label: `${device} (unknown)`,
+      };
+    }
     throw e;
   }
 }
@@ -313,17 +325,19 @@ export function explainCapture(
         if (optedOut)
           source = [{ layer: 'live', detail: `variants.${capture.variant}: false` }];
         break;
-      case 'viewport': {
-        // A device in the story's own layers replaces the project viewport.
-        const own =
-          params.viewport ?? (params.device !== undefined ? undefined : config.viewport);
-        value = deviceView?.viewport ?? own ?? DEFAULT_VIEWPORT;
-        // A device-sized viewport came from whoever set the device.
-        if (deviceView && own === undefined) source = post.sources.get('device');
+      case 'viewport':
+        value = deviceView.viewport;
+        // A device-sized viewport came from whoever set the device; a story,
+        // variant or live viewport overrides it and keeps its own source.
+        if (deviceView.device !== undefined && params.viewport === undefined)
+          source = post.sources.get('device');
         break;
-      }
       case 'device':
-        value = deviceView?.label;
+        value = deviceView.label;
+        break;
+      case 'orientation':
+        // The resolved one: a story viewport's shape wins over an orientation.
+        value = deviceView.orientation;
         break;
       case 'settle.timeout':
         value = resolved.timeoutMs;

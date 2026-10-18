@@ -189,8 +189,10 @@ a usage error before it launches a browser.
 
 Layers are the project config, then story parameters, then a variant. For each:
 
-- A layer's `device` sets the size and all of the emulation.
-- A `viewport` at the same or a higher layer overrides only the size; the
+- The project `viewport` is the size used when no layer sets a device.
+- A `device` at any layer, the project's included, sets the size and all of
+  the emulation.
+- A story, variant or live `viewport` overrides only a device's size; the
   device's emulation stays. `{ "device": "pixel-8", "viewport": { "width": 412, "height": 600 } }`
   is a short Pixel.
 - A `device` at a higher layer replaces a lower layer's `viewport` too.
