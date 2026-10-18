@@ -73,7 +73,7 @@ in 229.50s (`/private/tmp/jux-streaming-evidence-serial-suite.log`). Final built
 API output is rechecked against all six complete saved results, byte-stable on
 repeat; the default photo abstentions remain unchanged.
 
-No paid model or browser capture runs were made for these studies. Before an
+No paid model or browser capture runs were made for the extraction studies. Before an
 MCP exposure: validate a compact reference-only packet on a page-building
 decision, prove its information helps beyond the same reference image and
 source/tool access, and separately verify matcher precision if recovered blocks
@@ -87,3 +87,42 @@ Artifacts in `juxtapose-experiments/iteration-billing`: `target-only-evidence-v1
 `target-streaming-core-final-v1` (final built API equality and default-preservation
 check).
 Each retains inputs/hashes, source snapshots and raw results.
+
+## First-draft information-value gate: failed
+
+`website-build/reference-firstdraft-v2` runs one control-first Sol 6.1 medium
+patch-replay pair from the same blank React/TypeScript starter. Both receive a
+desktop reference, two asset sheets and the same source/runtime. Only treatment
+receives 1747 bytes of reference paint regions with provenance and confidence.
+The task is one first draft, not an autonomous tool loop or a finished-page
+build. Neither model invokes tools. All assets load, both render without errors,
+and protected inputs remain unchanged.
+
+| First desktop draft                | Image and assets | Plus paint regions |
+| ---------------------------------- | ---------------: | -----------------: |
+| Model calls                        |                1 |                  1 |
+| Model seconds                      |           78.326 |             72.527 |
+| Differing pixels                   |            21394 |              53730 |
+| Differing percent                  |          1.8571% |            4.6641% |
+| Total input                        |            17489 |              18040 |
+| Cached input                       |            12160 |               6912 |
+| Output                             |             4384 |               4077 |
+| Counted uncached input plus output |             9713 |              15205 |
+
+Neither is an exact pass. The fixed Pixelmatch policy is unchanged; pixel
+percentage is not implementation completeness. Mobile and behavior are outside
+this screen. The candidate fails the predeclared quality gate: modestly shorter
+time accompanies worse quality. Counted usage rises with different cache reuse;
+no normalization or savings claim follows. Aggregate counted spend is 24918.
+No replacement or extension is run. Do not promote automatic raw-region prefill
+or an MCP output from this result; unbound paint geometry has not earned it.
+
+A native-only exploratory diagnosis finds a more focused observation. Within a
+manually selected 600×400 map interior, the candidate's pixels match a reference
+crop exactly at offset (0,-1): the current interior is one pixel lower. All
+240000 pixels are byte-identical after alignment; the control already matches
+at offset zero. This is not a CSS cause or a whole-map/page identity claim, and
+does not rescue the failed global-quality result. Automatic scope selection and
+ambiguity/changed-content abstention must precede any agent-value test of that
+translation evidence. Raw results, videos and shift verification are retained
+in the first-draft study directory.
