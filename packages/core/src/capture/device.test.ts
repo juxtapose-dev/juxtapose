@@ -74,23 +74,35 @@ describe('resolveDevice', () => {
 });
 
 describe('emulationFingerprint', () => {
-  it('encodes device, orientation, flags and UA hash', () => {
+  it('encodes orientation, flags and UA hash, not the device name', () => {
     expect(
-      emulationFingerprint(undefined, {
+      emulationFingerprint({
         mobile: false,
         touch: false,
         orientation: 'landscape',
         angle: 0,
       }),
-    ).toBe('custom|landscape|m0t0|ua:none');
+    ).toBe('landscape|m0t0|ua:none');
     expect(
-      emulationFingerprint('iphone-15', {
+      emulationFingerprint({
         mobile: true,
         touch: true,
         orientation: 'portrait',
         angle: 0,
         userAgent: 'x',
       }),
-    ).toMatch(/^iphone-15\|portrait\|m1t1\|ua:[0-9a-f]{8}$/);
+    ).toMatch(/^portrait\|m1t1\|ua:[0-9a-f]{8}$/);
+  });
+
+  // The name is recorded separately (`device`); an alias renamed to its
+  // target emulates the same thing and must not read as an emulation change.
+  it('an alias and its target share a fingerprint; UA and orientation do not', () => {
+    const fp = (p: Parameters<typeof resolveDevice>[0]) =>
+      resolveDevice(p, r, D).fingerprint;
+    expect(fp({ device: 'mobile' })).toBe(fp({ device: 'iphone-15' }));
+    expect(fp({ device: 'pixel-8' })).not.toBe(fp({ device: 'iphone-15' }));
+    expect(fp({ device: 'iphone-15', orientation: 'landscape' })).not.toBe(
+      fp({ device: 'iphone-15' }),
+    );
   });
 });

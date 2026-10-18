@@ -157,13 +157,13 @@ test('approval persists the emulation fingerprint, and omits the key without one
     store,
     'm',
     Buffer.from('img'),
-    { ...meta, emulation: 'mobile|portrait|m1t1|ua:ab' },
+    { ...meta, emulation: 'portrait|m1t1|ua:ab' },
     image,
   );
   await approveCapture(store, 'd', Buffer.from('img2'), meta, image);
   const { baselines } = JSON.parse(
     await readFile(path.join(root, 'juxtapose.manifest.json'), 'utf8'),
   );
-  expect(baselines.m.emulation).toBe('mobile|portrait|m1t1|ua:ab');
+  expect(baselines.m.emulation).toBe('portrait|m1t1|ua:ab');
   expect('emulation' in baselines.d).toBe(false);
 });

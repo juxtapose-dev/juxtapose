@@ -105,7 +105,7 @@ describe.skipIf(!chrome)('device emulation in capture', () => {
     expect(seen[0]!.ua).toContain('Pixel 8');
     expect(seen[0]!.mobile).toBe('?1');
     expect(snap?.device).toBe('pixel-8');
-    expect(snap?.emulation).toMatch(/^pixel-8\|portrait\|m1t1\|ua:/);
+    expect(snap?.emulation).toMatch(/^portrait\|m1t1\|ua:[0-9a-f]{8}$/);
     expect(snap?.viewport).toEqual({ width: 412, height: 915 });
   }, 30_000);
 

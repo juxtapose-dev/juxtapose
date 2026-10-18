@@ -67,14 +67,14 @@ test('encoderChange flags entries from another encoder, including unrecorded one
 // so instead of calling it a regression. Absent reads as the implicit default.
 test('emulationChange compares fingerprints, absent meaning the default device', () => {
   expect(emulationChange({}, undefined)).toBeUndefined();
-  expect(emulationChange(undefined, 'mobile|portrait|m1t1|ua:ab')).toBeUndefined();
-  expect(emulationChange({ emulation: 'pixel-8|x' }, 'pixel-8|x')).toBeUndefined();
-  expect(emulationChange({}, 'mobile|portrait|m1t1|ua:ab')).toEqual({
+  expect(emulationChange(undefined, 'portrait|m1t1|ua:ab')).toBeUndefined();
+  expect(emulationChange({ emulation: 'portrait|x' }, 'portrait|x')).toBeUndefined();
+  expect(emulationChange({}, 'portrait|m1t1|ua:ab')).toEqual({
     from: 'default',
-    to: 'mobile|portrait|m1t1|ua:ab',
+    to: 'portrait|m1t1|ua:ab',
   });
-  expect(emulationChange({ emulation: 'pixel-8|x' }, undefined)).toEqual({
-    from: 'pixel-8|x',
+  expect(emulationChange({ emulation: 'portrait|x' }, undefined)).toEqual({
+    from: 'portrait|x',
     to: 'default',
   });
 });

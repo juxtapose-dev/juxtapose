@@ -203,12 +203,12 @@ test.each([
 test('a failing story captured on another device reports the device change', async () => {
   const { result } = await run({
     image: changed,
-    emulation: 'mobile|portrait|m1t1|ua:ab',
+    emulation: 'portrait|m1t1|ua:ab',
   });
   expect(result.status).toBe('fail');
   expect(result.baselineEmulation).toEqual({
     from: 'default',
-    to: 'mobile|portrait|m1t1|ua:ab',
+    to: 'portrait|m1t1|ua:ab',
   });
 });
 test('a passing story has no device change, on the hash path or the equivalence path', async () => {

@@ -59,10 +59,10 @@ function rotate(size: Viewport, to: Orientation): Viewport {
     : { width: size.height, height: size.width };
 }
 
-export function emulationFingerprint(
-  device: string | undefined,
-  e: DeviceEmulation,
-): string {
+/** What the page is emulated as, not what the device is called: the name is
+ *  recorded separately (`device`), and `mobile` renamed to `iphone-15` emulates
+ *  the same thing, so it must not read as a previous device emulation. */
+export function emulationFingerprint(e: DeviceEmulation): string {
   const ua =
     e.userAgent === undefined && e.userAgentMetadata === undefined
       ? 'none'
@@ -70,7 +70,7 @@ export function emulationFingerprint(
           .update((e.userAgent ?? '') + JSON.stringify(e.userAgentMetadata ?? null))
           .digest('hex')
           .slice(0, 8);
-  return `${device ?? 'custom'}|${e.orientation}|m${e.mobile ? 1 : 0}t${e.touch ? 1 : 0}|ua:${ua}`;
+  return `${e.orientation}|m${e.mobile ? 1 : 0}t${e.touch ? 1 : 0}|ua:${ua}`;
 }
 
 export function resolveDevice(
@@ -122,6 +122,6 @@ export function resolveDevice(
     viewport,
     emulation,
     ...(device !== undefined && { device }),
-    fingerprint: emulationFingerprint(device, emulation),
+    fingerprint: emulationFingerprint(emulation),
   };
 }

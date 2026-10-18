@@ -17,7 +17,7 @@ const fail = (storyId: string, extra: Record<string, unknown>) => ({
   changedRegions: [],
   ...extra,
 });
-const change = { from: 'default', to: 'mobile|portrait|m1t1|ua:ab' };
+const change = { from: 'default', to: 'portrait|m1t1|ua:ab' };
 
 vi.mock('@juxtapose/core', async (orig) => ({
   ...(await orig<typeof import('@juxtapose/core')>()),

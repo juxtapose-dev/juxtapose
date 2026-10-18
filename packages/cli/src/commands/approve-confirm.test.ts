@@ -164,7 +164,7 @@ test('approval records the capture emulation in the manifest, and omits it other
   const root = project();
   const file = path.join(root, '.juxtapose', 'runs', 'r1', 'report.json');
   const report = JSON.parse(readFileSync(file, 'utf8'));
-  report.results[0].emulation = 'mobile|portrait|m1t1|ua:ab';
+  report.results[0].emulation = 'portrait|m1t1|ua:ab';
   writeFileSync(file, JSON.stringify(report));
   const io = captureIo();
   expect(
@@ -173,6 +173,6 @@ test('approval records the capture emulation in the manifest, and omits it other
   const { baselines } = JSON.parse(
     readFileSync(path.join(root, 'juxtapose.manifest.json'), 'utf8'),
   );
-  expect(baselines.steady.emulation).toBe('mobile|portrait|m1t1|ua:ab');
+  expect(baselines.steady.emulation).toBe('portrait|m1t1|ua:ab');
   expect('emulation' in baselines.flaky).toBe(false);
 });
