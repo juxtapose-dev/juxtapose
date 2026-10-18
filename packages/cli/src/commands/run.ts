@@ -599,7 +599,9 @@ async function emit(
             : r.error
               ? ` ${r.error}`
               : '';
-      const prior = r.baselineEncoder !== undefined ? ' (previous encoder)' : '';
+      const prior =
+        (r.baselineEncoder !== undefined ? ' (previous encoder)' : '') +
+        (r.baselineEmulation !== undefined ? ' (previous device emulation)' : '');
       io.out(`  ${r.status.padEnd(6)} ${captureLabel(r)}${detail}${prior}\n`);
       for (const line of explain(r, grouped)) io.out(`         ${line}\n`);
     }

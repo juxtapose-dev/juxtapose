@@ -116,7 +116,7 @@ export {
   describeEncoder,
   describeEncoderFailures,
 } from './capture/encoder.js';
-export { encoderChange } from './capture/env.js';
+export { emulationChange, encoderChange } from './capture/env.js';
 // Where each capture setting came from: `jux config --explain`.
 export {
   ProvenanceLog,

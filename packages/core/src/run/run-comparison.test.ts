@@ -12,6 +12,7 @@ let noise: Buffer;
 let changed: Buffer;
 let current: Buffer;
 let livePolicy: Snapshot['comparison'];
+let liveEmulation: string | undefined;
 vi.mock('../capture/env.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../capture/env.js')>()),
   captureEnv: () => ({ browser: 'test', os: 'test', encoder: 'test' }),
@@ -26,6 +27,7 @@ vi.mock('../capture/pool.js', () => ({
             storyId: story.storyId,
             image: current,
             comparison: livePolicy,
+            ...(liveEmulation !== undefined ? { emulation: liveEmulation } : {}),
             viewport: { width: 20, height: 20 },
             durationMs: 1,
           },
@@ -58,10 +60,13 @@ async function run(
     corrupt?: boolean;
     stale?: boolean;
     newBaseline?: boolean;
+    emulation?: string;
+    approvedEmulation?: string;
   } = {},
 ) {
   current = options.image ?? noise;
   livePolicy = options.live;
+  liveEmulation = options.emulation;
   const get = vi.fn(async () =>
     options.missing ? null : options.corrupt ? changed : baseline,
   );
@@ -70,7 +75,15 @@ async function run(
     baselines: options.newBaseline
       ? {}
       : {
-          s: { hash: hashImage(baseline), commit: 'c', approvedBy: 'a', approvedAt: 't' },
+          s: {
+            hash: hashImage(baseline),
+            commit: 'c',
+            approvedBy: 'a',
+            approvedAt: 't',
+            ...(options.approvedEmulation
+              ? { emulation: options.approvedEmulation }
+              : {}),
+          },
         },
   };
   const before = JSON.stringify(manifest);
@@ -185,4 +198,25 @@ test.each([
   { mode: 'pixelmatch', maxDiffPixels: 5 },
 ])('invalid comparison is rejected: %j', (policy) => {
   expect(() => resolveComparison(policy as never)).toThrow();
+});
+
+test('a failing story captured on another device reports the device change', async () => {
+  const { result } = await run({
+    image: changed,
+    emulation: 'mobile|portrait|m1t1|ua:ab',
+  });
+  expect(result.status).toBe('fail');
+  expect(result.baselineEmulation).toEqual({
+    from: 'default',
+    to: 'mobile|portrait|m1t1|ua:ab',
+  });
+});
+test('a failing story on the approved device has no device change', async () => {
+  const { result } = await run({
+    image: changed,
+    emulation: 'mobile|x',
+    approvedEmulation: 'mobile|x',
+  });
+  expect(result.status).toBe('fail');
+  expect(result.baselineEmulation).toBeUndefined();
 });

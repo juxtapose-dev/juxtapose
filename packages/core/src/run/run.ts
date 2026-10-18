@@ -11,7 +11,7 @@ import { DEFAULT_RECHECK } from '../config/schema.js';
 import { NOT_RECHECKED } from '../baseline/approve.js';
 import type { Browser } from '../browser/browser.js';
 import { resolveDevices } from '../browser/devices.js';
-import { captureEnv, encoderChange } from '../capture/env.js';
+import { captureEnv, emulationChange, encoderChange } from '../capture/env.js';
 import type { Platform } from '../platform.js';
 import type {
   BaselineStore,
@@ -553,6 +553,11 @@ async function judge(
   const fromEncoder =
     status === 'fail' ? encoderChange(manifest.baselines[story.storyId]) : undefined;
   if (fromEncoder !== undefined) base.baselineEncoder = fromEncoder;
+  const fromDevice =
+    status === 'fail'
+      ? emulationChange(manifest.baselines[story.storyId], snapshot.emulation)
+      : undefined;
+  if (fromDevice !== undefined) base.baselineEmulation = fromDevice;
 
   // pass / new / stale need no pixel work: there is either nothing to explain
   // or nothing to compare against.
@@ -650,6 +655,7 @@ async function judge(
       structure: snapshot.structure,
     });
     delete base.baselineEncoder;
+    delete base.baselineEmulation;
     return {
       ...base,
       status: 'pass',

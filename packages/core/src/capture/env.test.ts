@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import {
   captureEnv,
   describeEnvChange,
+  emulationChange,
   encoderChange,
   sameEnv,
   type CaptureEnv,
@@ -60,4 +61,20 @@ test('encoderChange flags entries from another encoder, including unrecorded one
   expect(encoderChange({ env: { ...base, encoder: '8.17.3' } })).toBe('8.17.3');
   expect(encoderChange({})).toBe('unrecorded');
   expect(encoderChange(undefined)).toBeUndefined();
+});
+
+// A story captured on another device cannot match its baseline; the run says
+// so instead of calling it a regression. Absent reads as the implicit default.
+test('emulationChange compares fingerprints, absent meaning the default device', () => {
+  expect(emulationChange({}, undefined)).toBeUndefined();
+  expect(emulationChange(undefined, 'mobile|portrait|m1t1|ua:ab')).toBeUndefined();
+  expect(emulationChange({ emulation: 'pixel-8|x' }, 'pixel-8|x')).toBeUndefined();
+  expect(emulationChange({}, 'mobile|portrait|m1t1|ua:ab')).toEqual({
+    from: 'default',
+    to: 'mobile|portrait|m1t1|ua:ab',
+  });
+  expect(emulationChange({ emulation: 'pixel-8|x' }, undefined)).toEqual({
+    from: 'pixel-8|x',
+    to: 'default',
+  });
 });

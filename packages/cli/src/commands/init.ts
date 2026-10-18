@@ -264,7 +264,13 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
           store,
           result.storyId,
           image,
-          { commit, approvedBy, approvedAt, env: report.env },
+          {
+            commit,
+            approvedBy,
+            approvedAt,
+            env: report.env,
+            ...(result.emulation !== undefined ? { emulation: result.emulation } : {}),
+          },
           imagePath,
         );
         if (structureError) {
