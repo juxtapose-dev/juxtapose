@@ -335,6 +335,9 @@ export interface CompactPaintRegion {
   box: [x: number, y: number, width: number, height: number];
   rgb: string;
   count: number;
+  /** At most three independently observed positions, in y/x order. */
+  boxes?: Array<[number, number, number, number]>;
+  omittedBoxes?: number;
   textInside?: string;
   score?: number;
   elementText?: string;
@@ -421,6 +424,8 @@ export function appendFocusedPaint<
       const previous = found.get(key);
       if (previous) {
         previous.count++;
+        previous.boxes ??= [[...previous.box]];
+        previous.boxes.push([r.box.x, r.box.y, r.box.width, r.box.height]);
         if (role === 'target') previous.score = Math.min(previous.score!, r.text!.score);
         continue;
       }
@@ -444,6 +449,16 @@ export function appendFocusedPaint<
       r.box[1] + r.box[3] > area.y
         ? 0
         : 1;
+    // A single representative hid the desktop Manage spacing in the team
+    // trace (target y251/333/415 versus current y237/307/377). Keep bounded
+    // positions without inventing correspondence or a CSS row-height cause.
+    for (const group of found.values()) {
+      if (!group.boxes) continue;
+      group.boxes.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+      group.box = [...group.boxes[0]!];
+      group.omittedBoxes = Math.max(0, group.boxes.length - 3);
+      group.boxes = group.boxes.slice(0, 3);
+    }
     return [...found.values()].sort(
       (a, b) =>
         Number(changed.get(b)) - Number(changed.get(a)) ||
@@ -459,7 +474,7 @@ export function appendFocusedPaint<
       : 0;
   const detail: FocusedPaintFeedback = {
     meaning:
-      'Independent pixel components; box=[x,y,width,height], not CSS. textInside=OCR(score is not probability); elementText=current DOM. No target/current identity. Full cached text: reference(name,detail=json).',
+      'Independent components; box/boxes=[x,y,width,height], not CSS; up to 3 sorted boxes, omittedBoxes counts the rest. textInside=OCR(score not probability); elementText=current DOM. No target/current identity. Full cached text: reference(name,detail=json).',
     target: [],
     current: [],
     omitted: [total(paint.target), total(paint.current)],

@@ -188,7 +188,7 @@ Pixelmatch verdict.
 For focused target measurements, request
 `reference({name: "desktop-default", detail: "layout"})`. It returns
 `juxtapose.target-layout-focus/v1`: one target's status, current capture key,
-painted target/current boxes, current element identities, confidence rules,
+painted target/current boxes, current element labels and IDs, confidence rules,
 abstentions, omissions and a `next` instruction for the target's status. When a
 changed region exists, `cropRequest` supplies valid `{name, region}` arguments
 for requesting one saved paired crop if appearance remains unresolved. Element
@@ -233,7 +233,7 @@ No `cropRequest` means there is no saved changed-region crop to request. It uses
 without computing outlines or repeating hashes, image paths and region metadata.
 Focused observations target 3 KB and may finish one complete fact or paint
 observation block above that target, up to 4 KB. Further facts remain in JSON; long
-identities are omitted whole rather than truncated. Other target states still
+identities are omitted whole rather than truncated. Focused measurements omit DOM paths when a label or ID exists; full JSON retains them. Labels are not unique selectors. Other target states still
 require verification. This mode requires `name` and cannot be combined with
 `region` or `compare: "previous"`. Use `detail: "json"` for a full ledger or
 missing measurements, and `region` for a saved paired crop when appearance
@@ -290,6 +290,21 @@ with minimal arguments. An empty report is normal. Match reports to recorded
 calls before changing tools; a self-report does not prove a missing capability
 or a saving. Keep collection identical across comparison arms and include its
 output in token measurements. The MCP server does not upload this feedback.
+
+Experimental embeddings that supply `experimentalTargetTextProvider` may also
+include independent `paint.target` and `paint.current` inventories in requested
+layout detail. Normal CLI sessions do not enable OCR. `textInside` is target OCR
+with an engine score, not a probability; `elementText` is current DOM text.
+Neither establishes correspondence between the two inventories or a CSS cause.
+Each group has exact pixel `rgb`, a representative `box` and `count` of grouped observations (not every matching
+element on the page).
+Repeated groups also provide up to three `boxes` as space permits, sorted by y then x, and
+`omittedBoxes` for additional positions. All boxes use `[x,y,width,height]`.
+The group `count` includes unshown positions; `paint.omitted` counts components
+not represented by the groups, independently of `omittedBoxes`. Full cached text
+and positions remain in JSON detail without another recognition pass. These
+measurements do not change the verdict or default run hint; agent-value testing
+is still required.
 
 Requested `reference({detail: "json"})` also adds `layout` to failing target
 states when the saved current DOM is available. It contains all accepted

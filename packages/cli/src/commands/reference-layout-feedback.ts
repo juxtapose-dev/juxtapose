@@ -56,7 +56,7 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
         ? { issue: state.reason.slice(0, 240) }
         : {}),
     meaning:
-      'Target/current painted-region geometry; current element identities from DOM. paintedFill is the opaque component RGB, not CSS or whole-element equality; other states still require verification.',
+      'Target/current painted-region geometry; current DOM labels are not unique selectors; paths in detail=json. paintedFill is the opaque component RGB, not CSS or whole-element equality; other states still require verification.',
     // Both agents in the contact pilot guessed heading24 before measuring23.
     // Distinguish a resolved edit from a remaining visual question; no forced
     // image/probe step, and no claim that these geometry matches cover all error.
@@ -85,7 +85,16 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
       omittedMatches: layout.omittedMatches + layout.matches.length,
     },
   };
-  for (const match of layout.matches) {
+  for (const original of layout.matches) {
+    // The team trace fetched full JSON for repeated desktop positions after
+    // preview paths crowded out paint. Keep labels and provenance here; the
+    // full ledger retains paths. A path-only identity must remain intact.
+    const { path, ...identity } = original.element;
+    const match = {
+      ...original,
+      element: identity.label || identity.id ? identity : original.element,
+    };
+    void path;
     const rule = layout.confidenceRules[match.confidenceRule];
     if (typeof rule !== 'string') continue;
     const candidate = {
