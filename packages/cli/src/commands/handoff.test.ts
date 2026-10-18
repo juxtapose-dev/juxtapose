@@ -112,3 +112,51 @@ test('a store whose locate throws just yields no baseline and no crops command',
   expect(out).not.toContain('--crops');
   expect(out).toContain('- current:');
 });
+
+test.each([true, false])(
+  'new handoff links only an existing current image (%s)',
+  async (haveImage) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'jux-hand-new-'));
+    dirs.push(root);
+    await mkdir(path.join(root, 'storybook-static'), { recursive: true });
+    await writeFile(
+      path.join(root, 'storybook-static/index.json'),
+      JSON.stringify({ v: 5, entries: {} }),
+    );
+    const run = path.join(root, '.juxtapose/runs/r-new');
+    await mkdir(path.join(run, 'images'), { recursive: true });
+    await writeFile(
+      path.join(run, 'report.json'),
+      JSON.stringify({
+        runId: 'r-new',
+        results: [
+          {
+            storyId: 'card--new',
+            status: 'new',
+            mismatchPercent: 0,
+            mismatchPixels: 0,
+            changedRegions: [],
+          },
+        ],
+      }),
+    );
+    const image = path.join(run, 'images/card--new-current.webp');
+    if (haveImage) await writeFile(image, 'current');
+    let out = '';
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((s) => {
+      out += s;
+      return true;
+    });
+    try {
+      expect(await handoffCommand('card--new', { project: root })).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(out).toContain('Saved run: `r-new`');
+    expect(out.includes(image)).toBe(haveImage);
+    expect(out.includes('saved current image is unavailable')).toBe(!haveImage);
+    const detail = path.join(run, 'diffs/card--new.json');
+    expect(existsSync(detail)).toBe(true);
+    expect(out).toContain(detail);
+  },
+);

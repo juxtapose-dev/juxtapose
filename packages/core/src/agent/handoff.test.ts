@@ -193,9 +193,24 @@ describe('buildHandoffPrompt', () => {
   });
 
   it('handles a new story with no baseline', () => {
-    const out = buildHandoffPrompt({ ...base, status: 'new' });
+    const out = buildHandoffPrompt({ ...base, status: 'new', runId: 'r-new' });
     expect(out).toContain('no baseline yet');
     expect(out).toContain('jux approve');
+    expect(out).toContain('Saved run: `r-new`');
+    expect(out).toContain('Current image: `c.webp` (1280×800)');
+    expect(out).toContain('no recapture is needed to view this saved image');
+    expect(out).toContain('Saved report detail:');
+    expect(out).toContain('no approved-baseline pixel comparison');
+    expect(out).not.toContain('Pixel summary:');
+    expect(out).not.toContain('- baseline:');
+  });
+
+  it('new-story artifact availability is explicit rather than invented', () => {
+    const out = buildHandoffPrompt({ ...base, status: 'new', images: {} });
+    expect(out).toContain('The saved current image is unavailable');
+    expect(out).not.toContain('Current image:');
+    expect(out).not.toContain('no recapture is needed');
+    expect(out).not.toContain('Saved run:');
   });
 
   it('explains staleness as provenance, not pixels', () => {

@@ -32,6 +32,8 @@ import {
 } from '../report/format.js';
 
 export interface HandoffPayload {
+  /** Saved run to use for later report/checkpoint queries, when known. */
+  runId?: string;
   storyId: string;
   storyTitle: string;
   status: DiffStatus;
@@ -132,6 +134,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   lines.push(`# Visual change: ${p.storyTitle}`);
   lines.push('');
   lines.push(`Story \`${p.storyId}\` is **${p.status}**.`);
+  if (p.runId) lines.push(`Saved run: \`${p.runId}\`.`);
   lines.push(
     'This is saved approved-baseline evidence; design-reference results are separate.',
   );
@@ -201,6 +204,20 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
       'This story has no baseline yet — nothing to compare against. Decide whether',
       'the rendered output meets the requested task. Establish a baseline only if',
       'the user explicitly asks for approval; otherwise fix or review as requested.',
+      '',
+      '## Saved current capture',
+      '',
+      ...(p.images.current
+        ? [
+            `Current image: \`${p.images.current}\` (${p.viewport.width}×${p.viewport.height}).`,
+            'Use it only for a remaining appearance question; no recapture is needed to view this saved image.',
+          ]
+        : ['The saved current image is unavailable.']),
+      ...(p.diffDataPath
+        ? [
+            `Saved report detail: \`${p.diffDataPath}\`. It has no approved-baseline pixel comparison for this new story.`,
+          ]
+        : []),
       '',
       ...actions(p, { approveVerb: 'establish this as the baseline' }),
     );

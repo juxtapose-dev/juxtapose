@@ -25,7 +25,7 @@ label their evidence as approved-baseline data, separate from design targets.
 
 ## Verification and limits
 
-Build, typecheck and lint pass. The focused serial suite passes 63 tests across
+Build, typecheck and lint pass. The focused serial suite passes 66 tests across
 the core formatter, CLI handoff, MCP guidance budget and documentation schemas.
 It covers requested fix/review/approval scope, new/stale states, missing
 structure, passing captures with structural observations and settle warnings,
@@ -38,14 +38,22 @@ and approval rules, with no model call or capture. Artifacts are under
 `juxtapose-experiments/iteration-billing/handoff-workflow-stdio-v1`; its boolean
 checks describe returned instructions, not observed agent behavior.
 
-The final serial browser-backed suite passes 158 files and 2045 tests, with
-3 skipped, in 230.14 seconds (`/private/tmp/jux-handoff-workflow-suite.log`).
-Capture code, acceptance, payload types and tool arguments are unchanged.
+The final serial browser-backed suite passes 158 files and 2048 tests, with
+3 skipped, in 229.84 seconds (`/private/tmp/jux-handoff-artifact-suite.log`).
+Capture code, acceptance and tool arguments are unchanged. The core handoff
+payload adds an optional saved run ID; existing callers remain valid.
 No new capture-determinism claim is made. This does not preload source, infer
 CSS causes or establish a reduction in autonomous repair turns.
 
-A separate no-model startup audit identifies a follow-up: the new-story early
-return does not name the saved current image, run ID or sidecar. The native
-current image exists; exposing its location could avoid rediscovery when
-appearance must be assessed. This branch does not yet change artifact links.
-Evidence: `juxtapose-experiments/iteration-billing/handoff-startup-audit-v1`.
+A no-model startup audit found that the new-story early return did not name
+an existing current image, run ID or sidecar. That gap is now fixed: new-story
+handoffs identify the run and current-image/report paths, with an explicit
+missing-image state. The CLI only advertises the current image if it exists;
+the core payload's image remains optional. No approved-baseline pixel
+comparison is implied for a new story.
+
+The follow-up real stdio smoke returns 1848 bytes and verifies both linked
+files existed, without launching Chrome. Evidence is under
+`juxtapose-experiments/iteration-billing/handoff-startup-audit-v1` and
+`handoff-artifact-stdio-v1`. This establishes artifact availability at handoff
+time, not a measured reduction in agent calls.

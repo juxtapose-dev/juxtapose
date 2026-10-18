@@ -541,6 +541,10 @@ review-only request produces findings without code changes. Baseline approval
 always requires an explicit user request. A passing baseline needs no repair
 or approval, but does not prove that design targets or other required states
 pass. The sidecar contains saved report detail, not omitted evidence.
+The prompt identifies its saved run. New-story handoffs link the saved current
+image and report sidecar; a missing current image is stated explicitly. Use
+the existing capture for an appearance question rather than recapturing merely
+to locate or view it. A new story still has no approved-baseline pixel comparison.
 
 | Argument | Type   | Description |
 | -------- | ------ | ----------- |
