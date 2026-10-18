@@ -146,6 +146,7 @@ export async function cropReferenceChange(options: {
   toRun: string;
   result: ReferenceChangeResult;
   regionId: string;
+  padding?: number;
   name?: string;
 }): Promise<ReferenceChangeResult['crop']> {
   const state = options.result.states.find(
@@ -171,7 +172,9 @@ export async function cropReferenceChange(options: {
   const hash = (image: Buffer) => createHash('sha256').update(image).digest('hex');
   if (hash(left) !== state.previousHash || hash(right) !== state.currentHash)
     throw new Error('jux: saved capture changed; request a fresh region ID');
-  const [rendered] = await renderCrops(left, right, [region]);
+  const [rendered] = await renderCrops(left, right, [region], {
+    padding: options.padding,
+  });
   if (!rendered) throw new Error('jux: region lies outside the saved images');
   return referenceCrop(region.id, rendered);
 }
@@ -187,6 +190,7 @@ export async function evaluateReferenceChange(options: {
   /** A design reference name, or a capture key present in either run. */
   name?: string;
   regionId?: string;
+  padding?: number;
 }): Promise<ReferenceChangeResult> {
   const project = await realpath(options.project);
   const config = await loadConfig(project);
@@ -303,7 +307,9 @@ export async function evaluateReferenceChange(options: {
       if (options.regionId) {
         const region = regions.find((r) => r.id === options.regionId);
         if (region) {
-          const [rendered] = await renderCrops(left, right, [region]);
+          const [rendered] = await renderCrops(left, right, [region], {
+            padding: options.padding,
+          });
           if (rendered) crop = referenceCrop(region.id, rendered);
         }
       }
@@ -394,6 +400,7 @@ export async function evaluateReferences(options: {
   run?: string;
   name?: string;
   regionId?: string;
+  padding?: number;
   /** Requested diagnostics: up to two high-mismatch states, without recapture. */
   includeOutlines?: boolean;
   /** Requested JSON detail only; never computes evidence for a passing target. */
@@ -494,7 +501,9 @@ export async function evaluateReferences(options: {
           const region = ledger.regions.find((r) => r.id === options.regionId);
           if (region) {
             const target = await readFile(ledger.referenceImage);
-            const [rendered] = await renderCrops(target, current, [region]);
+            const [rendered] = await renderCrops(target, current, [region], {
+              padding: options.padding,
+            });
             if (!rendered) throw new Error('region lies outside the saved images');
             crops[index] = referenceCrop(region.id, rendered);
           }
@@ -618,10 +627,29 @@ export async function evaluateReferences(options: {
 
 export async function referenceCommand(
   name: string | undefined,
-  flags: { project?: string; run?: string; json?: boolean; region?: string },
+  flags: {
+    project?: string;
+    run?: string;
+    json?: boolean;
+    region?: string;
+    padding?: number | string;
+  },
   { io = stdio }: Session = {},
   layoutCache?: ReferenceLayoutCache,
 ): Promise<number> {
+  const padding =
+    typeof flags.padding === 'string'
+      ? flags.padding.trim()
+        ? Number(flags.padding)
+        : NaN
+      : flags.padding;
+  if (
+    padding !== undefined &&
+    (!flags.region || !Number.isSafeInteger(padding) || padding < 0)
+  ) {
+    io.err('jux: --padding requires --region and a non-negative safe integer\n');
+    return 2;
+  }
   if (flags.region && !flags.json) {
     io.err('jux: --region requires --json to return the PNG as base64\n');
     return 2;
@@ -632,6 +660,7 @@ export async function referenceCommand(
       ...(flags.run ? { run: flags.run } : {}),
       ...(name ? { name } : {}),
       ...(flags.region ? { regionId: flags.region } : {}),
+      ...(padding !== undefined ? { padding } : {}),
       includeLayout: Boolean(flags.json && !flags.region),
       includeOutlines: Boolean(flags.json && !flags.region),
       ...(layoutCache ? { layoutCache } : {}),

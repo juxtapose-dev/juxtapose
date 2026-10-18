@@ -384,7 +384,7 @@ export const TOOLS: Tool[] = [
     // Both team decision replays requested JSON for facts analysis abstained
     // from producing. Distinguish a testable edit from a measured CSS cause.
     description:
-      'Read saved evidence without recapture. Default: latest capture versus design target. compare=previous compares saved runs (fromRun, toRun defaults to latest): shared-capture pixel and structural deltas, not target progress. Use source + measurements to propose CSS edits as hypotheses, then run affected states to verify. Request detail=layout with name for missing geometry; region (optionally detail=crop) for one paired PNG crop. Use returned cropRequest directly when relevant. detail=json returns all saved matches/current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. Exact target matches need no confirmation call.',
+      'Read saved evidence without recapture. Use source + measurements to propose CSS edits as hypotheses; run affected states to verify. detail=layout with name: geometry; region: one paired PNG crop, padding adds context. Use returned cropRequest directly. detail=json: all saved matches, regions and current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. compare=previous compares saved runs, not target progress. Exact matches need no confirmation.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -410,6 +410,12 @@ export const TOOLS: Tool[] = [
         region: {
           type: 'string',
           description: 'Stable region ID from a prior reference result',
+        },
+        padding: {
+          type: 'integer',
+          minimum: 0,
+          description:
+            'Minimum context pixels around region; clamped to shared image extent. Requires region.',
         },
         detail: {
           type: 'string',
@@ -1007,6 +1013,14 @@ export class McpServer {
         checkEvidenceQuestion(args);
         const name = str(args, 'name');
         const region = str(args, 'region');
+        const padding = args['padding'] as number | undefined;
+        if (
+          padding !== undefined &&
+          (!region || !Number.isSafeInteger(padding) || padding < 0)
+        )
+          throw new ArgError(
+            "'padding' requires a saved region and a non-negative safe integer",
+          );
         const requestedDetail = str(args, 'detail');
         // A matched agent stopped at detail=crop despite having valid saved-region
         // arguments. Accept the explicit mode without adding the full ledger.
@@ -1071,6 +1085,7 @@ export class McpServer {
                   toRun: toRunId,
                   result: change,
                   regionId: region,
+                  ...(padding !== undefined ? { padding } : {}),
                   ...(name ? { name } : {}),
                 });
                 change = { ...change, crop };
@@ -1082,6 +1097,7 @@ export class McpServer {
                   toRun: toRunId,
                   ...(name ? { name } : {}),
                   ...(region ? { regionId: region } : {}),
+                  ...(padding !== undefined ? { padding } : {}),
                 });
                 if (!region) {
                   if (this.referenceChanges.size >= 8)
@@ -1150,6 +1166,7 @@ export class McpServer {
                     ...this.common(),
                     json: Boolean(region || detail),
                     ...(region ? { region } : {}),
+                    ...(padding !== undefined ? { padding } : {}),
                   },
                   s,
                   this.layouts,

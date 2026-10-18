@@ -815,6 +815,26 @@ test('requested JSON exposes every computed region and a ninth crop for targets 
     });
     expect(crop.isError).toBe(false);
     expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+    const padded = await server.call('reference', {
+      name: 'desktop',
+      region: ninth,
+      detail: 'json',
+      padding: 96,
+    });
+    expect(padded.isError).toBe(false);
+    const paddedMeta = JSON.parse((padded.content[0] as { text: string }).text).crop;
+    expect(paddedMeta.box.width).toBeGreaterThan(40);
+    expect(paddedMeta.box.height).toBe(180);
+    expect(
+      (
+        await server.call('reference', {
+          name: 'desktop',
+          region: ninth,
+          detail: 'crop',
+          padding: 0,
+        })
+      ).content,
+    ).toEqual(crop.content);
     const before = path.join(f.runs, 'r0');
     await mkdir(path.join(before, 'images'), { recursive: true });
     await writeFile(
@@ -837,6 +857,19 @@ test('requested JSON exposes every computed region and a ninth crop for targets 
     });
     const state = checkpoint.states[0] as { regions: Array<{ id: string }> };
     expect(state.regions).toHaveLength(12);
+    const uncachedPadded = await server.call('reference', {
+      name: 'desktop',
+      compare: 'previous',
+      fromRun: 'r0',
+      toRun: 'r1',
+      region: state.regions[8]!.id,
+      detail: 'json',
+      padding: 96,
+    });
+    expect(uncachedPadded.isError).toBe(false);
+    expect(
+      JSON.parse((uncachedPadded.content[0] as { text: string }).text).crop.box.width,
+    ).toBeGreaterThan(40);
     const saved = await server.call('reference', {
       name: 'desktop',
       compare: 'previous',
@@ -847,6 +880,66 @@ test('requested JSON exposes every computed region and a ninth crop for targets 
     });
     expect(saved.isError).toBe(false);
     expect(saved.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+    await server.call('reference', {
+      name: 'desktop',
+      compare: 'previous',
+      fromRun: 'r0',
+      toRun: 'r1',
+      detail: 'json',
+    });
+    const paddedCheckpoint = await server.call('reference', {
+      name: 'desktop',
+      compare: 'previous',
+      fromRun: 'r0',
+      toRun: 'r1',
+      region: state.regions[8]!.id,
+      detail: 'json',
+      padding: 96,
+    });
+    expect(paddedCheckpoint.isError).toBe(false);
+    expect(
+      JSON.parse((paddedCheckpoint.content[0] as { text: string }).text).crop.box.width,
+    ).toBeGreaterThan(40);
+    await writeFile(
+      path.join(f.run, 'images', `${encodeStoryId(f.desktop)}-current.webp`),
+      await sharp(target).webp({ lossless: true }).toBuffer(),
+    );
+    const stale = await server.call('reference', {
+      name: 'desktop',
+      compare: 'previous',
+      fromRun: 'r0',
+      toRun: 'r1',
+      region: state.regions[8]!.id,
+      detail: 'crop',
+      padding: 96,
+    });
+    expect(stale.isError).toBe(true);
+    expect((stale.content[0] as { text: string }).text).toContain(
+      'saved capture changed',
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test('MCP rejects invalid padding and padding without a region before reading inputs', async () => {
+  const f = await fixture(),
+    server = new McpServer({ project: f.root, chrome: '/not-a-browser' });
+  try {
+    for (const args of [
+      { name: 'desktop', padding: 96 },
+      ...[-1, 1.5, '96', Infinity].map((padding) => ({
+        name: 'desktop',
+        region: 'id',
+        padding,
+      })),
+    ]) {
+      const result = await server.call('reference', args);
+      expect(result.isError).toBe(true);
+      expect((result.content[0] as { text: string }).text).toContain(
+        'non-negative safe integer',
+      );
+    }
   } finally {
     await server.close();
   }

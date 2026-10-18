@@ -53,6 +53,7 @@ Common options
   --allow-unstable               approve: also baseline stories whose two run captures differed
   --run <dir>                    run directory to read (approve, check, handoff, reference, upload)
   --region <id>                  reference: return a saved comparison's paired crop (--json)
+  --padding <px>                 reference crop: minimum surrounding context (page pixels)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init, approve: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
   --upload                      run: upload captured results to hosted review (JUXTAPOSE_TOKEN)
@@ -189,6 +190,7 @@ async function main(argv: string[]): Promise<number> {
       'dry-run': { type: 'boolean' },
       run: { type: 'string' },
       region: { type: 'string' },
+      padding: { type: 'string' },
       as: { type: 'string' },
       'as-prefix': { type: 'string' },
       prefix: { type: 'boolean', default: false },

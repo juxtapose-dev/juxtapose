@@ -59,7 +59,7 @@ export const SPECS: Record<string, Spec> = {
   check: { flags: ['json', ...CONTEXT, 'run'], max: 0 },
   doctor: { flags: ['json', 'project', 'fix'], max: 0 },
   handoff: { flags: ['json', ...CONTEXT, 'run'], max: 1 },
-  reference: { flags: ['json', 'project', 'run', 'region'], max: 1 },
+  reference: { flags: ['json', 'project', 'run', 'region', 'padding'], max: 1 },
   snap: {
     flags: [
       'json',
@@ -106,6 +106,7 @@ const TAKES_VALUE = new Set([
   'chrome',
   'run',
   'region',
+  'padding',
   'recheck',
   'as',
   'as-prefix',

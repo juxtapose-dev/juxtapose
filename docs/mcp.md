@@ -193,7 +193,14 @@ Use the returned `cropRequest` directly when it covers the remaining question;
 JSON detail is unnecessary before requesting that crop. You may also use
 `reference({...cropRequest, detail: "crop"})`; explicit crop mode requires a
 region ID and returns the same short caption and paired PNG as omitting detail,
-without the full JSON ledger. If neither measurements
+without the full JSON ledger. If the saved crop is too narrow to show the
+relationship you need, add `padding: 96` (or another non-negative integer) to
+request at least that many page pixels around the changed region. The crop
+still includes the original doubled region, clamps to the shared image extent,
+and uses the existing scaling rule. Read the returned page box and nominal
+scale: padding cannot recover detail lost to downscaling or identify target DOM.
+It reuses saved images without recapture; it also works with checkpoint crops.
+If neither measurements
 nor the crop answer the question, report the missing observable instead of
 silently guessing a target value.
 No `cropRequest` means there is no saved changed-region crop to request. It uses the same cached measurements as JSON detail,
@@ -377,7 +384,7 @@ If none of the configured targets were captured, the result is an error with
 `outcome: "no-comparison"` in JSON detail, rather than a visual pass.
 The default result is a short text ledger that includes a dominant observed
 target/current color pair when one exists; pass `detail: "json"` for
-`juxtapose.design-reference-set/v1` with measured geometry, sampled visible target/current color pairs, and up to eight regions ranked by exact changed-pixel count. The short ledger names the largest region and its count. Pass a returned `region` ID to receive one paired target/current PNG as
+`juxtapose.design-reference-set/v1` with measured geometry, sampled visible target/current color pairs, and all computed regions ranked by exact changed-pixel count. The short ledger names the largest region and its count. Pass a returned `region` ID to receive one paired target/current PNG as
 an MCP image block. Region IDs remain valid after an MCP server restart while
 the saved images and config remain the same. If either image changes, an old ID
 is rejected; call `reference` again for current IDs. The ledger has explicit
