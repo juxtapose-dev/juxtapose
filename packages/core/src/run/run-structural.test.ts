@@ -55,7 +55,9 @@ function current(storyId: string) {
     viewport: BASE.viewport,
     capturedAt: 't',
     durationMs: 1,
-    ...(storyId === 'no-current' ? {} : { structure: CUR }),
+    ...(storyId === 'no-current'
+      ? {}
+      : { structure: storyId === 'geometry' ? fixture.cases.padding.structure : CUR }),
     ...(storyId.startsWith('capped')
       ? {
           settle: {
@@ -86,6 +88,11 @@ function store(
       version: 1,
       baselines: {
         s: { ...meta, hash: 'not-the-current-hash', structureHash: BASE.structureHash },
+        geometry: {
+          ...meta,
+          hash: 'not-the-current-hash',
+          structureHash: BASE.structureHash,
+        },
         "it's a story": {
           ...meta,
           hash: 'not-the-current-hash',
@@ -145,6 +152,29 @@ test('a failing story with sidecars on both sides carries a verdict', async () =
   expect(r.results[0].structural?.escalate.command).toBe('jux handoff s');
 });
 
+test('saves measured control detail separately using the one existing sidecar read', async () => {
+  const baseline = store('ok');
+  const report = await run(baseline, 'geometry', {
+    recheck: 'off',
+    config: { renderer: { shared: false } },
+  });
+  const result = report.results[0];
+  expect(result.status).toBe('fail');
+  expect(result.controlGeometry?.observations).toEqual([
+    expect.objectContaining({
+      testId: 'save',
+      height: { approved: 44, current: 52 },
+      width: { approved: 65.38, current: 73.38 },
+      provenance: 'structure',
+    }),
+  ]);
+  expect(baseline.getStructure).toHaveBeenCalledTimes(1);
+  expect(result.structural).not.toHaveProperty('controlGeometry');
+  expect(JSON.stringify(result.structural).length).toBeLessThanOrEqual(1500);
+  const restored = JSON.parse(JSON.stringify(report));
+  expect(restored.results[0].controlGeometry).toEqual(result.controlGeometry);
+});
+
 // Every printed command is pasteable: an id with a space or a quote is
 // shell-quoted like the CLI's own hints.
 test('the handoff escalate command shell-quotes the story id', async () => {
@@ -160,6 +190,7 @@ test('a passing story never calls getStructure and carries no structural', async
   const r = await run(s, 'green');
   expect(r.results[0].status).toBe('pass');
   expect(r.results[0].structural).toBeUndefined();
+  expect(r.results[0].controlGeometry).toBeUndefined();
   expect(s.getStructure).not.toHaveBeenCalled();
 });
 

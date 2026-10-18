@@ -318,7 +318,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'report',
     description:
-      'Read a saved Storybook/Ladle run without capture. Default: bounded summary of the latest run; story: one full capture result; detail=full: complete RunReport; detail=runs: saved run IDs, newest first, for choosing a checkpoint. runId selects an older saved run.',
+      'Read a saved Storybook/Ladle run without capture. Default: bounded summary; story: one full capture result, including available controlGeometry (measured approved/current control sizes, not CSS causes); detail=full: complete RunReport; detail=runs: saved run IDs, newest first. Request one story when wrapper resize facts leave control dimensions unclear. runId selects an older saved run.',
     inputSchema: {
       type: 'object',
       properties: {

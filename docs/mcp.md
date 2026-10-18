@@ -406,6 +406,21 @@ run; otherwise the latest is used. `story` and `detail: "full"` are exclusive.
 The server keeps a small cache of parsed reports and checks for saved-file
 changes before reusing one.
 
+When a wrapper resize does not explain which control changed, request one
+`report({story: "form--default", runId: "<saved-run>"})`. A failed capture may
+include `controlGeometry`: measured approved/current border-box widths and
+heights for native controls with unique matching DOM IDs or test IDs. For
+example, `height: {approved: 49, current: 36}` identifies a measured size change,
+not the CSS property that caused it. Typography, padding, or layout may be
+responsible. No new capture or sidecar read is needed.
+
+This evidence is absent from compact summaries. Its observation array is capped
+at three items and 1024 UTF-8 bytes, with an explicit `omitted` count. Ambiguous
+identities abstain; truncated snapshots report `unavailable: "truncated-structure"`.
+Older reports may not contain it. This is approved-baseline evidence, not
+geometry extracted from a PNG design target or a previous-run comparison.
+
+
 | Argument | Type   | Description                        |
 | -------- | ------ | ---------------------------------- |
 | `runId`  | string | Saved run ID (default latest).     |

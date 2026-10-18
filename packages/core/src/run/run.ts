@@ -21,7 +21,6 @@ import type {
   RunReport,
   Snapshot,
   StoryManifest,
-  StructuralVerdict,
   StructureSnapshot,
   Viewport,
 } from '../types.js';
@@ -35,6 +34,7 @@ import {
 } from '../baseline/status.js';
 import { decodeStructure } from '../capture/structure.js';
 import { structuralDiff } from '../diff/structural.js';
+import { observeControlGeometry } from '../diff/control-geometry.js';
 import { compareCodeUnits } from '../diff/structural/deltas.js';
 import { computeGroups } from './groups.js';
 import {
@@ -605,7 +605,7 @@ async function judge(
     return {
       ...base,
       baselineImage: 'unavailable',
-      ...(structural ? { structural } : {}),
+      ...structural,
     };
   }
 
@@ -690,7 +690,7 @@ async function judge(
     mismatchPercent: diff.mismatchPercent,
     changedRegions: diff.changedRegions,
     error: diff.dimensionMismatch ? 'viewport size changed since baseline' : undefined,
-    ...(structural ? { structural } : {}),
+    ...structural,
   };
 }
 
@@ -763,7 +763,7 @@ async function tryStructural(
   pixels: Pick<DiffOutput, 'changedRegions' | 'dimensionMismatch'>,
   p: Phases,
   pixelsUnavailable = false,
-): Promise<StructuralVerdict | undefined> {
+): Promise<Pick<DiffResult, 'structural' | 'controlGeometry'> | undefined> {
   if (!snapshot.structure) return undefined;
   let cause: Awaited<ReturnType<CauseIndex['causeFor']>> | undefined;
   if (opts.cause) {
@@ -774,8 +774,9 @@ async function tryStructural(
     }
   }
   try {
-    return structuralDiff({
-      baseline: await readBaselineStructure(opts.store, story.storyId),
+    const baseline = await readBaselineStructure(opts.store, story.storyId);
+    const structural = structuralDiff({
+      baseline,
       current: snapshot.structure,
       imagesIdentical: false,
       ...(pixelsUnavailable ? { pixelsUnavailable } : {}),
@@ -784,6 +785,20 @@ async function tryStructural(
       ...(cause ? { cause } : {}),
       ...(snapshot.settle ? { settleFlag: settleFlag(snapshot.settle) } : {}),
     });
+    // The billing replay needed the control measurement hidden by ancestor
+    // deduplication. Reuse these already-loaded snapshots; keep the separate
+    // detail outside the compact verdict's 1500-character budget.
+    let controlGeometry: DiffResult['controlGeometry'];
+    if (baseline && !pixels.dimensionMismatch) {
+      try {
+        const measured = observeControlGeometry(baseline, snapshot.structure);
+        if (measured.observations.length || measured.omitted || measured.unavailable)
+          controlGeometry = measured;
+      } catch {
+        // Optional evidence must not discard a valid structural explanation.
+      }
+    }
+    return { structural, ...(controlGeometry ? { controlGeometry } : {}) };
   } catch {
     return undefined;
   }

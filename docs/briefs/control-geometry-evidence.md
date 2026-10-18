@@ -1,6 +1,6 @@
 # Approved/current control geometry research
 
-Status: experimental internal observer; not wired into reports or MCP. No new capture, no image decode, no native dependency, no acceptance change.
+Status: experimental observer integrated into saved failed-capture detail on this branch; not promoted into compact MCP summaries. No new capture, no image decode, no native dependency, no acceptance change.
 
 Evidence: on the cleaned billing fixture, a tool-free compact-response replay changed label/input spacing when given only a wrapper resize delta. It passed behavior but failed all four visuals. Adding a measured textbox height (49→36, from unique matching DOM ID) produced 28/28 behavior and 4/4 visual passes in one subsequent replay. This is an information-value signal, not a statistical performance claim.
 
@@ -30,3 +30,5 @@ Automatic-selection replay: the first failing attention item, processed by this 
 Truncation guard: either truncated snapshot now returns unavailable=truncated-structure and no observations. Identity uniqueness cannot be established over an omitted suffix. Two focused cases cover each side. This preserves the requirement to abstain instead of guessing.
 
 Integration constraint found during review: structural verdicts have an existing 1500-character bound. Do not append this evidence to that verdict or displace existing facts. A requested-detail envelope should carry it separately and label the comparison direction (approved/current vs earlier/later). Summary and detail must not collide in saved comparison caches.
+
+Saved detail integration: run failure analysis reuses its decoded approved and current snapshots, persists a separate controlGeometry field beside structural, and exposes it through the existing report({story}) request. Structural verdict budgeting and signatures stay unchanged. MCP regression tests verify detail visibility and summary omission; the run-path test checks a single sidecar read with renderer retries and rechecks disabled. Full browser workflow validation remains outstanding.

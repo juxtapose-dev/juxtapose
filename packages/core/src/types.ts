@@ -1,5 +1,6 @@
 import type { Viewport } from './browser/types.js';
 import type { StructureCaptureTimings } from './capture/structure.js';
+import type { observeControlGeometry } from './diff/control-geometry.js';
 export type { StructureCaptureTimings } from './capture/structure.js';
 // Core data model. Deliberately free of any platform (Storybook/Ladle) types —
 // adapters map their world onto these.
@@ -472,6 +473,9 @@ export interface DiffResult {
   /** Tier-0 explanation of a failure. Present only when status is 'fail' and
    *  the current capture produced a structure; never consulted on pass. */
   structural?: StructuralVerdict;
+  /** Requested report detail: measured approved/current native-control sizes.
+   * Saved on failure alongside structural evidence; never changes the verdict. */
+  controlGeometry?: ReturnType<typeof observeControlGeometry>;
   /** Present only when non-empty. Never changes `status`. */
   flags?: CaptureFlag[];
   /** Present only with the `settle-timeout` flag. */

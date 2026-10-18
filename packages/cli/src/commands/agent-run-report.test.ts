@@ -182,13 +182,36 @@ describe('saved MCP run reports', () => {
   });
 
   test('reads one saved story or full report without browser and refreshes changed reports', async () => {
-    const project = await projectWithReport(report(20));
+    const initial = report(20);
+    initial.results[12]!.controlGeometry = {
+      observations: [
+        {
+          id: 'name',
+          tag: 'input',
+          role: 'textbox',
+          height: { approved: 49, current: 36 },
+          provenance: 'structure',
+          confidenceRule:
+            'unique same DOM id or test ID, with matching tag and role in both snapshots; measured border-box size, not a CSS cause',
+        },
+      ],
+      omitted: 0,
+      abstained: 0,
+      incompatible: false,
+    };
+    const project = await projectWithReport(initial);
     const cache = new SavedReportCache();
     const firstSummary = await cache.summary(project);
     expect(await cache.summary(project)).toBe(firstSummary);
     const server = new McpServer({ project });
     try {
       expect(json(await server.call('report', {})).schema).toBe('juxtapose.agent-run/v1');
+      expect(JSON.stringify(json(await server.call('report', {})))).not.toContain(
+        'controlGeometry',
+      );
+      expect(
+        json(await server.call('report', { story: 'story-12' })).controlGeometry,
+      ).toEqual(initial.results[12]!.controlGeometry);
       expect(json(await server.call('report', { story: 'story-12' })).storyId).toBe(
         'story-12',
       );
