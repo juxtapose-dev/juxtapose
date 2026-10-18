@@ -8,6 +8,11 @@ export interface FocusedLayoutFeedback {
   capture: string;
   status: string;
   meaning: string;
+  next: string;
+  /** Valid reference arguments, only when a saved changed-region ID exists. */
+  cropRequest?: { name: string; region: string };
+  /** Changed-pixel bounds selected by cropRequest; not a diagnosis of other regions. */
+  cropRegion?: { x: number; y: number; width: number; height: number };
   issue?: string;
   layout: ReferenceLayoutDetail | { status: 'unavailable'; reason: string };
 }
@@ -21,12 +26,25 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
   if (!state || result.states.length !== 1)
     throw new Error('focused layout requires exactly one target');
   const layout = 'layout' in state ? state.layout : undefined;
+  const region =
+    state.status === 'fail' && 'regions' in state ? state.regions[0] : undefined;
   const base = {
     schema: 'juxtapose.target-layout-focus/v1' as const,
     runId: result.runId,
     name: state.name,
     capture: state.storyId,
     status: state.status,
+    ...(region
+      ? {
+          cropRequest: { name: state.name, region: region.id },
+          cropRegion: {
+            x: region.x,
+            y: region.y,
+            width: region.width,
+            height: region.height,
+          },
+        }
+      : {}),
     ...('error' in state
       ? { issue: state.error.slice(0, 240) }
       : 'reason' in state && state.reason
@@ -34,6 +52,15 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
         : {}),
     meaning:
       'Target/current painted-region geometry; current element identities from DOM. Not CSS causes; other states still require verification.',
+    // Both agents in the contact pilot guessed heading24 before measuring23.
+    // Distinguish a resolved edit from a remaining visual question; no forced
+    // image/probe step, and no claim that these geometry matches cover all error.
+    next:
+      state.status === 'pass'
+        ? 'This target passes; do not inspect it again to confirm. Verify any remaining required states and behavior.'
+        : state.status === 'error' || state.status === 'incompatible'
+          ? 'Resolve the reported capture or reference issue first; do not infer a visual edit from incompatible inputs.'
+          : 'Use measurements with source; if sufficient, edit then run affected states once. cropRequest selects only cropRegion: use it for an unresolved question there, or detail=json for another region. If absent, no saved crop is available. Do not guess unmeasured target styles or repeat returned facts.',
   };
   if (!layout || !('matches' in layout))
     return bounded({

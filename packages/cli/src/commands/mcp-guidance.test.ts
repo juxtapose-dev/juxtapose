@@ -24,6 +24,8 @@ test('initialization stays small when a client repeats guidance on each tool', a
     expect(instructions).toContain('captured document order');
     expect(instructions).toContain('all required states, targets and behavior checks');
     expect(instructions).toContain('Never approve unless the user asks');
+    expect(instructions).toContain('resolve only missing facts');
+    expect(instructions).toContain('Prefer MCP measurements to images');
   } finally {
     await server.close();
   }

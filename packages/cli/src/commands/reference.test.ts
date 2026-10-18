@@ -269,6 +269,29 @@ test('region IDs can recover a crop after reevaluation', async () => {
   ).rejects.toThrow('Run reference again');
 });
 
+test('focused layout supplies usable saved-crop arguments without another ledger or browser', async () => {
+  const f = await fixture();
+  const reportBefore = await readFile(path.join(f.run, 'report.json'), 'utf8');
+  const server = new McpServer({ project: f.root, chrome: '/nonexistent/chrome' });
+  try {
+    const focused = await server.call('reference', { name: 'desktop', detail: 'layout' });
+    expect(focused.isError).toBe(false);
+    const text = focused.content[0];
+    if (text?.type !== 'text') throw new Error('expected focused text');
+    const packet = JSON.parse(text.text);
+    expect(packet.cropRequest).toEqual({
+      name: 'desktop',
+      region: expect.stringMatching(/^[a-f0-9]+:\d+$/),
+    });
+    const crop = await server.call('reference', packet.cropRequest);
+    expect(crop.isError).toBe(false);
+    expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+    expect(await readFile(path.join(f.run, 'report.json'), 'utf8')).toBe(reportBefore);
+  } finally {
+    await server.close();
+  }
+});
+
 test('MCP returns the all-state ledger and one crop after a server restart without Chrome', async () => {
   const f = await fixture();
   const firstServer = new McpServer({ project: f.root, chrome: '/nonexistent/chrome' });

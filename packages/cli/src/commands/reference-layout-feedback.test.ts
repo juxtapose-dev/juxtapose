@@ -10,6 +10,7 @@ function fixture() {
         name: 'desktop',
         storyId: 'form--default',
         status: 'fail',
+        regions: [{ id: '0123456789abcdef:1', x: 10, y: 20, width: 100, height: 49 }],
         layout: {
           status: 'measured',
           abstained: 2,
@@ -43,6 +44,8 @@ test('focused measurements preserve geometry, confidence and abstentions without
   });
   expect(focused.layout).toEqual((input.states[0] as { layout: unknown }).layout);
   expect(focused.meaning).toContain('other states still require verification');
+  expect(focused.cropRequest).toEqual({ name: 'desktop', region: '0123456789abcdef:1' });
+  expect(focused.cropRegion).toEqual({ x: 10, y: 20, width: 100, height: 49 });
   expect(JSON.stringify(input)).toBe(original);
 });
 
@@ -78,6 +81,8 @@ test('passing or missing-structure targets do not fabricate measurements', () =>
     status: 'pass',
     layout: { status: 'unavailable' },
   });
+  expect(focusedLayoutFeedback(input).next).toContain('do not inspect it again');
+  expect(focusedLayoutFeedback(input).cropRequest).toBeUndefined();
 });
 
 test('oversized target metadata fails explicitly instead of truncating identity', () => {
@@ -98,4 +103,22 @@ test('capture errors retain a bounded reason without another ledger request', ()
     issue: 'x'.repeat(240),
     layout: { status: 'unavailable' },
   });
+  expect(focusedLayoutFeedback(input).next).not.toContain('request one saved crop');
+});
+
+test('partial geometry allows a direct edit but does not prescribe guessed target styles', () => {
+  const response = focusedLayoutFeedback(fixture());
+  expect(response.next).toContain('if sufficient, edit');
+  expect(response.next).toContain('Do not guess unmeasured target styles');
+  expect(response.next).toContain('cropRequest');
+  expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThanOrEqual(3072);
+});
+
+test('missing region ID does not promise a nonexistent crop or reuse an element ID', () => {
+  const input = fixture();
+  (input.states[0] as unknown as { regions: unknown[] }).regions = [];
+  const response = focusedLayoutFeedback(input);
+  expect(response.cropRequest).toBeUndefined();
+  expect(response.cropRegion).toBeUndefined();
+  expect(response.next).toContain('no saved crop is available');
 });

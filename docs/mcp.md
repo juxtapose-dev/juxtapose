@@ -122,11 +122,13 @@ If `@juxtapose/cli` is already a dev dependency, use `"command": "npx"` with
    `crops: true` and look at the images. Full structural coverage is spatial
    overlap, not proof that the new appearance is correct.
 
-For a Storybook or Ladle project with baselines, call `run`, then `handoff`
-for each failing story. When `designReferences` are configured, `run` includes
+For a Storybook or Ladle project with baselines, call `run` and read its returned
+evidence first. Request `handoff` for a failing story only when more agent context
+is missing. When `designReferences` are configured, `run` includes
 an additional, compact target-versus-current result block for the capture keys it
-just saved. Call `reference` when you need the full measured ledger or a paired
-image crop; it reads the saved images without recapturing. Call `approve` only
+just saved. Request focused saved measurements for a missing fact, then one paired
+region crop if appearance remains unresolved. Use the full ledger only for a
+specific question the focused evidence cannot answer. Call `approve` only
 when the user asks you to.
 
 ## Tools
@@ -159,7 +161,13 @@ For focused target measurements, request
 `reference({name: "desktop-default", detail: "layout"})`. It returns
 `juxtapose.target-layout-focus/v1`: one target's status, current capture key,
 painted target/current boxes, current element identities, confidence rules,
-abstentions and omissions. It uses the same cached measurements as JSON detail,
+abstentions, omissions and a `next` instruction for the target's status. When a
+changed region exists, `cropRequest` supplies valid `{name, region}` arguments
+for requesting one saved paired crop if appearance remains unresolved. Element
+IDs are not crop IDs. `cropRegion` gives the selected changed-pixel bounds: this
+is the largest changed region, which may not answer a question about another
+part of the component. Request JSON detail only if a needed region is missing.
+No `cropRequest` means there is no saved changed-region crop to request. It uses the same cached measurements as JSON detail,
 without computing outlines or repeating hashes, image paths and region metadata.
 The matched observations are selected within a 3 KB response budget; long
 identities are omitted whole rather than truncated. Other target states still
@@ -174,6 +182,28 @@ source and measurements resolve the edit, change the source and verify the
 required states with `run`. Otherwise request a paired region crop for the
 remaining visual question. Avoid requesting images speculatively in the same
 batch as measurements: the returned evidence may make that image work unnecessary.
+
+Prefer MCP measurements and focused saved crops over a fresh browser screenshot
+or a custom pixel-analysis script for facts already returned. Reuse source that
+is already in context. A passing target hint needs no confirmation with another
+`reference` or `report` call. After an edit, capture the affected states and
+variants together once; check omitted required states before stopping. These are
+workflow instructions, not a measured time or token saving.
+
+Measurements that explain one region do not determine all target styles. Do not
+infer a font size from a painted box height or treat the lowest nonzero mismatch
+as a verified CSS value. If source and measurements leave several plausible
+values, resolve that specific uncertainty before editing; use one focused crop
+when text evidence is insufficient. Experimental hypothesis probes are not part
+of the public tool set.
+
+For benchmark clients, collect optional tool feedback in the agent's existing
+final response rather than adding a separate tool call. Ask only for encountered
+friction: the needed observable, workaround actually used and a visible tool name
+with minimal arguments. An empty report is normal. Match reports to recorded
+calls before changing tools; a self-report does not prove a missing capability
+or a saving. Keep collection identical across comparison arms and include its
+output in token measurements. The MCP server does not upload this feedback.
 
 Requested `reference({detail: "json"})` also adds `layout` to failing target
 states when the saved current DOM is available. It contains up to eight

@@ -371,7 +371,7 @@ export const TOOLS: Tool[] = [
     // The geometry-sufficient repair still viewed two PNGs alongside its
     // measurement requests. Ask clients to evaluate evidence before more images.
     description:
-      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Set detail=layout with name for focused target paint measurements. Read those results before requesting images; if source and measurements resolve the edit, edit then run. Otherwise request region for one paired PNG crop. Do not batch speculative image viewing with evidence requests. detail=json returns the full ledger. A passing target hint needs no reference call. Use local image analysis only for missing facts.',
+      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Request detail=layout with name only for missing geometry. If source and measurements resolve the edit, edit then run; otherwise request region for one paired PNG crop. Do not batch speculative images with measurements. Use detail=json or local image analysis only for a specific fact missing from focused evidence. A passing target hint needs no reference call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -452,7 +452,7 @@ export const TOOLS: Tool[] = [
 // In a real Codex discovery packet, the client repeated 1567 bytes of server
 // guidance on 12 tools (17,237 redundant bytes). Keep workflows on their tools.
 const INSTRUCTIONS =
-  'Use saved starting evidence, edit, then capture. Labels are saved identities, not unique CSS selectors; measurements do not identify CSS causes. Ordinals count same labels in captured document order. Stop only when all required states, targets and behavior checks pass. Never approve unless the user asks.';
+  'Reuse saved evidence; resolve only missing facts, edit, then capture. Prefer MCP measurements to images. Labels are saved identities, not unique CSS selectors; measurements do not identify CSS causes. Ordinals count same labels in captured document order. Stop only when all required states, targets and behavior checks pass. Never approve unless the user asks.';
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -711,8 +711,13 @@ export function compactReferenceFeedback(result: ReferenceResult) {
     omittedPassed: Math.max(0, passed.length - 8),
     guidance:
       result.outcome === 'pass'
-        ? 'Each listed captured target has compatible geometry and zero Pixelmatch mismatch pixels under the stated policy; all captured targets pass. Use the accompanying run summary for baseline and flake verdicts; no reference call is needed. Stop only when all required states and behavior checks pass. NotCaptured targets were not checked.'
-        : 'Target mismatch is not a CSS cause. Request reference with name and detail=layout for focused paint measurements, detail=json for the full ledger, or a region ID for one paired crop. Saved evidence; no recapture needed.',
+        ? 'Captured targets have compatible geometry and zero Pixelmatch mismatch pixels; no reference call is needed. Do not repeat this verdict with report. Use the run summary for baseline and flake verdicts. Stop only when all required states and behavior checks pass. NotCaptured targets were not checked.'
+        : result.outcome === 'error' ||
+            affected.some((state) => state.status === 'incompatible')
+          ? 'Resolve the reported capture or reference compatibility issue before inferring a UI edit. Reuse these reported facts; another image or ledger does not fix incompatible inputs.'
+          : result.outcome === 'no-comparison'
+            ? 'No target comparison was made. Capture the required target states; do not treat this as a pass or request images to confirm it.'
+            : 'Use returned facts with current source first; mismatch is not a CSS cause. For missing geometry request reference with name and detail=layout. If appearance remains unresolved, request one saved region crop. Use detail=json or local pixel analysis only for a specific missing fact. Do not recapture or reread facts already returned.',
   };
 }
 
