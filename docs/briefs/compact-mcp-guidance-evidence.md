@@ -39,7 +39,24 @@ the next call. This is an additional discovery failure, not a cost entirely
 attributable to Jux's prefix duplication. Future replays must distinguish
 bounded name-based discovery from the byte reduction measured here.
 
-Next gate is a small routing/next-action replay covering preserved guidance,
-before any more full runs. Nothing changes capture, result formats, acceptance,
-or approval behavior. Artifacts and the frozen protocol are under
-`juxtapose-experiments/iteration-billing/mcp-guidance-context-v1`.
+## Routing preservation follow-up
+
+Four valid Sol 6.1 medium single-call replays in C T T C order each answer
+the same seven tool-routing/next-action cases. Both arms return every expected
+decision exactly, with no invoked tools or cap stops. Mean counted usage is
+8979→6371.5 (29.0% less); total input 20916→18308.5 (12.5% less), with equal
+12160 cached input and 223 output tokens in both arms. Mean process time is
+7.0075→6.927 seconds: no meaningful time saving is established.
+
+This validates scoped guidance decisions and input reduction with a supplied
+catalog, not autonomous repair, dynamic discovery, or full-loop savings. The
+same seven cases repeated twice per arm are not independent generalization
+samples. Cases cover URL before/after, target versus baseline measurements,
+omitted required states, checkpoint comparison, saved styles, source rollback
+and stopping without approval. The grader's mutation tests pass; every oracle
+call validates against both frozen schemas. No dependency was installed.
+
+Next full-loop study must bound name-based discovery in both arms. Nothing
+changes capture, result formats, acceptance or approval behavior. Artifacts
+are under `juxtapose-experiments/iteration-billing/mcp-guidance-context-v1`
+and `guidance-routing-v2` (the latter includes archived controller sources).
