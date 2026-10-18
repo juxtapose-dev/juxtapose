@@ -211,7 +211,13 @@ conservative painted-region matches with target/current boxes, current element
 IDs and short labels. `dx`, `dy`, `dw` and `dh` mean current minus target;
 the boxes describe pixels, not CSS border boxes. Element identity comes from
 the current DOM; a design PNG has no DOM. Each match names its provenance and
-a confidence-rule ID defined once in `confidenceRules`.
+a confidence-rule ID defined once in `confidenceRules`. Each matched component
+also includes, for example,
+`paintedFill: {rgb: [40, 91, 196], targetCurrentEqual: true}`. This is the exact
+opaque sRGB pixel fill shared by those target/current components. It is not a
+CSS background color or a claim that the whole element is identical. An absent
+match says nothing about color agreement. The field is included in requested
+layout/JSON evidence; the compact run response does not add it.
 
 This analysis matches exact flat fills and unchanged inner paint, rejects
 ambiguous repeated controls, and omits geometry changes of two pixels or less.

@@ -8,6 +8,8 @@ export interface LayoutMatch {
   currentBlock: string;
   targetBox: LayoutBox;
   currentBox: LayoutBox;
+  /** Opaque pixel-component fill, not a CSS background or whole-element claim. */
+  paintedFill: { rgb: [number, number, number]; targetCurrentEqual: true };
   dx: number;
   dy: number;
   dw: number;
@@ -167,6 +169,9 @@ export function matchLayout(
       currentBlock: b.id,
       targetBox: a.box,
       currentBox: b.box,
+      // The contact control used a separate model call to sample a fill already
+      // checked by this matcher. Expose that observable without more analysis.
+      paintedFill: { rgb: [...a.fill!], targetCurrentEqual: true },
       ...delta,
       element: {
         path: element.path,

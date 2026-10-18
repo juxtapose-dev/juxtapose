@@ -77,7 +77,7 @@ async function fixture() {
   };
 }
 const cacheDir = (project: string) =>
-  path.join(project, '.juxtapose/analysis/target-layout-v2');
+  path.join(project, '.juxtapose/analysis/target-layout-v3');
 
 test('reuses target/current segmentation, deduplicates concurrent requests and survives restart', async () => {
   const f = await fixture(),
@@ -85,7 +85,11 @@ test('reuses target/current segmentation, deduplicates concurrent requests and s
   const [a, b] = await Promise.all([cache.evaluate(f), cache.evaluate(f)]);
   expect(a).toEqual(b);
   expect(a.matches).toMatchObject([
-    { dy: 8, element: { id: 'save', provenance: 'structure' } },
+    {
+      dy: 8,
+      element: { id: 'save', provenance: 'structure' },
+      paintedFill: { rgb: [37, 99, 235], targetCurrentEqual: true },
+    },
   ]);
   expect(extractTargetEvidence).toHaveBeenCalledTimes(2);
   expect(matchTargetLayout).toHaveBeenCalledTimes(1);
@@ -242,4 +246,46 @@ test('layout is on demand, cannot change the verdict and never analyzes a passin
   expect(pass.outcome).toBe('pass');
   expect(pass.states[0]).not.toHaveProperty('layout');
   expect(extractTargetEvidence).toHaveBeenCalledTimes(2);
+});
+
+test.each([
+  undefined,
+  { rgb: [256, 99, 235], targetCurrentEqual: true },
+  { rgb: [37, 99], targetCurrentEqual: true },
+  { rgb: [37, 99, 235], targetCurrentEqual: false },
+])(
+  'rebuilds cached matches with missing or invalid painted fill: %j',
+  async (paintedFill) => {
+    const f = await fixture();
+    const expected = await new ReferenceLayoutCache().evaluate(f);
+    const pair = (await readdir(cacheDir(f.project))).find((file) =>
+      file.startsWith('pair-'),
+    )!;
+    const file = path.join(cacheDir(f.project), pair);
+    const entry = JSON.parse(await readFile(file, 'utf8'));
+    if (paintedFill === undefined) delete entry.data.matches[0].paintedFill;
+    else entry.data.matches[0].paintedFill = paintedFill;
+    entry.checksum = hash(Buffer.from(JSON.stringify(entry.data)));
+    await writeFile(file, JSON.stringify(entry));
+    expect(await new ReferenceLayoutCache().evaluate(f)).toEqual(expected);
+    expect(extractTargetEvidence).toHaveBeenCalledTimes(2);
+    expect(matchTargetLayout).toHaveBeenCalledTimes(2);
+  },
+);
+
+test('ignores a previous layout cache version and recomputes the pixel measurements', async () => {
+  const f = await fixture();
+  const expected = await new ReferenceLayoutCache().evaluate(f);
+  const old = path.join(f.project, '.juxtapose/analysis/target-layout-v2');
+  await mkdir(old);
+  for (const name of await readdir(cacheDir(f.project))) {
+    await writeFile(
+      path.join(old, name),
+      await readFile(path.join(cacheDir(f.project), name)),
+    );
+  }
+  await rm(cacheDir(f.project), { recursive: true });
+  expect(await new ReferenceLayoutCache().evaluate(f)).toEqual(expected);
+  expect(extractTargetEvidence).toHaveBeenCalledTimes(4);
+  expect(matchTargetLayout).toHaveBeenCalledTimes(2);
 });

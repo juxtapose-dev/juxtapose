@@ -68,6 +68,7 @@ test('reports a unique painted block resize with current DOM provenance and no C
       dy: 0,
       dw: 0,
       element: { id: 'b0' },
+      paintedFill: { rgb: [37, 99, 235], targetCurrentEqual: true },
       provenance: 'measured-from-pixels',
     },
   ]);

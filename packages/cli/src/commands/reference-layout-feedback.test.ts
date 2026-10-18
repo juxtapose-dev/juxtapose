@@ -26,6 +26,7 @@ function fixture() {
             dh: -13,
             provenance: 'measured-from-pixels',
             confidenceRule: 'paint-1',
+            paintedFill: { rgb: [37, 99, 235], targetCurrentEqual: true },
           })),
         },
       },

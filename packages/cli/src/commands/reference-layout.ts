@@ -20,7 +20,7 @@ import { isRecord } from '../guards.js';
 
 // Change the directory version when segmentation, matching or evidence meaning
 // changes. The 39-pair feasibility study does not justify default MCP output.
-const VERSION = 2;
+const VERSION = 3;
 const MAX_ENTRIES = 16;
 const MAX_BYTES = 1024 * 1024;
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
@@ -83,7 +83,8 @@ export class ReferenceLayoutCache {
         ruleIds.set(match.confidenceRule, rule);
         confidenceRules[rule] = match.confidenceRule;
       }
-      const { element, targetBox, currentBox, dx, dy, dw, dh, provenance } = match;
+      const { element, targetBox, currentBox, paintedFill, dx, dy, dw, dh, provenance } =
+        match;
       return {
         element: {
           label: element.label,
@@ -92,6 +93,7 @@ export class ReferenceLayoutCache {
         },
         targetBox,
         currentBox,
+        paintedFill,
         dx,
         dy,
         dw,
@@ -215,6 +217,20 @@ function isLayout(value: unknown): value is TargetLayoutResult {
     (value['status'] === 'measured' || value['status'] === 'abstained') &&
     Array.isArray(value['matches']) &&
     value['matches'].length <= 256 &&
+    value['matches'].every(
+      (match: unknown) =>
+        isRecord(match) &&
+        isRecord(match['paintedFill']) &&
+        match['paintedFill']['targetCurrentEqual'] === true &&
+        Array.isArray(match['paintedFill']['rgb']) &&
+        match['paintedFill']['rgb'].length === 3 &&
+        match['paintedFill']['rgb'].every(
+          (channel: unknown) =>
+            Number.isInteger(channel) &&
+            (channel as number) >= 0 &&
+            (channel as number) <= 255,
+        ),
+    ) &&
     typeof value['abstained'] === 'number'
   );
 }
