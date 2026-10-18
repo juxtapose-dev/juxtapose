@@ -56,6 +56,34 @@ function json(result: Awaited<ReturnType<McpServer['call']>>) {
 }
 
 describe('saved MCP run reports', () => {
+  test('question is bounded diagnostic metadata; timing stays in requested detail', async () => {
+    const value = report(1);
+    const project = await projectWithReport(value);
+    const server = new McpServer({ project, chrome: '/must-not-launch' });
+    try {
+      const before = await server.call('report', {});
+      const question = 'Which saved control changed height?';
+      expect(await server.call('report', { question })).toEqual(before);
+      expect(json(before)).not.toHaveProperty('durationMs');
+      expect(
+        json(await server.call('report', { detail: 'full', question })).durationMs,
+      ).toBe(value.durationMs);
+      for (const question of ['', '   ', 'x'.repeat(161), 12]) {
+        const result = await server.call('report', { question });
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain('question');
+      }
+      expect((await server.call('report', { question: '🔎'.repeat(160) })).isError).toBe(
+        false,
+      );
+      expect((await server.call('report', { question: '🔎'.repeat(161) })).isError).toBe(
+        true,
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
   test('summary stays bounded and prioritizes capture errors and flakes', () => {
     const value = report(1000);
     value.results[16]!.unstable = { hashes: ['a'], unconfirmed: 'not rechecked' };

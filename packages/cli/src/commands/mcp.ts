@@ -134,6 +134,15 @@ const PROJECT = {
   description: 'Project dir (default: the server --project)',
 };
 
+const MAX_QUESTION_CHARACTERS = 160;
+const QUESTION = {
+  type: 'string',
+  minLength: 1,
+  maxLength: MAX_QUESTION_CHARACTERS,
+  description:
+    'Optional missing fact motivating this read; visible in tool-call history. Does not change evidence.',
+};
+
 /**
  * A config schema from @juxtapose/core as a tool argument: the shape is the
  * config's, so an agent writes the same object it would put in
@@ -322,10 +331,11 @@ export const TOOLS: Tool[] = [
   {
     name: 'report',
     description:
-      'Read a saved Storybook/Ladle run without capture. Default: bounded summary; story: one full capture result, including available controlGeometry (measured approved/current control sizes, not CSS causes); detail=full: complete RunReport; detail=runs: saved run IDs, newest first. Request one story when wrapper resize facts leave control dimensions unclear. With story and element, inspect unique saved current-element rect/styles; optional properties narrows the captured values. Use only when current computed values are unclear. runId selects an older saved run.',
+      'Read saved baseline evidence without capture; question names the missing fact. Default: bounded summary; story: one full capture result, including available controlGeometry (measured approved/current control sizes, not CSS causes); detail=full: complete RunReport; detail=runs: saved run IDs, newest first. Request one story when wrapper resize facts leave control dimensions unclear. With story and element, inspect unique saved current-element rect/styles; optional properties narrows the captured values. Use only when current computed values are unclear. runId selects an older saved run.',
     inputSchema: {
       type: 'object',
       properties: {
+        question: QUESTION,
         runId: { type: 'string', description: 'Saved run ID (default latest)' },
         story: { type: 'string', description: 'Exact capture key for one result' },
         detail: { type: 'string', enum: ['summary', 'full', 'runs'] },
@@ -371,10 +381,11 @@ export const TOOLS: Tool[] = [
     // The geometry-sufficient repair still viewed two PNGs alongside its
     // measurement requests. Ask clients to evaluate evidence before more images.
     description:
-      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Request detail=layout with name only for missing geometry. If source and measurements resolve the edit, edit then run; otherwise request region for one paired PNG crop. Do not batch speculative images with measurements. Use returned cropRequest directly when it covers the unresolved question; JSON is unnecessary for that crop. Request detail=json only for a different missing fact. If evidence remains insufficient, name the missing observable. A passing target hint needs no reference call.',
+      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Request detail=layout with name only for missing geometry. If source and measurements resolve the edit, edit then run; otherwise request region for one paired PNG crop. Do not batch speculative images with measurements. Use returned cropRequest directly when it covers the unresolved question; JSON is unnecessary for that crop. Request detail=json only for a different missing fact. For extra reads, question names the missing observable. A passing target hint needs no reference call.',
     inputSchema: {
       type: 'object',
       properties: {
+        question: QUESTION,
         compare: {
           type: 'string',
           enum: ['target', 'previous'],
@@ -470,6 +481,20 @@ const str = (args: Args, key: string, required = false): string | undefined => {
     throw new ArgError(`'${key}' must be a non-empty string`);
   return v;
 };
+
+/** The directory agent reported no friction despite several evidence reads.
+ * Capture the missing observable in its request, without an extra agent turn,
+ * response echo, analysis change or cache-key variation. */
+function checkEvidenceQuestion(args: Args): void {
+  const question = str(args, 'question');
+  if (
+    question !== undefined &&
+    (!question.trim() || [...question].length > MAX_QUESTION_CHARACTERS)
+  )
+    throw new ArgError(
+      `'question' must contain 1–${MAX_QUESTION_CHARACTERS} characters describing a missing fact`,
+    );
+}
 
 /** The `recheck` argument as the CLI flag that carries it. */
 function recheckArg(args: Args): RecheckFlags {
@@ -857,6 +882,7 @@ export class McpServer {
       case 'run':
         return this.run(args);
       case 'report': {
+        checkEvidenceQuestion(args);
         const runId = str(args, 'runId');
         const story = str(args, 'story');
         const detail = str(args, 'detail');
@@ -951,6 +977,7 @@ export class McpServer {
         };
       }
       case 'reference': {
+        checkEvidenceQuestion(args);
         const name = str(args, 'name');
         const region = str(args, 'region');
         const detail = str(args, 'detail');

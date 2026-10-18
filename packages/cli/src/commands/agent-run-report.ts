@@ -286,7 +286,6 @@ export function agentRunSummary(report: RunReport, options: SummaryOptions = {})
     capturedCount: report.capturedCount,
     totalCount: report.totalCount,
     summary: report.summary,
-    durationMs: report.durationMs,
     recheck: report.recheck,
     ...(controlMeasurements ? { controlMeasurements } : {}),
     // The deduplicated facts subsume the truncated group lines, so only one
@@ -317,9 +316,9 @@ export function agentRunSummary(report: RunReport, options: SummaryOptions = {})
         }
       : {}),
     next: onlyStaleAttention
-      ? 'These stale captures match saved baseline bytes. Their approval commits are outside current branch ancestry; no visual edit, detailed report, or recapture is needed. Re-approval is a separate decision to re-anchor the baselines.'
+      ? 'Baseline bytes match; approval commits are outside current branch ancestry; no visual edit, detailed report, or recapture is needed. Re-approval only re-anchors baselines.'
       : attention.length === 0
-        ? 'No capture blockers listed. Stop only when required capture coverage, target comparisons and behavior checks pass.'
-        : 'Use the returned evidence first. Request report with story and runId only for missing baseline detail. Baseline changes are not design-target instructions; no recapture is needed.',
+        ? 'No listed blockers. Stop only after required capture coverage, target comparisons and behavior checks pass.'
+        : 'Use returned facts. report(story, runId) only for missing baseline detail; these are not design-target instructions. No recapture.',
   };
 }

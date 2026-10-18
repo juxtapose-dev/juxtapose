@@ -133,6 +133,16 @@ when the user asks you to.
 
 ## Tools
 
+`reference` and `report` accept an optional `question` (1–160 characters): name
+the specific missing observable motivating this read, for example
+`reference({name: "desktop", detail: "layout", question: "What target height is measurable for the email control?"})`.
+The question stays in the client's tool-call history so a review can distinguish
+missing evidence from facts already supplied. It does not change analysis,
+cache identity, selection or response text, and the server does not persist or
+interpret it. Select evidence with the normal tool arguments. No extra call is
+needed to report the question; it is descriptive metadata, not proof the request
+was necessary or its answer sufficient.
+
 The server exposes ten tools. Each result's first text block holds the
 command's JSON, except `run`, which defaults to a bounded summary, and
 `reference`, which defaults to a short text ledger.
@@ -152,6 +162,8 @@ Default run hints contain verdicts, mismatch counts, largest-region IDs and any
 requested progress. Region bounds are omitted; request `reference({detail: "json"})`
 for bounds or `reference({name, region})` for a saved paired crop. The policy and
 state counts remain explicit; a subset pass does not verify omitted targets.
+Default baseline summaries omit capture duration; request
+`report({detail: "full"})` for `durationMs` and other profiling metadata.
 Sampled color pairs and experimental outline measurements
 are available in requested detail rather than the default hint. Outline
 measurements use a border color from the current DOM sidecar to find matching

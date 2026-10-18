@@ -154,6 +154,29 @@ test('a saved full-page capture compares against a target with separate layout v
   });
 });
 
+test('reference question leaves saved evidence and response unchanged', async () => {
+  const f = await fixture();
+  const server = new McpServer({ project: f.root, chrome: '/must-not-launch' });
+  try {
+    const args = { name: 'desktop', detail: 'layout' };
+    const before = await server.call('reference', args);
+    expect(before.isError).toBe(false);
+    expect(
+      await server.call('reference', {
+        ...args,
+        question: 'What target height is measurable for the control?',
+      }),
+    ).toEqual(before);
+    for (const question of [' ', 'x'.repeat(161), false]) {
+      const result = await server.call('reference', { ...args, question });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).toContain('question');
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 test('a run result gains bounded design feedback without changing its report block or recapturing', async () => {
   const f = await fixture();
   const original = JSON.stringify({ runId: 'r1', results: [{ storyId: f.desktop }] });
