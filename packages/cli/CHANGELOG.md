@@ -1,5 +1,21 @@
 # @juxtapose/cli
 
+## 0.26.0
+
+### Minor Changes
+
+- d22d8db: Add device presets. A `device` (`iphone-15`, `pixel-8`, `ipad`, the aliases `mobile`, `tablet` and `desktop`, or one you define under `devices`) sets the viewport and emulates the device: mobile layout, touch, user agent and client hints, at device scale factor 1. `orientation` rotates it. Use them with `jux snap --device` and `--orientation` (and the MCP `snap` tool), in project config, story parameters, URL entry `params` and variants. A baseline approved on another device is reported as `previous device emulation`. `jux snap --help` now lists `--viewport`. Captures with no device and no orientation are unchanged.
+- eabc743: Add opt-in full-document capture: `jux snap <url> --full-page`, or `fullPage: true` for a story. The image covers the whole rendered document while the browser keeps its layout viewport, which full-page captures record as `layoutViewport`. Before capturing, the page is scrolled through once so lazy images and scroll-triggered reveals load and finish animating.
+
+### Patch Changes
+
+- a122587: List the distinct approved-to-current property and size changes, deduplicated across failing captures, in the compact MCP run result as `changesFromApproved`. A fact only one viewport shows, such as a mobile-only grid, no longer disappears behind a truncated group line.
+- Updated dependencies [d22d8db]
+- Updated dependencies [eabc743]
+  - @juxtapose/core@0.25.0
+  - @juxtapose/adapter-ladle@0.3.33
+  - @juxtapose/adapter-storybook@0.4.30
+
 ## 0.25.1
 
 ### Patch Changes
