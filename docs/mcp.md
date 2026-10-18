@@ -412,7 +412,9 @@ design targets and behavior before stopping; an empty or partial run is not
 proof of completion.
 
 Compact `changesFromApproved` retains ordinal labels such as `textbox (1st)`
-and `textbox (2nd)` as distinct saved identities. These labels are not guaranteed
+and `textbox (2nd)` as distinct saved identities. Ordinals count same-labelled
+elements in the captured snapshot, including unchanged siblings; they describe
+document order on the side supplying the delta. These labels are not guaranteed
 unique CSS selectors. The array contains at most six facts plus an omission
 marker, within 800 UTF-8 bytes including capture labels. Facts longer than 240
 characters are omitted whole and counted in `omittedLongObservations`; full

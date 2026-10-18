@@ -1,12 +1,12 @@
 // A label is a description, not an identity: a page with two cards has two
-// `div.card`s, and when both change, every reader of the verdict — the JSON,
+// `div.card`s, and even when only one changes, every reader of the verdict — the JSON,
 // the summary, `describeDeltas` — sees one element. Measured on a dark-mode
 // probe: the two cards' facts merged into one clause that stated
 // `background-color` twice; on a 12-item reorder, seven `span.meta` moves
 // read as one line and six deltas vanished from the human output.
 //
 // So within one verdict, distinct elements get distinct labels. Only labels
-// that actually collide change, and they take the shortest stable
+// that collide within the captured page change, and they take the shortest stable
 // distinguisher: the nearest ancestor with a name, id or test id
 // (`span.meta in listitem[name="Item 4"]`), or, when that does not separate
 // them, the element's ordinal among same-labelled elements on its side of the
@@ -24,9 +24,13 @@ export function disambiguate(
   current: StructureSnapshot,
 ): Fact[] {
   const snap = (s: Source) => (s.side === 'baseline' ? baseline : current);
-  const nth: { baseline?: number[]; current?: number[] } = {};
-  // ordinals has one entry per element, and a source indexes an element.
-  const nthOf = (s: Source) => (nth[s.side] ??= ordinals(snap(s)))[s.index]!;
+  const indexes: {
+    baseline?: ReturnType<typeof labelIndex>;
+    current?: ReturnType<typeof labelIndex>;
+  } = {};
+  const indexOf = (s: Source) => (indexes[s.side] ??= labelIndex(snap(s)));
+  const nthOf = (s: Source) => indexOf(s).ordinals[s.index]!;
+  const peersOf = (s: Source, l: string) => indexOf(s).peers.get(l) ?? [];
   const key = (s: Source) => `${s.side}:${s.index}`;
   const labelOf = (f: Fact) => ('el' in f.delta ? f.delta.el : f.delta.after);
 
@@ -39,13 +43,34 @@ export function disambiguate(
     ids.set(key(f.source), f.source);
   }
 
+  const scopedCounts = new Map<string, Map<string, number>>();
+  const scopedLabel = (snapshot: StructureSnapshot, index: number, l: string) => {
+    const a = labelledAncestor(snapshot, index);
+    return a === undefined ? undefined : clip(`${l} in ${a}`, MAX_LABEL);
+  };
   const rename = new Map<string, string>();
   for (const [l, ids] of byLabel) {
-    if (ids.size < 2) continue;
     const sources = [...ids.values()];
+    // The two-button preflight produced identical labels for opposite repairs:
+    // an unchanged sibling must count when deciding whether a label is unique.
+    if (ids.size < 2 && sources.every((s) => peersOf(s, l).length < 2)) continue;
     const scoped = sources.map((s) => {
-      const a = labelledAncestor(snap(s), s.index);
-      return a === undefined ? undefined : clip(`${l} in ${a}`, MAX_LABEL);
+      const candidate = scopedLabel(snap(s), s.index, l);
+      if (candidate === undefined) return undefined;
+      const scopeKey = `${s.side}:${l}`;
+      let counts = scopedCounts.get(scopeKey);
+      if (!counts) {
+        counts = new Map<string, number>();
+        scopedCounts.set(scopeKey, counts);
+        // Count each same-label peer once, rather than scanning all peers for
+        // every changed sibling (5,000 changed rows would be 25M backwalks).
+        for (const i of peersOf(s, l)) {
+          const scoped = scopedLabel(snap(s), i, l);
+          if (scoped !== undefined) counts.set(scoped, (counts.get(scoped) ?? 0) + 1);
+        }
+      }
+      if ((counts.get(candidate) ?? 0) > 1) return undefined;
+      return candidate;
     });
     const distinct =
       scoped.every((x) => x !== undefined) && new Set(scoped).size === scoped.length;
@@ -80,18 +105,20 @@ function labelledAncestor(s: StructureSnapshot, index: number): string | undefin
   return undefined;
 }
 
-/** Each element's 1-based position among its side's elements that carry the
+/** Group elements and record each 1-based position among elements with the
  *  same label, in document order. One pass per side, not one per element: a
  *  list of 5,000 identical rows that all changed would otherwise be 25M
  *  label calls. */
-function ordinals(s: StructureSnapshot): number[] {
-  const seen = new Map<string, number>();
-  return s.elements.map((e) => {
+function labelIndex(s: StructureSnapshot) {
+  const peers = new Map<string, number[]>();
+  const ordinals = s.elements.map((e, index) => {
     const l = label(e);
-    const n = (seen.get(l) ?? 0) + 1;
-    seen.set(l, n);
-    return n;
+    let group = peers.get(l);
+    if (!group) peers.set(l, (group = []));
+    group.push(index);
+    return group.length;
   });
+  return { ordinals, peers };
 }
 
 function ordinal(n: number): string {
