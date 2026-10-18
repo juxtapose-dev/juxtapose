@@ -367,3 +367,13 @@ export { describeVisualEquivalence } from './report/comparison.js';
 
 export { selectStories, discoveryStoryIds } from './capture/story-selection.js';
 export { batchApprovals } from './baseline/manifest-batch.js';
+
+// Device presets: the registry (built-ins plus the project's `devices`) and the
+// check `jux snap` runs on --device before it launches a browser.
+export {
+  BUILTIN_DEVICES,
+  resolveDevices,
+  type DeviceRegistry,
+  type UserDeviceSpec,
+} from './browser/devices.js';
+export { resolveDevice, UnknownDeviceError } from './capture/device.js';

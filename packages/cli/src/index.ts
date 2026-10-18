@@ -94,6 +94,10 @@ Settle options (snap, run; over the story's and the config's settle)
                                  applies to every resource type, overriding per-type entries from lower layers
   --network <json>               a config network object for this call: per-type actions and URL rules,
                                  e.g. '{"external":{"images":"placeholder"},"rules":[{"match":"https://ads.*/**","action":"block"}]}'
+  --viewport WxH                 snap: viewport size in CSS px, e.g. 1280x800
+  --device <name>                snap: emulate a device preset (iphone-15, pixel-8, ipad, ...; or mobile,
+                                 tablet, desktop): its size, touch, user agent. Project 'devices' add more
+  --orientation portrait|landscape  snap: rotate the viewport (and the device's reported orientation)
   --full-page                    snap: full document, preserving layout viewport
   --delay <ms>                   snap: fixed extra wait after settling; last resort
 `;
@@ -190,6 +194,8 @@ async function main(argv: string[]): Promise<number> {
       prefix: { type: 'boolean', default: false },
       runs: { type: 'boolean', default: false },
       viewport: { type: 'string' },
+      device: { type: 'string' },
+      orientation: { type: 'string' },
       'wait-for': { type: 'string' },
       delay: { type: 'string' },
       'settle-timeout': { type: 'string' },

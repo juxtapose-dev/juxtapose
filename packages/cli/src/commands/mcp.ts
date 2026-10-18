@@ -202,6 +202,17 @@ export const TOOLS: Tool[] = [
           },
           required: ['width', 'height'],
         },
+        device: {
+          type: 'string',
+          description:
+            'Device preset to emulate: its size, touch and user agent. A key (iphone-15, pixel-8, ipad), an alias (mobile, tablet, desktop) or a device from the project config. A viewport overrides only the size.',
+        },
+        orientation: {
+          type: 'string',
+          enum: ['portrait', 'landscape'],
+          description:
+            "Rotate the viewport. Defaults to the device's listed shape, taller than wide is portrait.",
+        },
         fullPage: {
           type: 'boolean',
           description:
@@ -1058,6 +1069,14 @@ export class McpServer {
         throw new ArgError("'viewport' must be {width, height}");
       viewport = `${v.width}x${v.height}`;
     }
+    const device = str(args, 'device');
+    const orientation = str(args, 'orientation');
+    if (
+      orientation !== undefined &&
+      orientation !== 'portrait' &&
+      orientation !== 'landscape'
+    )
+      throw new ArgError("'orientation' must be 'portrait' or 'landscape'");
     if (args.fullPage !== undefined && typeof args.fullPage !== 'boolean')
       throw new ArgError("'fullPage' must be a boolean");
     const fullPage = args.fullPage === true;
@@ -1094,6 +1113,8 @@ export class McpServer {
                 ...(as ? { as } : {}),
                 ...(asPrefix ? { 'as-prefix': asPrefix } : {}),
                 ...(viewport ? { viewport } : {}),
+                ...(device ? { device } : {}),
+                ...(orientation ? { orientation } : {}),
                 ...(fullPage ? { 'full-page': true } : {}),
                 ...(waitFor ? { 'wait-for': waitFor } : {}),
                 ...(mask ? { mask } : {}),
