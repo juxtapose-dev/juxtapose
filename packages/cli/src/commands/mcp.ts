@@ -381,7 +381,7 @@ export const TOOLS: Tool[] = [
     // The geometry-sufficient repair still viewed two PNGs alongside its
     // measurement requests. Ask clients to evaluate evidence before more images.
     description:
-      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Request detail=layout with name only for missing geometry. If source and measurements resolve the edit, edit then run; otherwise request region for one paired PNG crop. Do not batch speculative images with measurements. Use returned cropRequest directly when it covers the unresolved question; JSON is unnecessary for that crop. Request detail=json only for a different missing fact. For extra reads, question names the missing observable. A passing target hint needs no reference call.',
+      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Request detail=layout with name only for missing geometry. If source and measurements resolve the edit, edit then run; otherwise request region (optionally detail=crop) for one paired PNG crop. Prefer measurements when sufficient. Use returned cropRequest directly when it covers the unresolved question; JSON is unnecessary for that crop. Request detail=json only for a different missing fact. For extra reads, question names the missing observable. Exact target matches need no confirmation call.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -410,9 +410,9 @@ export const TOOLS: Tool[] = [
         },
         detail: {
           type: 'string',
-          enum: ['json', 'layout'],
+          enum: ['json', 'layout', 'crop'],
           description:
-            'json: full ledger. layout: focused painted-region measurements for one named target; excludes crops and checkpoint comparisons.',
+            'json: full ledger. layout: named target geometry, no region/checkpoint. crop: paired image; requires region.',
         },
       },
     },
@@ -999,11 +999,16 @@ export class McpServer {
         checkEvidenceQuestion(args);
         const name = str(args, 'name');
         const region = str(args, 'region');
-        const detail = str(args, 'detail');
+        const requestedDetail = str(args, 'detail');
+        // A matched agent stopped at detail=crop despite having valid saved-region
+        // arguments. Accept the explicit mode without adding the full ledger.
+        const detail = requestedDetail === 'crop' ? undefined : requestedDetail;
+        if (requestedDetail === 'crop' && !region)
+          throw new ArgError("'detail=crop' requires a saved region ID");
         const compare = str(args, 'compare') ?? 'target';
         const fromRun = str(args, 'fromRun');
         if (detail !== undefined && detail !== 'json' && detail !== 'layout')
-          throw new ArgError("'detail' must be 'json' or 'layout'");
+          throw new ArgError("'detail' must be 'json', 'layout' or 'crop'");
         if (detail === 'layout' && (!name || region || compare !== 'target'))
           throw new ArgError(
             "'detail=layout' requires a named target without region or compare=previous",

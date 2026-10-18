@@ -309,6 +309,18 @@ test('focused layout supplies usable saved-crop arguments without another ledger
     const crop = await server.call('reference', packet.cropRequest);
     expect(crop.isError).toBe(false);
     expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+    // The matched agent used detail=crop with this valid region and was rejected.
+    const explicitCrop = await server.call('reference', {
+      ...packet.cropRequest,
+      detail: 'crop',
+    });
+    expect(explicitCrop).toEqual(crop);
+    const missingRegion = await server.call('reference', { detail: 'crop' });
+    expect(missingRegion.isError).toBe(true);
+    expect(missingRegion.content[0]).toMatchObject({
+      type: 'text',
+      text: expect.stringContaining('requires a saved region ID'),
+    });
     expect(await readFile(path.join(f.run, 'report.json'), 'utf8')).toBe(reportBefore);
   } finally {
     await server.close();
@@ -437,6 +449,15 @@ test('MCP requests an edit-only image delta on demand from saved runs', async ()
     region: id,
   });
   expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+  expect(
+    await server.call('reference', {
+      compare: 'previous',
+      fromRun: 'r1',
+      name: 'desktop',
+      region: id,
+      detail: 'crop',
+    }),
+  ).toEqual(crop);
   const cropDetail = await server.call('reference', {
     compare: 'previous',
     fromRun: 'r1',
