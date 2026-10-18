@@ -120,6 +120,52 @@ describe('RunDirSource.approve', () => {
   });
 });
 
+describe('RunDirSource.approve emulation', () => {
+  // Panel approval must record the fingerprint the CLI would, or the next
+  // same-device run reports a device change.
+  it.each([['mobile|portrait|m1t1|ua:ab'], [undefined]])(
+    'records %s',
+    async (emulation) => {
+      const root = await mkdtemp(path.join(tmpdir(), 'jux-src-'));
+      const runDir = path.join(root, 'run');
+      await mkdir(path.join(runDir, 'images'), { recursive: true });
+      await writeFile(
+        path.join(runDir, 'images', `${encodeStoryId('a')}-current.webp`),
+        'img',
+      );
+      const store = createBaselineStore(root, undefined);
+      const source = new RunDirSource({
+        projectRoot: root,
+        platform: { enumerate: async () => [story('a')] } as unknown as Platform,
+        store,
+        config: {} as ProjectConfig,
+        baseUrl: 'http://127.0.0.1:1',
+        runDir,
+        branch: 'main',
+        commitSha: 'abc',
+      });
+      await writeFile(
+        path.join(runDir, 'report.json'),
+        JSON.stringify({
+          runId: 'r',
+          results: [
+            {
+              storyId: 'a',
+              status: 'new',
+              hash: hashImage(Buffer.from('img')),
+              ...(emulation ? { emulation } : {}),
+            },
+          ],
+        }),
+      );
+      await source.approve('a');
+      const entry = (await store.readManifest()).baselines['a']!;
+      expect(entry.emulation).toBe(emulation);
+      expect('emulation' in entry).toBe(emulation !== undefined);
+    },
+  );
+});
+
 describe('RunDirSource.approve of a story the run captured once', () => {
   async function setup() {
     const root = await mkdtemp(path.join(tmpdir(), 'jux-src-'));

@@ -398,6 +398,7 @@ export class RunDirSource implements ReviewSource {
           // The run that produced this capture, not the addon process. Approving
           // through the panel must record the same fingerprint the CLI would.
           env: this.report?.env,
+          ...(result.emulation !== undefined ? { emulation: result.emulation } : {}),
         },
         this.imagePath('current', storyId),
       );

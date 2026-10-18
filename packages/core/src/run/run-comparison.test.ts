@@ -211,6 +211,15 @@ test('a failing story captured on another device reports the device change', asy
     to: 'mobile|portrait|m1t1|ua:ab',
   });
 });
+test('a passing story has no device change, on the hash path or the equivalence path', async () => {
+  const exact = await run({ image: baseline, emulation: 'mobile|x' });
+  expect(exact.result.status).toBe('pass');
+  expect(exact.result.baselineEmulation).toBeUndefined();
+  const equivalent = await run({ mode: perceptual, emulation: 'mobile|x' });
+  expect(equivalent.result.status).toBe('pass');
+  expect(equivalent.result.comparison).toBeDefined();
+  expect(equivalent.result.baselineEmulation).toBeUndefined();
+});
 test('a failing story on the approved device has no device change', async () => {
   const { result } = await run({
     image: changed,
