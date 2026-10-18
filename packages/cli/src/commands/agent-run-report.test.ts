@@ -189,6 +189,7 @@ describe('saved MCP run reports', () => {
           id: 'name',
           tag: 'input',
           role: 'textbox',
+          suppressedResize: true,
           height: { approved: 49, current: 36 },
           provenance: 'structure',
           confidenceRule:
@@ -204,8 +205,18 @@ describe('saved MCP run reports', () => {
     const firstSummary = await cache.summary(project);
     expect(await cache.summary(project)).toBe(firstSummary);
     const server = new McpServer({ project });
+    const experimental = new McpServer({ project }, { controlMeasurements: true });
     try {
       expect(json(await server.call('report', {})).schema).toBe('juxtapose.agent-run/v1');
+      expect(json(await server.call('report', {}))).not.toHaveProperty(
+        'controlMeasurements',
+      );
+      const expanded = json(await experimental.call('report', {}));
+      expect(expanded.controlMeasurements).toEqual(
+        agentRunSummary(initial, { controlMeasurements: true }).controlMeasurements,
+      );
+      expect(expanded).toHaveProperty('controlMeasurements.items.0.approved', 49);
+      expect(json(await experimental.call('report', {}))).toEqual(expanded);
       expect(JSON.stringify(json(await server.call('report', {})))).not.toContain(
         'controlGeometry',
       );
@@ -229,6 +240,7 @@ describe('saved MCP run reports', () => {
       expect((await server.call('report', { story: 'absent' })).isError).toBe(true);
     } finally {
       await server.close();
+      await experimental.close();
     }
   });
 

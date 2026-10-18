@@ -710,7 +710,8 @@ export class McpServer {
   private closed = false;
   private readonly project: string;
   private readonly scheduler: Scheduler;
-  private readonly reports = new SavedReportCache();
+  private readonly reports: SavedReportCache;
+  private readonly controlMeasurements: boolean;
   private readonly layouts = new ReferenceLayoutCache();
   /** Saved runs are immutable. Bound repeated previous/current analysis in
    * this session; a new latest run gets a different cache key. */
@@ -721,9 +722,17 @@ export class McpServer {
 
   constructor(
     private readonly flags: McpFlags = {},
-    opts: { snapSlots?: number; freezeImages?: boolean } = {},
+    opts: {
+      snapSlots?: number;
+      freezeImages?: boolean;
+      controlMeasurements?: boolean;
+    } = {},
   ) {
     this.freezeImages = opts.freezeImages;
+    this.controlMeasurements = opts.controlMeasurements ?? false;
+    this.reports = new SavedReportCache({
+      controlMeasurements: this.controlMeasurements,
+    });
     // Real path, so the containment check below compares like with like on a
     // machine where the root itself sits under a symlink (macOS /tmp).
     const root = path.resolve(flags.project ?? process.cwd());
@@ -1324,7 +1333,11 @@ export class McpServer {
         const first = withFeedback.content[0];
         if (first?.type === 'text') {
           const report = parseRunReport(first.text);
-          first.text = JSON.stringify(agentRunSummary(report));
+          first.text = JSON.stringify(
+            agentRunSummary(report, {
+              controlMeasurements: this.controlMeasurements,
+            }),
+          );
         }
         return withFeedback;
       },

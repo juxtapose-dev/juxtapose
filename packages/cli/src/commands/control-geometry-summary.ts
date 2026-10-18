@@ -2,7 +2,7 @@ import type { DiffResult } from '@juxtapose/core';
 
 const MAX_BYTES = 768;
 const MAX_ITEMS = 3;
-interface Measurement {
+export interface ControlMeasurement {
   element: { id: string } | { testId: string };
   dimension: 'width' | 'height';
   approved: number;
@@ -20,7 +20,7 @@ export function controlGeometrySummary(results: DiffResult[]) {
   const captureIds = new Set(failing.map((r) => r.storyId));
   const groups = new Map<
     string,
-    { item: Omit<Measurement, 'captures'>; captures: Set<string> }
+    { item: Omit<ControlMeasurement, 'captures'>; captures: Set<string> }
   >();
   let unlistedDetailObservations = 0;
   for (const result of failing) {
@@ -50,7 +50,7 @@ export function controlGeometrySummary(results: DiffResult[]) {
     ([ka, a], [kb, b]) =>
       b.captures.size - a.captures.size || (ka < kb ? -1 : ka > kb ? 1 : 0),
   );
-  const items: Measurement[] = [];
+  const items: ControlMeasurement[] = [];
   const build = () => ({
     basis: 'structure: approved→current border-box sizes; not CSS causes',
     items,
@@ -59,7 +59,7 @@ export function controlGeometrySummary(results: DiffResult[]) {
   });
   for (const [, group] of candidates) {
     if (items.length === MAX_ITEMS) break;
-    const item: Measurement = {
+    const item: ControlMeasurement = {
       ...group.item,
       captures:
         group.captures.size === captureIds.size

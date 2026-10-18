@@ -2,6 +2,12 @@ import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { parseRunReport, type DiffResult, type RunReport } from '@juxtapose/core';
 import { latestRunDir } from '../run-dir.js';
+import { controlGeometrySummary } from './control-geometry-summary.js';
+
+interface SummaryOptions {
+  /** Internal benchmark switch; normal MCP output keeps this disabled. */
+  controlMeasurements?: boolean;
+}
 
 const MAX_STORIES = 8;
 const MAX_CACHED_REPORTS = 8;
@@ -92,6 +98,7 @@ export async function savedRuns(project: string) {
 
 /** Parsed reports are shared by repeated story/full lookups in one MCP session. */
 export class SavedReportCache {
+  constructor(private readonly options: SummaryOptions = {}) {}
   private readonly reports = new Map<
     string,
     {
@@ -118,7 +125,7 @@ export class SavedReportCache {
       signature,
       report,
       byStory: new Map(report.results.map((result) => [result.storyId, result])),
-      summary: agentRunSummary(report),
+      summary: agentRunSummary(report, this.options),
     };
     this.reports.set(file, entry);
     if (this.reports.size > MAX_CACHED_REPORTS)
@@ -213,7 +220,10 @@ export function observedChanges(results: DiffResult[]): string[] {
 }
 
 /** Bounded MCP overview. Full evidence remains in the saved report. */
-export function agentRunSummary(report: RunReport) {
+export function agentRunSummary(report: RunReport, options: SummaryOptions = {}) {
+  const controlMeasurements = options.controlMeasurements
+    ? controlGeometrySummary(report.results)
+    : undefined;
   const changes = observedChanges(report.results);
   const attention = report.results.filter((r) => priority(r) < 5);
   const onlyStaleAttention =
@@ -237,6 +247,7 @@ export function agentRunSummary(report: RunReport) {
     summary: report.summary,
     durationMs: report.durationMs,
     recheck: report.recheck,
+    ...(controlMeasurements ? { controlMeasurements } : {}),
     // The deduplicated facts subsume the truncated group lines, so only one
     // of the two is sent.
     ...(changes.length
