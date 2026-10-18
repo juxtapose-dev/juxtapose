@@ -67,3 +67,13 @@ reports are retained in the experiments workspace under
 paths, which change after moving an identified field. The corrected independent
 oracle prefers unique IDs and uses the actual target DOM border inset to grade
 paint bounds. The matcher was not changed to fix that oracle error.
+
+`displacement.ts` is a separate internal experiment over already decoded equal
+RGBA extents. It proposes changed textured regions automatically, rejects
+ambiguous sampled translations and verifies every byte before reporting up to
+three scoped displacement facts. It does not depend on DOM matching or change
+verdicts. The real website's one-pixel map shift is recovered over 192000 pixels
+in about 1.4ms median locally (decode excluded). Negative periodic/flat/changed
+content cases abstain. Agent usefulness remains untested; no root export or MCP
+caller is added. See `docs/briefs/automatic-displacement-evidence.md` for bounds,
+independent crop verification, timings and the next gate.
