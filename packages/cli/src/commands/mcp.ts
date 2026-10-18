@@ -55,6 +55,7 @@ import { MAX_VIEWPORT_SIDE } from './snap.js';
 import { agentRunSummary, SavedReportCache, savedRuns } from './agent-run-report.js';
 import type { ReferenceChangeResult, ReferenceResult } from './reference.js';
 import { ReferenceLayoutCache } from './reference-layout.js';
+import type { TargetTextProvider } from './reference-paint.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 
@@ -774,7 +775,7 @@ export class McpServer {
   private readonly reports: SavedReportCache;
   private readonly elements = new SavedElementCache();
   private readonly controlMeasurements: boolean;
-  private readonly layouts = new ReferenceLayoutCache();
+  private readonly layouts: ReferenceLayoutCache;
   /** Saved runs are immutable. Bound repeated previous/current analysis in
    * this session; a new latest run gets a different cache key. */
   private readonly referenceChanges = new Map<string, ReferenceChangeResult>();
@@ -788,8 +789,11 @@ export class McpServer {
       snapSlots?: number;
       freezeImages?: boolean;
       controlMeasurements?: boolean;
+      /** Experimental: requested layout/JSON only, never default hints. */
+      experimentalTargetTextProvider?: TargetTextProvider;
     } = {},
   ) {
+    this.layouts = new ReferenceLayoutCache(opts.experimentalTargetTextProvider);
     this.freezeImages = opts.freezeImages;
     this.controlMeasurements = opts.controlMeasurements ?? true;
     this.reports = new SavedReportCache({

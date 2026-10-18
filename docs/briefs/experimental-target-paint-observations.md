@@ -29,10 +29,11 @@ areas from their seeds. Both default and observer-enabled layout outputs were
 identical to the parent implementation on every image. These checks prove
 extraction behavior on this corpus, not identity or OCR accuracy.
 
-## Integration still to do
+## Optional integration
 
-Wire an optional, versioned OCR provider into the session's requested-reference
-layout cache. Reuse the observer's pixels rather than decode or segment again.
+The session requested-reference layout cache accepts an optional, versioned OCR
+provider through the embedding-only `experimentalTargetTextProvider` option.
+Normal CLI sessions do not enable it or load an OCR engine. Reuse the observer's pixels rather than decode or segment again.
 Bound provider concurrency and candidate crops, memoize pending/results, evict
 failed requests, and validate persisted records before reuse. Bind cache entries
 to crop pixels/dimensions/fill and provider engine/language/preprocessing/settings.
@@ -41,6 +42,13 @@ observer is awaited and a rejection rejects extraction; the optional OCR adapter
 must catch provider errors inside its observer so geometry remains available. Test
 malformed records, failures and provider-version invalidation without paid trials.
 Do not install or add an OCR runtime dependency during this work.
+Recognition has a two-second deadline including queue time. Timed-out active
+work retains its real concurrency slot until the provider settles; queued work
+expires without starting. Geometry remains available, and failures are retryable.
+A stalled embedding provider should be replaced by its owner rather than
+starting unbounded replacement workers. Disk image evidence rejects DOM text
+annotations and inconsistent recognition states; current DOM text is derived
+from the current structure after loading the pixel-only image cache.
 
 Keep target `textInside` (OCR) separate from current `elementText` (structure).
 Require an OCR crop to equal a full-image-extracted component's bounds, reject
@@ -68,7 +76,35 @@ observations near useful deltas, with omission counts. Omit an overlong label
 whole rather than creating a misleading partial identity. An explicit MCP
 request should retrieve full cached text for a selected saved region without
 rerunning OCR or recapturing. Full means all text already extracted for that
-region, not automatic OCR of the whole page. The accessor is not implemented yet.
+region, not automatic OCR of the whole page.
+
+With the experimental provider configured, `reference({name, detail: "layout"})`
+adds at most two short observations per side when useful facts fit alongside
+existing geometry. `reference({name, detail: "json"})` exposes the analyzed regions
+under `states[].layout.paint.target.regions[]`, including `text.full`. This is
+currently a named-target accessor, not a selected-region text API. Full JSON,
+warm reads and a new session reuse validated disk entries without recognition.
+
+Identical crop pixels at identical positions and controls already explained
+by geometry are omitted from the focused paint block. Changed crop pixels rank
+ahead of unchanged translated components; unexplained translations remain
+available. Groups share text, fill and dimensions. The saved shipment screen
+previously repeated unchanged labels ahead of the changed Ready fill; filtering
+exposed target `#e8efd8` and current `#e3edf8` together with existing geometry.
+Unequal multiplicities are retained. No new color evidence means no paint block.
+Full cached evidence remains available regardless of this projection.
+
+A four-state real-worker smoke made 16 unique recognition calls at concurrency
+two, then zero further calls for full detail, warm reads or restart. Cold analysis
+took 231 ms, warm 2.7 ms, excluding 75 ms worker startup (single observations,
+not a latency benchmark). Defaults were byte-identical and made no OCR calls.
+This establishes integration/cache behavior, not whole-task token savings.
+
+Optimize whole-task tokens and calls at equal quality, rather than response
+bytes alone. Extra measured context belongs together when it enables the next
+edit; full cached text, DOM and analysis stay on demand. Cached model reads are
+reported separately from counted tokens. No default promotion before an agent
+comparison demonstrates a benefit.
 
 Use per-call `question` notes to distinguish missing measured facts from duplicate
 reads or legitimate layout crops. They guide feature selection; they are not

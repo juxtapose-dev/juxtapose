@@ -1,14 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto';
-import {
-  lstat,
-  mkdir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  writeFile,
-} from 'node:fs/promises';
-import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { realpath } from 'node:fs/promises';
 import {
   decodeStructure,
   extractTargetEvidence,
@@ -17,12 +8,19 @@ import {
   type TargetLayoutResult,
 } from '@juxtapose/core';
 import { isRecord } from '../guards.js';
+import { memo, cacheDirectory, derived } from './reference-derived-cache.js';
+import {
+  ReferencePaintAnalyzer,
+  currentElementText,
+  isPaint,
+  type TargetTextProvider,
+  type ObservedImage,
+  type ReferencePaintDetail,
+} from './reference-paint.js';
 
 // Change the directory version when segmentation, matching or evidence meaning
 // changes. The 39-pair feasibility study does not justify default MCP output.
 const VERSION = 3;
-const MAX_ENTRIES = 16;
-const MAX_BYTES = 1024 * 1024;
 const hash = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 
 type Match = TargetLayoutResult['matches'][number];
@@ -34,12 +32,17 @@ export type ReferenceLayoutDetail = Omit<TargetLayoutResult, 'matches'> & {
     }
   >;
   omittedMatches: number;
+  paint?: ReferencePaintDetail;
 };
 
 /** One MCP session reuses small derived evidence, never full decoded frames.
  * On restart the content-addressed disk cache serves identical requests. */
 export class ReferenceLayoutCache {
-  private readonly images = new Map<string, Promise<TargetEvidence>>();
+  private readonly images = new Map<string, Promise<ObservedImage>>();
+  private readonly paint?: ReferencePaintAnalyzer;
+  constructor(provider?: TargetTextProvider) {
+    if (provider) this.paint = new ReferencePaintAnalyzer(provider);
+  }
   private readonly pairs = new Map<string, Promise<TargetLayoutResult>>();
 
   async evaluate(input: {
@@ -58,22 +61,93 @@ export class ReferenceLayoutCache {
     const key = hash(
       JSON.stringify([VERSION, referenceHash, currentHash, hash(input.structure)]),
     );
-    const result = await memo(this.pairs, `${project}:${key}`, async () => {
-      const cache = await cacheDirectory(project);
-      return derived(cache, `pair-${key}`, isLayout, async () => {
-        const evidence = (image: Buffer, imageHash: string) =>
-          memo(this.images, `${project}:${imageHash}`, () =>
-            derived(cache, `image-${imageHash}`, isEvidence, () =>
+    const cache = await cacheDirectory(project);
+    const evidence = (image: Buffer, imageHash: string, role: 'target' | 'current') => {
+      const paintKey = this.paint
+        ? `paint-image-v2-${hash(JSON.stringify([imageHash, role, role === 'target' ? this.paint.provider.cacheKey : null]))}`
+        : null;
+      const imageKey = `${project}:${paintKey ?? imageHash}`;
+      const pending = memo(this.images, imageKey, async () => {
+        if (!this.paint || !paintKey)
+          return {
+            layout: await derived(cache, `image-${imageHash}`, isEvidence, () =>
               extractTargetEvidence(image),
             ),
-          );
-        const [target, current] = await Promise.all([
-          evidence(input.reference, referenceHash),
-          evidence(input.current, currentHash),
-        ]);
-        return matchTargetLayout(target, current, decodeStructure(input.structure));
+          };
+        const valid = (value: unknown): value is ObservedImage =>
+          isRecord(value) &&
+          isEvidence(value.layout) &&
+          isPaint(value.paint) &&
+          value.paint.providerFailures === 0 &&
+          value.paint.frameHash === imageHash &&
+          value.layout.width === value.paint.width &&
+          value.layout.height === value.paint.height;
+        return derived(
+          cache,
+          paintKey,
+          valid,
+          async () => {
+            let paint: ObservedImage['paint'];
+            const layout = await extractTargetEvidence(
+              image,
+              async (rgba, components) => {
+                try {
+                  paint = await this.paint!.observe(
+                    rgba,
+                    components,
+                    imageHash,
+                    role,
+                    cache,
+                  );
+                } catch {
+                  paint = { status: 'unavailable', reason: 'text-provider-unavailable' };
+                }
+              },
+            );
+            return { layout, paint };
+          },
+          (value) =>
+            value.paint?.status === 'measured' && value.paint.providerFailures === 0,
+        );
       });
-    });
+      // A partial provider failure must be retryable, while the same request's
+      // geometry remains valid. Pending work stays shared until it settles.
+      void pending.then(
+        (value) => {
+          if (
+            this.paint &&
+            (value.paint?.status !== 'measured' || value.paint.providerFailures > 0) &&
+            this.images.get(imageKey) === pending
+          )
+            this.images.delete(imageKey);
+        },
+        () => {},
+      );
+      return pending;
+    };
+    // One image promise supplies geometry and optional text; saved geometry-pair
+    // hits still obtain text from the versioned image cache, without recapture.
+    const observed = this.paint
+      ? Promise.all([
+          evidence(input.reference, referenceHash, 'target'),
+          evidence(input.current, currentHash, 'current'),
+        ])
+      : undefined;
+    const result = await memo(this.pairs, `${project}:${key}`, () =>
+      derived(cache, `pair-${key}`, isLayout, async () => {
+        const [target, current] = await (observed ??
+          Promise.all([
+            evidence(input.reference, referenceHash, 'target'),
+            evidence(input.current, currentHash, 'current'),
+          ]));
+        return matchTargetLayout(
+          target.layout,
+          current.layout,
+          decodeStructure(input.structure),
+        );
+      }),
+    );
+    const paint = observed ? await observed : undefined;
     const confidenceRules: Record<string, string> = {};
     const ruleIds = new Map<string, string>();
     const matches = result.matches.slice(0, 8).map((match) => {
@@ -107,97 +181,22 @@ export class ReferenceLayoutCache {
       confidenceRules,
       matches,
       omittedMatches: Math.max(0, result.matches.length - 8),
+      ...(paint
+        ? {
+            paint: {
+              target: paint[0].paint ?? {
+                status: 'unavailable' as const,
+                reason: 'no-paint-evidence',
+              },
+              current: currentElementText(
+                paint[1].paint ?? { status: 'unavailable', reason: 'no-paint-evidence' },
+                decodeStructure(input.structure),
+              ),
+            },
+          }
+        : {}),
     };
   }
-}
-
-function memo<T>(
-  entries: Map<string, Promise<T>>,
-  key: string,
-  produce: () => Promise<T>,
-): Promise<T> {
-  let result = entries.get(key);
-  if (result) {
-    entries.delete(key);
-    entries.set(key, result);
-    return result;
-  }
-  result = produce();
-  entries.set(key, result);
-  if (entries.size > MAX_ENTRIES) entries.delete(entries.keys().next().value!);
-  const pending = result;
-  void result.catch(() => {
-    if (entries.get(key) === pending) entries.delete(key);
-  });
-  return result;
-}
-
-/** Create/check one component at a time: recursive mkdir through a symlink
- * could write outside the project before a later containment check noticed. */
-async function cacheDirectory(project: string): Promise<string | null> {
-  let dir = project;
-  try {
-    for (const part of ['.juxtapose', 'analysis', `target-layout-v${VERSION}`]) {
-      dir = path.join(dir, part);
-      try {
-        await mkdir(dir);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return null;
-      }
-      if (!(await lstat(dir)).isDirectory() || (await realpath(dir)) !== dir) return null;
-    }
-    return dir;
-  } catch {
-    return null;
-  }
-}
-
-async function derived<T extends object>(
-  dir: string | null,
-  key: string,
-  valid: (value: unknown) => value is T,
-  produce: () => Promise<T>,
-): Promise<T> {
-  const file = dir ? path.join(dir, `${key}.json`) : null;
-  if (file) {
-    try {
-      const info = await lstat(file);
-      if (info.isFile() && info.size <= MAX_BYTES) {
-        const entry: unknown = JSON.parse(await readFile(file, 'utf8'));
-        if (
-          isRecord(entry) &&
-          entry['version'] === VERSION &&
-          entry['key'] === key &&
-          valid(entry['data']) &&
-          entry['checksum'] === hash(JSON.stringify(entry['data']))
-        )
-          return entry['data'];
-      }
-    } catch {
-      /* absent or corrupt derived cache: recompute */
-    }
-  }
-  const data = await produce();
-  if (file) {
-    const text = JSON.stringify({
-      version: VERSION,
-      key,
-      data,
-      checksum: hash(JSON.stringify(data)),
-    });
-    const temporary = `${file}.${randomUUID()}.tmp`;
-    if (Buffer.byteLength(text) <= MAX_BYTES) {
-      try {
-        await writeFile(temporary, text, { flag: 'wx' });
-        await rename(temporary, file);
-      } catch {
-        /* read-only caches cannot change evidence or verdicts */
-      } finally {
-        await rm(temporary, { force: true }).catch(() => {});
-      }
-    }
-  }
-  return data;
 }
 
 function isEvidence(value: unknown): value is TargetEvidence {

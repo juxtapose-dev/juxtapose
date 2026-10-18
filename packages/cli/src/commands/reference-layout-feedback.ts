@@ -1,5 +1,6 @@
 import type { ReferenceResult } from './reference.js';
 import type { ReferenceLayoutDetail } from './reference-layout.js';
+import { appendFocusedPaint, type FocusedPaintFeedback } from './reference-paint.js';
 
 export interface FocusedLayoutFeedback {
   schema: 'juxtapose.target-layout-focus/v1';
@@ -14,6 +15,7 @@ export interface FocusedLayoutFeedback {
   /** Changed-pixel bounds selected by cropRequest; not a diagnosis of other regions. */
   cropRegion?: { x: number; y: number; width: number; height: number };
   issue?: string;
+  paint?: FocusedPaintFeedback;
   layout: ReferenceLayoutDetail | { status: 'unavailable'; reason: string };
 }
 
@@ -97,7 +99,7 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
     confidenceRules[match.confidenceRule] = rule;
     output.layout.omittedMatches--;
   }
-  return bounded(output);
+  return bounded(appendFocusedPaint(output, layout.paint));
 }
 
 function bounded(response: FocusedLayoutFeedback): FocusedLayoutFeedback {
