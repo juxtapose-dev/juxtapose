@@ -535,6 +535,13 @@ Describes one story from the last run: what changed, the likely cause, image
 paths and the next steps. Same text as `jux handoff <storyId>`, which has no
 JSON form.
 
+The prompt uses saved evidence first and points to source/history only when
+needed. A requested regression fix can proceed within the user's scope; a
+review-only request produces findings without code changes. Baseline approval
+always requires an explicit user request. A passing baseline needs no repair
+or approval, but does not prove that design targets or other required states
+pass. The sidecar contains saved report detail, not omitted evidence.
+
 | Argument | Type   | Description |
 | -------- | ------ | ----------- |
 | `story`  | string | A story id. |

@@ -359,7 +359,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'handoff',
     description:
-      'A prompt describing one failing story from the last run: what changed, likely cause, image paths, next steps.',
+      "Saved approved-baseline explanation for one story: changes, likely cause, image paths and next steps. Use supplied evidence first; follow the user's requested fix or review scope. The handoff does not authorize baseline approval.",
     inputSchema: {
       type: 'object',
       properties: { story: { type: 'string', description: 'Story id' } },
