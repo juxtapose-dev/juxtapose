@@ -53,6 +53,13 @@ function closestKeys(name: string, keys: Iterable<string>): string[] {
     .map((x) => x.k);
 }
 
+/** The named device, or UnknownDeviceError with the closest keys. */
+export function lookupDevice(name: string, registry: DeviceRegistry): DeviceDescriptor {
+  const descriptor = registry.get(name);
+  if (!descriptor) throw new UnknownDeviceError(name, closestKeys(name, registry.keys()));
+  return descriptor;
+}
+
 function rotate(size: Viewport, to: Orientation): Viewport {
   return defaultOrientation(size) === to
     ? { width: size.width, height: size.height }
@@ -84,13 +91,7 @@ export function resolveDevice(
     return { viewport: params.viewport ?? fallback };
   }
 
-  let descriptor: DeviceDescriptor | undefined;
-  if (device !== undefined) {
-    descriptor = registry.get(device);
-    if (!descriptor) {
-      throw new UnknownDeviceError(device, closestKeys(device, registry.keys()));
-    }
-  }
+  const descriptor = device !== undefined ? lookupDevice(device, registry) : undefined;
 
   const base: Viewport = descriptor
     ? { width: descriptor.width, height: descriptor.height }

@@ -125,3 +125,24 @@ test('the retry line repeats --device and --orientation', async () => {
   expect(code).toBe(3);
   expect(io.stdout()).toMatch(/retry: .*--device mobile --orientation landscape/);
 });
+
+// resolveDevices threw a plain Error from inside snapCommand, which the CLI
+// reported as an unexpected failure (exit 3).
+test('a device cycle in the project config is a config error, exit 2', async () => {
+  const io = captureIo();
+  const code = await snapCommand(
+    [url],
+    {
+      project: project({
+        platform: 'urls',
+        urls: [],
+        devices: { a: { extends: 'b' }, b: { extends: 'a' } },
+      }),
+      as: 'x',
+    },
+    { io, browser: noBrowser },
+  );
+  expect(code).toBe(2);
+  expect(io.stderr()).toContain('device cycle: a -> b -> a');
+  expect(io.stderr()).not.toContain('unexpected failure');
+});
