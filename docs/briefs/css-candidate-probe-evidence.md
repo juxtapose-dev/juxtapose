@@ -84,3 +84,23 @@ inventing phase timings. Three focused checks pass; two real native captures
 also verify exact matches and preserved expected new-baseline exit-1 output.
 Frozen study controllers and raw logs remain unchanged. Image-free efficacy and
 production robustness are still open gates.
+
+## Geometry-sufficient repair and image-request ordering
+
+`probe-geometry-v1` tests a responsive button-height mismatch with unchanged
+typography. One Sol 6.1 medium session completes in 3 model calls and 19.886s,
+using 53717 total input, 46592 cached input and 425 output: 7550 counted tokens.
+It requests saved layout for both states, edits two height tokens, then verifies
+both exact targets and all four behavior checks. No probe is called. Protected
+inputs remain intact. This is a single-arm sufficiency result, not a controlled
+savings estimate.
+
+The full rollout also contains two local image views in the first code-mode
+batch, despite zero image blocks in the MCP server log. Initial attachments
+were absent, but this was not an image-free repair. Future analyses must inspect
+nested local image calls as well as MCP logs. Tool guidance now asks clients to
+read measurements before deciding whether images are needed, edit and verify
+when source plus measurements suffice, and request a focused paired crop for
+unresolved appearance. It does not prohibit images or change tool contracts.
+The wording's effect on agent behavior still needs a controlled test across
+geometry-sufficient and appearance-uncertain cases.

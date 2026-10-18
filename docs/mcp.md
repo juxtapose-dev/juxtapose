@@ -169,6 +169,12 @@ missing measurements, and `region` for a saved paired crop when appearance
 remains uncertain. Passing or unsupported targets return explicit unavailable
 measurement status rather than invented geometry.
 
+Read the focused measurements before deciding whether to request images. If
+source and measurements resolve the edit, change the source and verify the
+required states with `run`. Otherwise request a paired region crop for the
+remaining visual question. Avoid requesting images speculatively in the same
+batch as measurements: the returned evidence may make that image work unnecessary.
+
 Requested `reference({detail: "json"})` also adds `layout` to failing target
 states when the saved current DOM is available. It contains up to eight
 conservative painted-region matches with target/current boxes, current element

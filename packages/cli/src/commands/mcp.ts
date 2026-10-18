@@ -368,8 +368,10 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'reference',
+    // The geometry-sufficient repair still viewed two PNGs alongside its
+    // measurement requests. Ask clients to evaluate evidence before more images.
     description:
-      'Read saved image evidence for a remaining question, without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, and toRun defaulting to the latest) for every capture both saved: changed pixels plus observed structural changes (property old→new, resizes). Use it against a checkpoint run ID to see what later edits changed; it does not measure progress toward the target. Set detail=layout with name for focused target paint measurements; detail=json returns regions and the full ledger, or region for one paired PNG crop. A passing target run hint needs no reference call. Use local image analysis only for facts the saved evidence lacks.',
+      'Read saved evidence without recapture. Default compares the latest capture with the design target. compare=previous compares two saved runs (fromRun, toRun defaults to latest) across shared captures: changed pixels and structural changes (property old→new, resizes), not target progress. Set detail=layout with name for focused target paint measurements. Read those results before requesting images; if source and measurements resolve the edit, edit then run. Otherwise request region for one paired PNG crop. Do not batch speculative image viewing with evidence requests. detail=json returns the full ledger. A passing target hint needs no reference call. Use local image analysis only for missing facts.',
     inputSchema: {
       type: 'object',
       properties: {
