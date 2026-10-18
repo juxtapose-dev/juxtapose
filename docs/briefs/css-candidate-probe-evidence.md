@@ -104,3 +104,23 @@ when source plus measurements suffice, and request a focused paired crop for
 unresolved appearance. It does not prohibit images or change tool contracts.
 The wording's effect on agent behavior still needs a controlled test across
 geometry-sufficient and appearance-uncertain cases.
+
+## Tool-description ordering screen
+
+`evidence-order-v1` completes one control-first Sol 6.1 medium pair at exact
+2/2 visual and 4/4 behavior quality. Only the served reference description
+changes (710 to 707 bytes); shared instructions, schemas, tools and prompts
+are equal. Both take 3 calls. Control takes 18.636s, candidate 25.528s.
+Candidate views two local images instead of four but also runs a pixel script.
+Total input increases from 53937 to 54362. Counted usage is 18145 versus 8087,
+accompanied by different cache reuse; this is not a stable cost-saving claim.
+
+No efficiency benefit is established. Description exposure is also unverified:
+neither agent requests its schema, and the changed wording is absent from
+logged messages/output. Rollouts do not fully expose model tool-schema context,
+so absence is not proven. Do not claim the agent ignored a visible instruction.
+Stop this metadata-only protocol rather than repeating it. Before a future
+trial, assert intervention visibility in a supplied compact result/prompt packet,
+or use a supplied-catalog replay. No response/default change is promoted from
+this result; the tool wording remains a workflow clarification, not a measured
+optimization. Full design-from-scratch performance is still unestablished.
