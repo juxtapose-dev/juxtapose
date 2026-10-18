@@ -216,6 +216,14 @@ previous/current PNG crop. The server caches a bounded number of these
 immutable saved-run comparisons for repeated lookups in the same session. A
 crop requested from a cached region reuses its analysis and validates both
 saved image hashes before rendering.
+
+Both target and checkpoint crops include their page-pixel `box` and nominal
+`scale` (output pixels per page pixel). JSON detail also includes `width` and
+`height` of the complete paired PNG, including the center gutter. Each side's
+scaled dimensions are rounded to whole pixels. Target crops show target left,
+current right; checkpoint crops show earlier left, later right. The box includes
+nearby context, but content outside it is not shown. Metadata comes from the
+existing crop renderer; no additional capture or image analysis is performed.
 After a capture, `run` includes compact target feedback by default. Set
 `compareTo: "previous"` (resolved before capture) or a saved run ID to append
 the checkpoint pixel/structure change in the same call. The extra text block

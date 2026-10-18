@@ -257,6 +257,11 @@ test('region IDs can recover a crop after reevaluation', async () => {
   const regionId = state.regions[0]!.id;
   const again = await evaluateReferences({ project: f.root, name: 'desktop', regionId });
   expect(again.crop?.regionId).toBe(regionId);
+  expect(again.crop?.box.width).toBeGreaterThan(0);
+  expect(again.crop?.scale).toBeGreaterThan(0);
+  // PNG IHDR dimensions verify the metadata against the actual encoded image.
+  expect(again.crop?.width).toBe(again.crop!.png.readUInt32BE(16));
+  expect(again.crop?.height).toBe(again.crop!.png.readUInt32BE(20));
   expect(again.crop?.png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
   await writeFile(path.join(f.root, 'design/target.png'), red);
   await expect(
@@ -295,7 +300,31 @@ test('MCP returns the all-state ledger and one crop after a server restart witho
   const secondServer = new McpServer({ project: f.root, chrome: '/nonexistent/chrome' });
   const crop = await secondServer.call('reference', { name: 'desktop', region: id });
   expect(crop.isError).toBe(false);
+  expect(crop.content[0]).toMatchObject({
+    type: 'text',
+    text: expect.stringContaining('Content outside this box is not shown'),
+  });
   expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+  const detailed = await secondServer.call('reference', {
+    name: 'desktop',
+    region: id,
+    detail: 'json',
+  });
+  const text = detailed.content[0];
+  const metadata = JSON.parse(text?.type === 'text' ? text.text : '{}').crop;
+  expect(metadata).toMatchObject({
+    regionId: id,
+    box: {
+      x: expect.any(Number),
+      y: expect.any(Number),
+      width: expect.any(Number),
+      height: expect.any(Number),
+    },
+    scale: expect.any(Number),
+    width: expect.any(Number),
+    height: expect.any(Number),
+  });
+  expect(metadata.pngBase64).toBeUndefined();
   await secondServer.close();
 });
 
@@ -362,6 +391,31 @@ test('MCP requests an edit-only image delta on demand from saved runs', async ()
     region: id,
   });
   expect(crop.content[1]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+  const cropDetail = await server.call('reference', {
+    compare: 'previous',
+    fromRun: 'r1',
+    name: 'desktop',
+    region: id,
+    detail: 'json',
+  });
+  expect(cropDetail.isError).toBe(false);
+  const cropText = cropDetail.content[0];
+  const cropMetadata = JSON.parse(cropText?.type === 'text' ? cropText.text : '{}').crop;
+  const cropImage = cropDetail.content[1];
+  expect(cropImage?.type).toBe('image');
+  if (cropImage?.type === 'image') {
+    const bytes = Buffer.from(cropImage.data, 'base64');
+    expect(cropMetadata.width).toBe(bytes.readUInt32BE(16));
+    expect(cropMetadata.height).toBe(bytes.readUInt32BE(20));
+  }
+  expect(cropMetadata.box).toEqual(
+    expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+  );
+  expect(cropMetadata.scale).toBeGreaterThan(0);
+  expect(crop.content[0]).toMatchObject({
+    type: 'text',
+    text: expect.stringContaining('earlier left, later right'),
+  });
   const currentImage = path.join(
     next,
     'images',

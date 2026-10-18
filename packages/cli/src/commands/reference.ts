@@ -13,6 +13,7 @@ import {
   parseRunReport,
   renderCrops,
   structuralDiff,
+  type Crop,
   type Delta,
   type DesignReferenceLedger,
   type DiffResult,
@@ -42,6 +43,15 @@ type State =
       layout?: ReferenceLayoutDetail | { status: 'unavailable'; reason: string };
     });
 
+export type ReferenceCrop = Pick<Crop, 'box' | 'scale' | 'width' | 'height' | 'png'> & {
+  regionId: string;
+};
+
+function referenceCrop(regionId: string, rendered: Crop): ReferenceCrop {
+  const { box, scale, width, height, png } = rendered;
+  return { regionId, box, scale, width, height, png };
+}
+
 export interface ReferenceResult {
   schema: 'juxtapose.design-reference-set/v1';
   runId: string;
@@ -58,7 +68,7 @@ export interface ReferenceResult {
   };
   states: State[];
   /** Present only when a region ID was requested. Left is target, right is current. */
-  crop?: { regionId: string; png: Buffer };
+  crop?: ReferenceCrop;
 }
 
 export interface ReferenceChangeResult {
@@ -89,7 +99,7 @@ export interface ReferenceChangeResult {
   }>;
   /** Observed earlier→later facts deduplicated across the changed states. */
   changes?: string[];
-  crop?: { regionId: string; png: Buffer };
+  crop?: ReferenceCrop;
 }
 
 const inside = (child: string, parent: string) =>
@@ -163,7 +173,7 @@ export async function cropReferenceChange(options: {
     throw new Error('jux: saved capture changed; request a fresh region ID');
   const [rendered] = await renderCrops(left, right, [region]);
   if (!rendered) throw new Error('jux: region lies outside the saved images');
-  return { regionId: region.id, png: rendered.png };
+  return referenceCrop(region.id, rendered);
 }
 
 /** Compare two immutable saved runs, such as a checkpoint and a later attempt:
@@ -293,7 +303,7 @@ export async function evaluateReferenceChange(options: {
         const region = regions.find((r) => r.id === options.regionId);
         if (region) {
           const [rendered] = await renderCrops(left, right, [region]);
-          if (rendered) crop = { regionId: region.id, png: rendered.png };
+          if (rendered) crop = referenceCrop(region.id, rendered);
         }
       }
       const structural =
@@ -481,7 +491,7 @@ export async function evaluateReferences(options: {
           const target = await readFile(ledger.referenceImage);
           const [rendered] = await renderCrops(target, current, [region]);
           if (!rendered) throw new Error('region lies outside the saved images');
-          crop = { regionId: region.id, png: rendered.png };
+          crop = referenceCrop(region.id, rendered);
         }
       }
       states.push({
@@ -621,6 +631,10 @@ export async function referenceCommand(
             ? {
                 crop: {
                   regionId: result.crop.regionId,
+                  box: result.crop.box,
+                  scale: result.crop.scale,
+                  width: result.crop.width,
+                  height: result.crop.height,
                   pngBase64: result.crop.png.toString('base64'),
                 },
               }

@@ -990,9 +990,20 @@ export class McpServer {
                   text: detail
                     ? JSON.stringify({
                         ...change,
-                        crop: crop ? { regionId: crop.regionId } : undefined,
+                        crop: crop
+                          ? {
+                              regionId: crop.regionId,
+                              box: crop.box,
+                              scale: crop.scale,
+                              width: crop.width,
+                              height: crop.height,
+                            }
+                          : undefined,
                       })
-                    : savedChangeText(change),
+                    : savedChangeText(change) +
+                      (crop
+                        ? `\nCrop page box ${JSON.stringify(crop.box)}; nominal scale ${crop.scale}; earlier left, later right. Content outside this box is not shown.`
+                        : ''),
                 },
               ];
               if (crop)
@@ -1030,15 +1041,23 @@ export class McpServer {
               const first = result.content[0];
               if (first?.type === 'text') {
                 const parsed = JSON.parse(first.text) as {
-                  crop?: { regionId: string; pngBase64: string };
+                  crop?: {
+                    regionId: string;
+                    pngBase64: string;
+                    box: { x: number; y: number; width: number; height: number };
+                    scale: number;
+                    width: number;
+                    height: number;
+                  };
                   [key: string]: unknown;
                 };
                 if (parsed.crop) {
-                  const { pngBase64, regionId } = parsed.crop;
+                  const { pngBase64, ...metadata } = parsed.crop;
+                  const { regionId, box, scale } = metadata;
                   delete parsed.crop;
                   first.text = detail
-                    ? JSON.stringify({ ...parsed, crop: { regionId } })
-                    : `Design reference crop ${regionId}: target on the left, current capture on the right. Re-run reference for a fresh region ID if either image changed.`;
+                    ? JSON.stringify({ ...parsed, crop: metadata })
+                    : `Design reference crop ${regionId}: target on the left, current capture on the right. Page box ${JSON.stringify(box)}; nominal scale ${scale}. Content outside this box is not shown. Re-run reference for a fresh region ID if either image changed.`;
                   result.content.push({
                     type: 'image',
                     mimeType: 'image/png',
