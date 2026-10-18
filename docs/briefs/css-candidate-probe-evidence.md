@@ -177,3 +177,34 @@ on demand and internal: no new MCP tool/default, live Storybook support,
 automatic CSS cause, optimization loop or acceptance change. A future agent
 gate must require agent-chosen hypotheses and equal independently verified
 quality, with a feasible budget that does not depend on cached prefixes.
+
+## Agent-chosen hypothesis pilot: small observed difference
+
+`joint-agent-v1` completes one control-first Sol6.1 medium pair on a new static
+contact typography/spacing fixture. Both arms already use Jux, share source,
+four initial images and a working image/browser toolkit; treatment additionally
+has the hypothesis tool. Both achieve 2/2 exact visual states (also RGBA equal),
+6/6 behavior checks and preserved protected inputs. This is not Jux versus
+screenshots alone.
+
+Control takes six calls, 41.770s and 17636 counted tokens; treatment takes five,
+39.137s and 17950. Total input falls 119556→99567; cached input, excluded from
+the counted cap, is 102656→82176. Time is 6.3% lower in this pair, but counted
+tokens are 1.8% higher. Neither a material workflow win nor general effect is
+established. Both make the same wrong initial heading edit. Treatment only
+probes one heading23 hypothesis after that failure; it does not use joint sets
+or avoid the failed edit. The one-call difference occurs in pre-edit work.
+
+The reusable static engine's separate preflight verifies canonical reuse,
+source invalidation, concurrent-edit withholding and batch limits in nine
+native captures with no model calls. Its compact response is 420 bytes. Real
+MCP stdio preflight confirms schema and evidence delivery. Native tool time
+in the agent session is 410ms and included in the process interval.
+
+Cached-excluded token counts are not billing estimates. Applying published
+Standard Sol6.1 credit rates to the pilot logs gives a 5.5% lower credit-rate
+equivalent (1.28564→1.21474), not measured subscription depletion. The source,
+dated rate assumptions and components are in `standard-credit-estimate.json`.
+No replacement/extension run or MCP/default promotion follows. A useful next
+gate must test avoiding an uncertain edit before it happens, rather than late
+confirmation of a single guess.
