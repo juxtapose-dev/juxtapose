@@ -29,6 +29,24 @@ values are unclear, rather than adding styles to every response.
 Artifacts: `juxtapose-experiments/website-build/style-holdout-v1`, including
 the frozen protocol, prompts, native images, raw usage and independent grades.
 
+## Source-enabled follow-up
+
+A separate held-out responsive planner page gives both arms source access,
+target/starting images, the same other Jux tools and live browser inspection.
+Only treatment exposes saved styles. Both repair directly from source, use
+one Jux run to verify both viewports, and pass 2/2 exact visual states and
+4/4 behavior checks. Neither requests styles or another image. Both take
+four usage-bearing model calls. Control: 19.126 seconds and 13203 counted
+tokens; treatment: 22.279 seconds and 13614. Cached input is recorded
+separately, excluded from those counts. Both complete normally and preserve
+protected inputs.
+
+The predeclared one-pair futility stop applies: no added benefit in this case,
+no reverse pair and no default promotion. One pair does not establish causal
+time/token overhead. This confirms the inspection can be unnecessary when
+source already resolves the question. Artifacts and exact accounting are in
+`juxtapose-experiments/website-build/style-source-v3/RESULTS.md`.
+
 ## Contract and efficiency checks
 
 Exact query fields combine with AND; a unique match is required. Unchanged
