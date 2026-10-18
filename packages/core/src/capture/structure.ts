@@ -75,7 +75,18 @@ export const STRUCTURE_PROPS: readonly string[] = [
   // A pseudo-element's visible text lives here, not in a text node: without it
   // a CSS icon swap (`content: "★"` → `"☆"`) is unexplained pixels.
   'content',
+  // Shipment's measured mobile regression kept its columns but changed named
+  // areas. Without areas, reports exposed only displaced/resized children.
+  'grid-template-areas',
 ];
+
+/** Missing capture capability is unknown, not the property's initial value. */
+export function hasCapturedStyle(snapshot: StructureSnapshot, property: string): boolean {
+  if (property === 'grid-template-columns')
+    return snapshot.styleCaptureVersion === 2 || snapshot.styleCaptureVersion === 3;
+  if (property === 'grid-template-areas') return snapshot.styleCaptureVersion === 3;
+  return true;
+}
 
 /** Inherited properties are stored only where they differ from the parent. */
 export const INHERITED_PROPS: ReadonlySet<string> = new Set([
@@ -122,6 +133,7 @@ export const INITIAL_VALUES: Readonly<Record<string, string>> = {
   'box-shadow': 'none',
   gap: 'normal',
   'grid-template-columns': 'none',
+  'grid-template-areas': 'none',
   'z-index': 'auto',
   content: 'normal',
 };
@@ -471,7 +483,7 @@ export function normalizeStructure(
 
   const snapshot: StructureSnapshot = {
     schema: 'juxtapose.structure/v1',
-    styleCaptureVersion: 2,
+    styleCaptureVersion: 3,
     viewport,
     structureHash: hashElements(elements),
     // Compared with viewport.height (below-fold), so in the same image pixels.
@@ -703,6 +715,9 @@ function isStructureSnapshot(v: unknown): v is StructureSnapshot {
   return (
     isRecord(v) &&
     v['schema'] === 'juxtapose.structure/v1' &&
+    (v['styleCaptureVersion'] === undefined ||
+      v['styleCaptureVersion'] === 2 ||
+      v['styleCaptureVersion'] === 3) &&
     typeof v['structureHash'] === 'string' &&
     typeof v['contentHeight'] === 'number' &&
     isRecord(v['viewport']) &&

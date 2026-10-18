@@ -92,3 +92,32 @@ test('old captures do not invent values for properties introduced later', () => 
     unavailableProperties: ['grid-template-columns'],
   });
 });
+
+test('report properties accept measured grid areas, while v2 retains columns and abstains on areas', () => {
+  const s = snapshot();
+  const title = s.elements.find((e) => e.tag === 'h1')!;
+  s.styleCaptureVersion = 3;
+  title.styles['grid-template-areas'] = '"main badge" "meta action"';
+  title.styles['grid-template-columns'] = '200px 80px';
+  const properties = ['grid-template-areas', 'grid-template-columns'];
+  expect(inspectStructureElement(s, { tag: 'h1' }, properties)).toMatchObject({
+    status: 'measured',
+    provenance: 'structure',
+    styles: {
+      'grid-template-areas': '"main badge" "meta action"',
+      'grid-template-columns': '200px 80px',
+    },
+  });
+  s.styleCaptureVersion = 2;
+  expect(inspectStructureElement(s, { tag: 'h1' }, properties)).toMatchObject({
+    status: 'measured',
+    styles: { 'grid-template-columns': '200px 80px' },
+    unavailableProperties: ['grid-template-areas'],
+  });
+  delete s.styleCaptureVersion;
+  expect(inspectStructureElement(s, { tag: 'h1' }, properties)).toMatchObject({
+    status: 'measured',
+    styles: {},
+    unavailableProperties: properties,
+  });
+});

@@ -1,4 +1,4 @@
-import { STRUCTURE_PROPS, styleReader } from '../capture/structure.js';
+import { STRUCTURE_PROPS, hasCapturedStyle, styleReader } from '../capture/structure.js';
 import type { StructureElement, StructureSnapshot } from '../types.js';
 
 export const ELEMENT_QUERY_FIELDS = [
@@ -120,10 +120,9 @@ export function inspectStructureElement(
   const available: Array<[string, string]> = [];
   const unavailableProperties: string[] = [];
   for (const property of [...new Set(properties)].sort()) {
-    const value =
-      property === 'grid-template-columns' && snapshot.styleCaptureVersion !== 2
-        ? undefined
-        : read(found, property);
+    const value = hasCapturedStyle(snapshot, property)
+      ? read(found, property)
+      : undefined;
     if (value === undefined) unavailableProperties.push(property);
     else available.push([property, value]);
   }

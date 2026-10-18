@@ -234,9 +234,9 @@ export interface StructureElement {
 
 export interface StructureSnapshot {
   schema: 'juxtapose.structure/v1';
-  /** Version 2 includes computed grid-template-columns. Older sidecars omit
-   * this field, so comparisons skip that property until both sides have it. */
-  styleCaptureVersion?: 2;
+  /** Version 2 captures grid-template-columns; version 3 also captures
+   * grid-template-areas. Compare a property only when both versions support it. */
+  styleCaptureVersion?: 2 | 3;
   /** Captured image bounds, which can exceed the layout viewport for full-page captures. */
   viewport: Viewport;
   /** Original browser layout viewport, present for full-page captures. */

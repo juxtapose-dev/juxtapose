@@ -565,6 +565,14 @@ geometry extracted from a PNG design target or a previous-run comparison.
 | `element`    | object   | With `story`: exact saved element fields.          |
 | `properties` | string[] | With `element`: 1–12 captured computed properties. |
 
+Structure capture version 3 records computed `grid-template-areas` and classifies
+its changes as layout evidence. `report` element properties can return this
+saved value. Older captures list it in `unavailableProperties`; a structural
+comparison skips areas unless both captures support them. Version 2 and 3
+captures can still compare `grid-template-columns`. These are saved DOM
+measurements, not CSS inferred from a PNG target. Existing approvals are not
+recaptured or changed automatically.
+
 ### check
 
 Lists the stories from the last run that still need review, without

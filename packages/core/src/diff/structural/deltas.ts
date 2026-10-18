@@ -10,6 +10,7 @@
 import {
   INHERITED_PROPS,
   STRUCTURE_PROPS,
+  hasCapturedStyle,
   elementAt,
   styleReader,
   round,
@@ -130,13 +131,9 @@ export function computeFacts(
       }
 
       for (const prop of STRUCTURE_PROPS) {
-        // A pre-v2 baseline never captured this value. Comparing its empty
-        // default with a current grid would invent a change on every grid.
-        if (
-          prop === 'grid-template-columns' &&
-          (a.styleCaptureVersion !== 2 || b.styleCaptureVersion !== 2)
-        )
-          continue;
+        // Keep v2 columns comparable with v3, but never turn missing old area
+        // capture into a fabricated `none`→layout regression.
+        if (!hasCapturedStyle(a, prop) || !hasCapturedStyle(b, prop)) continue;
         // An unstored border colour resolves to currentColor, so a plain
         // `color` change would also report four phantom border-colour deltas
         // on every borderless element. No border, no border-colour fact.

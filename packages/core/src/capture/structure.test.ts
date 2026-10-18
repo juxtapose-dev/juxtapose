@@ -6,6 +6,7 @@ import {
   effectiveStyle,
   encodeStructure,
   MAX_ELEMENTS,
+  STRUCTURE_PROPS,
   normalizeStructure,
   type CdpSnapshot,
 } from './structure.js';
@@ -17,6 +18,15 @@ const fixture = JSON.parse(
     'utf8',
   ),
 ) as { viewport: { width: number; height: number }; raw: CdpSnapshot };
+// This real CDP fixture predates the areas slot. Preserve all recorded values
+// and supply the initial value for the newly requested property before visibility.
+for (const doc of fixture.raw.documents)
+  for (const styles of doc.layout.styles)
+    styles.splice(
+      STRUCTURE_PROPS.indexOf('grid-template-areas'),
+      0,
+      fixture.raw.strings.indexOf('none'),
+    );
 const snap = () => normalizeStructure(fixture.raw, fixture.viewport);
 const find = (pred: (e: ReturnType<typeof snap>['elements'][number]) => boolean) =>
   snap().elements.find(pred);
@@ -188,6 +198,32 @@ test('records the document content height, taller than the viewport', () => {
 test('gzip round-trips', () => {
   const s = snap();
   expect(decodeStructure(encodeStructure(s))).toEqual(s);
+});
+
+test('v3 records named grid areas without disturbing other captured style slots', () => {
+  const raw = structuredClone(fixture.raw);
+  const doc = raw.documents[0];
+  const node = doc.nodes.nodeName.findIndex((name) => raw.strings[name] === 'MAIN');
+  const row = doc.layout.nodeIndex.indexOf(node);
+  const areas = '"main badge" "meta action"';
+  raw.strings.push(areas);
+  doc.layout.styles[row][STRUCTURE_PROPS.indexOf('grid-template-areas')] =
+    raw.strings.length - 1;
+  const snapshot = normalizeStructure(raw, fixture.viewport);
+  const main = snapshot.elements.findIndex((element) => element.tag === 'main');
+  expect(snapshot.styleCaptureVersion).toBe(3);
+  expect(effectiveStyle(snapshot, main, 'grid-template-areas')).toBe(areas);
+  expect(effectiveStyle(snapshot, main, 'color')).toBe('rgb(17, 24, 39)');
+  expect(decodeStructure(encodeStructure(snapshot))).toEqual(snapshot);
+  for (const version of [undefined, 2, 3])
+    expect(
+      decodeStructure(
+        Buffer.from(JSON.stringify({ ...snapshot, styleCaptureVersion: version })),
+      ),
+    ).toBeDefined();
+  expect(() =>
+    decodeStructure(Buffer.from(JSON.stringify({ ...snapshot, styleCaptureVersion: 4 }))),
+  ).toThrow('sidecar');
 });
 
 test('caps at MAX_ELEMENTS and records the truncation', () => {
