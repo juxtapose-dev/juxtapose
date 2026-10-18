@@ -229,6 +229,13 @@ values, resolve that specific uncertainty before editing; use one focused crop
 when text evidence is insufficient. Experimental hypothesis probes are not part
 of the public tool set.
 
+Call advertised tool names directly when their arguments are known. If a client
+needs a catalog lookup, filter locally and return only the matching names; fetch
+a schema only for unknown arguments. Do not print full tool objects to confirm
+names already supplied. A recorded team repair printed 7,945 bytes of declarations
+before using those same known tools. This routing guidance avoids that repeated
+context; its effect on agent adherence and whole-task spend is not yet measured.
+
 For benchmark clients, collect optional tool feedback in the agent's existing
 final response rather than adding a separate tool call. Ask only for encountered
 friction: the needed observable, workaround actually used and a visible tool name

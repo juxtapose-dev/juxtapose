@@ -463,8 +463,10 @@ export const TOOLS: Tool[] = [
 
 // In a real Codex discovery packet, the client repeated 1567 bytes of server
 // guidance on 12 tools (17,237 redundant bytes). Keep workflows on their tools.
+// The team trace printed 7,945 bytes of already-advertised tool declarations.
+// Keep discovery routing within the existing 400-byte initialization budget.
 const INSTRUCTIONS =
-  'Reuse saved evidence; resolve only missing facts, edit, then capture. Prefer MCP measurements to images. Labels are not unique CSS selectors; measurements do not identify CSS causes. Ordinals: same labels, captured document order. Stop only when all required states, targets and behavior checks pass. Never approve unless the user asks.';
+  'Use known tools; resolve only missing facts. Discover names; schemas if needed. Prefer MCP measurements to images. Labels: not unique CSS selectors; measurements do not identify CSS causes. Ordinals: same-label captured document order. Stop when all required states, targets and behavior checks pass. Never approve unless the user asks.';
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
