@@ -252,8 +252,10 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'diff',
+    // A client printed 30KB of crop image data as text, truncating a later
+    // source result. Keep rendering guidance on both image-producing tools.
     description:
-      'Compare two snaps. Returns juxtapose.verdict/v1 (prefix: juxtapose.verdict-set/v1); differences are a result, not an error. Set crops when the text evidence is insufficient to judge appearance, including when `explained` is "full": it adds juxtapose.crops/v1 and baseline|current PNG strips.',
+      'Compare two snaps. Returns juxtapose.verdict/v1 (prefix: juxtapose.verdict-set/v1); differences are a result, not an error. Set crops when text cannot judge appearance, even if explained=full: adds juxtapose.crops/v1 and baseline|current PNG strips. Render images once; never print base64 as text.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -384,7 +386,7 @@ export const TOOLS: Tool[] = [
     // Both team decision replays requested JSON for facts analysis abstained
     // from producing. Distinguish a testable edit from a measured CSS cause.
     description:
-      'Read saved evidence without recapture. Use source + measurements to propose CSS edits as hypotheses; run affected states to verify. detail=layout with name: geometry; region: one paired PNG crop, padding adds context. Use returned cropRequest directly. detail=json: all saved matches, regions and current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. compare=previous compares saved runs, not target progress. Exact matches need no confirmation.',
+      'Read saved evidence without recapture. Use source + measurements to propose CSS edits as hypotheses; run affected states to verify. detail=layout with name: geometry; region: one paired PNG crop, padding adds context. Use returned cropRequest directly. detail=json: all saved matches, regions and current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. compare=previous compares saved runs, not target progress. Exact target matches need no reread. Render images once; never print base64 as text.',
     inputSchema: {
       type: 'object',
       properties: {

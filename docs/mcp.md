@@ -200,6 +200,26 @@ still includes the original doubled region, clamps to the shared image extent,
 and uses the existing scaling rule. Read the returned page box and nominal
 scale: padding cannot recover detail lost to downscaling or identify target DOM.
 It reuses saved images without recapture; it also works with checkpoint crops.
+
+Clients that execute tool calls in JavaScript must render each content block
+according to its type. Do not print the whole result or its enclosing
+`Promise.allSettled` wrapper: serializing PNG base64 as text wastes context and
+can truncate later results. Preserve `isError`, print text blocks, and render
+each image once. For a code-mode client with `text` and `image` helpers:
+
+```js
+const result = await tools.mcp__jux__reference({ name, region, padding: 96 });
+if (result.isError) text('MCP tool error');
+for (const block of result.content) {
+  if (block.type === 'text') text(block.text);
+  else if (block.type === 'image') image(block);
+}
+```
+
+Apply the same pattern separately to each fulfilled batch result; print a
+rejection as an error rather than serializing the entire batch. Standard MCP
+clients should display the native image content directly.
+
 If neither measurements
 nor the crop answer the question, report the missing observable instead of
 silently guessing a target value.
