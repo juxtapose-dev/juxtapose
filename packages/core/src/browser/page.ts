@@ -42,6 +42,13 @@ export interface FullPageSize extends Viewport {
   scale?: number;
 }
 
+/** The visual viewport a viewport capture clips to: page offset in CSS pixels, and zoom. */
+export interface ViewportZoom {
+  scale: number;
+  pageX: number;
+  pageY: number;
+}
+
 /**
  * The page a platform adapter drives: the public adapter API, exported from
  * `@juxtapose/core`. Adapters receive it in `showStory`, `settle`,
@@ -103,6 +110,8 @@ export interface Page {
    * Chrome's ICC chunk still in it). Core removes that metadata before hashing.
    */
   fullPageSize?(): Promise<FullPageSize>;
+  /** The zoom a viewport capture clips by, when mobile emulation zoomed the page; else undefined. */
+  viewportZoom?(): Promise<ViewportZoom | undefined>;
   screenshot(opts?: {
     mask?: string[];
     format?: 'png' | 'webp';
@@ -831,6 +840,17 @@ export class CdpPage implements Page {
         'jux: full-page capture exceeds safe image bounds (32767px per side, 100 million pixels)',
       );
     return scale === 1 ? { width, height } : { width, height, scale };
+  }
+
+  // A viewport capture clips by the visual viewport (see screenshot), so a
+  // zoomed page's structure needs the same offset and scale to line up with
+  // the image. Only mobile emulation zooms; without it there is no read.
+  async viewportZoom(): Promise<ViewportZoom | undefined> {
+    if (!this.emulation?.mobile) return undefined;
+    const { visualViewport } = await this.send('Page.getLayoutMetrics');
+    if (visualViewport.scale === 1) return undefined;
+    const { scale, pageX, pageY } = visualViewport;
+    return { scale, pageX, pageY };
   }
 
   /** Screenshotter.screenshotPage: prepare → fonts.ready → mask → getLayoutMetrics → captureScreenshot → cleanup. */

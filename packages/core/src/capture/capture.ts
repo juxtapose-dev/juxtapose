@@ -616,7 +616,10 @@ async function captureStoryDocument(
   // paint barrier, before the shutter, with nothing in between that could
   // mutate the page.
   const size: FullPageSize = fullPage ? await page.fullPageSize!() : layoutViewport;
-  const { scale = 1, ...effective } = size;
+  const { scale: fullPageScale = 1, ...effective } = size;
+  const zoom = fullPage ? undefined : await page.viewportZoom?.();
+  const scale = zoom?.scale ?? fullPageScale;
+  const origin = zoom ? { x: zoom.pageX, y: zoom.pageY } : { x: 0, y: 0 };
   phase('structure capture');
   const tStructure = performance.now();
   const structureEnabled =
@@ -626,7 +629,14 @@ async function captureStoryDocument(
       ? { mark: 0, snapshot: 0, verify: 0, normalize: 0, cleanup: 0 }
       : undefined;
   const structure = structureEnabled
-    ? await captureStructure(page, effective, params.mask ?? [], structureTimings, scale)
+    ? await captureStructure(
+        page,
+        effective,
+        params.mask ?? [],
+        structureTimings,
+        scale,
+        origin,
+      )
     : undefined;
   if (structure && fullPage) structure.layoutViewport = layoutViewport;
   if (structure && deps.platform.structureContextIds?.length) {

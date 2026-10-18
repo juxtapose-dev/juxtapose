@@ -244,4 +244,49 @@ describe.skipIf(!chrome)('device emulation in capture', () => {
     const mark = snap?.structure?.elements.find((e) => e.id === 'mark');
     expect(mark?.rect).toEqual({ x: 490, y: 100, w: 100, h: 100 });
   }, 30_000);
+
+  it('records structure in image pixels for a zoomed viewport capture', async () => {
+    const platform = createUrlPlatform([{ id: 'w', url: `${base}/wide` }]);
+    const snap = await withPage(async (page) =>
+      captureStory(
+        page,
+        await story(platform, { device: 'iphone-15' }),
+        { platform, baseUrl: base },
+        viewport,
+      ),
+    );
+    const scale = 393 / 980;
+    const { data, info } = await sharp(snap!.image)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    expect(Math.abs(info.width - 393)).toBeLessThanOrEqual(1);
+    const mark = snap?.structure?.elements.find((e) => e.id === 'mark');
+    expect(Math.abs(mark!.rect.x - 490 * scale)).toBeLessThanOrEqual(2);
+    expect(Math.abs(mark!.rect.y - 100 * scale)).toBeLessThanOrEqual(2);
+    expect(Math.abs(mark!.rect.w - 100 * scale)).toBeLessThanOrEqual(2);
+    const cx = Math.round(mark!.rect.x + mark!.rect.w / 2);
+    const cy = Math.round(mark!.rect.y + mark!.rect.h / 2);
+    const at = (cy * info.width + cx) * info.channels;
+    expect([...data.subarray(at, at + 3)]).toEqual([255, 0, 0]);
+    expect(snap!.structure!.contentHeight).toBeCloseTo(3000 * scale, 0);
+  }, 30_000);
+
+  it('records a meta-viewport page’s viewport capture unscaled', async () => {
+    const platform = createUrlPlatform([{ id: 'w', url: `${base}/wide-meta` }]);
+    const snap = await withPage(async (page) =>
+      captureStory(
+        page,
+        await story(platform, { device: 'iphone-15' }),
+        { platform, baseUrl: base },
+        viewport,
+      ),
+    );
+    const { info } = await sharp(snap!.image).toBuffer({ resolveWithObject: true });
+    expect([info.width, info.height]).toEqual([393, 852]);
+    // At scale 1 the marker (left 490) is past the 393px viewport, so it is
+    // not recorded; scaled, it would be at x 196.
+    const ids = snap!.structure!.elements.map((e) => e.id);
+    expect(ids).not.toContain('mark');
+    expect(snap!.structure!.contentHeight).toBe(3000);
+  }, 30_000);
 });
