@@ -325,8 +325,7 @@ export const TOOLS: Tool[] = [
         report: {
           type: 'string',
           enum: ['summary', 'full'],
-          description:
-            'summary (default); full adds diagnostics, not target evidence',
+          description: 'summary (default); full adds diagnostics, not target evidence',
         },
       },
     },
@@ -334,7 +333,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'report',
     description:
-      'Read saved baseline evidence without capture; question names the missing fact. Default: bounded summary; story: one full capture result, including available controlGeometry (measured approved/current control sizes, not CSS causes); detail=full: complete RunReport; detail=runs: saved run IDs, newest first. Request one story when wrapper resize facts leave control dimensions unclear. With story and element, inspect unique saved current-element rect/styles; optional properties narrows the captured values. Use only when current computed values are unclear. runId selects an older saved run.',
+      'Read saved baseline evidence without capture; question names the missing fact. Default: bounded summary; story: one full capture result, including available controlGeometry (measured approved/current control sizes, not CSS causes); detail=full: complete RunReport; detail=runs: saved run IDs, newest first. Select a story for unclear control dimensions. With story and element, inspect unique saved current-element rect/styles; properties selects CSS values. Request only missing facts. runId selects an older saved run.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -347,7 +346,7 @@ export const TOOLS: Tool[] = [
           minProperties: 1,
           additionalProperties: false,
           properties: Object.fromEntries(
-            ELEMENT_QUERY_FIELDS.map((key) => [key, { type: 'string' }]),
+            ELEMENT_QUERY_FIELDS.map((key) => [key, { type: 'string', pattern: '\\S' }]),
           ),
           description:
             'With story: exact saved current-element fields (AND); ambiguous or truncated snapshots abstain. Not a live CSS selector.',
@@ -358,7 +357,7 @@ export const TOOLS: Tool[] = [
           minItems: 1,
           maxItems: 12,
           description:
-            'With element: captured computed properties to return; default typography and vertical margins. No live query.',
+            'CSS names; uncaptured values unavailable. Defaults: typography and vertical margins.',
         },
       },
     },

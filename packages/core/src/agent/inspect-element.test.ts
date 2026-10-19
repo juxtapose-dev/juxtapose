@@ -54,9 +54,11 @@ test('exact query fields combine and unmatched queries stay explicit', () => {
   });
   expect(isElementQuery({ selector: 'h1' })).toBe(false);
   expect(isElementQuery({})).toBe(false);
-  expect(() => inspectStructureElement(s, { tag: 'h1' }, ['height'])).toThrow(
-    'captured computed-property',
-  );
+  expect(inspectStructureElement(s, { tag: 'h1' }, ['height'])).toMatchObject({
+    status: 'measured',
+    unavailableProperties: ['height'],
+    styles: {},
+  });
 });
 test('long style values are omitted whole while later short properties survive', () => {
   const s = snapshot(),
@@ -120,4 +122,21 @@ test('report properties accept measured grid areas, while v2 retains columns and
     styles: {},
     unavailableProperties: properties,
   });
+});
+
+test('uncaptured CSS values preserve known measurements without inventing defaults', () => {
+  const result = inspectStructureElement(snapshot(), { tag: 'h1' }, [
+    'opacity',
+    'image-rendering',
+    'transform',
+    '--brand-color',
+  ]);
+  expect(result).toMatchObject({
+    status: 'measured',
+    styles: { opacity: '1', transform: 'none' },
+    unavailableProperties: ['--brand-color', 'image-rendering'],
+  });
+  expect(() =>
+    inspectStructureElement(snapshot(), { tag: 'h1' }, ['color; display:none']),
+  ).toThrow('CSS property names');
 });

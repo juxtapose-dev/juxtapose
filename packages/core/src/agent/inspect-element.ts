@@ -61,10 +61,13 @@ export function checkElementProperties(value: unknown): asserts value is string[
     !Array.isArray(value) ||
     value.length === 0 ||
     value.length > 12 ||
-    value.some((p) => typeof p !== 'string' || !STRUCTURE_PROPS.includes(p))
+    value.some(
+      (p) =>
+        typeof p !== 'string' || p.length > 100 || !/^[-a-zA-Z][a-zA-Z0-9-]*$/.test(p),
+    )
   )
     throw new Error(
-      'properties must contain 1–12 captured computed-property names (e.g. font-size, line-height, margin-top, padding-top); width/height are in rect',
+      'properties must contain 1–12 CSS property names; uncaptured values are reported unavailable, and width/height are in rect',
     );
 }
 /** In a held-out typography choice, saved current styles identified the exact
@@ -120,9 +123,12 @@ export function inspectStructureElement(
   const available: Array<[string, string]> = [];
   const unavailableProperties: string[] = [];
   for (const property of [...new Set(properties)].sort()) {
-    const value = hasCapturedStyle(snapshot, property)
-      ? read(found, property)
-      : undefined;
+    // A real agent asked for image-rendering with opacity/transform. Rejecting
+    // the entire request discarded known facts and stopped its iteration.
+    const value =
+      STRUCTURE_PROPS.includes(property) && hasCapturedStyle(snapshot, property)
+        ? read(found, property)
+        : undefined;
     if (value === undefined) unavailableProperties.push(property);
     else available.push([property, value]);
   }

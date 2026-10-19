@@ -609,9 +609,9 @@ explicit status instead of choosing an element.
 This returns `juxtapose.current-element/v1`, the saved run/capture IDs, structure
 hash, matched identity, border-box `rect` and captured computed values. Defaults
 are font family, size, weight, line height, letter spacing and vertical margins.
-`properties` selects 1–12 captured properties. CSS width/height are not collected;
+`properties` selects 1–12 CSS property names. CSS width/height are not collected;
 use `rect` for border-box dimensions. Later-added properties are marked in
-`unavailableProperties` for old captures rather than filled with invented values.
+`unavailableProperties` when absent from a capture or unsupported by the capture format, rather than filled with invented values. A request mixing captured and uncaptured properties still returns the available measurements.
 A 3 KB element payload budget omits whole oversized style values and reports
 `omittedStyles`; identities are never truncated. The MCP envelope is capped at
 4 KB. Values describe the saved current capture time; target values and CSS-rule
@@ -649,13 +649,13 @@ prioritized before the detail budget; this flag is not a claim about a CSS cause
 Older reports may not contain it. This is approved-baseline evidence, not
 geometry extracted from a PNG design target or a previous-run comparison.
 
-| Argument     | Type     | Description                                        |
-| ------------ | -------- | -------------------------------------------------- |
-| `runId`      | string   | Saved run ID (default latest).                     |
-| `story`      | string   | Exact capture key to inspect.                      |
-| `detail`     | string   | `"summary"` (default), `"full"` or `"runs"`.       |
-| `element`    | object   | With `story`: exact saved element fields.          |
-| `properties` | string[] | With `element`: 1–12 captured computed properties. |
+| Argument     | Type     | Description                                                                                           |
+| ------------ | -------- | ----------------------------------------------------------------------------------------------------- |
+| `runId`      | string   | Saved run ID (default latest).                                                                        |
+| `story`      | string   | Exact capture key to inspect.                                                                         |
+| `detail`     | string   | `"summary"` (default), `"full"` or `"runs"`.                                                          |
+| `element`    | object   | With `story`: exact saved element fields.                                                             |
+| `properties` | string[] | With `element`: 1–12 CSS property names; uncaptured properties are listed in `unavailableProperties`. |
 
 Structure capture version 3 records computed `grid-template-areas` and classifies
 its changes as layout evidence. `report` element properties can return this
