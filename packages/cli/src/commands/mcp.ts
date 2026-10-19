@@ -286,7 +286,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'After editing, capture affected stories and variants together (Storybook/Ladle or URLs). One call returns the baseline verdict, target hint, and optional compareTo checkpoint change; do not repeat them with report or reference. changesFromApproved measures approved→current, not design-target error. Includes selective control measurements. A subset pass does not verify omitted targets. stories selects exact capture IDs; configured URL viewports have separate IDs. Use all=true to verify every configured state. Use report=full for missing state detail. rgbaStates counts decoded-pixel equality independently of policy.',
+      'After editing, capture affected stories and variants together (Storybook/Ladle or URLs). One call returns the baseline verdict, target hint, and optional compareTo checkpoint change; do not repeat them with report or reference. changesFromApproved measures approved→current, not design-target error. Includes selective control measurements. A subset pass does not verify omitted targets. stories selects exact capture IDs; configured URL viewports have separate IDs. Use all=true to verify every configured state. Prefer summary for visual edits; full adds capture diagnostics. rgbaStates counts decoded-pixel equality independently of policy.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -326,7 +326,7 @@ export const TOOLS: Tool[] = [
           type: 'string',
           enum: ['summary', 'full'],
           description:
-            'Response detail (default summary); full returns the complete RunReport',
+            'summary (default); full adds diagnostics, not target evidence',
         },
       },
     },

@@ -10,6 +10,11 @@ the complete `RunReport` remains in the saved run and is available through
 `report` or `run({report: "full"})`. `reference` can compare two saved captures
 on demand. `jux run --json` is unchanged.
 
+For visual iteration, omit `report` or use `report: "summary"`. Both report modes
+include the same design-target feedback. Full mode adds raw capture details,
+including timing diagnostics; it does not add target measurements. To inspect
+those diagnostics after a capture, use `report({detail: "full"})` on the saved run.
+
 The compact `run` response lists up to eight captures needing attention and
 points to `report` for details. A `stale` baseline means its saved image bytes
 match the capture, but its approval commit is outside the current branch's
