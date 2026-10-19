@@ -94,7 +94,7 @@ export const SPECS: Record<string, Spec> = {
     max: 0,
   },
   diff: { flags: ['json', 'project', 'prefix', 'runs', 'crops'], max: 2 },
-  mcp: { flags: ['project', 'concurrency', 'chrome', 'no-daemon'], max: 0 },
+  mcp: { flags: ['project', 'concurrency', 'chrome', 'no-daemon', 'tools'], max: 0 },
 };
 
 /** Flags whose value is a string, so a bare `--story` is an error. */
@@ -104,6 +104,7 @@ const TAKES_VALUE = new Set([
   'story',
   'explain',
   'chrome',
+  'tools',
   'run',
   'region',
   'padding',

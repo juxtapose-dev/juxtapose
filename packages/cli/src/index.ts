@@ -36,9 +36,10 @@ Usage
                                  the effective capture settings for one story or variant key, and
                                  which layer each came from (config, story, stories glob, variant, CLI)
   jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix, two runs with --runs)
-  jux mcp [--project <dir>] [--concurrency <n>]
-                                 MCP server on stdio for coding agents: snap, diff, list, run, check, handoff, reference, approve
+  jux mcp [--project <dir>] [--concurrency <n>] [--tools <names>]
+                                 MCP server on stdio for coding agents
                                  (--concurrency: snaps at once, 1-16, default half the cores up to 4)
+                                 (--tools: exact comma-separated tool names; default all tools)
   jux --version                  print installed package versions
 `;
 
@@ -179,6 +180,7 @@ async function main(argv: string[]): Promise<number> {
       origin: { type: 'string' },
       platform: { type: 'string' },
       concurrency: { type: 'string' },
+      tools: { type: 'string' },
       since: { type: 'string' },
       all: { type: 'boolean', default: false },
       fix: { type: 'boolean', default: false },

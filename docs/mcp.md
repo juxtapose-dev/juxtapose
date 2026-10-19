@@ -64,13 +64,33 @@ signal exits immediately.
 
 ## Set up the server
 
-The server takes three options:
+The server accepts these options:
 
 - `--project <dir>`: the project root. It defaults to the directory the client
   starts the server in. Tools can work only in this directory or below it.
 - `--chrome <path>`: use this Chromium binary instead of the pinned one, as for
   `jux snap`.
 - `--no-daemon`: launch a private browser instead of using the warm one.
+- `--concurrency <n>`: concurrent snaps, from 1 to 16; defaults to half the cores,
+  capped at 4.
+- `--tools <names>`: expose only these exact comma-separated tool names. By
+  default all ten tools are available. Unknown or empty names fail at startup;
+  surrounding whitespace is ignored and duplicate names are listed once.
+  Omitted tools cannot be invoked through this server.
+
+If your client already filters tools, prefer that capability. Otherwise, for a
+focused capture-and-comparison session, configure the server with:
+
+```bash
+jux mcp --tools run,report,reference
+```
+
+This subset is **not read-only**: `run` captures pages and writes saved results.
+It excludes story discovery (`list`), review blockers (`check`), capture-setting
+inspection (`explain`), and approval, along with the URL and handoff tools. Choose
+the subset only when those capabilities are unnecessary. This reduces the tool
+catalog sent to the client; it does not change capture or comparison semantics.
+Tool selection is a CLI option, not a project configuration setting.
 
 ### Claude Code
 

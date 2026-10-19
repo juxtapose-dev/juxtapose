@@ -62,6 +62,8 @@ export const PROTOCOL_VERSION = '2025-06-18';
 
 export interface McpFlags {
   project?: string;
+  /** Exact comma-separated tool names; omitted exposes every tool. */
+  tools?: string;
   chrome?: string;
   'no-daemon'?: boolean;
   /** Snap calls that may capture at once; see SNAP_SLOTS. */
@@ -199,7 +201,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'snap',
     description:
-      'URL workflow: capture pixels + structure under a name. If no before snap exists, snap before editing; snap after editing under another name, then diff. Pass url+as for one page, or urls+asPrefix for several. For Storybook/Ladle use run instead.',
+      'URL workflow: capture pixels + structure under a name. If no before snap exists, snap before editing; snap after editing under another name, then diff if available. Pass url+as for one page, or urls+asPrefix for several. For Storybook/Ladle, prefer run if available.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -487,6 +489,26 @@ export const TOOLS: Tool[] = [
 // Keep discovery routing within the existing 400-byte initialization budget.
 const INSTRUCTIONS =
   'Use known tools; resolve only missing facts. Discover names; schemas if needed. Prefer MCP measurements to images. Labels: not unique CSS selectors; measurements do not identify CSS causes. Ordinals: same-label captured document order. Stop when all required states, targets and behavior checks pass. Never approve unless the user asks.';
+
+const RESTRICTED_INSTRUCTIONS =
+  'Use only tools advertised by this server. Reuse returned facts; inspect only unresolved questions. Stop when all required run verdicts, design targets and behavior checks pass. Never approve unless the user asks.';
+
+export function resolveMcpTools(value: unknown): readonly Tool[] {
+  if (value === undefined) return TOOLS;
+  if (typeof value !== 'string' || !value.trim())
+    throw new Error(
+      '--tools must be a nonempty comma-separated list of exact tool names',
+    );
+  const names = value.split(',').map((name) => name.trim());
+  if (names.some((name) => !name))
+    throw new Error('--tools must not contain empty names');
+  for (const name of names)
+    if (!TOOLS.some((tool) => tool.name === name))
+      throw new Error(
+        `--tools: unknown tool '${name}'; available: ${TOOLS.map((tool) => tool.name).join(',')}`,
+      );
+  return TOOLS.filter((tool) => names.includes(tool.name));
+}
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -810,6 +832,8 @@ export function compactReferenceFeedback(result: ReferenceResult) {
 /** One server: the tool handlers, the scheduler and the session browser.
  *  The transport is separate so tests can drive it without a process. */
 export class McpServer {
+  readonly tools: readonly Tool[];
+  readonly instructions: string;
   private browser: Promise<Browser> | null = null;
   private lending: Promise<Browser> | null = null;
   private closed = false;
@@ -837,6 +861,9 @@ export class McpServer {
     } = {},
   ) {
     this.layouts = new ReferenceLayoutCache(opts.experimentalTargetTextProvider);
+    this.tools = resolveMcpTools(flags.tools);
+    this.instructions =
+      flags.tools === undefined ? INSTRUCTIONS : RESTRICTED_INSTRUCTIONS;
     this.freezeImages = opts.freezeImages;
     this.controlMeasurements = opts.controlMeasurements ?? true;
     this.reports = new SavedReportCache({
@@ -911,6 +938,7 @@ export class McpServer {
    *  until it settles: only run can stop early, and leftover snap or diff
    *  work must not overlap a call that touches the same files. */
   async call(name: string, args: Args, signal?: AbortSignal): Promise<ToolResult> {
+    if (!this.hasTool(name)) throw new UnknownTool(`unknown or disabled tool '${name}'`);
     // The place in line is taken now, before planning awaits anything, so
     // conflicting calls are granted in the order they arrived.
     const ticket = this.scheduler.ticket();
@@ -937,6 +965,10 @@ export class McpServer {
     } finally {
       release();
     }
+  }
+
+  hasTool(name: string): boolean {
+    return this.tools.some((tool) => tool.name === name);
   }
 
   private async plan(name: string, args: Args): Promise<Planned> {
@@ -1806,15 +1838,15 @@ export async function handleMessage(
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'jux', version },
-        instructions: INSTRUCTIONS,
+        instructions: server.instructions,
       });
     case 'ping':
       return rpcResult(id, {});
     case 'tools/list':
-      return rpcResult(id, { tools: TOOLS });
+      return rpcResult(id, { tools: server.tools });
     case 'tools/call': {
       const name = params.name;
-      if (typeof name !== 'string' || !TOOLS.some((t) => t.name === name))
+      if (typeof name !== 'string' || !server.hasTool(name))
         return rpcError(id, -32602, `unknown tool: ${String(name)}`);
       const args = params.arguments ?? {};
       if (!isRecord(args)) return rpcError(id, -32602, 'arguments must be an object');
@@ -1841,6 +1873,14 @@ const rpcError = (id: RpcId, code: number, message: string): RpcResponse => ({
 const SIGNALS = { SIGINT: 2, SIGTERM: 15 } as const;
 
 export async function mcpCommand(flags: McpFlags, version: string): Promise<number> {
+  try {
+    resolveMcpTools(flags.tools);
+  } catch (error) {
+    process.stderr.write(
+      `jux mcp: ${error instanceof Error ? error.message : String(error)}.\n`,
+    );
+    return EXIT.usage;
+  }
   const config = await loadConfig(path.resolve(flags.project ?? process.cwd()));
   // Once at startup, on stderr (stdout is the protocol); each snap and run
   // call also reports them in its own result.
