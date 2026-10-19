@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { encodeStoryId, encodeStructure, type StructureSnapshot } from '@juxtapose/core';
+import { deflateSync } from 'node:zlib';
 import { captureIo } from '../io.js';
 import {
   evaluateReferenceChange,
@@ -39,6 +40,40 @@ const red = Buffer.from(
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
+
+/** Minimal opaque white RGBA PNG, so tests need no image library. */
+function whitePng(width: number, height: number): Buffer {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (b: Buffer) => {
+    let c = 0xffffffff;
+    for (const byte of b) c = crcTable[(c ^ byte) & 0xff]! ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  const rows = Buffer.alloc((width * 4 + 1) * height, 255);
+  for (let y = 0; y < height; y++) rows[y * (width * 4 + 1)] = 0;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(rows)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'jux-reference-cli-'));
@@ -176,6 +211,50 @@ test('reference question leaves saved evidence and response unchanged', async ()
   } finally {
     await server.close();
   }
+});
+
+test('a full-page capture shorter than its target fails with a compact extent, never pass or incompatible', async () => {
+  const f = await fixture();
+  // Target is 12x10; the saved capture is 12x8 (see fixture), so dh = -2.
+  await writeFile(path.join(f.root, 'design', 'tall.png'), whitePng(12, 10));
+  const configPath = path.join(f.root, 'juxtapose.config.json');
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  config.designReferences.mobile = {
+    ...config.designReferences.mobile,
+    image: 'design/tall.png',
+    viewport: { width: 12, height: 6 },
+    captureKind: 'full-page',
+  };
+  await writeFile(configPath, JSON.stringify(config));
+  const reportPath = path.join(f.run, 'report.json');
+  const report = JSON.parse(await readFile(reportPath, 'utf8'));
+  report.results[1].layoutViewport = { width: 12, height: 6 };
+  await writeFile(reportPath, JSON.stringify(report));
+
+  const result = await evaluateReferences({ project: f.root, name: 'mobile' });
+  expect(result.outcome).toBe('fail');
+  expect(result.states[0]).toMatchObject({
+    status: 'fail',
+    mismatchPixels: 24,
+    extent: { dw: 0, dh: -2, missingAreaPixels: 24 },
+  });
+
+  const io = captureIo();
+  expect(await referenceCommand('mobile', { project: f.root }, { io })).toBe(1);
+  expect(io.stdout()).toContain('current is 2 px shorter than the target');
+
+  const run = {
+    content: [{ type: 'text' as const, text: JSON.stringify({ runId: 'r1' }) }],
+    isError: false,
+  };
+  const hint = JSON.parse(
+    ((await withDesignReferenceFeedback(run, f.root)).content[1] as { text: string })
+      .text,
+  );
+  const state = hint.states.find((x: { name: string }) => x.name === 'mobile');
+  expect(hint.outcome).toBe('fail');
+  expect(state).toMatchObject({ status: 'fail', extent: { dh: -2, dw: 0 } });
+  expect(state.extentNote).toContain('current is 2 px shorter than the target');
 });
 
 test('a run result gains bounded design feedback without changing its report block or recapturing', async () => {

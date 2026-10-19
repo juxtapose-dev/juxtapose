@@ -45,7 +45,20 @@ export interface DesignReferenceLedger {
   regions: Array<ChangedRegion & { id: string; changedPixels?: number }>;
   /** Sampled co-located colors from visible mismatches, not inferred styles. */
   visibleColors?: VisibleColorEvidence;
+  /** Present only when a full-page capture and its target differ in size and
+   * were compared over the overlap (top-left aligned; missing area counts as
+   * mismatching). `dw`/`dh` are current minus reference, in image pixels. */
+  extent?: DesignReferenceExtent;
   structure: { status: 'unavailable'; reason: 'design-reference-has-no-dom' };
+}
+
+export interface DesignReferenceExtent {
+  current: Viewport;
+  reference: Viewport;
+  dw: number;
+  dh: number;
+  /** Pixels of the bounding canvas covered by only one of the two images. */
+  missingAreaPixels: number;
 }
 
 export interface DesignReferenceCurrent {
@@ -177,6 +190,18 @@ export async function compareDesignReference(input: {
                   current.viewport.height * dpr !== currentPixels.height
                 ? 'current-geometry'
                 : undefined;
+  if (
+    reason === 'current-geometry' &&
+    extentComparable(current, currentKind, dpr, currentPixels, expectedPixels)
+  ) {
+    const cachedExtent = input.cacheDir
+      ? await readCachedLedger(input.cacheDir, comparisonId, base)
+      : null;
+    if (cachedExtent) return cachedExtent;
+    const ledger = await compareOverlap(base, target, current.image, threshold);
+    if (input.cacheDir) await writeCachedLedger(input.cacheDir, ledger);
+    return ledger;
+  }
   if (reason) return { ...base, reason };
   const cached = input.cacheDir
     ? await readCachedLedger(input.cacheDir, comparisonId, base)
@@ -186,8 +211,9 @@ export async function compareDesignReference(input: {
     threshold,
     includeVisibleColors: true,
   });
-  // The geometry checks above ensure diffImages can never silently compare
-  // different dimensions; keep this guard if its implementation changes.
+  // Same-extent comparisons only reach here: a differing full-page extent is
+  // handled by compareOverlap above, and every other geometry mismatch is
+  // 'incompatible'. Keep this guard if diffImages changes.
   if (diff.dimensionMismatch) return { ...base, reason: 'current-geometry' };
   const ledger: DesignReferenceLedger = {
     ...base,
@@ -205,8 +231,69 @@ export async function compareDesignReference(input: {
   return ledger;
 }
 
+/** A full-page capture whose own metadata is consistent (image bounds match
+ * viewport × DPR) but whose extent differs from the target. Anything else
+ * stays 'incompatible': it is not a plain page-length difference. */
+function extentComparable(
+  current: DesignReferenceCurrent,
+  kind: 'viewport' | 'full-page',
+  dpr: number,
+  currentPixels: Viewport,
+  expectedPixels: Viewport,
+): boolean {
+  return (
+    kind === 'full-page' &&
+    current.viewport.width * dpr === currentPixels.width &&
+    current.viewport.height * dpr === currentPixels.height &&
+    (currentPixels.width !== expectedPixels.width ||
+      currentPixels.height !== expectedPixels.height)
+  );
+}
+
+/** Mirror a top-left bounding canvas: pixelmatch the shared overlap, then count
+ * every pixel present in only one image as a mismatch. Never resizes or aligns.
+ * The result is always 'fail': the extents differ, so the target is not met. */
+async function compareOverlap(
+  base: DesignReferenceLedger,
+  target: Buffer,
+  current: Buffer,
+  threshold: number,
+): Promise<DesignReferenceLedger> {
+  const ref = base.geometry.referencePixels;
+  const cur = base.geometry.currentPixels;
+  const width = Math.min(ref.width, cur.width);
+  const height = Math.min(ref.height, cur.height);
+  const crop = (image: Buffer) =>
+    sharp(image).extract({ left: 0, top: 0, width, height }).png().toBuffer();
+  const [a, b] = await Promise.all([crop(target), crop(current)]);
+  const diff = await diffImages(a, b, { threshold, includeVisibleColors: true });
+  const canvas = Math.max(ref.width, cur.width) * Math.max(ref.height, cur.height);
+  const missingAreaPixels = canvas - width * height;
+  const mismatchPixels = diff.mismatchPixels + missingAreaPixels;
+  return {
+    ...base,
+    status: 'fail',
+    reason: 'current-geometry',
+    mismatchPixels,
+    mismatchPercent: (mismatchPixels / canvas) * 100,
+    rawMismatchPixels: (diff.rawMismatchPixels ?? 0) + missingAreaPixels,
+    ...(diff.visibleColors ? { visibleColors: diff.visibleColors } : {}),
+    regions: (diff.rankedChangedRegions ?? diff.changedRegions).map((r, i) => ({
+      ...r,
+      id: `${base.comparisonId.slice(0, 16)}:${i + 1}`,
+    })),
+    extent: {
+      current: cur,
+      reference: ref,
+      dw: cur.width - ref.width,
+      dh: cur.height - ref.height,
+      missingAreaPixels,
+    },
+  };
+}
+
 /** A new analysis algorithm or ledger meaning must use a new directory version. */
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const MAX_CACHE_BYTES = 1024 * 1024;
 
 async function safeCacheDir(dir: string, create: boolean): Promise<string | null> {
@@ -252,6 +339,7 @@ async function readCachedLedger(
       ledger.storyId !== expected.storyId ||
       ledger.name !== expected.name ||
       !['pass', 'fail'].includes(ledger.status) ||
+      (ledger.status === 'pass' && ledger.extent !== undefined) ||
       !Array.isArray(ledger.regions) ||
       JSON.stringify(ledger.geometry) !== JSON.stringify(expected.geometry) ||
       JSON.stringify(ledger.policy) !== JSON.stringify(expected.policy)

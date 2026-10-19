@@ -56,6 +56,7 @@ import { agentRunSummary, SavedReportCache, savedRuns } from './agent-run-report
 import type { ReferenceChangeResult, ReferenceResult } from './reference.js';
 import { ReferenceLayoutCache } from './reference-layout.js';
 import type { TargetTextProvider } from './reference-paint.js';
+import { extentGuidance } from './reference-extent.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 
@@ -757,6 +758,12 @@ export function compactReferenceFeedback(result: ReferenceResult) {
         : {}),
       ...(state.progress ? { progress: state.progress } : {}),
       ...(state.bestRun ? { bestRun: state.bestRun } : {}),
+      ...(state.extent
+        ? {
+            extent: { dh: state.extent.dh, dw: state.extent.dw },
+            extentNote: extentGuidance(state.extent),
+          }
+        : {}),
       ...(state.regions[0]
         ? {
             largestRegion: {
@@ -1569,6 +1576,11 @@ export class McpServer {
           first.text = JSON.stringify(
             agentRunSummary(report, {
               controlMeasurements: this.controlMeasurements,
+              designReferencesCompared: withFeedback.content.some(
+                (block) =>
+                  block.type === 'text' &&
+                  block.text.includes('juxtapose.design-reference-hint/v1'),
+              ),
             }),
           );
         }

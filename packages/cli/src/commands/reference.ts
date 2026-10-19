@@ -23,6 +23,7 @@ import {
 import { loadConfig } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
+import { extentGuidance } from './reference-extent.js';
 import { observedChanges } from './agent-run-report.js';
 import { ReferenceLayoutCache, type ReferenceLayoutDetail } from './reference-layout.js';
 
@@ -699,7 +700,7 @@ export async function referenceCommand(
           io.out(`- ${state.name} (${state.storyId}): incompatible — ${state.reason}\n`);
         else
           io.out(
-            `- ${state.name} (${state.storyId}): ${state.status} — ${state.mismatchPixels} changed pixels (${state.mismatchPercent}%), ${state.regionCount} regions${state.regions.length ? `; largest region ${state.regions[0]!.id} (${state.regions[0]!.changedPixels ?? 'unknown'} changed pixels)` : ''}${state.visibleColors?.pairs[0] && state.visibleColors.pairs[0].pixels >= 32 && state.visibleColors.pairs[0].sharePercent >= 50 ? `; observed colors: target ${colorText(state.visibleColors.pairs[0].reference)}, current ${colorText(state.visibleColors.pairs[0].current)} (${state.visibleColors.pairs[0].sharePercent}% of sampled visible mismatches; not a CSS cause)` : ''}\n`,
+            `- ${state.name} (${state.storyId}): ${state.status} — ${state.mismatchPixels} changed pixels (${state.mismatchPercent}%), ${state.regionCount} regions${state.extent ? `; extent differs: ${extentGuidance(state.extent)}` : ''}${state.regions.length ? `; largest region ${state.regions[0]!.id} (${state.regions[0]!.changedPixels ?? 'unknown'} changed pixels)` : ''}${state.visibleColors?.pairs[0] && state.visibleColors.pairs[0].pixels >= 32 && state.visibleColors.pairs[0].sharePercent >= 50 ? `; observed colors: target ${colorText(state.visibleColors.pairs[0].reference)}, current ${colorText(state.visibleColors.pairs[0].current)} (${state.visibleColors.pairs[0].sharePercent}% of sampled visible mismatches; not a CSS cause)` : ''}\n`,
           );
       }
       if (result.states.length > 20)

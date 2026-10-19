@@ -229,6 +229,7 @@ export {
   compareDesignReference,
   readDesignReferenceTarget,
   type DesignReferenceCurrent,
+  type DesignReferenceExtent,
   type DesignReferenceLedger,
 } from './diff/design-reference.js';
 export { diffImages } from './diff/diff.js';

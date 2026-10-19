@@ -347,6 +347,14 @@ without retaining decoded screenshots. Content-addressed derived files under
 bytes, current structure bytes and algorithm version. Changed inputs invalidate
 the analysis; corrupt caches are recomputed and a read-only cache does not
 change the verdict. These facts remain on demand pending agent-value testing.
+When a full-page capture differs from its target only in size (same viewport,
+device scale factor and capture kind), the state is `fail`, never `incompatible`
+or `pass`. Jux compares the top-left overlap and counts every pixel present in
+only one image as a mismatch. The hint adds a compact `extent:{dh,dw}` (current
+minus target, in image pixels) and an `extentNote` such as "current is 2 px
+shorter than the target". Fix the page length or width first; region IDs cover
+only the overlap.
+
 When exactly two detected outlines have an unambiguous relationship, `layout`
 can report `stacked` versus `side-by-side`. `nearCurrentElementIds`, when
 present, identifies current textboxes that uniquely overlap the measured

@@ -272,6 +272,25 @@ describe('saved MCP run reports', () => {
     expect(agentRunSummary(stale).next).toContain('only for missing baseline detail');
   });
 
+  test('with no approved baseline, next points to the design-reference hint', () => {
+    const fresh = report(2);
+    fresh.summary = { pass: 0, fail: 0, new: 2, stale: 0, skip: 0 };
+    fresh.results.forEach((result) => {
+      result.status = 'new';
+    });
+    const compared = agentRunSummary(fresh, { designReferencesCompared: true });
+    expect(compared.next).toBe(
+      'No approved baseline; use the design-reference hint below for target mismatches.',
+    );
+    expect(compared.next).not.toContain('Call report');
+    // Without a reference comparison, or with a baseline verdict, text is unchanged.
+    expect(agentRunSummary(fresh).next).toContain('Call report with story');
+    fresh.results[1]!.status = 'fail';
+    expect(agentRunSummary(fresh, { designReferencesCompared: true }).next).toContain(
+      'Call report with story',
+    );
+  });
+
   test('reads one saved story or full report without browser and refreshes changed reports', async () => {
     const initial = report(20);
     initial.results[12]!.controlGeometry = {

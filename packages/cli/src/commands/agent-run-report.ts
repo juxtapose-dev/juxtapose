@@ -5,6 +5,7 @@ import { latestRunDir } from '../run-dir.js';
 import { controlGeometrySummary } from './control-geometry-summary.js';
 
 interface SummaryOptions {
+  designReferencesCompared?: boolean;
   /** Internal benchmark override; selective measurements are enabled by default. */
   controlMeasurements?: boolean;
 }
@@ -266,6 +267,13 @@ export function agentRunSummary(report: RunReport, options: SummaryOptions = {})
   const { lines: changes, omittedLongObservations } = observedChangeSummary(
     report.results,
   );
+  const captured = report.results.filter((r) => r.status !== 'skip');
+  // No approved baseline exists for any captured story, so a baseline verdict
+  // says nothing; the design targets are the only comparison this run made.
+  const targetsOnly =
+    options.designReferencesCompared === true &&
+    captured.length > 0 &&
+    captured.every((r) => r.status === 'new');
   const attention = report.results.filter((r) => priority(r) < 5);
   const onlyStaleAttention =
     attention.length > 0 &&
@@ -315,7 +323,9 @@ export function agentRunSummary(report: RunReport, options: SummaryOptions = {})
             'Stale baseline image bytes match; the approval commit is outside current branch ancestry.',
         }
       : {}),
-    next: onlyStaleAttention
+    next: targetsOnly
+      ? 'No approved baseline; use the design-reference hint below for target mismatches.'
+      : onlyStaleAttention
       ? 'Baseline bytes match; approval commits are outside current branch ancestry; no visual edit, detailed report, or recapture is needed. Re-approval only re-anchors baselines.'
       : attention.length === 0
         ? 'No listed blockers. Stop only after required capture coverage, target comparisons and behavior checks pass.'

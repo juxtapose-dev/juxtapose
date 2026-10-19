@@ -104,20 +104,21 @@ describe('compareDesignReference', () => {
         })
       ).reason,
     ).toBe('viewport');
-    expect(
-      (
-        await compareDesignReference({
-          projectRoot: f.root,
-          name: 'mobile',
-          reference,
-          current: {
-            ...current,
-            image: f.current.image,
-            viewport: { width: 4, height: 3 },
-          },
-        })
-      ).reason,
-    ).toBe('current-geometry');
+    // A self-consistent full-page capture of a different length is compared
+    // over the overlap (see the extent test below), not rejected.
+    const inconsistent = await compareDesignReference({
+      projectRoot: f.root,
+      name: 'mobile',
+      reference,
+      current: {
+        ...current,
+        image: f.current.image,
+        viewport: { width: 4, height: 5 },
+      },
+    });
+    expect(inconsistent.status).toBe('incompatible');
+    expect(inconsistent.reason).toBe('current-geometry');
+    expect(inconsistent.extent).toBeUndefined();
     expect(
       (
         await compareDesignReference({
@@ -132,6 +133,58 @@ describe('compareDesignReference', () => {
         })
       ).reason,
     ).toBe('capture-kind');
+  });
+
+  it('compares the overlap and reports an extent block when a full-page capture has a different length', async () => {
+    const f = await fixture();
+    const tall = async (height: number, paintRow?: number) => {
+      const px = Buffer.alloc(4 * height * 4, 255);
+      if (paintRow !== undefined)
+        for (let x = 0; x < 4; x++)
+          px.fill(0, (paintRow * 4 + x) * 4, (paintRow * 4 + x) * 4 + 3);
+      return sharp(px, { raw: { width: 4, height, channels: 4 } })
+        .png()
+        .toBuffer();
+    };
+    await writeFile(join(f.root, 'design/card.png'), await tall(5));
+    const reference = { ...f.reference, captureKind: 'full-page' as const };
+    const run = async (height: number, paintRow?: number) =>
+      compareDesignReference({
+        projectRoot: f.root,
+        name: 'mobile',
+        reference,
+        current: {
+          ...f.current,
+          image: await tall(height, paintRow),
+          viewport: { width: 4, height },
+          layoutViewport: { width: 4, height: 3 },
+          captureKind: 'full-page' as const,
+        },
+      });
+    // Shorter by one row: identical overlap, one missing row of 4 pixels.
+    const shorter = await run(4);
+    expect(shorter.status).toBe('fail');
+    expect(shorter.extent).toEqual({
+      current: { width: 4, height: 4 },
+      reference: { width: 4, height: 5 },
+      dw: 0,
+      dh: -1,
+      missingAreaPixels: 4,
+    });
+    expect(shorter.mismatchPixels).toBe(4);
+    expect(shorter.mismatchPercent).toBeCloseTo(20);
+    expect(shorter.regions).toEqual([]);
+    // Taller by one row with a changed pixel row inside the overlap.
+    const taller = await run(6, 1);
+    expect(taller.status).toBe('fail');
+    expect(taller.extent).toMatchObject({ dw: 0, dh: 1, missingAreaPixels: 4 });
+    expect(taller.mismatchPixels).toBe(4 + 4);
+    expect(taller.regions).toHaveLength(1);
+    expect(taller.regions[0]).toMatchObject({ x: 0, y: 1, width: 4, height: 1 });
+    // Equal extent never carries an extent block.
+    const equal = await run(5);
+    expect(equal.status).toBe('pass');
+    expect(equal.extent).toBeUndefined();
   });
 
   it('requires recorded layout geometry even when a full-page image fits the viewport', async () => {
@@ -204,7 +257,7 @@ describe('compareDesignReference', () => {
     await writeFile(join(cacheDir, files[0]!), '{broken');
     expect(await compareDesignReference(input)).toEqual(first);
     expect(JSON.parse(await readFile(join(cacheDir, files[0]!), 'utf8'))).toMatchObject({
-      version: 1,
+      version: 2,
       ledger: { comparisonId: first.comparisonId },
     });
 
