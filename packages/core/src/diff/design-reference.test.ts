@@ -185,6 +185,58 @@ describe('compareDesignReference', () => {
     const equal = await run(5);
     expect(equal.status).toBe('pass');
     expect(equal.extent).toBeUndefined();
+    // Width-only mismatch: 5x5 current vs 4x5 target, one extra column of 5.
+    const wide = await compareDesignReference({
+      projectRoot: f.root,
+      name: 'mobile',
+      reference,
+      current: {
+        ...f.current,
+        image: await sharp({
+          create: { width: 5, height: 5, channels: 4, background: '#ffffff' },
+        })
+          .png()
+          .toBuffer(),
+        viewport: { width: 5, height: 5 },
+        layoutViewport: { width: 4, height: 3 },
+        captureKind: 'full-page' as const,
+      },
+    });
+    expect(wide.status).toBe('fail');
+    expect(wide.reason).toBeUndefined();
+    expect(wide.extent).toMatchObject({ dw: 1, dh: 0, missingAreaPixels: 5 });
+    expect(wide.mismatchPixels).toBe(5);
+    // Cross direction: 10x5 current vs 5x10 target. The 5x5 corner covered by
+    // neither image is not counted: 50 + 50 - 2*25 = 50.
+    await writeFile(
+      join(f.root, 'design/card.png'),
+      await sharp({
+        create: { width: 5, height: 10, channels: 4, background: '#ffffff' },
+      })
+        .png()
+        .toBuffer(),
+    );
+    const cross = await compareDesignReference({
+      projectRoot: f.root,
+      name: 'mobile',
+      reference: { ...reference, viewport: { width: 5, height: 3 } },
+      current: {
+        ...f.current,
+        image: await sharp({
+          create: { width: 10, height: 5, channels: 4, background: '#ffffff' },
+        })
+          .png()
+          .toBuffer(),
+        viewport: { width: 10, height: 5 },
+        layoutViewport: { width: 5, height: 3 },
+        captureKind: 'full-page' as const,
+      },
+    });
+    expect(cross.status).toBe('fail');
+    expect(cross.extent).toMatchObject({ dw: 5, dh: -5, missingAreaPixels: 50 });
+    expect(cross.mismatchPixels).toBe(50);
+    expect(cross.rawMismatchPixels).toBe(50);
+    expect(cross.mismatchPercent).toBeCloseTo(50);
   });
 
   it('requires recorded layout geometry even when a full-page image fits the viewport', async () => {
@@ -240,7 +292,7 @@ describe('compareDesignReference', () => {
 
   it('reuses saved analysis for identical image bytes and invalidates on a changed target', async () => {
     const f = await fixture();
-    const cacheDir = join(f.root, 'reference-analysis-v1');
+    const cacheDir = join(f.root, 'reference-analysis-v2');
     const input = {
       projectRoot: f.root,
       name: 'mobile',
@@ -277,7 +329,7 @@ describe('compareDesignReference', () => {
     const f = await fixture();
     const elsewhere = await mkdtemp(join(tmpdir(), 'jux-reference-cache-outside-'));
     roots.push(elsewhere);
-    const cacheDir = join(f.root, 'reference-analysis-v1');
+    const cacheDir = join(f.root, 'reference-analysis-v2');
     await symlink(elsewhere, cacheDir);
     const result = await compareDesignReference({
       projectRoot: f.root,

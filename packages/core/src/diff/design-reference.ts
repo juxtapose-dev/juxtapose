@@ -57,7 +57,7 @@ export interface DesignReferenceExtent {
   reference: Viewport;
   dw: number;
   dh: number;
-  /** Pixels of the bounding canvas covered by only one of the two images. */
+  /** Pixels of the bounding canvas covered by exactly one of the two images. */
   missingAreaPixels: number;
 }
 
@@ -268,12 +268,13 @@ async function compareOverlap(
   const [a, b] = await Promise.all([crop(target), crop(current)]);
   const diff = await diffImages(a, b, { threshold, includeVisibleColors: true });
   const canvas = Math.max(ref.width, cur.width) * Math.max(ref.height, cur.height);
-  const missingAreaPixels = canvas - width * height;
+  // Pixels in exactly one image; the corner covered by neither is excluded.
+  const missingAreaPixels =
+    cur.width * cur.height + ref.width * ref.height - 2 * width * height;
   const mismatchPixels = diff.mismatchPixels + missingAreaPixels;
   return {
     ...base,
     status: 'fail',
-    reason: 'current-geometry',
     mismatchPixels,
     mismatchPercent: (mismatchPixels / canvas) * 100,
     rawMismatchPixels: (diff.rawMismatchPixels ?? 0) + missingAreaPixels,

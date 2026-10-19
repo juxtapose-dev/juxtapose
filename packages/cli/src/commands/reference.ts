@@ -468,7 +468,7 @@ export async function evaluateReferences(options: {
             storyId: result.storyId, image: current, viewport: result.viewport,
             ...(result.layoutViewport ? { layoutViewport: result.layoutViewport, captureKind: 'full-page' as const } : {}),
           },
-          cacheDir: path.join(runDir, 'reference-analysis-v1'),
+          cacheDir: path.join(runDir, 'reference-analysis-v2'),
         });
         let layout: Extract<State, { geometry: unknown }>['layout'];
         if (options.includeLayout && ledger.status === 'fail') {
