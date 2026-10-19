@@ -846,3 +846,13 @@ check results carry `rendererRetry` evidence, and handoffs explain it. The
 `approve` tool always confirms the selected hash on a fresh renderer, even
 with `allowUnstable`; it cannot approve different bytes. See
 [renderer settings](configuration.md#renderer-settings).
+
+### Inspect a design before the first capture
+
+Call `reference({ name: "desktop", detail: "target" })` to read a configured
+`designReferences` PNG before its UI exists. The response contains one image
+block and compact metadata: name, story ID, configured viewport/DPR, actual pixel
+dimensions and image SHA-256. Render the image block directly; do not print its
+base64 data. This request opens no browser, needs no saved run and makes no
+comparison or correctness claim. It cannot be combined with a region or saved-run
+comparison. After editing, use `run` for current-versus-target feedback.

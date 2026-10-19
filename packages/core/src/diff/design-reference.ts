@@ -63,6 +63,18 @@ export interface DesignReferenceCurrent {
 /** Compare one saved image with a project-contained design PNG, without a
  * browser. Different file encodings can pass when their visible pixels match.
  * The exact byte hashes are retained as evidence, not used as the verdict. */
+/** Target-only access avoids requiring a capture of UI that is not built yet. */
+export async function readDesignReferenceTarget(
+  projectRoot: string,
+  reference: DesignReferenceSpec,
+) {
+  const imagePath = await projectPngPath(projectRoot, reference.image);
+  const png = await readFile(imagePath);
+  const metadata = await sharp(png).metadata();
+  if (metadata.format !== 'png') throw new Error('design reference must be a PNG image');
+  return { png, hash: hash(png), pixels: dimensions(metadata) };
+}
+
 export async function compareDesignReference(input: {
   projectRoot: string;
   name: string;

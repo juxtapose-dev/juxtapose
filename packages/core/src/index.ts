@@ -227,6 +227,7 @@ export {
 export { compareSnaps, type SnapSide, type SnapComparison } from './diff/compare.js';
 export {
   compareDesignReference,
+  readDesignReferenceTarget,
   type DesignReferenceCurrent,
   type DesignReferenceLedger,
 } from './diff/design-reference.js';

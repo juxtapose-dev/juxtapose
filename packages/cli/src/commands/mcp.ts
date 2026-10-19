@@ -386,7 +386,7 @@ export const TOOLS: Tool[] = [
     // Both team decision replays requested JSON for facts analysis abstained
     // from producing. Distinguish a testable edit from a measured CSS cause.
     description:
-      'Read saved evidence without recapture. Use source + measurements to propose CSS edits as hypotheses; run affected states to verify. detail=layout with name: geometry; region: one paired PNG crop, padding adds context. Use returned cropRequest directly. detail=json: all saved matches, regions and current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. compare=previous compares saved runs, not target progress. Exact target matches need no reread. Render images once; never print base64 as text.',
+      'Read evidence without recapture; detail=target needs no run. Use source + measurements to propose CSS edits as hypotheses; run affected states to verify. detail=layout with name: geometry; region: one paired PNG crop, padding adds context. Use returned cropRequest directly. detail=json: all saved matches, regions and current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. compare=previous: saved runs, not target progress. Skip exact matches. Render images; never print base64.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -421,9 +421,9 @@ export const TOOLS: Tool[] = [
         },
         detail: {
           type: 'string',
-          enum: ['json', 'layout', 'crop'],
+          enum: ['json', 'layout', 'crop', 'target'],
           description:
-            'json: full ledger. layout: named target geometry, no region/checkpoint. crop: paired image; requires region.',
+            'target: named design PNG, no run needed. json: full ledger. layout: named geometry. crop: paired image; requires region.',
         },
       },
     },
@@ -1031,8 +1031,17 @@ export class McpServer {
           throw new ArgError("'detail=crop' requires a saved region ID");
         const compare = str(args, 'compare') ?? 'target';
         const fromRun = str(args, 'fromRun');
-        if (detail !== undefined && detail !== 'json' && detail !== 'layout')
-          throw new ArgError("'detail' must be 'json', 'layout' or 'crop'");
+        if (
+          detail !== undefined &&
+          detail !== 'json' &&
+          detail !== 'layout' &&
+          detail !== 'target'
+        )
+          throw new ArgError("'detail' must be 'json', 'layout', 'crop' or 'target'");
+        if (detail === 'target' && (!name || region || compare !== 'target'))
+          throw new ArgError(
+            "'detail=target' requires a named target without region or compare=previous",
+          );
         if (detail === 'layout' && (!name || region || compare !== 'target'))
           throw new ArgError(
             "'detail=layout' requires a named target without region or compare=previous",
@@ -1047,6 +1056,35 @@ export class McpServer {
         return {
           locks: this.readsRun(),
           exec: async (signal) => {
+            if (detail === 'target') {
+              const config = await loadConfig(this.project);
+              const reference = config.designReferences?.[name!];
+              if (!reference) return errorResult(`jux: unknown design reference ${name}`);
+              const { readDesignReferenceTarget } = await import('@juxtapose/core');
+              const target = await readDesignReferenceTarget(this.project, reference);
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      schema: 'juxtapose.design-target/v1',
+                      name,
+                      storyId: reference.storyId,
+                      viewport: reference.viewport,
+                      deviceScaleFactor: reference.deviceScaleFactor ?? 1,
+                      pixels: target.pixels,
+                      hash: target.hash,
+                    }),
+                  },
+                  {
+                    type: 'image',
+                    mimeType: 'image/png',
+                    data: target.png.toString('base64'),
+                  },
+                ],
+                isError: false,
+              };
+            }
             if (compare === 'previous') {
               const { cropReferenceChange, evaluateReferenceChange } =
                 await import('./reference.js');
