@@ -1,5 +1,5 @@
 import type { StructureSnapshot } from '../../types.js';
-import { styleReader } from '../../capture/structure.js';
+import { hasCapturedStyle, styleReader } from '../../capture/structure.js';
 import sharp from 'sharp';
 import { fromPng } from './segment.js';
 import { fromPngStreaming } from './stream.js';
@@ -12,12 +12,22 @@ export interface LayoutBox {
   width: number;
   height: number;
 }
+export interface StructureTextEvidence {
+  /** Captured element text; descendant text is not necessarily included.
+   * Parent/child blocks preserve mixed typography, not character offsets. */
+  value: string;
+  tag: string;
+  /** Captured computed values, not target CSS declarations or inferred fonts. */
+  styles: Record<string, string>;
+}
+
 export interface EvidenceBlock {
   id: string;
   box: LayoutBox;
   /** Exact opaque sRGB fill. No typography or CSS cause is inferred. */
   fill: [number, number, number] | null;
   solidArea: number | null;
+  text?: StructureTextEvidence;
   /** Translation-invariant exact inner paint, not recognized text or a font. */
   content?: { width: number; height: number; sha256: string };
   children: string[];
@@ -36,6 +46,18 @@ export interface RgbaImage {
   width: number;
   height: number;
 }
+
+const TEXT_PROPERTIES = [
+  'color',
+  'font-family',
+  'font-size',
+  'font-style',
+  'font-weight',
+  'letter-spacing',
+  'line-height',
+  'text-decoration-line',
+  'text-transform',
+] as const;
 
 export function fromStructure(snapshot: StructureSnapshot): TargetEvidence {
   const children: string[][] = snapshot.elements.map(() => []);
@@ -62,6 +84,25 @@ export function fromStructure(snapshot: StructureSnapshot): TargetEvidence {
         },
         fill: rgb?.length === 3 ? (rgb as [number, number, number]) : null,
         solidArea: null,
+        // The real-review typography diagnostic removed 98.4% of Pixelmatch
+        // differences using mixed kbd/body styles that this converter discarded.
+        // Keep source facts here; PNG producers must not infer equivalent text.
+        ...(element.text !== undefined
+          ? {
+              text: {
+                value: element.text,
+                tag: element.tag,
+                styles: Object.fromEntries(
+                  TEXT_PROPERTIES.flatMap((property) => {
+                    const value = hasCapturedStyle(snapshot, property)
+                      ? style(index, property)
+                      : undefined;
+                    return value === undefined ? [] : [[property, value]];
+                  }),
+                ),
+              },
+            }
+          : {}),
         children: children[index]!,
         provenance: 'structure',
         confidenceRule: 'captured-dom-rectangle; visible fill area unknown',

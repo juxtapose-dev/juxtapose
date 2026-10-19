@@ -153,3 +153,45 @@ test('exact inner paint follows distinct controls through a reorder without OCR'
     { element: { id: 'b1' }, dx: -50, dy: 8 },
   ]);
 });
+
+test('structured evidence preserves mixed text styles without flattening descendants', () => {
+  const snapshot = structure([
+    [0, 0, 80, 16],
+    [0, 0, 8, 14],
+  ]);
+  const parent = snapshot.elements[0]!;
+  parent.tag = 'p';
+  parent.text = '/ move';
+  parent.styles = {
+    'font-family': 'sans-serif',
+    'font-size': '12px',
+    'line-height': '16px',
+  };
+  const child = snapshot.elements[1]!;
+  child.parent = 0;
+  child.tag = 'kbd';
+  child.text = 'j';
+  child.styles = { 'font-family': 'monospace' };
+  const evidence = fromStructure(snapshot);
+  expect(evidence.blocks[0]).toMatchObject({
+    children: ['dom:1'],
+    text: { value: '/ move', tag: 'p', styles: { 'font-family': 'sans-serif' } },
+  });
+  expect(evidence.blocks[1]).toMatchObject({
+    text: {
+      value: 'j',
+      tag: 'kbd',
+      styles: { 'font-family': 'monospace', 'font-size': '12px', 'line-height': '16px' },
+    },
+  });
+  const styles = evidence.blocks[1]!.text!.styles;
+  expect(Object.keys(styles)).toEqual(Object.keys(styles).sort());
+  expect(JSON.stringify(fromStructure(snapshot))).toBe(JSON.stringify(evidence));
+  expect(parent.text).toBe('/ move');
+});
+
+test('pixel and textless structure blocks do not invent typography', () => {
+  expect(fromStructure(structure([[0, 0, 10, 10]])).blocks[0]).not.toHaveProperty('text');
+  for (const block of fromPng(rects([[0, 0, 10, 10]])).blocks)
+    expect(block).not.toHaveProperty('text');
+});

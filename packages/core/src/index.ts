@@ -238,6 +238,7 @@ export {
   matchLayout as matchTargetLayout,
   fromStructure as targetEvidenceFromStructure,
   type TargetEvidence,
+  type StructureTextEvidence,
   type RgbaImage,
   type PaintComponentEvidence,
   type SolidPaintComponent,
