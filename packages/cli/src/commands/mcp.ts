@@ -690,15 +690,21 @@ export function compactReferenceFeedback(result: ReferenceResult) {
   // The exact-quality pilot requested a separate baseline report after target
   // passes because raw equality was hidden. Reuse counts already in ledgers;
   // aggregate every state, including those omitted from the bounded key lists.
-  const rgbaStates = { equal: 0, different: 0, unverified: result.summary.notCaptured };
-  for (const state of result.states) {
+  // v13 needed four run→exact_check round trips for per-state raw counts.
+  // Reuse saved measurements; this adds no decode or comparison work.
+  const rawPixels = (state: ReferenceResult['states'][number]) => {
     const raw = 'rawMismatchPixels' in state ? state.rawMismatchPixels : null;
-    if (
-      (state.status === 'pass' || state.status === 'fail') &&
+    return (state.status === 'pass' || state.status === 'fail') &&
       typeof raw === 'number' &&
       Number.isSafeInteger(raw) &&
       raw >= 0
-    ) {
+      ? raw
+      : undefined;
+  };
+  const rgbaStates = { equal: 0, different: 0, unverified: result.summary.notCaptured };
+  for (const state of result.states) {
+    const raw = rawPixels(state);
+    if (raw !== undefined) {
       if (raw === 0) rgbaStates.equal++;
       else rgbaStates.different++;
     } else rgbaStates.unverified++;
@@ -732,6 +738,7 @@ export function compactReferenceFeedback(result: ReferenceResult) {
       key: state.storyId,
       status: state.status,
       pixels: state.mismatchPixels,
+      rawPixels: rawPixels(state),
       percent: state.mismatchPercent,
       // The real-review residual probe abstained on all 14 layout candidates.
       // Advertise layout only when the saved analysis can answer that call.
@@ -762,6 +769,7 @@ export function compactReferenceFeedback(result: ReferenceResult) {
     passed: passed.slice(0, 8).map((state) => ({
       name: state.name,
       key: state.storyId,
+      rawPixels: rawPixels(state),
       ...('progress' in state && state.progress ? { progress: state.progress } : {}),
       ...('bestRun' in state && state.bestRun ? { bestRun: state.bestRun } : {}),
     })),

@@ -248,6 +248,10 @@ test('300 target states stay bounded with progress and passing keys', () => {
   expect(compact.states).toHaveLength(8);
   expect(compact.passed).toHaveLength(8);
   expect(compact.rgbaStates).toEqual({ equal: 150, different: 150, unverified: 1 });
+  expect(
+    compact.states.every((state) => 'rawPixels' in state && state.rawPixels === 1),
+  ).toBe(true);
+  expect(compact.passed.every((state) => state.rawPixels === 0)).toBe(true);
   expect(compact.omittedAffected).toBe(142);
   expect(compact.omittedPassed).toBe(142);
   expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(5000);
@@ -367,6 +371,11 @@ test('decoded equality stays separate from tolerant passes and unknown inputs', 
   expect(compact.rgbaStates).toEqual({ equal: 1, different: 1, unverified: 5 });
   expect(compact.counts).toEqual(result.summary);
   expect(compact.policy).toEqual(result.policy);
+  expect(compact.passed).toEqual([
+    { name: 'exact', key: 'a', rawPixels: 0 },
+    { name: 'tolerated', key: 'b', rawPixels: 7782 },
+    { name: 'old-ledger', key: 'c', rawPixels: undefined },
+  ]);
 });
 
 test('policy passes do not discourage needed exact-target investigation', () => {

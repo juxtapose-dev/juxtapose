@@ -166,6 +166,7 @@ compatible and Pixelmatch found zero mismatch pixels under the stated policy.
 The separate `rgbaStates` counts exact decoded-pixel equality across all configured
 reference states, including those omitted from the bounded lists. For example,
 `{"equal":4,"different":0,"unverified":0}` means four exact RGBA matches.
+Listed target states and passed keys also include `rawPixels`, the exact RGBA mismatch count, when measured. Missing `rawPixels` means unverified, never zero. These per-state counts reuse the saved analysis and identify residual differences without a second verification call. `pixels` remains the Pixelmatch count under the stated policy.
 A toleranced pass may still count as `different`; errors, incompatible or missing
 captures, and unavailable raw counts remain `unverified`. These observations do
 not change Pixelmatch verdicts. Use these returned counts instead of another
