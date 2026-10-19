@@ -214,6 +214,12 @@ export function normalizeStructure(
   // node, layout.* one per layout row, and each styles row one value per
   // requested property. The indexed reads marked `!` below rely on that.
   const { layout } = doc;
+  // The scrolled review fixture painted a card at y=16 while CDP bounds said
+  // y=371 (scrollOffsetY=355). Visibility and pixel regions use viewport space.
+  const scrollX = doc.scrollOffsetX ?? 0;
+  const scrollY = doc.scrollOffsetY ?? 0;
+  if (!Number.isFinite(scrollX) || !Number.isFinite(scrollY))
+    throw new Error('DOMSnapshot returned invalid document scroll offsets');
   // Optional in the protocol, always sent by Chromium. A missing one is a
   // broken snapshot: say which, rather than fail on a later read (or, for
   // nodeValue on a page without text, not at all).
@@ -338,8 +344,8 @@ export function normalizeStructure(
         h: round((b[3] as number) * scale),
       };
     return {
-      x: round(b[0] as number),
-      y: round(b[1] as number),
+      x: round((b[0] as number) - scrollX),
+      y: round((b[1] as number) - scrollY),
       w: round(b[2] as number),
       h: round(b[3] as number),
     };

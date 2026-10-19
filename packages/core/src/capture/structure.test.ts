@@ -286,3 +286,21 @@ test('normalizing reads a bounded number of strings per node, however wide the p
   // and the eager decode 42 per row.
   expect(reads).toBeLessThan(10 * doc.nodes.nodeType.length);
 });
+
+test('document scroll offsets normalize bounds and visibility into screenshot space', () => {
+  const raw = structuredClone(fixture.raw);
+  const doc = raw.documents[0]!;
+  doc.scrollOffsetX = 37.5;
+  doc.scrollOffsetY = 355;
+  for (const bounds of doc.layout.bounds) {
+    bounds[0] += 37.5;
+    bounds[1] += 355;
+  }
+  expect(normalizeStructure(raw, fixture.viewport)).toEqual(snap());
+});
+
+test('invalid scroll offsets cannot produce misleading structure', () => {
+  const raw = structuredClone(fixture.raw);
+  raw.documents[0]!.scrollOffsetY = Number.NaN;
+  expect(() => normalizeStructure(raw, fixture.viewport)).toThrow('scroll offsets');
+});
