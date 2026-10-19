@@ -856,3 +856,9 @@ dimensions and image SHA-256. Render the image block directly; do not print its
 base64 data. This request opens no browser, needs no saved run and makes no
 comparison or correctness claim. It cannot be combined with a region or saved-run
 comparison. After editing, use `run` for current-versus-target feedback.
+
+Target hints include `layoutMatches` on affected states only when saved confident
+geometry matches are available. Request `reference({name, detail: "layout"})`
+for those states. When none are available, the hint directs you to a saved
+region crop; a layout request cannot recover matches that the analysis abstained
+from reporting. This availability hint does not identify a CSS cause.

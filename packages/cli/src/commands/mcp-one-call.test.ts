@@ -395,3 +395,44 @@ test('policy passes do not discourage needed exact-target investigation', () => 
     expect(compact.guidance).not.toContain('no reference call is needed');
   }
 });
+
+// The real-review probe returned 14 abstentions and zero matches; requesting
+// layout added 898 bytes and no actionable measurements.
+test('compact feedback recommends only available saved layout evidence', () => {
+  const result = {
+    runId: 'residual',
+    outcome: 'fail',
+    policy: { method: 'pixelmatch', threshold: 0.1, includeAA: false },
+    summary: { pass: 0, fail: 1, incompatible: 0, error: 0, notCaptured: 0 },
+    states: [
+      {
+        name: 'mobile',
+        storyId: 'mobile',
+        status: 'fail',
+        mismatchPixels: 1030,
+        mismatchPercent: 0.313,
+        rawMismatchPixels: 3128,
+        regions: [{ id: 'region:1', changedPixels: 1026 }],
+        layout: { status: 'measured', matches: [], abstained: 14 },
+      },
+    ],
+  } as unknown as ReferenceResult;
+  const empty = compactReferenceFeedback(result);
+  expect(empty.guidance).not.toContain('detail=layout');
+  expect(empty.guidance).toContain('detail=crop');
+  expect(empty.states[0]).not.toHaveProperty('layoutMatches');
+  const state = result.states[0];
+  if (!('layout' in state)) throw new Error('Expected comparison state');
+  state.layout = {
+    status: 'measured',
+    matches: [{ element: 'textbox' }],
+    abstained: 13,
+  } as typeof state.layout;
+  const matched = compactReferenceFeedback(result);
+  expect(matched.guidance).toContain('detail=layout');
+  expect(matched.states[0]).toHaveProperty('layoutMatches', 1);
+  state.layout = { status: 'unavailable', reason: 'no usable blocks' };
+  expect(compactReferenceFeedback(result).guidance).not.toContain('detail=layout');
+  delete state.layout;
+  expect(compactReferenceFeedback(result).guidance).not.toContain('detail=layout');
+});

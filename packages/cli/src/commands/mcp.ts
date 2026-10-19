@@ -734,6 +734,11 @@ export function compactReferenceFeedback(result: ReferenceResult) {
       status: state.status,
       pixels: state.mismatchPixels,
       percent: state.mismatchPercent,
+      // The real-review residual probe abstained on all 14 layout candidates.
+      // Advertise layout only when the saved analysis can answer that call.
+      ...(state.layout && 'matches' in state.layout && state.layout.matches.length > 0
+        ? { layoutMatches: state.layout.matches.length }
+        : {}),
       ...(state.progress ? { progress: state.progress } : {}),
       ...(state.bestRun ? { bestRun: state.bestRun } : {}),
       ...(state.regions[0]
@@ -772,7 +777,9 @@ export function compactReferenceFeedback(result: ReferenceResult) {
           ? 'Resolve the capture/reference issue before inferring a UI edit; images cannot resolve incompatible inputs.'
           : result.outcome === 'no-comparison'
             ? 'No target comparison. Capture required states; this is not a pass.'
-            : 'Use facts + source. Missing geometry: reference(name, detail=layout). Unresolved appearance: saved region crop. Do not recapture unchanged code.',
+            : states.some((state) => 'layoutMatches' in state)
+              ? 'Use facts + source. States with layoutMatches have saved geometry: reference(name, detail=layout). Otherwise use a saved region crop. Do not recapture unchanged code.'
+              : 'Use facts + source. No confident layout matches are available. For appearance, use reference(name, region=largestRegion.id, detail=crop). Do not recapture unchanged code.',
   };
 }
 
