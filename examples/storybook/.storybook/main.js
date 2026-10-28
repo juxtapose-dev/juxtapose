@@ -1,4 +1,17 @@
+import { copyFileSync, mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+// Use the worker shipped with the pinned MSW version, including static builds.
+const workerDir = fileURLToPath(new URL('./.msw/', import.meta.url));
+mkdirSync(workerDir, { recursive: true });
+copyFileSync(
+  createRequire(import.meta.url).resolve('msw/mockServiceWorker.js'),
+  `${workerDir}/mockServiceWorker.js`,
+);
+
 export default {
+  staticDirs: [workerDir],
   stories:
     process.env.JUX_PROFILE_STORIES === '1'
       ? ['../profiling/**/*.stories.jsx']

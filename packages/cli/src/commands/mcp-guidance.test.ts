@@ -19,13 +19,19 @@ test('initialization stays small when a client repeats guidance on each tool', a
     // A real client discovery response repeated global guidance on every tool.
     // A server-only instruction budget misses that multiplication.
     expect(Buffer.byteLength(JSON.stringify(repeated))).toBeLessThanOrEqual(19_000);
-    expect(instructions).toContain('not unique CSS selectors');
-    expect(instructions).toContain('do not identify CSS causes');
-    expect(instructions).toContain('captured document order');
+    expect(TOOLS.find((t) => t.name === 'report')!.description).toContain(
+      'not unique CSS selectors',
+    );
+    expect(TOOLS.find((t) => t.name === 'report')!.description).toContain(
+      'do not identify CSS causes',
+    );
+    expect(TOOLS.find((t) => t.name === 'report')!.description).toContain(
+      'captured document order',
+    );
     expect(instructions).toContain('all required states, targets and behavior checks');
     expect(instructions).toContain('Never approve unless the user asks');
     expect(instructions).toContain('resolve only missing facts');
-    expect(instructions).toContain('Prefer MCP measurements to images');
+    expect(instructions).toContain('Prefer saved measurements');
   } finally {
     await server.close();
   }

@@ -104,7 +104,7 @@ test('preview paths leave room for independent repeated positions without evicti
     omittedBoxes: 0,
   });
   expect(output.paint?.meaning).toContain('No target/current identity');
-  expect(Buffer.byteLength(JSON.stringify(output))).toBeLessThanOrEqual(3072);
+  expect(Buffer.byteLength(JSON.stringify(output))).toBeLessThanOrEqual(4096);
   expect(JSON.stringify(input)).toBe(saved);
 });
 
@@ -180,7 +180,7 @@ test('optional repeated positions shrink before dropping a color group at the by
     boundarySeen = true;
     expect(groups.map((g) => g.rgb)).toEqual(['#305f9b', '#4b6474']);
     expect(groups.every((g) => g.count === g.boxes!.length + g.omittedBoxes!)).toBe(true);
-    expect(Buffer.byteLength(JSON.stringify(packet))).toBeLessThanOrEqual(3072);
+    expect(Buffer.byteLength(JSON.stringify(packet))).toBeLessThanOrEqual(4096);
     break;
   }
   expect(boundarySeen).toBe(true);

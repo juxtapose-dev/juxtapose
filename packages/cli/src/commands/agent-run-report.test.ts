@@ -284,10 +284,10 @@ describe('saved MCP run reports', () => {
     );
     expect(compared.next).not.toContain('Call report');
     // Without a reference comparison, or with a baseline verdict, text is unchanged.
-    expect(agentRunSummary(fresh).next).toContain('Call report with story');
+    expect(agentRunSummary(fresh).next).toContain('only for missing baseline detail');
     fresh.results[1]!.status = 'fail';
     expect(agentRunSummary(fresh, { designReferencesCompared: true }).next).toContain(
-      'Call report with story',
+      'only for missing baseline detail',
     );
   });
 

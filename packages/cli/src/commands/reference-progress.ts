@@ -95,7 +95,7 @@ async function readLedgers(
     const captures = new Map(
       parseRunReport(await readFile(report, 'utf8')).results.map((r) => [r.storyId, r]),
     );
-    const dir = path.join(path.dirname(report), 'reference-analysis-v1');
+    const dir = path.join(path.dirname(report), 'reference-analysis-v2');
     if (!(await lstat(dir)).isDirectory() || (await realpath(dir)) !== dir) return found;
     for (const file of (await readdir(dir)).sort()) {
       if (!/^[a-f0-9]{64}\.json$/.test(file)) continue;
@@ -107,7 +107,7 @@ async function readLedgers(
         if (!isRecord(entry) || !isRecord(entry['ledger'])) continue;
         const ledger = entry['ledger'] as unknown as DesignReferenceLedger;
         if (
-          entry['version'] !== 1 ||
+          entry['version'] !== 2 ||
           !ledger ||
           ledger.comparisonId !== file.slice(0, -5) ||
           entry['checksum'] !== hash(JSON.stringify(ledger)) ||

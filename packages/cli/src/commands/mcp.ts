@@ -336,7 +336,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'report',
     description:
-      'Saved evidence, no capture. Default: summary; story: full result with available approved/current controlGeometry; detail=full: RunReport; detail=runs: newest run IDs. element inspects saved current-element rect/styles; ancestor selects its enclosing element. Request only missing facts; measurements are not CSS causes.',
+      'Saved evidence, no capture. Default: summary; story: full result with available approved/current controlGeometry; detail=full: RunReport; detail=runs: newest run IDs. element inspects saved current-element rect/styles; ancestor selects its enclosing element. Labels are not unique CSS selectors; ordinals follow same-label captured document order. Measurements do not identify CSS causes. Request only missing facts.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -488,7 +488,7 @@ export const TOOLS: Tool[] = [
 // The team trace printed 7,945 bytes of already-advertised tool declarations.
 // Keep discovery routing within the existing 400-byte initialization budget.
 const INSTRUCTIONS =
-  'Use known tools; resolve only missing facts. Discover names; schemas if needed. Prefer MCP measurements to images. Labels: not unique CSS selectors; measurements do not identify CSS causes. Ordinals: same-label captured document order. Stop when all required states, targets and behavior checks pass. Never approve unless the user asks.';
+  'Use known tools; resolve only missing facts. Prefer saved measurements. Stop when all required states, targets and behavior checks pass. Never approve unless the user asks.';
 
 const RESTRICTED_INSTRUCTIONS =
   'Use only tools advertised by this server. Reuse returned facts; inspect only unresolved questions. Stop when all required run verdicts, design targets and behavior checks pass. Never approve unless the user asks.';
@@ -1522,7 +1522,10 @@ export class McpServer {
     const all = bool(args, 'all');
     const dryRun = bool(args, 'dryRun');
     const compareTo = str(args, 'compareTo');
-    if (compareTo !== undefined && !/^[a-zA-Z0-9_-]+$/.test(compareTo))
+    if (
+      args.compareTo === null ||
+      (compareTo !== undefined && !/^[a-zA-Z0-9_-]+$/.test(compareTo))
+    )
       throw new ArgError("'compareTo' must be a saved run ID or 'previous'");
     const progress = bool(args, 'progress');
     if (dryRun && (compareTo !== undefined || progress))

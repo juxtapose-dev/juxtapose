@@ -25,3 +25,6 @@ scripts/loop-anecdote/page.html
 
 # Copied from @juxtapose/core at build (packages/cli/scripts/copy-schema.mjs)
 packages/cli/schema.json
+
+# Generated from the pinned example-only MSW dependency.
+examples/storybook/.storybook/.msw/

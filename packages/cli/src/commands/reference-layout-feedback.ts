@@ -98,11 +98,9 @@ export function focusedLayoutFeedback(result: ReferenceResult): FocusedLayoutFee
         },
         omittedColorPairs: Math.max(0, colors.pairs.length - 2),
       };
-      if (fitsFocusedEvidence(response, candidate))
-        return bounded(candidate);
+      if (fitsFocusedEvidence(response, candidate)) return bounded(candidate);
       const omitted = { ...response, omittedColorPairs: colors.pairs.length };
-      if (evidenceBytes(omitted) <= FOCUSED_MAX_BYTES)
-        return bounded(omitted);
+      if (evidenceBytes(omitted) <= FOCUSED_MAX_BYTES) return bounded(omitted);
     }
     return bounded(response);
   };

@@ -9,3 +9,5 @@ examples/*/.juxtapose/
 .superpowers/
 packages/core/schema.json
 packages/cli/schema.json
+
+examples/storybook/.storybook/.msw/

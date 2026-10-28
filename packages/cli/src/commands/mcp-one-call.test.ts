@@ -187,7 +187,7 @@ test.each(['geometry', 'policy', 'capture-hash', 'checksum'])(
     const root = await fixture();
     await save(root, 'r1', whiteWebp);
     await evaluateReferences({ project: root, run: 'r1' });
-    const dir = path.join(root, '.juxtapose/runs/r1/reference-analysis-v1');
+    const dir = path.join(root, '.juxtapose/runs/r1/reference-analysis-v2');
     const file = path.join(dir, (await readdir(dir))[0]!);
     const entry = JSON.parse(await readFile(file, 'utf8'));
     if (field === 'geometry') entry.ledger.geometry.deviceScaleFactor = 2;

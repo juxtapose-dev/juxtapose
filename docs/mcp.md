@@ -216,7 +216,7 @@ hex colors (`#rrggbb`, or `#rrggbbaa` when translucent) at the same image
 coordinates and a sample count, with pixel
 provenance and the total visible mismatch sample count. These are not matched
 elements or CSS color substitutions: movement can pair paint with background.
-Geometry has priority under the 3 KiB response limit; omitted color pairs remain
+Geometry has priority under the 3 KiB target / 4 KiB maximum; omitted color pairs remain
 available in JSON detail. Missing `colorSamples` can mean unavailable evidence or
 insufficient response space; it does not mean unchanged paint. No new image
 analysis or capture runs for this field,
@@ -730,7 +730,7 @@ geometry extracted from a PNG design target or a previous-run comparison.
 | `detail`     | string   | `"summary"` (default), `"full"` or `"runs"`.                                                          |
 | `element`    | object   | With `story`: exact saved element fields.                                                             |
 | `properties` | string[] | With `element`: 1–12 CSS property names; uncaptured properties are listed in `unavailableProperties`. |
-| `ancestor` | object | With `element`: nearest matching strict saved ancestor. |
+| `ancestor`   | object   | With `element`: nearest matching strict saved ancestor.                                               |
 
 Structure capture version 3 records computed `grid-template-areas` and classifies
 its changes as layout evidence. `report` element properties can return this

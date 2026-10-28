@@ -17,10 +17,11 @@
   },
   "devDependencies": {
     "@juxtapose/cli": "workspace:*",
+    "@juxtapose/storybook": "workspace:*",
     "@storybook/react": "^8.4.7",
     "@storybook/react-vite": "^8.4.7",
+    "msw": "2.15.0",
     "storybook": "^8.4.7",
-    "vite": "^5.4.11",
-    "@juxtapose/storybook": "workspace:*"
+    "vite": "^5.4.11"
   }
 }

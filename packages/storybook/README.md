@@ -14,13 +14,13 @@ export default {
 };
 ```
 
-A **Visual** tab appears in the addon panel. From there you can capture the
+A **Juxtapose** tab appears in the addon panel. From there you can capture the
 current story or the whole suite, compare against the baseline four ways
 (side by side with a diff overlay, a draggable slider, an onion crossfade, or
 flicker), approve changes, and copy an agent-ready prompt describing exactly
 what moved.
 
-juxtapose also registers as a test provider: a **Visual** row in Storybook's
+juxtapose also registers as a test provider: a **Juxtapose** row in Storybook's
 testing module at the bottom of the sidebar, and Storybook's **Run tests**
 button runs the visual suite alongside your other tests. The test provider
 needs Storybook 8.5 or later and is checked against 8.6 and 10.6. On earlier
@@ -52,6 +52,13 @@ prompt fails, its text remains selectable in the panel.
 
 The addon mounts its API inside Storybook's own dev server, so there is no
 second process to run and no port to configure.
+
+MSW-backed stories are supported: Storybook captures allow service workers.
+Configure MSW in your Storybook, serve its worker asset in both development and
+static builds, and await worker readiness in your preview/loader before fetching
+mocked data. The addon does not install or configure MSW for you. CI verifies
+real MSW responses in repeated captures; the example's `Msw.stories.jsx` shows
+the setup. This is separate from URL-only `jux snap`, which blocks service workers.
 
 Full documentation: https://github.com/juxtapose-dev/juxtapose
 

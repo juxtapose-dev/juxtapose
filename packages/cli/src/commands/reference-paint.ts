@@ -497,6 +497,7 @@ export function appendFocusedPaint<
     };
   if (evidenceBytes(result) > FOCUSED_MAX_BYTES) return packet;
   let anchor: T | typeof result = packet;
+  const included: Array<{ source: CompactPaintRegion; shown: CompactPaintRegion }> = [];
   for (let i = 0; i < 2; i++) {
     const candidate = {
       ...result,
@@ -508,6 +509,7 @@ export function appendFocusedPaint<
       },
     };
     let added = false;
+    const additions: typeof included = [];
     // The two inventories remain independent. Emit this small observation
     // block whole so a few bytes do not hide one side of the evidence.
     for (const [side, key] of [
@@ -516,13 +518,40 @@ export function appendFocusedPaint<
     ] as const) {
       const group = candidates[side]?.[i];
       if (!group) continue;
-      candidate.paint[key].push(group);
+      const shown = {
+        ...group,
+        ...(group.boxes
+          ? { boxes: [group.boxes[0]!], omittedBoxes: group.count - 1 }
+          : {}),
+      };
+      candidate.paint[key].push(shown);
+      additions.push({ source: group, shown });
       candidate.paint.omitted[side] -= group.count;
       added = true;
     }
     if (added && fitsFocusedEvidence(anchor, candidate)) {
       result = candidate;
       anchor = result;
+      included.push(...additions);
+    }
+  }
+  // Keep both inventories before spending the remaining budget on positions.
+  // These optional coordinates may not evict a whole observed color group.
+  for (let index = 1; index < 3; index++) {
+    for (const { source, shown } of included) {
+      const box = source.boxes?.[index];
+      if (!box || !shown.boxes) continue;
+      const previousBytes = evidenceBytes(result);
+      shown.boxes.push(box);
+      shown.omittedBoxes!--;
+      if (
+        evidenceBytes(result) > FOCUSED_MAX_BYTES ||
+        (previousBytes > FOCUSED_TARGET_BYTES &&
+          evidenceBytes(result) > FOCUSED_TARGET_BYTES)
+      ) {
+        shown.boxes.pop();
+        shown.omittedBoxes!++;
+      }
     }
   }
   if (!result.paint.target.length && !result.paint.current.length) {

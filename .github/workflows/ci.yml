@@ -123,6 +123,9 @@ jobs:
       # differs across machines and Chromium versions, so a baseline captured
       # on a developer's Mac would never match a CI runner. What must hold is
       # that repeated captures on the SAME machine agree.
+      - name: Storybook MSW mocked responses
+        run: node scripts/check-msw.mjs
+
       - name: Determinism (Storybook)
         run: node scripts/check-determinism.mjs examples/storybook 3
 

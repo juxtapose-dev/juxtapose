@@ -326,9 +326,9 @@ export function agentRunSummary(report: RunReport, options: SummaryOptions = {})
     next: targetsOnly
       ? 'No approved baseline; use the design-reference hint below for target mismatches.'
       : onlyStaleAttention
-      ? 'Baseline bytes match; approval commits are outside current branch ancestry; no visual edit, detailed report, or recapture is needed. Re-approval only re-anchors baselines.'
-      : attention.length === 0
-        ? 'No listed blockers. Stop only after required capture coverage, target comparisons and behavior checks pass.'
-        : 'Use returned facts. report(story, runId) only for missing baseline detail; these are not design-target instructions. No recapture.',
+        ? 'Baseline bytes match; approval commits are outside current branch ancestry; no visual edit, detailed report, or recapture is needed. Re-approval only re-anchors baselines.'
+        : attention.length === 0
+          ? 'No listed blockers. Stop only after required capture coverage, target comparisons and behavior checks pass.'
+          : 'Use returned facts. report(story, runId) only for missing baseline detail; these are not design-target instructions. No recapture.',
   };
 }

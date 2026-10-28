@@ -98,8 +98,9 @@ test('real stdio CLI limits discovery and invocation with compact restricted ins
       })),
     },
   };
-  expect(Buffer.byteLength(JSON.stringify(byId(2)))).toBeLessThanOrEqual(5_200);
-  expect(Buffer.byteLength(JSON.stringify(repeated))).toBeLessThanOrEqual(5_900);
+  // Includes target-only, ancestor, focused evidence and checkpoint schemas.
+  expect(Buffer.byteLength(JSON.stringify(byId(2)))).toBeLessThanOrEqual(8_000);
+  expect(Buffer.byteLength(JSON.stringify(repeated))).toBeLessThanOrEqual(8_700);
 });
 
 test.each(['', 'run,', 'not-a-tool'])(

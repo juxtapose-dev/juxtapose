@@ -29,7 +29,7 @@ const SIDEBAR_POLL_MS = 4000;
 addons.register(ADDON_ID, (api: unknown) => {
   addons.add(PANEL_ID, {
     type: types.PANEL,
-    title: 'Visual',
+    title: 'Juxtapose',
     // Docs pages have nothing to capture, so keep the tab out of the way there.
     match: ({ viewMode }: { viewMode?: string }) => viewMode === 'story',
     render: ({ active }: { active?: boolean }) => <PanelHost active={active === true} />,

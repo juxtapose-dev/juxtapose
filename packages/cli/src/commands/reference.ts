@@ -465,8 +465,15 @@ export async function evaluateReferences(options: {
           name,
           reference,
           current: {
-            storyId: result.storyId, image: current, viewport: result.viewport,
-            ...(result.layoutViewport ? { layoutViewport: result.layoutViewport, captureKind: 'full-page' as const } : {}),
+            storyId: result.storyId,
+            image: current,
+            viewport: result.viewport,
+            ...(result.layoutViewport
+              ? {
+                  layoutViewport: result.layoutViewport,
+                  captureKind: 'full-page' as const,
+                }
+              : {}),
           },
           cacheDir: path.join(runDir, 'reference-analysis-v2'),
         });

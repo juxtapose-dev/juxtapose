@@ -71,18 +71,32 @@ try {
     )
     .catch(() => (registered = false));
 
+  // Registration precedes React's manager render. Wait for the actual tab.
+  await page.waitForFunction(
+    () =>
+      [...globalThis.document.querySelectorAll('[role=tab]')].some(
+        (el) => el.textContent?.trim() === 'Juxtapose',
+      ),
+    undefined,
+    { timeout: REGISTER_TIMEOUT_MS },
+  );
+
   const facts = await page.evaluate(() => {
     const m = globalThis.__STORYBOOK_ADDONS_MANAGER;
     const api = globalThis.__STORYBOOK_API__;
     return {
       providers: Object.keys(m?.elements?.['test-provider'] ?? {}),
       panels: Object.keys(m?.elements?.panel ?? {}),
+      panelTitle: m?.elements?.panel?.['juxtapose/panel']?.title,
+      tabRendered: [...globalThis.document.querySelectorAll('[role=tab]')].some(
+        (el) => el.textContent?.trim() === 'Juxtapose',
+      ),
       moduleGetter: typeof api?.experimental_getTestProviderStore,
     };
   });
 
   // The registry entry is the regression guard; a rendered row is the proof
-  // the manager picked it up. The row's <strong>Visual</strong> label is the
+  // the manager picked it up. The row's <strong>Juxtapose</strong> label is the
   // addon's own markup (the panel tab is a button, not a <strong>), so it does
   // not depend on either major's testing-module DOM.
   let rendered = true;
@@ -90,7 +104,7 @@ try {
     .waitForFunction(
       () =>
         [...globalThis.document.querySelectorAll('strong')].some(
-          (el) => el.textContent === 'Visual',
+          (el) => el.textContent === 'Juxtapose',
         ),
       undefined,
       { timeout: REGISTER_TIMEOUT_MS },
@@ -107,7 +121,13 @@ try {
   console.log(`module experimental_getTestProviderStore: ${facts.moduleGetter}`);
   console.log(`rendered in testing module: ${rendered}`);
   console.log(`"Run tests" reached the addon: ${runPosts.length > 0}`);
-  ok = registered && rendered && runPosts.length > 0;
+  console.log(`Juxtapose tab: ${facts.panelTitle === 'Juxtapose' && facts.tabRendered}`);
+  ok =
+    registered &&
+    rendered &&
+    runPosts.length > 0 &&
+    facts.panelTitle === 'Juxtapose' &&
+    facts.tabRendered;
   if (ok && process.argv.includes('--capture')) {
     const response = await fetch(`${url}jux/api/run`, {
       method: 'POST',
