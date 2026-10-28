@@ -20,6 +20,9 @@ import { createInterface } from 'node:readline';
 import path from 'node:path';
 import {
   acquireBrowser,
+  isElementQuery,
+  checkElementProperties,
+  ELEMENT_QUERY_FIELDS,
   freezeImages,
   checkNetwork,
   checkSettle,
@@ -39,6 +42,7 @@ import { isRecord } from '../guards.js';
 import { loadConfig } from '../context.js';
 import { captureIo, type Session } from '../io.js';
 import { latestRunDir } from '../run-dir.js';
+import { SavedElementCache } from './saved-element.js';
 import {
   EXCLUSIVE,
   Scheduler,
@@ -48,13 +52,18 @@ import {
 } from '../scheduler.js';
 import { snapName } from '../snap-name.js';
 import { MAX_VIEWPORT_SIDE } from './snap.js';
-import { agentRunSummary, SavedReportCache } from './agent-run-report.js';
+import { agentRunSummary, SavedReportCache, savedRuns } from './agent-run-report.js';
 import type { ReferenceChangeResult, ReferenceResult } from './reference.js';
+import { ReferenceLayoutCache } from './reference-layout.js';
+import type { TargetTextProvider } from './reference-paint.js';
+import { extentGuidance } from './reference-extent.js';
 
 export const PROTOCOL_VERSION = '2025-06-18';
 
 export interface McpFlags {
   project?: string;
+  /** Exact comma-separated tool names; omitted exposes every tool. */
+  tools?: string;
   chrome?: string;
   'no-daemon'?: boolean;
   /** Snap calls that may capture at once; see SNAP_SLOTS. */
@@ -129,6 +138,15 @@ const PROJECT = {
   description: 'Project dir (default: the server --project)',
 };
 
+const MAX_QUESTION_CHARACTERS = 160;
+const QUESTION = {
+  type: 'string',
+  minLength: 1,
+  maxLength: MAX_QUESTION_CHARACTERS,
+  description:
+    'Optional missing fact motivating this read; visible in tool-call history. Does not change evidence.',
+};
+
 /**
  * A config schema from @juxtapose/core as a tool argument: the shape is the
  * config's, so an agent writes the same object it would put in
@@ -183,7 +201,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'snap',
     description:
-      'URL workflow: capture pixels + structure under a name. If no before snap exists, snap before editing; snap after editing under another name, then diff. Pass url+as for one page, or urls+asPrefix for several. For Storybook/Ladle use run instead.',
+      'URL workflow: capture pixels + structure under a name. If no before snap exists, snap before editing; snap after editing under another name, then diff if available. Pass url+as for one page, or urls+asPrefix for several. For Storybook/Ladle, prefer run if available.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -237,8 +255,10 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'diff',
+    // A client printed 30KB of crop image data as text, truncating a later
+    // source result. Keep rendering guidance on both image-producing tools.
     description:
-      'Compare two snaps. Returns juxtapose.verdict/v1 (prefix: juxtapose.verdict-set/v1); differences are a result, not an error. Set crops when the text evidence is insufficient to judge appearance, including when `explained` is "full": it adds juxtapose.crops/v1 and baseline|current PNG strips.',
+      'Compare two snaps. Returns juxtapose.verdict/v1 (prefix: juxtapose.verdict-set/v1); differences are a result, not an error. Set crops when text cannot judge appearance, even if explained=full: adds juxtapose.crops/v1 and baseline|current PNG strips. Render images once; never print base64 as text.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -269,16 +289,26 @@ export const TOOLS: Tool[] = [
   {
     name: 'run',
     description:
-      'Capture selected Storybook/Ladle stories after an edit. Returns a bounded run summary and a design-target hint by default. Set feedback=none if requesting a saved previous/current diff instead; set report=full for all results. Use report for saved detail without recapture.',
+      'After editing, capture affected stories and variants together (Storybook/Ladle or URLs). One call returns the baseline verdict, target hint, and optional compareTo checkpoint change; do not repeat them with report or reference. changesFromApproved measures approved→current, not design-target error. Includes selective control measurements. A subset pass does not verify omitted targets. stories selects exact capture IDs; configured URL viewports have separate IDs. Use all=true to verify every configured state. Prefer summary for visual edits; full adds capture diagnostics. rgbaStates counts decoded-pixel equality independently of policy.',
     inputSchema: {
       type: 'object',
       properties: {
         all: { type: 'boolean', description: 'Capture every story' },
+        compareTo: {
+          type: 'string',
+          description:
+            'Saved run ID or "previous" (resolved before capture). Append the saved pixel/structure change; off by default.',
+        },
+        progress: {
+          type: 'boolean',
+          description:
+            'Opt-in target pixel trend and bestRun among the newest 20 saved runs; off by default. Record bestRun as a checkpoint. To roll back, restore its source, not the baselines.',
+        },
         feedback: {
           type: 'string',
           enum: ['target', 'none'],
           description:
-            'Design-target hint after capture (default), or none when you intend to request a saved previous/current comparison instead',
+            'Design-target hint after capture (default), or none to skip target analysis; compareTo works with either',
         },
         dryRun: {
           type: 'boolean',
@@ -298,8 +328,7 @@ export const TOOLS: Tool[] = [
         report: {
           type: 'string',
           enum: ['summary', 'full'],
-          description:
-            'Response detail (default summary); full returns the complete RunReport',
+          description: 'summary (default); full adds diagnostics, not target evidence',
         },
       },
     },
@@ -307,13 +336,42 @@ export const TOOLS: Tool[] = [
   {
     name: 'report',
     description:
-      'Read a saved Storybook/Ladle run without capture. Default: bounded summary of the latest run; story: one full capture result; detail=full: complete RunReport. runId selects an older saved run.',
+      'Saved evidence, no capture. Default: summary; story: full result with available approved/current controlGeometry; detail=full: RunReport; detail=runs: newest run IDs. element inspects saved current-element rect/styles; ancestor selects its enclosing element. Labels are not unique CSS selectors; ordinals follow same-label captured document order. Measurements do not identify CSS causes. Request only missing facts.',
     inputSchema: {
       type: 'object',
       properties: {
+        question: QUESTION,
         runId: { type: 'string', description: 'Saved run ID (default latest)' },
         story: { type: 'string', description: 'Exact capture key for one result' },
-        detail: { type: 'string', enum: ['summary', 'full'] },
+        detail: { type: 'string', enum: ['summary', 'full', 'runs'] },
+        element: {
+          type: 'object',
+          minProperties: 1,
+          additionalProperties: false,
+          properties: Object.fromEntries(
+            ELEMENT_QUERY_FIELDS.map((key) => [key, { type: 'string', pattern: '\\S' }]),
+          ),
+          description:
+            'With story: exact saved fields (AND). Ambiguous/truncated: abstain. Not CSS.',
+        },
+        ancestor: {
+          type: 'object',
+          minProperties: 1,
+          additionalProperties: false,
+          properties: Object.fromEntries(
+            ELEMENT_QUERY_FIELDS.map((key) => [key, { type: 'string' }]),
+          ),
+          description:
+            'With unique element: nearest matching strict ancestor (max 64 parents); e.g. title → article.',
+        },
+        properties: {
+          type: 'array',
+          items: { type: 'string' },
+          minItems: 1,
+          maxItems: 12,
+          description:
+            'CSS names; uncaptured values unavailable. Defaults: typography and vertical margins.',
+        },
       },
     },
   },
@@ -326,7 +384,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'handoff',
     description:
-      'A prompt describing one failing story from the last run: what changed, likely cause, image paths, next steps.',
+      "Saved approved-baseline explanation for one story: changes, likely cause, image paths and next steps. Use supplied evidence first; follow the user's requested fix or review scope. The handoff does not authorize baseline approval.",
     inputSchema: {
       type: 'object',
       properties: { story: { type: 'string', description: 'Story id' } },
@@ -335,11 +393,16 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'reference',
+    // The geometry-sufficient repair still viewed two PNGs alongside its
+    // measurement requests. Ask clients to evaluate evidence before more images.
+    // Both team decision replays requested JSON for facts analysis abstained
+    // from producing. Distinguish a testable edit from a measured CSS cause.
     description:
-      'Read saved image evidence without recapture. Default compares the latest capture with the design target. Set compare=previous and fromRun to compare a prior saved capture with the latest capture when you need to see what an edit changed; changed pixels alone do not measure progress toward the target. Set detail=json for regions or region for one paired PNG crop. A passing target run hint needs no reference call.',
+      'Read evidence without recapture; detail=target needs no run. Use source + measurements to propose CSS edits as hypotheses; run affected states to verify. detail=layout with name: geometry and available pixel colors; region: one paired PNG crop, padding adds context. Use returned cropRequest directly. detail=json: all saved matches, regions and current DOM paths; other omissions can remain. It cannot add PNG target DOM, prove CSS causes or resolve abstained matches. question names a missing observable the tool can supply. compare=previous: saved runs, not target progress. Skip exact matches. Render images; never print base64.',
     inputSchema: {
       type: 'object',
       properties: {
+        question: QUESTION,
         compare: {
           type: 'string',
           enum: ['target', 'previous'],
@@ -349,19 +412,30 @@ export const TOOLS: Tool[] = [
           type: 'string',
           description: 'Required with compare=previous; exact earlier run ID',
         },
+        toRun: {
+          type: 'string',
+          description: 'With compare=previous: the later run ID (default latest)',
+        },
         name: {
           type: 'string',
-          description: 'Optional configured design reference name; omit for all',
+          description:
+            'Optional design reference name (or, with compare=previous, a capture key); omit for all',
         },
         region: {
           type: 'string',
           description: 'Stable region ID from a prior reference result',
         },
+        padding: {
+          type: 'integer',
+          minimum: 0,
+          description:
+            'Minimum context pixels around region; clamped to shared image extent. Requires region.',
+        },
         detail: {
           type: 'string',
-          enum: ['json'],
+          enum: ['json', 'layout', 'crop', 'target'],
           description:
-            'Return the full structured ledger instead of the short text summary',
+            'target: named design PNG, no run needed. json: full ledger. layout: named geometry. crop: paired image; requires region.',
         },
       },
     },
@@ -409,8 +483,32 @@ export const TOOLS: Tool[] = [
   },
 ];
 
+// In a real Codex discovery packet, the client repeated 1567 bytes of server
+// guidance on 12 tools (17,237 redundant bytes). Keep workflows on their tools.
+// The team trace printed 7,945 bytes of already-advertised tool declarations.
+// Keep discovery routing within the existing 400-byte initialization budget.
 const INSTRUCTIONS =
-  'For URL before/after checks, reuse an existing before snap or capture one, then edit, snap after, and diff. For Storybook/Ladle, use run on the affected stories and variants together. If saved Jux evidence already describes the starting UI, edit before capturing again. After a coherent edit, read the run report and any compact design-reference hint before deciding what remains. If the run verdict, requested design targets, and behavior checks pass, stop. If evidence leaves a specific question, use reference detail=json for saved measurements or one region crop for appearance; do not recapture or inspect whole screenshots to repeat facts Jux already returned. Local image scripts remain useful when Jux lacks the needed fact. Use check for review blockers, explain for capture settings, and never approve unless the user asks.';
+  'Use known tools; resolve only missing facts. Prefer saved measurements. Stop when all required states, targets and behavior checks pass. Never approve unless the user asks.';
+
+const RESTRICTED_INSTRUCTIONS =
+  'Use only tools advertised by this server. Reuse returned facts; inspect only unresolved questions. Stop when all required run verdicts, design targets and behavior checks pass. Never approve unless the user asks.';
+
+export function resolveMcpTools(value: unknown): readonly Tool[] {
+  if (value === undefined) return TOOLS;
+  if (typeof value !== 'string' || !value.trim())
+    throw new Error(
+      '--tools must be a nonempty comma-separated list of exact tool names',
+    );
+  const names = value.split(',').map((name) => name.trim());
+  if (names.some((name) => !name))
+    throw new Error('--tools must not contain empty names');
+  for (const name of names)
+    if (!TOOLS.some((tool) => tool.name === name))
+      throw new Error(
+        `--tools: unknown tool '${name}'; available: ${TOOLS.map((tool) => tool.name).join(',')}`,
+      );
+  return TOOLS.filter((tool) => names.includes(tool.name));
+}
 
 class ArgError extends Error {}
 class UnknownTool extends Error {}
@@ -428,6 +526,20 @@ const str = (args: Args, key: string, required = false): string | undefined => {
     throw new ArgError(`'${key}' must be a non-empty string`);
   return v;
 };
+
+/** The directory agent reported no friction despite several evidence reads.
+ * Capture the missing observable in its request, without an extra agent turn,
+ * response echo, analysis change or cache-key variation. */
+function checkEvidenceQuestion(args: Args): void {
+  const question = str(args, 'question');
+  if (
+    question !== undefined &&
+    (!question.trim() || [...question].length > MAX_QUESTION_CHARACTERS)
+  )
+    throw new ArgError(
+      `'question' must contain 1–${MAX_QUESTION_CHARACTERS} characters describing a missing fact`,
+    );
+}
 
 /** The `recheck` argument as the CLI flag that carries it. */
 function recheckArg(args: Args): RecheckFlags {
@@ -527,6 +639,7 @@ export const SNAP_SLOTS = 4;
 export async function withDesignReferenceFeedback(
   run: ToolResult,
   project: string,
+  options: { progress?: boolean; previousRun?: string } = {},
 ): Promise<ToolResult> {
   if (run.isError) return run;
   const first = run.content[0];
@@ -553,9 +666,12 @@ export async function withDesignReferenceFeedback(
     const result = await evaluateReferences({
       project,
       run: runId,
-      includeOutlines: true,
     });
     if (result.outcome === 'no-comparison') return run;
+    if (options.progress) {
+      const { targetProgress } = await import('./reference-progress.js');
+      await targetProgress(project, result, options.previousRun).catch(() => {});
+    }
     run.content.push({
       type: 'text',
       text: JSON.stringify(compactReferenceFeedback(result)),
@@ -569,7 +685,63 @@ export async function withDesignReferenceFeedback(
   return run;
 }
 
-function compactReferenceFeedback(result: ReferenceResult) {
+/** A checkpoint comparison now covers every shared capture, so unchanged ones
+ *  are counted, not listed: a 200-story run with one edit reads as one line. */
+function savedChangeText(change: ReferenceChangeResult): string {
+  const count = (status: string) =>
+    change.states.filter((state) => state.status === status).length;
+  const notable = change.states.filter((state) => state.status !== 'unchanged');
+  const counts = [
+    `${count('changed')} changed`,
+    `${count('unchanged')} unchanged`,
+    ...(count('incompatible') ? [`${count('incompatible')} incompatible`] : []),
+    ...(count('not-comparable') ? [`${count('not-comparable')} not comparable`] : []),
+  ].join(', ');
+  const lines = notable
+    .slice(0, 8)
+    .map(
+      (state) =>
+        `${state.name}: ${state.status}${state.changedPixels !== undefined ? `, ${state.changedPixels} changed pixels` : ''}${state.reason ? ` (${state.reason})` : ''}${state.regions?.[0] ? `, largest region ${state.regions[0].id}` : ''}`,
+    );
+  return [
+    `Saved capture change ${change.fromRunId} → ${change.toRunId}; Pixelmatch threshold 0.1: ${counts}.`,
+    ...lines,
+    ...(notable.length > 8 ? [`… ${notable.length - 8} more; request detail=json.`] : []),
+    ...(change.changes?.length
+      ? [
+          `Observed structural changes ${change.fromRunId} → ${change.toRunId}:`,
+          ...change.changes.map((line) => `  ${line}`),
+        ]
+      : []),
+    'Changed pixels describe the edit, not distance to the design target.',
+  ].join('\n');
+}
+
+// Across 11 saved shipment/contact runs, omitting region bounds and repeated
+// guidance cuts hint JSON by 19–27%. Full bounds remain in requested detail.
+export function compactReferenceFeedback(result: ReferenceResult) {
+  // The exact-quality pilot requested a separate baseline report after target
+  // passes because raw equality was hidden. Reuse counts already in ledgers;
+  // aggregate every state, including those omitted from the bounded key lists.
+  // v13 needed four run→exact_check round trips for per-state raw counts.
+  // Reuse saved measurements; this adds no decode or comparison work.
+  const rawPixels = (state: ReferenceResult['states'][number]) => {
+    const raw = 'rawMismatchPixels' in state ? state.rawMismatchPixels : null;
+    return (state.status === 'pass' || state.status === 'fail') &&
+      typeof raw === 'number' &&
+      Number.isSafeInteger(raw) &&
+      raw >= 0
+      ? raw
+      : undefined;
+  };
+  const rgbaStates = { equal: 0, different: 0, unverified: result.summary.notCaptured };
+  for (const state of result.states) {
+    const raw = rawPixels(state);
+    if (raw !== undefined) {
+      if (raw === 0) rgbaStates.equal++;
+      else rgbaStates.different++;
+    } else rgbaStates.unverified++;
+  }
   const affected = result.states.filter((state) => state.status !== 'pass');
   const passed = result.states.filter((state) => state.status === 'pass');
   affected.sort((a, b) => {
@@ -585,44 +757,43 @@ function compactReferenceFeedback(result: ReferenceResult) {
         name: state.name,
         key: state.storyId,
         status: state.status,
-        error: state.error,
+        error: state.error.slice(0, 240),
       };
     if (state.status === 'incompatible')
       return {
         name: state.name,
         key: state.storyId,
         status: state.status,
-        reason: state.reason,
+        reason: state.reason?.slice(0, 240),
       };
-    const dominant = state.visibleColors?.pairs[0];
     return {
       name: state.name,
       key: state.storyId,
       status: state.status,
       pixels: state.mismatchPixels,
+      rawPixels: rawPixels(state),
       percent: state.mismatchPercent,
+      // The real-review residual probe abstained on all 14 layout candidates.
+      // Advertise layout only when the saved analysis can answer that call.
+      ...(state.layout && 'matches' in state.layout && state.layout.matches.length > 0
+        ? { layoutMatches: state.layout.matches.length }
+        : {}),
+      ...(state.progress ? { progress: state.progress } : {}),
+      ...(state.bestRun ? { bestRun: state.bestRun } : {}),
+      ...(state.extent
+        ? {
+            extent: { dh: state.extent.dh, dw: state.extent.dw },
+            extentNote: extentGuidance(state.extent),
+          }
+        : {}),
       ...(state.regions[0]
         ? {
             largestRegion: {
               id: state.regions[0].id,
               pixels: state.regions[0].changedPixels,
-              x: state.regions[0].x,
-              y: state.regions[0].y,
-              width: state.regions[0].width,
-              height: state.regions[0].height,
             },
           }
         : {}),
-      ...(dominant && dominant.pixels >= 32 && dominant.sharePercent >= 50
-        ? {
-            observedColorPair: {
-              reference: dominant.reference,
-              current: dominant.current,
-              sharePercent: dominant.sharePercent,
-            },
-          }
-        : {}),
-      ...(state.outline ? { outline: state.outline } : {}),
     };
   });
   return {
@@ -631,26 +802,47 @@ function compactReferenceFeedback(result: ReferenceResult) {
     outcome: result.outcome,
     policy: result.policy,
     counts: result.summary,
+    rgbaStates,
     states,
     omittedAffected: affected.length - states.length,
-    passed: passed.slice(0, 8).map((state) => ({ name: state.name, key: state.storyId })),
+    passed: passed.slice(0, 8).map((state) => ({
+      name: state.name,
+      key: state.storyId,
+      rawPixels: rawPixels(state),
+      ...('progress' in state && state.progress ? { progress: state.progress } : {}),
+      ...('bestRun' in state && state.bestRun ? { bestRun: state.bestRun } : {}),
+    })),
     omittedPassed: Math.max(0, passed.length - 8),
     guidance:
       result.outcome === 'pass'
-        ? 'Each listed captured target has compatible geometry and zero Pixelmatch mismatch pixels under the stated policy; all captured targets pass. Read the run report for regression and flake status; no reference call is needed to verify these targets, and no recapture is needed. NotCaptured targets were not checked.'
-        : 'Observed target/current pixels, not inferred CSS causes. Use these facts for the next edit. If a specific uncertainty remains, call reference with detail=json for saved geometry or a region ID for one paired crop; neither needs recapture.',
+        ? rgbaStates.different === 0 && rgbaStates.unverified === 0
+          ? 'Captured targets pass the stated policy; no reference call is needed. Check remaining required states and behavior. NotCaptured is unverified.'
+          : 'Policy verification is complete. Exact tasks require no different or unverified rgbaStates. Use saved target evidence for differences, capture missing states, and check behavior.'
+        : result.outcome === 'error' ||
+            affected.some((state) => state.status === 'incompatible')
+          ? 'Resolve the capture/reference issue before inferring a UI edit; images cannot resolve incompatible inputs.'
+          : result.outcome === 'no-comparison'
+            ? 'No target comparison. Capture required states; this is not a pass.'
+            : states.some((state) => 'layoutMatches' in state)
+              ? 'Use facts + source. States with layoutMatches have saved geometry: reference(name, detail=layout). Otherwise use a saved region crop. Do not recapture unchanged code.'
+              : 'Use facts + source. No confident layout matches are available. For appearance, use reference(name, region=largestRegion.id, detail=crop). Do not recapture unchanged code.',
   };
 }
 
 /** One server: the tool handlers, the scheduler and the session browser.
  *  The transport is separate so tests can drive it without a process. */
 export class McpServer {
+  readonly tools: readonly Tool[];
+  readonly instructions: string;
   private browser: Promise<Browser> | null = null;
   private lending: Promise<Browser> | null = null;
   private closed = false;
   private readonly project: string;
   private readonly scheduler: Scheduler;
-  private readonly reports = new SavedReportCache();
+  private readonly reports: SavedReportCache;
+  private readonly elements = new SavedElementCache();
+  private readonly controlMeasurements: boolean;
+  private readonly layouts: ReferenceLayoutCache;
   /** Saved runs are immutable. Bound repeated previous/current analysis in
    * this session; a new latest run gets a different cache key. */
   private readonly referenceChanges = new Map<string, ReferenceChangeResult>();
@@ -660,9 +852,23 @@ export class McpServer {
 
   constructor(
     private readonly flags: McpFlags = {},
-    opts: { snapSlots?: number; freezeImages?: boolean } = {},
+    opts: {
+      snapSlots?: number;
+      freezeImages?: boolean;
+      controlMeasurements?: boolean;
+      /** Experimental: requested layout/JSON only, never default hints. */
+      experimentalTargetTextProvider?: TargetTextProvider;
+    } = {},
   ) {
+    this.layouts = new ReferenceLayoutCache(opts.experimentalTargetTextProvider);
+    this.tools = resolveMcpTools(flags.tools);
+    this.instructions =
+      flags.tools === undefined ? INSTRUCTIONS : RESTRICTED_INSTRUCTIONS;
     this.freezeImages = opts.freezeImages;
+    this.controlMeasurements = opts.controlMeasurements ?? true;
+    this.reports = new SavedReportCache({
+      controlMeasurements: this.controlMeasurements,
+    });
     // Real path, so the containment check below compares like with like on a
     // machine where the root itself sits under a symlink (macOS /tmp).
     const root = path.resolve(flags.project ?? process.cwd());
@@ -732,6 +938,7 @@ export class McpServer {
    *  until it settles: only run can stop early, and leftover snap or diff
    *  work must not overlap a call that touches the same files. */
   async call(name: string, args: Args, signal?: AbortSignal): Promise<ToolResult> {
+    if (!this.hasTool(name)) throw new UnknownTool(`unknown or disabled tool '${name}'`);
     // The place in line is taken now, before planning awaits anything, so
     // conflicting calls are granted in the order they arrived.
     const ticket = this.scheduler.ticket();
@@ -760,6 +967,10 @@ export class McpServer {
     }
   }
 
+  hasTool(name: string): boolean {
+    return this.tools.some((tool) => tool.name === name);
+  }
+
   private async plan(name: string, args: Args): Promise<Planned> {
     switch (name) {
       case 'snap':
@@ -769,19 +980,44 @@ export class McpServer {
       case 'run':
         return this.run(args);
       case 'report': {
+        checkEvidenceQuestion(args);
         const runId = str(args, 'runId');
         const story = str(args, 'story');
         const detail = str(args, 'detail');
+        const element = args['element'];
+        if (element !== undefined && !isElementQuery(element))
+          throw new ArgError(
+            'element must contain exact id, testId, tag, role, name or text fields',
+          );
+        const ancestor = args['ancestor'];
+        if (ancestor !== undefined && !isElementQuery(ancestor))
+          throw new ArgError('ancestor must contain exact saved element fields');
+        if (ancestor !== undefined && element === undefined)
+          throw new ArgError('ancestor requires element');
+        const properties = args['properties'];
+        if (properties !== undefined) checkElementProperties(properties);
+        if (element !== undefined && !story) throw new ArgError('element requires story');
+        if (properties !== undefined && element === undefined)
+          throw new ArgError('properties requires element');
         if (story === '') throw new ArgError("'story' must be a non-empty capture key");
-        if (detail !== undefined && detail !== 'summary' && detail !== 'full')
-          throw new ArgError("'detail' must be 'summary' or 'full'");
-        if (story && detail === 'full')
-          throw new ArgError("pass 'story' or 'detail=full', not both");
+        if (
+          detail !== undefined &&
+          detail !== 'summary' &&
+          detail !== 'full' &&
+          detail !== 'runs'
+        )
+          throw new ArgError("'detail' must be 'summary', 'full' or 'runs'");
+        if (story && detail !== undefined && detail !== 'summary')
+          throw new ArgError(`pass 'story' or 'detail=${detail}', not both`);
+        if (runId && detail === 'runs')
+          throw new ArgError("'detail=runs' lists every saved run; omit 'runId'");
         return {
           locks: this.readsRun(),
           exec: async () => {
             let data: unknown;
-            if (story) {
+            if (detail === 'runs') {
+              data = await savedRuns(this.project);
+            } else if (story) {
               const { report, result } = await this.reports.story(
                 this.project,
                 story,
@@ -789,15 +1025,33 @@ export class McpServer {
               );
               if (!result)
                 return errorResult(`jux: story '${story}' is not in run ${report.runId}`);
-              data = result;
+              data = element
+                ? {
+                    runId: report.runId,
+                    storyId: story,
+                    ...(await this.elements.lookup(
+                      this.project,
+                      report.runId,
+                      story,
+                      element,
+                      properties,
+                      ancestor,
+                    )),
+                  }
+                : result;
             } else {
               data =
                 detail === 'full'
                   ? await this.reports.get(this.project, runId)
                   : await this.reports.summary(this.project, runId);
             }
+            const text = JSON.stringify(data);
+            if (element && Buffer.byteLength(text) > 4096)
+              return errorResult(
+                'jux: saved element response exceeds the 4096-byte budget',
+              );
             return {
-              content: [{ type: 'text', text: JSON.stringify(data) }],
+              content: [{ type: 'text', text }],
               isError: false,
             };
           },
@@ -827,27 +1081,85 @@ export class McpServer {
         };
       }
       case 'reference': {
+        checkEvidenceQuestion(args);
         const name = str(args, 'name');
         const region = str(args, 'region');
-        const detail = str(args, 'detail');
+        const padding = args['padding'] as number | undefined;
+        if (
+          padding !== undefined &&
+          (!region || !Number.isSafeInteger(padding) || padding < 0)
+        )
+          throw new ArgError(
+            "'padding' requires a saved region and a non-negative safe integer",
+          );
+        const requestedDetail = str(args, 'detail');
+        // A matched agent stopped at detail=crop despite having valid saved-region
+        // arguments. Accept the explicit mode without adding the full ledger.
+        const detail = requestedDetail === 'crop' ? undefined : requestedDetail;
+        if (requestedDetail === 'crop' && !region)
+          throw new ArgError("'detail=crop' requires a saved region ID");
         const compare = str(args, 'compare') ?? 'target';
         const fromRun = str(args, 'fromRun');
-        if (detail !== undefined && detail !== 'json')
-          throw new ArgError("'detail' must be 'json'");
+        if (
+          detail !== undefined &&
+          detail !== 'json' &&
+          detail !== 'layout' &&
+          detail !== 'target'
+        )
+          throw new ArgError("'detail' must be 'json', 'layout', 'crop' or 'target'");
+        if (detail === 'target' && (!name || region || compare !== 'target'))
+          throw new ArgError(
+            "'detail=target' requires a named target without region or compare=previous",
+          );
+        if (detail === 'layout' && (!name || region || compare !== 'target'))
+          throw new ArgError(
+            "'detail=layout' requires a named target without region or compare=previous",
+          );
         if (compare !== 'target' && compare !== 'previous')
           throw new ArgError("'compare' must be 'target' or 'previous'");
         if (compare === 'previous' && !fromRun)
           throw new ArgError("'fromRun' is required with compare='previous'");
-        if (compare === 'target' && fromRun)
-          throw new ArgError("'fromRun' requires compare='previous'");
+        const toRun = str(args, 'toRun');
+        if (compare === 'target' && (fromRun || toRun))
+          throw new ArgError("'fromRun' and 'toRun' require compare='previous'");
         return {
           locks: this.readsRun(),
           exec: async (signal) => {
+            if (detail === 'target') {
+              const config = await loadConfig(this.project);
+              const reference = config.designReferences?.[name!];
+              if (!reference) return errorResult(`jux: unknown design reference ${name}`);
+              const { readDesignReferenceTarget } = await import('@juxtapose/core');
+              const target = await readDesignReferenceTarget(this.project, reference);
+              return {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      schema: 'juxtapose.design-target/v1',
+                      name,
+                      storyId: reference.storyId,
+                      viewport: reference.viewport,
+                      deviceScaleFactor: reference.deviceScaleFactor ?? 1,
+                      pixels: target.pixels,
+                      hash: target.hash,
+                    }),
+                  },
+                  {
+                    type: 'image',
+                    mimeType: 'image/png',
+                    data: target.png.toString('base64'),
+                  },
+                ],
+                isError: false,
+              };
+            }
             if (compare === 'previous') {
               const { cropReferenceChange, evaluateReferenceChange } =
                 await import('./reference.js');
               const latest = await latestRunDir(this.project);
               if (!latest) return errorResult('jux: no saved run found');
+              const toRunId = toRun ?? path.basename(latest);
               // Names are resolved through project config. A live edit may
               // remap a name without changing either immutable saved run.
               const config = await loadConfig(this.project);
@@ -857,7 +1169,7 @@ export class McpServer {
               const referenceKey = createHash('sha256')
                 .update(JSON.stringify(selectedReferences))
                 .digest('hex');
-              const key = JSON.stringify([latest, fromRun, name, referenceKey]);
+              const key = JSON.stringify([toRunId, fromRun, name, referenceKey]);
               let change = this.referenceChanges.get(key);
               if (region && !change && name) {
                 // A summary over all references is reusable for a later crop
@@ -866,7 +1178,7 @@ export class McpServer {
                   .update(JSON.stringify(config.designReferences ?? {}))
                   .digest('hex');
                 const allKey = JSON.stringify([
-                  latest,
+                  toRunId,
                   fromRun,
                   undefined,
                   allReferenceKey,
@@ -879,9 +1191,10 @@ export class McpServer {
                 const crop = await cropReferenceChange({
                   project: this.project,
                   fromRun: fromRun!,
-                  toRun: path.basename(latest),
+                  toRun: toRunId,
                   result: change,
                   regionId: region,
+                  ...(padding !== undefined ? { padding } : {}),
                   ...(name ? { name } : {}),
                 });
                 change = { ...change, crop };
@@ -890,9 +1203,10 @@ export class McpServer {
                 change = await evaluateReferenceChange({
                   project: this.project,
                   fromRun: fromRun!,
-                  toRun: path.basename(latest),
+                  toRun: toRunId,
                   ...(name ? { name } : {}),
                   ...(region ? { regionId: region } : {}),
+                  ...(padding !== undefined ? { padding } : {}),
                 });
                 if (!region) {
                   if (this.referenceChanges.size >= 8)
@@ -903,21 +1217,26 @@ export class McpServer {
                 }
               }
               const crop = change.crop;
-              const summary = change.states
-                .slice(0, 8)
-                .map(
-                  (state) =>
-                    `${state.name}: ${state.status}${state.changedPixels !== undefined ? `, ${state.changedPixels} changed pixels` : ''}${state.regions?.[0] ? `, largest region ${state.regions[0].id}` : ''}`,
-                );
               const content: ToolResult['content'] = [
                 {
                   type: 'text',
                   text: detail
                     ? JSON.stringify({
                         ...change,
-                        crop: crop ? { regionId: crop.regionId } : undefined,
+                        crop: crop
+                          ? {
+                              regionId: crop.regionId,
+                              box: crop.box,
+                              scale: crop.scale,
+                              width: crop.width,
+                              height: crop.height,
+                            }
+                          : undefined,
                       })
-                    : `Saved capture change ${change.fromRunId} → ${change.toRunId}; Pixelmatch threshold 0.1.\n${summary.join('\n')}${change.states.length > 8 ? `\n… ${change.states.length - 8} more states; request detail=json.` : ''}\nChanged pixels describe the edit, not distance to the design target.`,
+                    : savedChangeText(change) +
+                      (crop
+                        ? `\nCrop page box ${JSON.stringify(crop.box)}; nominal scale ${crop.scale}; earlier left, later right. Content outside this box is not shown.`
+                        : ''),
                 },
               ];
               if (crop)
@@ -928,6 +1247,25 @@ export class McpServer {
                 });
               return { content, isError: false };
             }
+            if (detail === 'layout') {
+              if (signal?.aborted) return errorResult(CANCELLED);
+              const { evaluateReferences } = await import('./reference.js');
+              const { focusedLayoutFeedback } =
+                await import('./reference-layout-feedback.js');
+              const evidence = await evaluateReferences({
+                project: this.project,
+                name,
+                includeLayout: true,
+                layoutCache: this.layouts,
+              });
+              return {
+                content: [
+                  { type: 'text', text: JSON.stringify(focusedLayoutFeedback(evidence)) },
+                ],
+                isError:
+                  evidence.outcome === 'error' || evidence.outcome === 'no-comparison',
+              };
+            }
             const { referenceCommand } = await import('./reference.js');
             const result = await this.invoke(
               (s) =>
@@ -937,8 +1275,10 @@ export class McpServer {
                     ...this.common(),
                     json: Boolean(region || detail),
                     ...(region ? { region } : {}),
+                    ...(padding !== undefined ? { padding } : {}),
                   },
                   s,
+                  this.layouts,
                 ),
               signal,
             );
@@ -954,15 +1294,23 @@ export class McpServer {
               const first = result.content[0];
               if (first?.type === 'text') {
                 const parsed = JSON.parse(first.text) as {
-                  crop?: { regionId: string; pngBase64: string };
+                  crop?: {
+                    regionId: string;
+                    pngBase64: string;
+                    box: { x: number; y: number; width: number; height: number };
+                    scale: number;
+                    width: number;
+                    height: number;
+                  };
                   [key: string]: unknown;
                 };
                 if (parsed.crop) {
-                  const { pngBase64, regionId } = parsed.crop;
+                  const { pngBase64, ...metadata } = parsed.crop;
+                  const { regionId, box, scale } = metadata;
                   delete parsed.crop;
                   first.text = detail
-                    ? JSON.stringify({ ...parsed, crop: { regionId } })
-                    : `Design reference crop ${regionId}: target on the left, current capture on the right. Re-run reference for a fresh region ID if either image changed.`;
+                    ? JSON.stringify({ ...parsed, crop: metadata })
+                    : `Design reference crop ${regionId}: target on the left, current capture on the right. Page box ${JSON.stringify(box)}; nominal scale ${scale}. Content outside this box is not shown. Re-run reference for a fresh region ID if either image changed.`;
                   result.content.push({
                     type: 'image',
                     mimeType: 'image/png',
@@ -1173,9 +1521,20 @@ export class McpServer {
   private run(args: Args): Planned {
     const all = bool(args, 'all');
     const dryRun = bool(args, 'dryRun');
+    const compareTo = str(args, 'compareTo');
+    if (
+      args.compareTo === null ||
+      (compareTo !== undefined && !/^[a-zA-Z0-9_-]+$/.test(compareTo))
+    )
+      throw new ArgError("'compareTo' must be a saved run ID or 'previous'");
+    const progress = bool(args, 'progress');
+    if (dryRun && (compareTo !== undefined || progress))
+      throw new ArgError("'compareTo' and 'progress' require a capture, not dryRun");
     const feedback = str(args, 'feedback') ?? 'target';
     if (feedback !== 'target' && feedback !== 'none')
       throw new ArgError("'feedback' must be 'target' or 'none'");
+    if (progress && feedback === 'none')
+      throw new ArgError("'progress' requires feedback='target'");
     const since = str(args, 'since');
     const stories = strings(args, 'stories');
     const settle = settleArg(args);
@@ -1190,6 +1549,16 @@ export class McpServer {
     return {
       locks: EXCLUSIVE,
       exec: async (signal) => {
+        // Resolve under the capture lock: a queued run must compare to the
+        // last completed run, never to itself or a half-written neighbour.
+        const previous =
+          compareTo === 'previous' || progress ? await latestRunDir(this.project) : null;
+        const previousRun = previous ? path.basename(previous) : undefined;
+        const fromRun = compareTo === 'previous' ? previousRun : compareTo;
+        if (compareTo && !fromRun)
+          return errorResult('jux: no saved checkpoint; run without compareTo first');
+        // Invalid checkpoints fail before spending a browser capture.
+        if (fromRun) await this.reports.get(this.project, fromRun);
         const { runCommand } = await import('./run.js');
         const result = await this.invoke(
           (s) =>
@@ -1211,16 +1580,65 @@ export class McpServer {
         const withFeedback =
           feedback === 'none'
             ? result
-            : await withDesignReferenceFeedback(result, this.project);
+            : await withDesignReferenceFeedback(result, this.project, {
+                progress,
+                ...(previousRun ? { previousRun } : {}),
+              });
+        if (fromRun) {
+          const first = result.content[0];
+          if (first?.type === 'text') {
+            const report = parseRunReport(first.text);
+            if (report.capturedCount > 0 && report.runId !== 'empty') {
+              try {
+                const change = await this.savedChange(fromRun, report.runId);
+                withFeedback.content.push({
+                  type: 'text',
+                  text: `${change.schema}\n${savedChangeText(change)}`,
+                });
+              } catch (error) {
+                withFeedback.content.push({
+                  type: 'text',
+                  text: `Saved checkpoint comparison unavailable: ${error instanceof Error ? error.message : String(error)}`,
+                });
+              }
+            }
+          }
+        }
         if (reportDetail === 'full') return withFeedback;
         const first = withFeedback.content[0];
         if (first?.type === 'text') {
           const report = parseRunReport(first.text);
-          first.text = JSON.stringify(agentRunSummary(report));
+          first.text = JSON.stringify(
+            agentRunSummary(report, {
+              controlMeasurements: this.controlMeasurements,
+              designReferencesCompared: withFeedback.content.some(
+                (block) =>
+                  block.type === 'text' &&
+                  block.text.includes('juxtapose.design-reference-hint/v1'),
+              ),
+            }),
+          );
         }
         return withFeedback;
       },
     };
+  }
+
+  private async savedChange(fromRun: string, toRun: string) {
+    const config = await loadConfig(this.project);
+    const referenceKey = createHash('sha256')
+      .update(JSON.stringify(config.designReferences ?? {}))
+      .digest('hex');
+    const key = JSON.stringify([toRun, fromRun, undefined, referenceKey]);
+    let change = this.referenceChanges.get(key);
+    if (!change) {
+      const { evaluateReferenceChange } = await import('./reference.js');
+      change = await evaluateReferenceChange({ project: this.project, fromRun, toRun });
+      if (this.referenceChanges.size >= 8)
+        this.referenceChanges.delete(this.referenceChanges.keys().next().value!);
+      this.referenceChanges.set(key, change);
+    }
+    return change;
   }
 
   /** Explicit ids only, each one a result in the last run: an approval that
@@ -1423,15 +1841,15 @@ export async function handleMessage(
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'jux', version },
-        instructions: INSTRUCTIONS,
+        instructions: server.instructions,
       });
     case 'ping':
       return rpcResult(id, {});
     case 'tools/list':
-      return rpcResult(id, { tools: TOOLS });
+      return rpcResult(id, { tools: server.tools });
     case 'tools/call': {
       const name = params.name;
-      if (typeof name !== 'string' || !TOOLS.some((t) => t.name === name))
+      if (typeof name !== 'string' || !server.hasTool(name))
         return rpcError(id, -32602, `unknown tool: ${String(name)}`);
       const args = params.arguments ?? {};
       if (!isRecord(args)) return rpcError(id, -32602, 'arguments must be an object');
@@ -1458,6 +1876,14 @@ const rpcError = (id: RpcId, code: number, message: string): RpcResponse => ({
 const SIGNALS = { SIGINT: 2, SIGTERM: 15 } as const;
 
 export async function mcpCommand(flags: McpFlags, version: string): Promise<number> {
+  try {
+    resolveMcpTools(flags.tools);
+  } catch (error) {
+    process.stderr.write(
+      `jux mcp: ${error instanceof Error ? error.message : String(error)}.\n`,
+    );
+    return EXIT.usage;
+  }
   const config = await loadConfig(path.resolve(flags.project ?? process.cwd()));
   // Once at startup, on stderr (stdout is the protocol); each snap and run
   // call also reports them in its own result.

@@ -122,6 +122,7 @@ export async function handoffCommand(
   const flakeGroup = report.flakeGroups?.find((g) => g.storyIds.includes(storyId));
   const variant = handoffVariant(result);
   const payload: HandoffPayload = {
+    runId: report.runId,
     storyId,
     storyTitle: story ? `${story.title} — ${story.name}` : storyId,
     status: result.status,
@@ -144,7 +145,7 @@ export async function handoffCommand(
     ...(cropsCommand ? { cropsCommand } : {}),
     images: {
       baseline: haveBaseline ? baselineImage : undefined,
-      current: currentImage,
+      current: existsSync(currentImage) ? currentImage : undefined,
       // No pixel diff runs when the baseline image is unavailable, so no overlay exists.
       diff:
         result.status === 'fail' && !result.baselineImage

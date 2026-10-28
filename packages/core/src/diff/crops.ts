@@ -1,7 +1,7 @@
 // Tier-3: the pixels, but only where they changed and only as much as an
 // agent needs. One PNG per changed region — baseline | current, side by
 // side — with the region's bounding box doubled about its centre for
-// context and scaled so the longer side is at most 512px. Nearest-neighbour
+// context (or expanded by explicit padding) and scaled so the longer side is at most 512px. Nearest-neighbour
 // when scaling up, so a 1px border reads as a hard 6px step and not a blur.
 // No browser; sharp only, which `diffImages` already loads.
 
@@ -19,10 +19,15 @@ const PNG = { compressionLevel: 9, adaptiveFiltering: false } as const;
 /** The gutter colour: magenta is in no UI palette, so it never reads as content. */
 const GUTTER_RGBA = { r: 255, g: 0, b: 255, alpha: 1 };
 
+export interface CropOptions {
+  /** Minimum surrounding context in page pixels; shared-image bounds still apply. */
+  padding?: number;
+}
+
 export interface Crop {
   /** The changed region this strip shows, page px. */
   region: ChangedRegion;
-  /** What was cropped: the region doubled about its centre, clamped to both frames. */
+  /** Actual context bounds, clamped to both frames; doubled by default. */
   box: ChangedRegion;
   /** Output px per page px: an integer above 1 when enlarged, under 1 when reduced. */
   scale: number;
@@ -36,6 +41,7 @@ export async function renderCrops(
   a: Buffer,
   b: Buffer,
   regions: ChangedRegion[],
+  options: CropOptions = {},
 ): Promise<Crop[]> {
   const [ma, mb] = await Promise.all([sharp(a).metadata(), sharp(b).metadata()]);
   // Only the overlap exists on both sides; after a size change that is the
@@ -52,7 +58,7 @@ export async function renderCrops(
     // The cap counts rendered crops, not candidates: off-frame regions at the
     // front must not starve a valid later one.
     if (out.length >= MAX_CROPS) break;
-    const box = cropBox(region, frame);
+    const box = cropBox(region, frame, options);
     if (box.width === 0 || box.height === 0) continue;
     const scale = scaleFor(box);
     const sw = Math.max(1, Math.round(box.width * scale));
@@ -80,13 +86,18 @@ export async function renderCrops(
   return out;
 }
 
-/** The region doubled about its centre, at least MIN_BOX a side, clamped to
+/** The region doubled about its centre, or expanded by minimum padding,
+ * at least MIN_BOX a side, clamped to
  *  the frame, integer px. A zero-size box means the region lies outside the
  *  frame. */
 export function cropBox(
   r: ChangedRegion,
   frame: { width: number; height: number },
+  options: CropOptions = {},
 ): ChangedRegion {
+  const padding = options.padding === undefined ? 0 : options.padding;
+  if (!Number.isSafeInteger(padding) || padding < 0)
+    throw new Error('crop padding must be a non-negative safe integer');
   // Clamping alone would drag a region left of / above the frame back to the
   // origin and crop something unrelated, so outside means no box. The edges
   // are exclusive: a region starting at x == width covers no pixel. A
@@ -99,8 +110,15 @@ export function cropBox(
   ) {
     return { x: 0, y: 0, width: 0, height: 0 };
   }
-  const w = Math.max(MIN_BOX, r.width * 2);
-  const h = Math.max(MIN_BOX, r.height * 2);
+  // An 18px-high mobile change produced only 36px of context and omitted
+  // the button the agent asked about. Explicit padding expands saved pixels,
+  // without guessing target components or changing the default crop bytes.
+  const w = Math.max(MIN_BOX, r.width * 2, r.width + 2 * Math.min(padding, frame.width));
+  const h = Math.max(
+    MIN_BOX,
+    r.height * 2,
+    r.height + 2 * Math.min(padding, frame.height),
+  );
   const x0 = Math.min(frame.width, Math.max(0, Math.floor(r.x + r.width / 2 - w / 2)));
   const y0 = Math.min(frame.height, Math.max(0, Math.floor(r.y + r.height / 2 - h / 2)));
   const x1 = Math.min(frame.width, Math.ceil(x0 + w));

@@ -56,6 +56,34 @@ function json(result: Awaited<ReturnType<McpServer['call']>>) {
 }
 
 describe('saved MCP run reports', () => {
+  test('question is bounded diagnostic metadata; timing stays in requested detail', async () => {
+    const value = report(1);
+    const project = await projectWithReport(value);
+    const server = new McpServer({ project, chrome: '/must-not-launch' });
+    try {
+      const before = await server.call('report', {});
+      const question = 'Which saved control changed height?';
+      expect(await server.call('report', { question })).toEqual(before);
+      expect(json(before)).not.toHaveProperty('durationMs');
+      expect(
+        json(await server.call('report', { detail: 'full', question })).durationMs,
+      ).toBe(value.durationMs);
+      for (const question of ['', '   ', 'x'.repeat(161), 12]) {
+        const result = await server.call('report', { question });
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain('question');
+      }
+      expect((await server.call('report', { question: '🔎'.repeat(160) })).isError).toBe(
+        false,
+      );
+      expect((await server.call('report', { question: '🔎'.repeat(161) })).isError).toBe(
+        true,
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
   test('summary stays bounded and prioritizes capture errors and flakes', () => {
     const value = report(1000);
     value.results[16]!.unstable = { hashes: ['a'], unconfirmed: 'not rechecked' };
@@ -121,8 +149,56 @@ describe('saved MCP run reports', () => {
         'main>section>form gap 20px→12px (all 3)',
         'button[name="Save details"] background-color #285bc4→#1b773f (other)',
         'div.address-grid grid-template-columns 266px→125px 125px (card__mobile)',
-        'div.field resized h-8px (all 3)',
       ]);
+    });
+
+    test('keeps ordinal element identities distinct and leaves long facts intact on demand', () => {
+      const lines = observedChanges([
+        withDeltas('desktop', [
+          style('textbox (1st)', 'height', '44px', '36px'),
+          style('textbox (2nd)', 'height', '44px', '36px'),
+          style('x'.repeat(300), 'height', '44px', '36px'),
+        ]),
+      ] as RunReport['results']);
+      expect(lines).toEqual([
+        'textbox (1st) height 44px→36px (all 1)',
+        'textbox (2nd) height 44px→36px (all 1)',
+      ]);
+    });
+
+    test('signals long observations without modifying saved evidence', () => {
+      const value = report(1);
+      const delta = style('x'.repeat(300), 'height', '44px', '36px');
+      value.results[0] = withDeltas('story-0', [delta]) as RunReport['results'][number];
+      const original = JSON.stringify(value);
+      const summary = agentRunSummary(value);
+      expect(summary.omittedLongObservations).toBe(1);
+      expect(summary.changesFromApproved).toBeUndefined();
+      expect(JSON.stringify(value)).toBe(original);
+      expect(agentRunSummary(report(1)).omittedLongObservations).toBeUndefined();
+    });
+
+    test('retains a fourth repair fact while bounding UTF-8 output including capture IDs', () => {
+      const values = [
+        gap,
+        green,
+        style('grid', 'grid-template-columns', '266px', '125px 125px'),
+        resized('field', 0, -13),
+      ];
+      const lines = observedChanges([
+        withDeltas('desktop', values),
+        withDeltas('mobile', values),
+      ] as RunReport['results']);
+      expect(lines).toHaveLength(4);
+      expect(lines).toContain('field resized h-13px (all 2)');
+      const longIds = observedChanges([
+        withDeltas('界'.repeat(200), [gap]),
+        withDeltas('文'.repeat(200), [gap]),
+        withDeltas('other', [green]),
+      ] as RunReport['results']);
+      expect(Buffer.byteLength(JSON.stringify(longIds))).toBeLessThanOrEqual(800);
+      expect(longIds).toContain('+1 more');
+      expect(longIds.some((line) => line.includes('background-color'))).toBe(true);
     });
 
     test('stays bounded and drops single-capture noise in a large run', () => {
@@ -153,6 +229,21 @@ describe('saved MCP run reports', () => {
     });
   });
 
+  test('guidance avoids redundant reads without treating empty or partial runs as complete', () => {
+    const empty = report(0);
+    expect(agentRunSummary(empty).next).toContain('required capture coverage');
+    const partial = report(1);
+    partial.results[0]!.status = 'pass';
+    partial.totalCount = 4;
+    expect(agentRunSummary(partial).next).toContain(
+      'target comparisons and behavior checks',
+    );
+    const failed = report(1);
+    failed.results[0]!.status = 'fail';
+    expect(agentRunSummary(failed).next).toContain('only for missing baseline detail');
+    expect(agentRunSummary(failed).next).toContain('not design-target instructions');
+  });
+
   test('explains exact-match stale baselines without asking for another visual lookup', () => {
     const stale = report(2);
     stale.summary = { pass: 0, fail: 0, new: 0, stale: 2, skip: 0 };
@@ -173,22 +264,75 @@ describe('saved MCP run reports', () => {
     expect(mixed.staleMeaning).toContain(
       'approval commit is outside current branch ancestry',
     );
-    expect(mixed.next).toContain('Call report with story');
+    expect(mixed.next).toContain('only for missing baseline detail');
 
     stale.results[1]!.status = 'stale';
     stale.results[1]!.unstable = { hashes: ['a'], unconfirmed: 'not rechecked' };
     stale.results[1]!.unrechecked = true;
-    expect(agentRunSummary(stale).next).toContain('Call report with story');
+    expect(agentRunSummary(stale).next).toContain('only for missing baseline detail');
+  });
+
+  test('with no approved baseline, next points to the design-reference hint', () => {
+    const fresh = report(2);
+    fresh.summary = { pass: 0, fail: 0, new: 2, stale: 0, skip: 0 };
+    fresh.results.forEach((result) => {
+      result.status = 'new';
+    });
+    const compared = agentRunSummary(fresh, { designReferencesCompared: true });
+    expect(compared.next).toBe(
+      'No approved baseline; use the design-reference hint below for target mismatches.',
+    );
+    expect(compared.next).not.toContain('Call report');
+    // Without a reference comparison, or with a baseline verdict, text is unchanged.
+    expect(agentRunSummary(fresh).next).toContain('only for missing baseline detail');
+    fresh.results[1]!.status = 'fail';
+    expect(agentRunSummary(fresh, { designReferencesCompared: true }).next).toContain(
+      'only for missing baseline detail',
+    );
   });
 
   test('reads one saved story or full report without browser and refreshes changed reports', async () => {
-    const project = await projectWithReport(report(20));
+    const initial = report(20);
+    initial.results[12]!.controlGeometry = {
+      observations: [
+        {
+          id: 'name',
+          tag: 'input',
+          role: 'textbox',
+          suppressedResize: true,
+          height: { approved: 49, current: 36 },
+          provenance: 'structure',
+          confidenceRule:
+            'unique same DOM id or test ID, with matching tag and role in both snapshots; measured border-box size, not a CSS cause',
+        },
+      ],
+      omitted: 0,
+      abstained: 0,
+      incompatible: false,
+    };
+    const project = await projectWithReport(initial);
     const cache = new SavedReportCache();
     const firstSummary = await cache.summary(project);
     expect(await cache.summary(project)).toBe(firstSummary);
-    const server = new McpServer({ project });
+    const server = new McpServer({ project }, { controlMeasurements: false });
+    const defaultServer = new McpServer({ project });
     try {
       expect(json(await server.call('report', {})).schema).toBe('juxtapose.agent-run/v1');
+      expect(json(await server.call('report', {}))).not.toHaveProperty(
+        'controlMeasurements',
+      );
+      const expanded = json(await defaultServer.call('report', {}));
+      expect(expanded.controlMeasurements).toEqual(
+        agentRunSummary(initial, { controlMeasurements: true }).controlMeasurements,
+      );
+      expect(expanded).toHaveProperty('controlMeasurements.items.0.approved', 49);
+      expect(json(await defaultServer.call('report', {}))).toEqual(expanded);
+      expect(JSON.stringify(json(await server.call('report', {})))).not.toContain(
+        'controlGeometry',
+      );
+      expect(
+        json(await server.call('report', { story: 'story-12' })).controlGeometry,
+      ).toEqual(initial.results[12]!.controlGeometry);
       expect(json(await server.call('report', { story: 'story-12' })).storyId).toBe(
         'story-12',
       );
@@ -206,6 +350,7 @@ describe('saved MCP run reports', () => {
       expect((await server.call('report', { story: 'absent' })).isError).toBe(true);
     } finally {
       await server.close();
+      await defaultServer.close();
     }
   });
 

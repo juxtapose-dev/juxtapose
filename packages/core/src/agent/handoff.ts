@@ -5,7 +5,7 @@ import { describeRendererRetries } from '../report/renderer-retry.js';
 // The central bet, inherited from the original tool and worth restating:
 // send STRUCTURED DATA, not screenshots. `mismatchPercent: 3.72` and a box at
 // (412, 88) are exact; an LLM's spatial reasoning over a PNG is probabilistic
-// and costs 10-50x the tokens. Images are listed last, as a fallback.
+// so measured text comes first. Images are listed last for appearance questions.
 //
 // Pure function. No I/O, no clipboard — string in, string out, so it is
 // trivially testable and callable from both the CLI and a server.
@@ -32,6 +32,8 @@ import {
 } from '../report/format.js';
 
 export interface HandoffPayload {
+  /** Saved run to use for later report/checkpoint queries, when known. */
+  runId?: string;
   storyId: string;
   storyTitle: string;
   status: DiffStatus;
@@ -132,6 +134,10 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   lines.push(`# Visual change: ${p.storyTitle}`);
   lines.push('');
   lines.push(`Story \`${p.storyId}\` is **${p.status}**.`);
+  if (p.runId) lines.push(`Saved run: \`${p.runId}\`.`);
+  lines.push(
+    'This is saved approved-baseline evidence; design-reference results are separate.',
+  );
   if (p.comparison)
     lines.push(
       describeVisualEquivalence([
@@ -184,11 +190,34 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   // baseline wrong or a failure spurious, so it is read before either.
   if (p.settle) lines.push(...settleSection(p.settle), '');
 
+  if (p.status === 'pass') {
+    lines.push(
+      'This captured state passes its approved-baseline policy. No baseline repair or approval is needed.',
+      'Check only missing required states, design targets or behavior checks; one passing baseline does not complete a design task.',
+      'Resolve any capture warnings above before concluding the task is complete.',
+    );
+    if (!p.structural?.deltaCount && !p.structural?.flags.length) return lines.join('\n');
+  }
+
   if (p.status === 'new') {
     lines.push(
       'This story has no baseline yet — nothing to compare against. Decide whether',
-      'the rendered output is correct, then either approve it to establish the',
-      'baseline or fix the component first.',
+      'the rendered output meets the requested task. Establish a baseline only if',
+      'the user explicitly asks for approval; otherwise fix or review as requested.',
+      '',
+      '## Saved current capture',
+      '',
+      ...(p.images.current
+        ? [
+            `Current image: \`${p.images.current}\` (${p.viewport.width}×${p.viewport.height}).`,
+            'Use it only for a remaining appearance question; no recapture is needed to view this saved image.',
+          ]
+        : ['The saved current image is unavailable.']),
+      ...(p.diffDataPath
+        ? [
+            `Saved report detail: \`${p.diffDataPath}\`. It has no approved-baseline pixel comparison for this new story.`,
+          ]
+        : []),
       '',
       ...actions(p, { approveVerb: 'establish this as the baseline' }),
     );
@@ -201,8 +230,8 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
       'of HEAD — most likely a branch that never merged. The pixels may well match;',
       'the provenance is what is in question.',
       '',
-      'Re-run the capture first. If it then passes, re-approve to re-anchor the',
-      'baseline to the current history.',
+      'Re-run the capture first. If it then passes, report the stale provenance.',
+      'Re-anchor the baseline only if the user explicitly asks for approval.',
       '',
       ...actions(p, { approveVerb: 're-anchor the baseline' }),
     );
@@ -210,7 +239,10 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   }
 
   if (p.diffDataPath) {
-    lines.push(`Read \`${p.diffDataPath}\` for the full machine-readable diff.`, '');
+    lines.push(
+      `Use the evidence below first. Read \`${p.diffDataPath}\` only for missing saved detail; it cannot recover deltas omitted from the report.`,
+      '',
+    );
   }
 
   const imageUnavailable = p.baselineImage === 'unavailable';
@@ -236,7 +268,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
   if (v && missing) {
     lines.push(
       missing === 'baseline'
-        ? 'No structure snapshot for the baseline, so nothing explains these pixels. Re-approve after this change to get structural diffs next time.'
+        ? 'No structure snapshot for the baseline, so nothing explains these pixels. A later approval requested by the user stores structure for future comparisons.'
         : 'No structure snapshot for the current capture (structure capture failed or was unavailable). Re-run the capture to get structural diffs.',
       '',
     );
@@ -265,8 +297,8 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     if (v.deltas.length > 0) {
       lines.push(
         'Check these deltas against the change you intended. If they are all intended,',
-        `the change is expected: approve it (\`jux approve --story ${shellQuote(p.storyId)}\`). If any`,
-        'delta is one you did not intend, fix that before approving.',
+        'the baseline change is expected; this does not establish design-target correctness.',
+        'Approval still requires an explicit user request. Fix unintended deltas when a fix was requested.',
       );
     }
     if (v.flags.length > 0) {
@@ -276,7 +308,7 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
       lines.push(
         '',
         'Part of the pixel change has no matching DOM or style delta (canvas, images, or',
-        'rendering). Look at the diff image for those regions.',
+        'rendering). Inspect paired crops for those regions if appearance remains unclear.',
       );
     }
     lines.push('');
@@ -332,7 +364,8 @@ export function buildHandoffPrompt(p: HandoffPayload): string {
     lines.push('');
   }
 
-  lines.push(...actions(p, { approveVerb: 'accept the new rendering' }));
+  if (p.status !== 'pass')
+    lines.push(...actions(p, { approveVerb: 'accept the new rendering' }));
 
   if (p.cropsCommand || p.images.baseline || p.images.current || p.images.diff) {
     lines.push('', '## If still unsure', '');
@@ -373,28 +406,28 @@ function actions(p: HandoffPayload, opts: { approveVerb: string }): string[] {
 
   if (p.componentPath) {
     out.push(
-      `1. Inspect the component: \`${p.componentPath}\``,
-      `2. Check recent history: \`git log -p -- ${p.componentPath}\``,
+      `1. Use the supplied evidence; inspect relevant source as needed: \`${p.componentPath}\``,
+      `2. If intent remains unclear, check recent history: \`git log -p -- ${shellQuote(p.componentPath)}\``,
       '3. Decide: intentional change, or regression?',
     );
   } else {
     out.push(
-      '1. Locate the component behind this story.',
-      '2. Check its recent history for an explanation.',
+      '1. Use the supplied evidence; locate relevant source only when needed for the requested task.',
+      '2. If intent remains unclear, check recent history for an explanation.',
       '3. Decide: intentional change, or regression?',
     );
   }
 
   out.push(
     '',
-    `- **Intentional** → \`jux approve --story ${shellQuote(p.storyId)}\` to ${opts.approveVerb}.`,
+    `- **Intentional** → report the review conclusion. Only if the user explicitly asks for approval, use \`jux approve --story ${shellQuote(p.storyId)}\` to ${opts.approveVerb}.`,
     // A project on the repo-backed store commits its images on purpose.
     ...(p.imagesCommitted
       ? []
       : [
-          '  Commit `juxtapose.manifest.json` and `juxtapose.structures/`. Never `git add` an image: baseline images stay in the local cache.',
+          '  After authorized approval, commit `juxtapose.manifest.json` and `juxtapose.structures/`. Never `git add` an image: baseline images stay in the local cache.',
         ]),
-    '- **Regression** → propose a fix. Do not apply it without confirmation.',
+    '- **Regression** → if the user requested a fix, apply it within that scope and verify the affected stories and variants. For a review-only request, describe the proposed fix without changing files.',
   );
   return out;
 }

@@ -60,7 +60,12 @@ export function registerTestProvider(api: unknown): boolean {
   add(
     TEST_PROVIDER_ID,
     contract === 'legacy'
-      ? { type: types.experimental_TEST_PROVIDER, name: 'Visual', runnable: true, render }
+      ? {
+          type: types.experimental_TEST_PROVIDER,
+          name: 'Juxtapose',
+          runnable: true,
+          render,
+        }
       : { type: types.experimental_TEST_PROVIDER, render },
   );
 
@@ -168,7 +173,7 @@ const TestProviderRow: React.FC<{ store: ProviderStore }> = ({ store }) => {
 
   return (
     <Row>
-      <strong>Visual</strong>
+      <strong>Juxtapose</strong>
       {running ? (
         <Muted>running…</Muted>
       ) : error ? (

@@ -10,6 +10,11 @@ the complete `RunReport` remains in the saved run and is available through
 `report` or `run({report: "full"})`. `reference` can compare two saved captures
 on demand. `jux run --json` is unchanged.
 
+For visual iteration, omit `report` or use `report: "summary"`. Both report modes
+include the same design-target feedback. Full mode adds raw capture details,
+including timing diagnostics; it does not add target measurements. To inspect
+those diagnostics after a capture, use `report({detail: "full"})` on the saved run.
+
 The compact `run` response lists up to eight captures needing attention and
 points to `report` for details. A `stale` baseline means its saved image bytes
 match the capture, but its approval commit is outside the current branch's
@@ -59,13 +64,33 @@ signal exits immediately.
 
 ## Set up the server
 
-The server takes three options:
+The server accepts these options:
 
 - `--project <dir>`: the project root. It defaults to the directory the client
   starts the server in. Tools can work only in this directory or below it.
 - `--chrome <path>`: use this Chromium binary instead of the pinned one, as for
   `jux snap`.
 - `--no-daemon`: launch a private browser instead of using the warm one.
+- `--concurrency <n>`: concurrent snaps, from 1 to 16; defaults to half the cores,
+  capped at 4.
+- `--tools <names>`: expose only these exact comma-separated tool names. By
+  default all ten tools are available. Unknown or empty names fail at startup;
+  surrounding whitespace is ignored and duplicate names are listed once.
+  Omitted tools cannot be invoked through this server.
+
+If your client already filters tools, prefer that capability. Otherwise, for a
+focused capture-and-comparison session, configure the server with:
+
+```bash
+jux mcp --tools run,report,reference
+```
+
+This subset is **not read-only**: `run` captures pages and writes saved results.
+It excludes story discovery (`list`), review blockers (`check`), capture-setting
+inspection (`explain`), and approval, along with the URL and handoff tools. Choose
+the subset only when those capabilities are unnecessary. This reduces the tool
+catalog sent to the client; it does not change capture or comparison semantics.
+Tool selection is a CLI option, not a project configuration setting.
 
 ### Claude Code
 
@@ -122,14 +147,26 @@ If `@juxtapose/cli` is already a dev dependency, use `"command": "npx"` with
    `crops: true` and look at the images. Full structural coverage is spatial
    overlap, not proof that the new appearance is correct.
 
-For a Storybook or Ladle project with baselines, call `run`, then `handoff`
-for each failing story. When `designReferences` are configured, `run` includes
+For a Storybook or Ladle project with baselines, call `run` and read its returned
+evidence first. Request `handoff` for a failing story only when more agent context
+is missing. When `designReferences` are configured, `run` includes
 an additional, compact target-versus-current result block for the capture keys it
-just saved. Call `reference` when you need the full measured ledger or a paired
-image crop; it reads the saved images without recapturing. Call `approve` only
+just saved. Request focused saved measurements for a missing fact, then one paired
+region crop if appearance remains unresolved. Use the full ledger only for a
+specific question the focused evidence cannot answer. Call `approve` only
 when the user asks you to.
 
 ## Tools
+
+`reference` and `report` accept an optional `question` (1–160 characters): name
+the specific missing observable motivating this read, for example
+`reference({name: "desktop", detail: "layout", question: "What target height is measurable for the email control?"})`.
+The question stays in the client's tool-call history so a review can distinguish
+missing evidence from facts already supplied. It does not change analysis,
+cache identity, selection or response text, and the server does not persist or
+interpret it. Select evidence with the normal tool arguments. No extra call is
+needed to report the question; it is descriptive metadata, not proof the request
+was necessary or its answer sufficient.
 
 The server exposes ten tools. Each result's first text block holds the
 command's JSON, except `run`, which defaults to a bounded summary, and
@@ -146,13 +183,198 @@ complete saved result. Targets outside a
 subset run count as `notCaptured`; if none were captured, no hint is added.
 For a passing target, the hint means the viewport and image geometry were
 compatible and Pixelmatch found zero mismatch pixels under the stated policy.
-For up to two failing targets (favoring different viewports), a hint may also
-include `outline` with measured target/current border-box positions. It uses a border color from the current
-capture's DOM sidecar to find matching strokes in both images. It omits the
-field when those strokes are absent, the capture DPR differs from 1, or the
-geometry difference is at most two pixels. The boxes do not identify elements or imply a CSS cause, and they do
-not affect the Pixelmatch verdict. Read this compact observation before
-requesting the full reference ledger or a crop.
+The separate `rgbaStates` counts exact decoded-pixel equality across all configured
+reference states, including those omitted from the bounded lists. For example,
+`{"equal":4,"different":0,"unverified":0}` means four exact RGBA matches.
+Listed target states and passed keys also include `rawPixels`, the exact RGBA mismatch count, when measured. Missing `rawPixels` means unverified, never zero. These per-state counts reuse the saved analysis and identify residual differences without a second verification call. `pixels` remains the Pixelmatch count under the stated policy.
+A toleranced pass may still count as `different`; errors, incompatible or missing
+captures, and unavailable raw counts remain `unverified`. These observations do
+not change Pixelmatch verdicts. Use these returned counts instead of another
+report call to ask whether policy passes are also exact.
+Default run hints contain verdicts, mismatch counts, largest-region IDs and any
+requested progress. Region bounds are omitted; request `reference({detail: "json"})`
+for bounds or `reference({name, region})` for a saved paired crop. The policy and
+state counts remain explicit; a subset pass does not verify omitted targets.
+Default baseline summaries omit capture duration; request
+`report({detail: "full"})` for `durationMs` and other profiling metadata.
+Sampled color pairs and experimental outline measurements
+are available in requested detail rather than the default hint. Outline
+measurements use a border color from the current DOM sidecar to find matching
+strokes in both images; the boxes do not establish element identity or CSS
+causes. Up to two failing targets, favoring distinct viewports, may contain
+`outline` in `reference({detail: "json"})`. These diagnostics never affect the
+Pixelmatch verdict.
+
+For focused target measurements, request
+`reference({name: "desktop-default", detail: "layout"})`. It returns
+`juxtapose.target-layout-focus/v1`: one target's status, current capture key,
+painted target/current boxes, current element labels and IDs, confidence rules,
+abstentions, omissions and a `next` instruction for the target's status. When a
+comparison has color evidence, the requested layout result also includes up to
+two `colorSamples` pairs and `omittedColorPairs`. Each pair gives reference/current
+hex colors (`#rrggbb`, or `#rrggbbaa` when translucent) at the same image
+coordinates and a sample count, with pixel
+provenance and the total visible mismatch sample count. These are not matched
+elements or CSS color substitutions: movement can pair paint with background.
+Geometry has priority under the 3 KiB target / 4 KiB maximum; omitted color pairs remain
+available in JSON detail. Missing `colorSamples` can mean unavailable evidence or
+insufficient response space; it does not mean unchanged paint. No new image
+analysis or capture runs for this field,
+and the default `run` hint does not include it. When a
+changed region exists, `cropRequest` supplies valid `{name, region}` arguments
+for requesting one saved paired crop if appearance remains unresolved. Element
+IDs are not crop IDs. `cropRegion` gives the selected changed-pixel bounds: this
+is the largest changed region, which may not answer a question about another
+part of the component. Request JSON detail only if a needed region is missing.
+Use the returned `cropRequest` directly when it covers the remaining question;
+JSON detail is unnecessary before requesting that crop. You may also use
+`reference({...cropRequest, detail: "crop"})`; explicit crop mode requires a
+region ID and returns the same short caption and paired PNG as omitting detail,
+without the full JSON ledger. If the saved crop is too narrow to show the
+relationship you need, add `padding: 96` (or another non-negative integer) to
+request at least that many page pixels around the changed region. The crop
+still includes the original doubled region, clamps to the shared image extent,
+and uses the existing scaling rule. Read the returned page box and nominal
+scale: padding cannot recover detail lost to downscaling or identify target DOM.
+It reuses saved images without recapture; it also works with checkpoint crops.
+
+Clients that execute tool calls in JavaScript must render each content block
+according to its type. Do not print the whole result or its enclosing
+`Promise.allSettled` wrapper: serializing PNG base64 as text wastes context and
+can truncate later results. Preserve `isError`, print text blocks, and render
+each image once. For a code-mode client with `text` and `image` helpers:
+
+```js
+const result = await tools.mcp__jux__reference({ name, region, padding: 96 });
+if (result.isError) text('MCP tool error');
+for (const block of result.content) {
+  if (block.type === 'text') text(block.text);
+  else if (block.type === 'image') image(block);
+}
+```
+
+Apply the same pattern separately to each fulfilled batch result; print a
+rejection as an error rather than serializing the entire batch. Standard MCP
+clients should display the native image content directly.
+
+If neither measurements
+nor the crop answer the question, report the missing observable instead of
+silently guessing a target value.
+No `cropRequest` means there is no saved changed-region crop to request. It uses the same cached measurements as JSON detail,
+without computing outlines or repeating hashes, image paths and region metadata.
+Focused observations target 3 KB and may finish one complete fact or paint
+observation block above that target, up to 4 KB. Further facts remain in JSON; long
+identities are omitted whole rather than truncated. Focused measurements omit DOM paths when a label or ID exists; full JSON retains them. Labels are not unique selectors. Other target states still
+require verification. This mode requires `name` and cannot be combined with
+`region` or `compare: "previous"`. Use `detail: "json"` for a full ledger or
+missing measurements, and `region` for a saved paired crop when appearance
+remains uncertain. Passing or unsupported targets return explicit unavailable
+measurement status rather than invented geometry.
+
+Read the focused measurements before deciding whether to request images. If
+source and measurements resolve the edit, change the source and verify the
+required states with `run`. Otherwise request a paired region crop for the
+remaining visual question. Avoid requesting images speculatively in the same
+batch as measurements: the returned evidence may make that image work unnecessary.
+
+Prefer MCP measurements and focused saved crops over a fresh browser screenshot
+or a custom pixel-analysis script for facts already returned. Reuse source that
+is already in context. A passing target hint needs no confirmation with another
+`reference` or `report` call. After an edit, capture the affected states and
+variants together once; check omitted required states before stopping. These are
+workflow instructions, not a measured time or token saving. For configured URL
+projects, each viewport entry has its own capture ID: `stories` selects those
+exact IDs rather than automatically adding related viewport entries. Use
+`run({all: true})` when every configured state is required.
+
+Measurements describe pixels, not CSS causes. Use current source and those
+measurements to form a candidate CSS edit, then verify it against every required
+target state. Treat the inferred cause as a hypothesis, not a measured fact. A
+painted box height does not prove a font size; a nonzero mismatch minimum does
+not verify a CSS value. Request more evidence for a specific observable that
+would change the edit when the current evidence cannot support a testable
+hypothesis. A saved crop can answer unresolved appearance questions.
+
+Requested full JSON returns all saved accepted geometry matches, current DOM
+paths and cached text when available; other analysis omissions can remain. It cannot supply a PNG target's DOM, prove CSS causation or recover
+matches that analysis abstained from producing. `omittedMatches` in the focused response counts accepted
+matches left out of that preview. JSON detail has no eight-match or eight-region cutoff; it
+returns all accepted matches and changed regions from the existing bounded
+analysis. Region IDs stay valid beyond the eighth region for both target and
+checkpoint comparisons. `abstained` is not another inventory of accepted
+matches waiting there. Do not repeat a request for an unavailable fact.
+Experimental hypothesis probes are not part of the public tool set. These
+routing boundaries follow the recorded requests in the team decision replay;
+their effect on completed-task efficiency remains unmeasured.
+
+Call advertised tool names directly when their arguments are known. If a client
+needs a catalog lookup, filter locally and return only the matching names; fetch
+a schema only for unknown arguments. Do not print full tool objects to confirm
+names already supplied. A recorded team repair printed 7,945 bytes of declarations
+before using those same known tools. This routing guidance avoids that repeated
+context; its effect on agent adherence and whole-task spend is not yet measured.
+
+For benchmark clients, collect optional tool feedback in the agent's existing
+final response rather than adding a separate tool call. Ask only for encountered
+friction: the needed observable, workaround actually used and a visible tool name
+with minimal arguments. An empty report is normal. Match reports to recorded
+calls before changing tools; a self-report does not prove a missing capability
+or a saving. Keep collection identical across comparison arms and include its
+output in token measurements. The MCP server does not upload this feedback.
+
+Experimental embeddings that supply `experimentalTargetTextProvider` may also
+include independent `paint.target` and `paint.current` inventories in requested
+layout detail. Normal CLI sessions do not enable OCR. `textInside` is target OCR
+with an engine score, not a probability; `elementText` is current DOM text.
+Neither establishes correspondence between the two inventories or a CSS cause.
+Each group has exact pixel `rgb`, a representative `box` and `count` of grouped observations (not every matching
+element on the page).
+Repeated groups also provide up to three `boxes` as space permits, sorted by y then x, and
+`omittedBoxes` for additional positions. All boxes use `[x,y,width,height]`.
+The group `count` includes unshown positions; `paint.omitted` counts components
+not represented by the groups, independently of `omittedBoxes`. Full cached text
+and positions remain in JSON detail without another recognition pass. These
+measurements do not change the verdict or default run hint; agent-value testing
+is still required.
+
+Requested `reference({detail: "json"})` also adds `layout` to failing target
+states when the saved current DOM is available. It contains all accepted
+conservative painted-region matches with target/current boxes, current element
+IDs and short labels. `dx`, `dy`, `dw` and `dh` mean current minus target;
+the boxes describe pixels, not CSS border boxes. Element identity comes from
+the current DOM; a design PNG has no DOM. Each match names its provenance and
+a confidence-rule ID defined once in `confidenceRules`. Each matched component
+also includes, for example,
+`paintedFill: {rgb: [40, 91, 196], targetCurrentEqual: true}`. This is the exact
+opaque sRGB pixel fill shared by those target/current components. It is not a
+CSS background color or a claim that the whole element is identical. An absent
+match says nothing about color agreement. The field is included in requested
+layout/JSON evidence; the compact run response does not add it.
+
+This analysis matches exact flat fills and unchanged inner paint, rejects
+ambiguous repeated controls, and omits geometry changes of two pixels or less.
+Different fonts, colors, gradients or ambiguous shapes may produce no facts.
+`status: "measured"` means analysis completed, not that the UI passes;
+`status: "abstained"` with `reason: "component-budget"` or
+`"incompatible-geometry"` means it could not provide these measurements.
+`"unavailable"` reports missing or unusable saved inputs. The existing target
+verdict remains authoritative, including when there are no layout matches.
+
+Passing targets, default run hints and crop-only requests skip layout analysis.
+The MCP session retains at most 16 image analyses and 16 pair comparisons,
+without retaining decoded screenshots. Content-addressed derived files under
+`.juxtapose/analysis/target-layout-v2/` survive a restart. Keys include image
+bytes, current structure bytes and algorithm version. Changed inputs invalidate
+the analysis; corrupt caches are recomputed and a read-only cache does not
+change the verdict. These facts remain on demand pending agent-value testing.
+When a full-page capture differs from its target only in size (same viewport,
+device scale factor and capture kind), the state is `fail`, never `incompatible`
+or `pass`. Jux compares the top-left overlap and counts every pixel present in
+only one image as a mismatch. The hint adds a compact `extent:{dh,dw}` (current
+minus target, in image pixels) and an `extentNote` such as "current is 2 px
+shorter than the target". Fix the page length or width first; region IDs cover
+only the overlap.
+
 When exactly two detected outlines have an unambiguous relationship, `layout`
 can report `stacked` versus `side-by-side`. `nearCurrentElementIds`, when
 present, identifies current textboxes that uniquely overlap the measured
@@ -164,18 +386,76 @@ appear in the design reference or why the layouts differ.
 By default, compares the last saved run with configured named design PNGs. No
 browser is opened. Pass `name` to select one target, or omit it for the
 captured-state ledger. To see what changed since an earlier run, call
-`reference` with `compare: "previous"` and `fromRun: "<run-id>"`. That view
-compares the earlier saved image with the latest saved image using Pixelmatch;
-it does not recapture or say whether the edit moved closer to the design.
-Its short response lists changed pixel counts and region IDs; `detail: "json"`
-returns `juxtapose.saved-run-change/v1`. A region request returns a paired
+`reference` with `compare: "previous"` and `fromRun: "<run-id>"`. `toRun`
+selects the later run; it defaults to the latest. The view covers every
+capture both runs saved, not only design-reference states, so it works in a
+project without design PNGs. Design references keep their names; other
+captures appear under their capture keys, and `name` accepts either. It
+compares the saved images with Pixelmatch and, when both runs saved structure,
+the structure the way `diff` compares two snaps. It does not recapture or say
+whether the edit moved closer to the design.
+
+Saved runs are never pruned, so any earlier run works as a checkpoint: keep a
+good run's ID, and after later edits compare against it. `report` with
+`detail: "runs"` lists up to 20 saved runs, newest first, with their counts.
+To roll back, restore the checkpoint's source and run again; approving is not a
+checkpoint, because it rewrites the committed baselines.
+
+The short response counts changed and unchanged captures, lists up to eight
+that changed with their changed pixel counts and region IDs, and adds up to
+six observed structural changes deduplicated across them, such as
+`main>section>form gap 12px→20px (all 4)`. On the four-capture billing
+fixture, comparing the regressed run with the repaired one took 88 ms and
+821 bytes and named all four edits. `detail: "json"`
+returns `juxtapose.saved-run-change/v1`, with each changed state's structural
+deltas. A region request returns a paired
 previous/current PNG crop. The server caches a bounded number of these
 immutable saved-run comparisons for repeated lookups in the same session. A
 crop requested from a cached region reuses its analysis and validates both
 saved image hashes before rendering.
+
+Both target and checkpoint crops include their page-pixel `box` and nominal
+`scale` (output pixels per page pixel). JSON detail also includes `width` and
+`height` of the complete paired PNG, including the center gutter. Each side's
+scaled dimensions are rounded to whole pixels. Target crops show target left,
+current right; checkpoint crops show earlier left, later right. The box includes
+nearby context, but content outside it is not shown. Metadata comes from the
+existing crop renderer; no additional capture or image analysis is performed.
 After a capture, `run` includes compact target feedback by default. Set
-`feedback: "none"` on that call if you intend to request only the
-previous/current view and want to avoid computing the target comparison.
+`compareTo: "previous"` (resolved before capture) or a saved run ID to append
+the checkpoint pixel/structure change in the same call. The extra text block
+starts with `juxtapose.saved-run-change/v1`. It reuses the saved comparison cache
+for later `reference` detail or crop requests. Set `feedback: "none"` to skip
+target analysis while still requesting a checkpoint comparison.
+
+`progress: true` additionally includes each listed target's `progress`, when a
+compatible preceding comparison exists, and `bestRun`:
+
+```json
+{
+  "progress": { "fromRun": "r2", "pixels": [812, 224], "trend": "closer" },
+  "bestRun": "r3"
+}
+```
+
+These are opt-in measurements, not a quality score. Progress compares target
+mismatch pixels against the immediately preceding run. `bestRun` is the fewest
+mismatch pixels among this run and compatible saved analyses in the newest 20
+runs; ties prefer this run, then the newest earlier run. Reference bytes,
+capture key, geometry and comparison policy must match. Missing historical
+analyses are skipped, except the preceding run, which may be analysed once
+from its saved images against the current target through the existing content
+cache. Stale analyses and incompatible captures contribute no trend. Old
+reports without capture hashes require that re-analysis before use. No browser
+is opened for history.
+
+One `run` supplies these verdicts without a follow-up `report` or `reference`.
+Use those tools only for missing detail. Stop when all required captures,
+targets and behavior checks pass; `notCaptured` targets remain unchecked.
+Record a useful `bestRun` as a checkpoint, and retain its source separately.
+Checkpoint comparisons and progress cannot be requested with `dryRun`;
+progress also requires target feedback. An invalid checkpoint is rejected
+before capture. Neither option changes approval or acceptance policy.
 
 In the default target view, configured targets outside a subset run or skipped
 there count as `notCaptured`;
@@ -184,7 +464,7 @@ If none of the configured targets were captured, the result is an error with
 `outcome: "no-comparison"` in JSON detail, rather than a visual pass.
 The default result is a short text ledger that includes a dominant observed
 target/current color pair when one exists; pass `detail: "json"` for
-`juxtapose.design-reference-set/v1` with measured geometry, sampled visible target/current color pairs, and up to eight regions ranked by exact changed-pixel count. The short ledger names the largest region and its count. Pass a returned `region` ID to receive one paired target/current PNG as
+`juxtapose.design-reference-set/v1` with measured geometry, sampled visible target/current color pairs, and all computed regions ranked by exact changed-pixel count. The short ledger names the largest region and its count. Pass a returned `region` ID to receive one paired target/current PNG as
 an MCP image block. Region IDs remain valid after an MCP server restart while
 the saved images and config remain the same. If either image changes, an old ID
 is rejected; call `reference` again for current IDs. The ledger has explicit
@@ -287,15 +567,17 @@ and unstable captures first), and how many more were omitted. It also includes
 a compact design-target hint when references are configured. The full report
 is saved for focused, read-only lookups.
 
-| Argument   | Type     | Description                                                                                          |
-| ---------- | -------- | ---------------------------------------------------------------------------------------------------- |
-| `all`      | boolean  | Capture every story instead of the affected ones.                                                    |
-| `since`    | string   | Git ref. Traces changed files since it for `cause`.                                                  |
-| `stories`  | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
-| `settle`   | object   | Settle options for every story, as for `snap`.                                                       |
-| `recheck`  | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
-| `feedback` | string   | `"target"` (default) or `"none"` to skip design-target analysis after capture.                       |
-| `report`   | string   | `"summary"` (default) or `"full"` for the complete `RunReport`.                                      |
+| Argument    | Type     | Description                                                                                          |
+| ----------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `all`       | boolean  | Capture every story instead of the affected ones.                                                    |
+| `since`     | string   | Git ref. Traces changed files since it for `cause`.                                                  |
+| `stories`   | string[] | Exact story IDs or ID globs to capture; base matches include variants.                               |
+| `settle`    | object   | Settle options for every story, as for `snap`.                                                       |
+| `recheck`   | string   | `"changed"` (default), `"new"` or `"off"`: which stories get a second capture. Overrides the config. |
+| `feedback`  | string   | `"target"` (default) or `"none"` to skip design-target analysis after capture.                       |
+| `compareTo` | string   | Saved run ID or `"previous"`; append checkpoint change (default off).                                |
+| `progress`  | boolean  | Add compatible target trend and bounded best-run history (default off).                              |
+| `report`    | string   | `"summary"` (default) or `"full"` for the complete `RunReport`.                                      |
 
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.
@@ -319,6 +601,38 @@ Set `dryRun: true` to return the selection instead of capturing. It uses the
 same selection rules and response shape as `list`, while retaining run's affected
 analysis when no selectors are supplied. This does not replace the last run.
 
+The summary's `next` guidance asks for additional saved detail only when the
+returned evidence leaves a question. `changesFromApproved` describes a difference
+from the approved baseline, not an instruction to match a design target. A run
+with no listed capture blockers still requires checking requested coverage,
+design targets and behavior before stopping; an empty or partial run is not
+proof of completion.
+
+Compact `changesFromApproved` retains ordinal labels such as `textbox (1st)`
+and `textbox (2nd)` as distinct saved identities. Ordinals count same-labelled
+elements in the captured snapshot, including unchanged siblings; they describe
+document order on the side supplying the delta. These labels are not guaranteed
+unique CSS selectors. The array contains at most six facts plus an omission
+marker, within 800 UTF-8 bytes including capture labels. Facts longer than 240
+characters are omitted whole and counted in `omittedLongObservations`; full
+saved results retain them. A `+N more` marker counts eligible grouped facts
+excluded by the count or byte budget. Request a specific saved story only when
+its missing detail is needed.
+
+Compact `run` and `report` summaries may include `controlMeasurements` when
+ancestor deduplication hid a native-control resize and the element has no other
+direct fact. Each item identifies a DOM ID or test ID, the measured dimension,
+`approved` and `current` values, and the capture keys where it was observed.
+`captures: "all-failing"` means every failing capture in this saved run—not every
+story in the project. Identical measurements are grouped across captures.
+
+This block is limited to three items and 768 UTF-8 bytes. `omittedMeasurements`
+counts grouped measurements that did not fit; `unlistedDetailObservations` counts
+observations already omitted from saved per-story detail. Neither count implies
+that the displayed evidence is insufficient for the next edit. Request more
+detail only for a specific unanswered question. Dimensions describe border boxes,
+not CSS causes. No block is emitted when no qualifying measurement is available.
+
 ### report
 
 Reads a saved run without launching a browser or capturing again. With no
@@ -329,11 +643,102 @@ run; otherwise the latest is used. `story` and `detail: "full"` are exclusive.
 The server keeps a small cache of parsed reports and checks for saved-file
 changes before reusing one.
 
-| Argument | Type   | Description                        |
-| -------- | ------ | ---------------------------------- |
-| `runId`  | string | Saved run ID (default latest).     |
-| `story`  | string | Exact capture key to inspect.      |
-| `detail` | string | `"summary"` (default) or `"full"`. |
+To inspect one element's captured current styles without a browser, use:
+
+```json
+{
+  "story": "billing-card--default__mobile",
+  "runId": "<saved-run-id>",
+  "element": { "id": "display-name" },
+  "properties": ["font-size", "line-height", "padding-top"]
+}
+```
+
+For a repeated card, anchor the lookup to a unique title and request its nearest
+matching ancestor:
+
+```json
+{
+  "story": "sessions--upcoming",
+  "element": { "text": "Building accessible forms" },
+  "ancestor": { "tag": "article" },
+  "properties": ["padding-top", "gap", "grid-template-columns"]
+}
+```
+
+`ancestor` uses the same exact fields as `element`. It searches strict parents
+(up to 64), returning the nearest match. The anchor must be unique; an ambiguous
+anchor still abstains. No matching parent returns `not-found`; excessive depth
+or an invalid parent chain returns `unavailable`. Returned values describe the
+saved current ancestor, never the reference image or a CSS cause. This reuses
+the saved snapshot and does not capture again.
+
+`element` is an exact-field query, not a CSS selector. Supported fields are `id`,
+`testId`, `tag`, `role`, `name` and `text`; supplied fields must all match. Tag
+matching ignores case; other fields match the captured strings exactly. For
+example, `{ "tag": "h1" }` works only when that capture has one matching heading.
+Unchanged duplicates count. Ambiguous, missing or truncated evidence returns an
+explicit status instead of choosing an element.
+
+This returns `juxtapose.current-element/v1`, the saved run/capture IDs, structure
+hash, matched identity, border-box `rect` and captured computed values. Defaults
+are font family, size, weight, line height, letter spacing and vertical margins.
+`properties` selects 1–12 CSS property names. CSS width/height are not collected;
+use `rect` for border-box dimensions. Later-added properties are marked in
+`unavailableProperties` when absent from a capture or unsupported by the capture format, rather than filled with invented values. A request mixing captured and uncaptured properties still returns the available measurements.
+A 3 KB element payload budget omits whole oversized style values and reports
+`omittedStyles`; identities are never truncated. The MCP envelope is capped at
+4 KB. Values describe the saved current capture time; target values and CSS-rule
+locations require other evidence.
+
+The server caches at most eight decoded current structures, shares a read across concurrent
+requests, and checks file metadata before reuse. A saved-file change invalidates the
+cache. Source files and images are not read for this lookup. Use it when a
+specific current computed value is unclear; avoid requesting it to repeat values
+already supplied. The core SDK exports `inspectStructureElement`, `ElementQuery`
+and `ElementInspection` for the same pure snapshot operation.
+
+First use any `controlMeasurements` in the compact summary. If a wrapper resize
+still leaves the control dimensions unclear, request one
+`report({story: "form--default", runId: "<saved-run>"})`. A failed capture may
+include `controlGeometry`: measured approved/current border-box widths and
+heights for native controls with unique matching DOM IDs or test IDs. For
+example, `height: {approved: 49, current: 36}` identifies a measured size change,
+not the CSS property that caused it. Typography, padding, or layout may be
+responsible. No new capture or sidecar read is needed.
+
+An ancestor-suppressed control without IDs can also carry its exact `tag`, `role`
+and `name`, when the existing structural pair has the same unique role/name/tag
+in both complete snapshots. Renamed, duplicate or conflicting identities abstain.
+The compact `controlMeasurements` summary groups these measurements across
+captures within its existing three-item/768-byte limit. Names identify saved
+DOM evidence; they do not establish a CSS selector or a PNG target's dimensions.
+
+Full `controlGeometry` detail is not repeated in compact summaries. Its observation array is capped
+at three items and 1024 UTF-8 bytes, with an explicit `omitted` count. Ambiguous
+identities abstain; truncated snapshots report `unavailable: "truncated-structure"`.
+`suppressedResize: true` marks a size change omitted from ordinary facts because
+it followed its parent and had no other direct fact. These measurements are
+prioritized before the detail budget; this flag is not a claim about a CSS cause.
+Older reports may not contain it. This is approved-baseline evidence, not
+geometry extracted from a PNG design target or a previous-run comparison.
+
+| Argument     | Type     | Description                                                                                           |
+| ------------ | -------- | ----------------------------------------------------------------------------------------------------- |
+| `runId`      | string   | Saved run ID (default latest).                                                                        |
+| `story`      | string   | Exact capture key to inspect.                                                                         |
+| `detail`     | string   | `"summary"` (default), `"full"` or `"runs"`.                                                          |
+| `element`    | object   | With `story`: exact saved element fields.                                                             |
+| `properties` | string[] | With `element`: 1–12 CSS property names; uncaptured properties are listed in `unavailableProperties`. |
+| `ancestor`   | object   | With `element`: nearest matching strict saved ancestor.                                               |
+
+Structure capture version 3 records computed `grid-template-areas` and classifies
+its changes as layout evidence. `report` element properties can return this
+saved value. Older captures list it in `unavailableProperties`; a structural
+comparison skips areas unless both captures support them. Version 2 and 3
+captures can still compare `grid-template-columns`. These are saved DOM
+measurements, not CSS inferred from a PNG target. Existing approvals are not
+recaptured or changed automatically.
 
 ### check
 
@@ -346,6 +751,17 @@ capturing. No arguments. Same result as `jux check --json`:
 Describes one story from the last run: what changed, the likely cause, image
 paths and the next steps. Same text as `jux handoff <storyId>`, which has no
 JSON form.
+
+The prompt uses saved evidence first and points to source/history only when
+needed. A requested regression fix can proceed within the user's scope; a
+review-only request produces findings without code changes. Baseline approval
+always requires an explicit user request. A passing baseline needs no repair
+or approval, but does not prove that design targets or other required states
+pass. The sidecar contains saved report detail, not omitted evidence.
+The prompt identifies its saved run. New-story handoffs link the saved current
+image and report sidecar; a missing current image is stated explicitly. Use
+the existing capture for an appearance question rather than recapturing merely
+to locate or view it. A new story still has no approved-baseline pixel comparison.
 
 | Argument | Type   | Description |
 | -------- | ------ | ----------- |
@@ -510,3 +926,19 @@ check results carry `rendererRetry` evidence, and handoffs explain it. The
 `approve` tool always confirms the selected hash on a fresh renderer, even
 with `allowUnstable`; it cannot approve different bytes. See
 [renderer settings](configuration.md#renderer-settings).
+
+### Inspect a design before the first capture
+
+Call `reference({ name: "desktop", detail: "target" })` to read a configured
+`designReferences` PNG before its UI exists. The response contains one image
+block and compact metadata: name, story ID, configured viewport/DPR, actual pixel
+dimensions and image SHA-256. Render the image block directly; do not print its
+base64 data. This request opens no browser, needs no saved run and makes no
+comparison or correctness claim. It cannot be combined with a region or saved-run
+comparison. After editing, use `run` for current-versus-target feedback.
+
+Target hints include `layoutMatches` on affected states only when saved confident
+geometry matches are available. Request `reference({name, detail: "layout"})`
+for those states. When none are available, the hint directs you to a saved
+region crop; a layout request cannot recover matches that the analysis abstained
+from reporting. This availability hint does not identify a CSS cause.

@@ -227,17 +227,37 @@ export {
 export { compareSnaps, type SnapSide, type SnapComparison } from './diff/compare.js';
 export {
   compareDesignReference,
+  readDesignReferenceTarget,
   type DesignReferenceCurrent,
+  type DesignReferenceExtent,
   type DesignReferenceLedger,
 } from './diff/design-reference.js';
 export { diffImages } from './diff/diff.js';
+export {
+  extractTargetEvidence,
+  extractTargetEvidenceStreaming,
+  matchLayout as matchTargetLayout,
+  fromStructure as targetEvidenceFromStructure,
+  type TargetEvidence,
+  type StructureTextEvidence,
+  type RgbaImage,
+  type PaintComponentEvidence,
+  type SolidPaintComponent,
+  type TargetLayoutResult,
+} from './diff/target-layout/index.js';
 export {
   observeReferenceOutlines,
   type OutlineBox,
   type ReferenceOutlineObservation,
 } from './diff/reference-outlines.js';
 // Tier-3 crops: two images + regions → side-by-side PNG strips, no browser.
-export { renderCrops, MAX_CROPS, MAX_CROP_SIDE, type Crop } from './diff/crops.js';
+export {
+  renderCrops,
+  MAX_CROPS,
+  MAX_CROP_SIDE,
+  type Crop,
+  type CropOptions,
+} from './diff/crops.js';
 export { describeDelta, describeDeltas } from './diff/structural/summary.js';
 export { compareCodeUnits } from './diff/structural/deltas.js';
 export { shellQuote } from './shell-quote.js';
@@ -378,3 +398,11 @@ export {
   type UserDeviceSpec,
 } from './browser/devices.js';
 export { resolveDevice, UnknownDeviceError } from './capture/device.js';
+export {
+  inspectStructureElement,
+  isElementQuery,
+  checkElementProperties,
+  ELEMENT_QUERY_FIELDS,
+  type ElementQuery,
+  type ElementInspection,
+} from './agent/inspect-element.js';

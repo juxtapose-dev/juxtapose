@@ -36,9 +36,10 @@ Usage
                                  the effective capture settings for one story or variant key, and
                                  which layer each came from (config, story, stories glob, variant, CLI)
   jux diff <a> <b> [--json]      what changed between two snaps (or two prefixes with --prefix, two runs with --runs)
-  jux mcp [--project <dir>] [--concurrency <n>]
-                                 MCP server on stdio for coding agents: snap, diff, list, run, check, handoff, reference, approve
+  jux mcp [--project <dir>] [--concurrency <n>] [--tools <names>]
+                                 MCP server on stdio for coding agents
                                  (--concurrency: snaps at once, 1-16, default half the cores up to 4)
+                                 (--tools: exact comma-separated tool names; default all tools)
   jux --version                  print installed package versions
 `;
 
@@ -53,6 +54,7 @@ Common options
   --allow-unstable               approve: also baseline stories whose two run captures differed
   --run <dir>                    run directory to read (approve, check, handoff, reference, upload)
   --region <id>                  reference: return a saved comparison's paired crop (--json)
+  --padding <px>                 reference crop: minimum surrounding context (page pixels)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init, approve: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
   --upload                      run: upload captured results to hosted review (JUXTAPOSE_TOKEN)
@@ -178,6 +180,7 @@ async function main(argv: string[]): Promise<number> {
       origin: { type: 'string' },
       platform: { type: 'string' },
       concurrency: { type: 'string' },
+      tools: { type: 'string' },
       since: { type: 'string' },
       all: { type: 'boolean', default: false },
       fix: { type: 'boolean', default: false },
@@ -189,6 +192,7 @@ async function main(argv: string[]): Promise<number> {
       'dry-run': { type: 'boolean' },
       run: { type: 'string' },
       region: { type: 'string' },
+      padding: { type: 'string' },
       as: { type: 'string' },
       'as-prefix': { type: 'string' },
       prefix: { type: 'boolean', default: false },

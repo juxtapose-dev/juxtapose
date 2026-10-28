@@ -2,7 +2,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-/** Most recent run directory containing a report, or null. */
+/** Most recent saved report, unaffected by later analysis/cache writes. */
 export async function latestRunDir(projectRoot: string): Promise<string | null> {
   const runsRoot = path.join(projectRoot, '.juxtapose', 'runs');
   if (!existsSync(runsRoot)) return null;
@@ -10,9 +10,15 @@ export async function latestRunDir(projectRoot: string): Promise<string | null> 
   let newest: { dir: string; mtime: number } | null = null;
   for (const entry of await readdir(runsRoot)) {
     const dir = path.join(runsRoot, entry);
-    if (!existsSync(path.join(dir, 'report.json'))) continue;
-    const { mtimeMs } = await stat(dir);
-    if (!newest || mtimeMs > newest.mtime) newest = { dir, mtime: mtimeMs };
+    const report = path.join(dir, 'report.json');
+    if (!existsSync(report)) continue;
+    const { mtimeMs } = await stat(report);
+    if (
+      !newest ||
+      mtimeMs > newest.mtime ||
+      (mtimeMs === newest.mtime && dir > newest.dir)
+    )
+      newest = { dir, mtime: mtimeMs };
   }
   return newest?.dir ?? null;
 }

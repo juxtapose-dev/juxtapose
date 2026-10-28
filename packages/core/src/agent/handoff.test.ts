@@ -147,10 +147,34 @@ describe('buildHandoffPrompt', () => {
     expect(out).toContain('git log -p -- /repo/src/Button.tsx');
   });
 
-  it('gives both approve and fix paths, and withholds auto-apply', () => {
+  it('respects requested fixes, review-only scope and explicit approval', () => {
     const out = buildHandoffPrompt(base);
     expect(out).toContain('jux approve --story components-button--primary');
-    expect(out).toContain('Do not apply it without confirmation');
+    expect(out).toContain('Only if the user explicitly asks for approval');
+    expect(out).toContain('if the user requested a fix, apply it within that scope');
+    expect(out).toContain('For a review-only request');
+    expect(out).not.toContain('Do not apply it without confirmation');
+    expect(out).toContain('If intent remains unclear, check recent history');
+    expect(out).toContain('Use the evidence below first');
+  });
+
+  it('a passing baseline needs no repair or approval and does not imply target completion', () => {
+    const out = buildHandoffPrompt({ ...base, status: 'pass' });
+    expect(out).toContain('No baseline repair or approval is needed');
+    expect(out).toContain('one passing baseline does not complete a design task');
+    expect(out).not.toContain('jux approve');
+    expect(out).not.toContain('git log');
+  });
+
+  it('all actionable statuses preserve user scope and quote optional history paths', () => {
+    for (const status of ['fail', 'new', 'stale'] as const) {
+      const out = buildHandoffPrompt({ ...base, status, componentPath: '/repo/a b.tsx' });
+      expect(out).toContain('Only if the user explicitly asks for approval');
+      expect(out).toContain('For a review-only request');
+      expect(out).toContain("git log -p -- '/repo/a b.tsx'");
+      expect(out).toContain('design-reference results are separate');
+      expect(out).not.toContain('Do not apply it without confirmation');
+    }
   });
 
   it('footers the project root so a wrong-repo session self-detects', () => {
@@ -169,9 +193,24 @@ describe('buildHandoffPrompt', () => {
   });
 
   it('handles a new story with no baseline', () => {
-    const out = buildHandoffPrompt({ ...base, status: 'new' });
+    const out = buildHandoffPrompt({ ...base, status: 'new', runId: 'r-new' });
     expect(out).toContain('no baseline yet');
     expect(out).toContain('jux approve');
+    expect(out).toContain('Saved run: `r-new`');
+    expect(out).toContain('Current image: `c.webp` (1280×800)');
+    expect(out).toContain('no recapture is needed to view this saved image');
+    expect(out).toContain('Saved report detail:');
+    expect(out).toContain('no approved-baseline pixel comparison');
+    expect(out).not.toContain('Pixel summary:');
+    expect(out).not.toContain('- baseline:');
+  });
+
+  it('new-story artifact availability is explicit rather than invented', () => {
+    const out = buildHandoffPrompt({ ...base, status: 'new', images: {} });
+    expect(out).toContain('The saved current image is unavailable');
+    expect(out).not.toContain('Current image:');
+    expect(out).not.toContain('no recapture is needed');
+    expect(out).not.toContain('Saved run:');
   });
 
   it('explains staleness as provenance, not pixels', () => {
@@ -332,6 +371,22 @@ describe('describeRegion', () => {
     expect(canvas.explained).toBe('none');
     const partial = buildHandoffPrompt({ ...base, structural: canvas });
     expect(partial).toContain('Part of the pixel change has no matching');
+  });
+
+  it('a passing pixel policy still preserves recorded structural observations and warnings', () => {
+    const out = buildHandoffPrompt({
+      ...base,
+      status: 'pass',
+      mismatchPixels: 0,
+      mismatchPercent: 0,
+      structural: verdictFor('color'),
+      settle: { status: 'timeout', timeoutMs: 1500, pending: ['/poll'] },
+    });
+    expect(out).toContain('## What changed (structure)');
+    expect(out).toContain('settle-timeout');
+    expect(out).toContain('Resolve any capture warnings');
+    expect(out).not.toContain('git log');
+    expect(out).not.toContain('jux approve --story');
   });
 
   it('without a verdict the prompt is unchanged in shape', () => {

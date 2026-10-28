@@ -368,3 +368,42 @@ test('deep-chain followers preserve reference fact and rect order with linear an
     expect(actual.some((f) => f.rects.length > 500)).toBe(true);
   }
 });
+
+test('optional evidence collector finds only otherwise unexplained suppressed resizes', () => {
+  const a = structure([
+    node(null, 0, { id: 'field', rect: { x: 0, y: 0, w: 200, h: 80 } }),
+    node(0, 1, {
+      id: 'name',
+      tag: 'input',
+      role: 'textbox',
+      rect: { x: 0, y: 20, w: 200, h: 49 },
+      styles: { 'padding-top': '8px' },
+    }),
+  ]);
+  const b = structuredClone(a);
+  b.elements[0]!.rect.h -= 13;
+  b.elements[1]!.rect.h -= 13;
+  const selected: Array<[number, number]> = [];
+  const matches = matchElements(a, b);
+  expect(computeFacts(a, b, matches, (i, j) => selected.push([i, j]))).toEqual(
+    computeFacts(a, b, matches),
+  );
+  expect(selected).toEqual([[1, 1]]);
+  // An existing direct style fact already supplies repair evidence. The
+  // collector does not assert that this style caused the size change.
+  b.elements[1]!.styles['padding-top'] = '12px';
+  const withStyle: Array<[number, number]> = [];
+  computeFacts(a, b, matches, (i, j) => withStyle.push([i, j]));
+  expect(withStyle).toEqual([]);
+});
+
+test('collecting suppressed geometry leaves every captured corpus fact unchanged', () => {
+  for (const { structure: current } of Object.values(fixture.cases)) {
+    const baseline = snap('noop');
+    const matches = matchElements(baseline, current);
+    const selected: number[] = [];
+    expect(computeFacts(baseline, current, matches, (i) => selected.push(i))).toEqual(
+      computeFacts(baseline, current, matches),
+    );
+  }
+});

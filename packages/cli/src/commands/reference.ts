@@ -12,13 +12,26 @@ import {
   observeReferenceOutlines,
   parseRunReport,
   renderCrops,
+  structuralDiff,
+  type Crop,
+  type Delta,
   type DesignReferenceLedger,
+  type DiffResult,
   type DesignReferenceSpec,
   type ReferenceOutlineObservation,
 } from '@juxtapose/core';
 import { loadConfig } from '../context.js';
 import { latestRunDir } from '../run-dir.js';
 import { stdio, type Session } from '../io.js';
+import { extentGuidance } from './reference-extent.js';
+import { observedChanges } from './agent-run-report.js';
+import { ReferenceLayoutCache, type ReferenceLayoutDetail } from './reference-layout.js';
+
+export interface TargetProgress {
+  fromRun: string;
+  pixels: [number, number];
+  trend: 'closer' | 'further' | 'same';
+}
 
 type State =
   | { name: string; storyId: string; status: 'error'; error: string }
@@ -26,7 +39,19 @@ type State =
       regionCount: number;
       regions: DesignReferenceLedger['regions'];
       outline?: ReferenceOutlineObservation;
+      progress?: TargetProgress;
+      bestRun?: string;
+      layout?: ReferenceLayoutDetail | { status: 'unavailable'; reason: string };
     });
+
+export type ReferenceCrop = Pick<Crop, 'box' | 'scale' | 'width' | 'height' | 'png'> & {
+  regionId: string;
+};
+
+function referenceCrop(regionId: string, rendered: Crop): ReferenceCrop {
+  const { box, scale, width, height, png } = rendered;
+  return { regionId, box, scale, width, height, png };
+}
 
 export interface ReferenceResult {
   schema: 'juxtapose.design-reference-set/v1';
@@ -44,7 +69,7 @@ export interface ReferenceResult {
   };
   states: State[];
   /** Present only when a region ID was requested. Left is target, right is current. */
-  crop?: { regionId: string; png: Buffer };
+  crop?: ReferenceCrop;
 }
 
 export interface ReferenceChangeResult {
@@ -69,8 +94,13 @@ export interface ReferenceChangeResult {
       height: number;
       changedPixels?: number;
     }>;
+    /** The saved structure sidecars of both runs, compared as `jux diff`
+     *  compares two snaps. Absent when either sidecar is missing. */
+    structural?: { classification: string; deltaCount: number; deltas: Delta[] };
   }>;
-  crop?: { regionId: string; png: Buffer };
+  /** Observed earlier→later facts deduplicated across the changed states. */
+  changes?: string[];
+  crop?: ReferenceCrop;
 }
 
 const inside = (child: string, parent: string) =>
@@ -117,6 +147,7 @@ export async function cropReferenceChange(options: {
   toRun: string;
   result: ReferenceChangeResult;
   regionId: string;
+  padding?: number;
   name?: string;
 }): Promise<ReferenceChangeResult['crop']> {
   const state = options.result.states.find(
@@ -142,35 +173,35 @@ export async function cropReferenceChange(options: {
   const hash = (image: Buffer) => createHash('sha256').update(image).digest('hex');
   if (hash(left) !== state.previousHash || hash(right) !== state.currentHash)
     throw new Error('jux: saved capture changed; request a fresh region ID');
-  const [rendered] = await renderCrops(left, right, [region]);
+  const [rendered] = await renderCrops(left, right, [region], {
+    padding: options.padding,
+  });
   if (!rendered) throw new Error('jux: region lies outside the saved images');
-  return { regionId: region.id, png: rendered.png };
+  return referenceCrop(region.id, rendered);
 }
 
-/** Compare two immutable saved captures; this is the edit's image delta, not
- * a change in distance to the design target. No browser or recapture. */
+/** Compare two immutable saved runs, such as a checkpoint and a later attempt:
+ * the edit's image and structure delta, not a change in distance to the
+ * design target. No browser or recapture. */
 export async function evaluateReferenceChange(options: {
   project: string;
   fromRun: string;
-  /** Known latest run from an MCP session avoids a second directory scan. */
+  /** Defaults to the latest run. */
   toRun?: string;
+  /** A design reference name, or a capture key present in either run. */
   name?: string;
   regionId?: string;
+  padding?: number;
 }): Promise<ReferenceChangeResult> {
   const project = await realpath(options.project);
   const config = await loadConfig(project);
   checkProjectSettle(config);
   const references = config.designReferences ?? {};
-  const names = options.name ? [options.name] : Object.keys(references).sort();
-  if (!names.length)
-    throw new Error('jux: configure designReferences before comparing captures');
-  if (options.name && !Object.hasOwn(references, options.name))
-    throw new Error(`jux: unknown design reference '${options.name}'`);
   const [fromDir, toDir] = await Promise.all([
     selectedRun(project, options.fromRun),
     selectedRun(project, options.toRun),
   ]);
-  if (fromDir === toDir) throw new Error('jux: fromRun must differ from the latest run');
+  if (fromDir === toDir) throw new Error('jux: fromRun and toRun must be different runs');
   const readReport = async (dir: string) => {
     const file = await realpath(path.join(dir, 'report.json'));
     if (!inside(file, dir)) throw new Error('run report escapes the run');
@@ -179,10 +210,41 @@ export async function evaluateReferenceChange(options: {
   const [before, after] = await Promise.all([readReport(fromDir), readReport(toDir)]);
   const previous = new Map(before.results.map((r) => [r.storyId, r]));
   const current = new Map(after.results.map((r) => [r.storyId, r]));
+  // Design references keep their names; every other capture both runs saved
+  // follows under its own key, so a checkpoint covers projects without
+  // design PNGs and stories no reference names.
+  let targets: Array<{ name: string; storyId: string }>;
+  if (options.name !== undefined) {
+    if (Object.hasOwn(references, options.name))
+      targets = [
+        {
+          name: options.name,
+          storyId: (references[options.name] as DesignReferenceSpec).storyId,
+        },
+      ];
+    else if (previous.has(options.name) || current.has(options.name))
+      targets = [{ name: options.name, storyId: options.name }];
+    else
+      throw new Error(
+        `jux: '${options.name}' is neither a design reference nor a capture in either run`,
+      );
+  } else {
+    const named = Object.keys(references)
+      .sort()
+      .map((name) => ({
+        name,
+        storyId: (references[name] as DesignReferenceSpec).storyId,
+      }));
+    const covered = new Set(named.map((target) => target.storyId));
+    const shared = [...current.keys()]
+      .filter((id) => previous.has(id) && !covered.has(id))
+      .sort();
+    targets = [...named, ...shared.map((storyId) => ({ name: storyId, storyId }))];
+  }
+  if (!targets.length) throw new Error('jux: the two runs share no captures');
   const states: ReferenceChangeResult['states'] = [];
   let crop: ReferenceChangeResult['crop'];
-  for (const name of names) {
-    const storyId = (references[name] as DesignReferenceSpec).storyId;
+  for (const { name, storyId } of targets) {
     const a = previous.get(storyId);
     const b = current.get(storyId);
     if (
@@ -239,16 +301,23 @@ export async function evaluateReferenceChange(options: {
         });
         continue;
       }
-      const regions = (diff.rankedChangedRegions ?? diff.changedRegions)
-        .slice(0, 8)
-        .map((r, i) => ({ ...r, id: `${comparisonId.slice(0, 16)}:${i + 1}` }));
+      const regions = (diff.rankedChangedRegions ?? diff.changedRegions).map((r, i) => ({
+        ...r,
+        id: `${comparisonId.slice(0, 16)}:${i + 1}`,
+      }));
       if (options.regionId) {
         const region = regions.find((r) => r.id === options.regionId);
         if (region) {
-          const [rendered] = await renderCrops(left, right, [region]);
-          if (rendered) crop = { regionId: region.id, png: rendered.png };
+          const [rendered] = await renderCrops(left, right, [region], {
+            padding: options.padding,
+          });
+          if (rendered) crop = referenceCrop(region.id, rendered);
         }
       }
+      const structural =
+        previousHash === currentHash
+          ? undefined
+          : await savedStructural(fromDir, toDir, storyId, diff);
       states.push({
         name,
         storyId,
@@ -258,6 +327,7 @@ export async function evaluateReferenceChange(options: {
         changedPixels: diff.mismatchPixels,
         changedPercent: diff.mismatchPercent,
         regions,
+        ...(structural ? { structural } : {}),
       });
     } catch (err) {
       states.push({
@@ -272,13 +342,56 @@ export async function evaluateReferenceChange(options: {
     throw new Error(
       `jux: region '${options.regionId}' was not found in this saved comparison`,
     );
+  const changes = observedChanges(
+    states
+      .filter((state) => state.structural?.deltas.length)
+      .map(
+        (state) =>
+          ({
+            storyId: state.storyId,
+            status: 'fail',
+            structural: state.structural,
+          }) as DiffResult,
+      ),
+  );
   return {
     schema: 'juxtapose.saved-run-change/v1',
     fromRunId: before.runId,
     toRunId: after.runId,
     policy: { method: 'pixelmatch', threshold: 0.1, includeAA: false },
     states,
+    ...(changes.length ? { changes } : {}),
     ...(crop ? { crop } : {}),
+  };
+}
+
+/** The structural verdict between two saved runs' sidecars for one capture,
+ *  or undefined when either run saved none (a capture error, an old run). */
+async function savedStructural(
+  fromDir: string,
+  toDir: string,
+  storyId: string,
+  pixels: { changedRegions: DiffResult['changedRegions']; dimensionMismatch: boolean },
+): Promise<ReferenceChangeResult['states'][number]['structural']> {
+  const file = `${encodeStoryId(storyId)}-current.structure.json.gz`;
+  const read = (dir: string) =>
+    savedFile(dir, file).then(
+      (gz) => decodeStructure(gz),
+      () => undefined,
+    );
+  const [baseline, current] = await Promise.all([read(fromDir), read(toDir)]);
+  if (!baseline || !current) return undefined;
+  const verdict = structuralDiff({
+    baseline,
+    current,
+    imagesIdentical: false,
+    pixels,
+    escalate: { command: 'reference compare=previous region=<id>' },
+  });
+  return {
+    classification: verdict.classification,
+    deltaCount: verdict.deltaCount,
+    deltas: verdict.deltas,
   };
 }
 
@@ -288,8 +401,12 @@ export async function evaluateReferences(options: {
   run?: string;
   name?: string;
   regionId?: string;
-  /** MCP run hints only: up to two high-mismatch states, without recapture. */
+  padding?: number;
+  /** Requested diagnostics: up to two high-mismatch states, without recapture. */
   includeOutlines?: boolean;
+  /** Requested JSON detail only; never computes evidence for a passing target. */
+  includeLayout?: boolean;
+  layoutCache?: ReferenceLayoutCache;
 }): Promise<ReferenceResult> {
   const project = await realpath(options.project);
   const config = await loadConfig(project);
@@ -305,72 +422,122 @@ export async function evaluateReferences(options: {
   if (!inside(reportFile, runDir)) throw new Error('run report escapes the run');
   const report = parseRunReport(await readFile(reportFile, 'utf8'));
   const results = new Map(report.results.map((r) => [r.storyId, r]));
-  const states: State[] = [];
+  const evaluated = new Array<State | undefined>(names.length);
+  const crops = new Array<ReferenceResult['crop']>(names.length);
+  const layoutCache = options.layoutCache ?? new ReferenceLayoutCache();
   let notCaptured = 0;
-  let crop: ReferenceResult['crop'];
-  for (const name of names) {
-    const reference = references[name] as DesignReferenceSpec;
-    const result = results.get(reference.storyId);
-    // `jux run` often captures only changed stories. A configured target for
-    // another story is outside this comparison, not a broken capture. An
-    // explicit name still reports the absent capture as an error.
-    if ((!result || result.status === 'skip') && !options.name) {
-      notCaptured++;
-      continue;
-    }
-    if (!result || result.status === 'skip' || result.error || !result.viewport) {
-      states.push({
-        name,
-        storyId: reference.storyId,
-        status: 'error',
-        error: !result
-          ? 'capture key is absent from the saved run'
-          : (result.error ?? 'saved run has no usable capture for this key'),
-      });
-      continue;
-    }
-    try {
-      const current = await savedFile(
-        runDir,
-        `${encodeStoryId(reference.storyId)}-current.webp`,
-      );
-      const ledger = await compareDesignReference({
-        projectRoot: project,
-        name,
-        reference,
-        current: {
-          storyId: result.storyId,
-          image: current,
-          viewport: result.viewport,
-          ...(result.layoutViewport
-            ? { layoutViewport: result.layoutViewport, captureKind: 'full-page' as const }
-            : {}),
-        },
-        cacheDir: path.join(runDir, 'reference-analysis-v1'),
-      });
-      if (options.regionId) {
-        const region = ledger.regions.find((r) => r.id === options.regionId);
-        if (region) {
-          const target = await readFile(ledger.referenceImage);
-          const [rendered] = await renderCrops(target, current, [region]);
-          if (!rendered) throw new Error('region lies outside the saved images');
-          crop = { regionId: region.id, png: rendered.png };
-        }
+  let cursor = 0;
+  // Four saved states took 100ms with derived caches cold versus 69ms with
+  // concurrent reads/decode. Bound memory to four targets; CPU work remains
+  // on this thread. Indexed results preserve sorted names despite I/O order.
+  const worker = async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= names.length) return;
+      const name = names[index]!;
+      const reference = references[name] as DesignReferenceSpec;
+      const result = results.get(reference.storyId);
+      // `jux run` often captures only changed stories. A configured target for
+      // another story is outside this comparison, not a broken capture. An
+      // explicit name still reports the absent capture as an error.
+      if ((!result || result.status === 'skip') && !options.name) {
+        notCaptured++;
+        continue;
       }
-      states.push({
-        ...ledger,
-        regionCount: ledger.regions.length,
-        regions: ledger.regions.slice(0, 8),
-      });
-    } catch (err) {
-      states.push({
-        name,
-        storyId: reference.storyId,
-        status: 'error',
-        error: err instanceof Error ? err.message : String(err),
-      });
+      if (!result || result.status === 'skip' || result.error || !result.viewport) {
+        evaluated[index] = {
+          name,
+          storyId: reference.storyId,
+          status: 'error',
+          error: !result
+            ? 'capture key is absent from the saved run'
+            : (result.error ?? 'saved run has no usable capture for this key'),
+        };
+        continue;
+      }
+      try {
+        const current = await savedFile(
+          runDir,
+          `${encodeStoryId(reference.storyId)}-current.webp`,
+        );
+        const ledger = await compareDesignReference({
+          projectRoot: project,
+          name,
+          reference,
+          current: {
+            storyId: result.storyId,
+            image: current,
+            viewport: result.viewport,
+            ...(result.layoutViewport
+              ? {
+                  layoutViewport: result.layoutViewport,
+                  captureKind: 'full-page' as const,
+                }
+              : {}),
+          },
+          cacheDir: path.join(runDir, 'reference-analysis-v2'),
+        });
+        let layout: Extract<State, { geometry: unknown }>['layout'];
+        if (options.includeLayout && ledger.status === 'fail') {
+          try {
+            const [target, structure] = await Promise.all([
+              readFile(ledger.referenceImage),
+              savedFile(
+                runDir,
+                `${encodeStoryId(reference.storyId)}-current.structure.json.gz`,
+              ),
+            ]);
+            layout = await layoutCache.evaluate({
+              project,
+              reference: target,
+              current,
+              structure,
+              referenceHash: ledger.referenceHash,
+              currentHash: ledger.currentHash,
+            });
+          } catch (error) {
+            layout = {
+              status: 'unavailable',
+              reason: (error instanceof Error ? error.message : String(error)).slice(
+                0,
+                240,
+              ),
+            };
+          }
+        }
+        if (options.regionId) {
+          const region = ledger.regions.find((r) => r.id === options.regionId);
+          if (region) {
+            const target = await readFile(ledger.referenceImage);
+            const [rendered] = await renderCrops(target, current, [region], {
+              padding: options.padding,
+            });
+            if (!rendered) throw new Error('region lies outside the saved images');
+            crops[index] = referenceCrop(region.id, rendered);
+          }
+        }
+        evaluated[index] = {
+          ...ledger,
+          regionCount: ledger.regions.length,
+          regions: ledger.regions,
+          ...(layout ? { layout } : {}),
+        };
+      } catch (err) {
+        evaluated[index] = {
+          name,
+          storyId: reference.storyId,
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, names.length) }, worker));
+  const states = evaluated.filter((state): state is State => state !== undefined);
+  // Collect crops in name order, matching the serial evaluator's selection
+  // rather than whichever asynchronous request ends last.
+  let crop: ReferenceResult['crop'];
+  for (const candidate of crops) if (candidate) crop = candidate;
   if (options.regionId && !crop)
     throw new Error(
       `jux: region '${options.regionId}' was not found in this saved comparison; the reference or capture may have changed. Run reference again for current region IDs.`,
@@ -468,9 +635,29 @@ export async function evaluateReferences(options: {
 
 export async function referenceCommand(
   name: string | undefined,
-  flags: { project?: string; run?: string; json?: boolean; region?: string },
+  flags: {
+    project?: string;
+    run?: string;
+    json?: boolean;
+    region?: string;
+    padding?: number | string;
+  },
   { io = stdio }: Session = {},
+  layoutCache?: ReferenceLayoutCache,
 ): Promise<number> {
+  const padding =
+    typeof flags.padding === 'string'
+      ? flags.padding.trim()
+        ? Number(flags.padding)
+        : NaN
+      : flags.padding;
+  if (
+    padding !== undefined &&
+    (!flags.region || !Number.isSafeInteger(padding) || padding < 0)
+  ) {
+    io.err('jux: --padding requires --region and a non-negative safe integer\n');
+    return 2;
+  }
   if (flags.region && !flags.json) {
     io.err('jux: --region requires --json to return the PNG as base64\n');
     return 2;
@@ -481,6 +668,10 @@ export async function referenceCommand(
       ...(flags.run ? { run: flags.run } : {}),
       ...(name ? { name } : {}),
       ...(flags.region ? { regionId: flags.region } : {}),
+      ...(padding !== undefined ? { padding } : {}),
+      includeLayout: Boolean(flags.json && !flags.region),
+      includeOutlines: Boolean(flags.json && !flags.region),
+      ...(layoutCache ? { layoutCache } : {}),
     });
     if (flags.json) {
       io.out(
@@ -490,6 +681,10 @@ export async function referenceCommand(
             ? {
                 crop: {
                   regionId: result.crop.regionId,
+                  box: result.crop.box,
+                  scale: result.crop.scale,
+                  width: result.crop.width,
+                  height: result.crop.height,
                   pngBase64: result.crop.png.toString('base64'),
                 },
               }
@@ -512,7 +707,7 @@ export async function referenceCommand(
           io.out(`- ${state.name} (${state.storyId}): incompatible — ${state.reason}\n`);
         else
           io.out(
-            `- ${state.name} (${state.storyId}): ${state.status} — ${state.mismatchPixels} changed pixels (${state.mismatchPercent}%), ${state.regionCount} regions${state.regions.length ? `; largest region ${state.regions[0]!.id} (${state.regions[0]!.changedPixels ?? 'unknown'} changed pixels)` : ''}${state.visibleColors?.pairs[0] && state.visibleColors.pairs[0].pixels >= 32 && state.visibleColors.pairs[0].sharePercent >= 50 ? `; observed colors: target ${colorText(state.visibleColors.pairs[0].reference)}, current ${colorText(state.visibleColors.pairs[0].current)} (${state.visibleColors.pairs[0].sharePercent}% of sampled visible mismatches; not a CSS cause)` : ''}\n`,
+            `- ${state.name} (${state.storyId}): ${state.status} — ${state.mismatchPixels} changed pixels (${state.mismatchPercent}%), ${state.regionCount} regions${state.extent ? `; extent differs: ${extentGuidance(state.extent)}` : ''}${state.regions.length ? `; largest region ${state.regions[0]!.id} (${state.regions[0]!.changedPixels ?? 'unknown'} changed pixels)` : ''}${state.visibleColors?.pairs[0] && state.visibleColors.pairs[0].pixels >= 32 && state.visibleColors.pairs[0].sharePercent >= 50 ? `; observed colors: target ${colorText(state.visibleColors.pairs[0].reference)}, current ${colorText(state.visibleColors.pairs[0].current)} (${state.visibleColors.pairs[0].sharePercent}% of sampled visible mismatches; not a CSS cause)` : ''}\n`,
           );
       }
       if (result.states.length > 20)

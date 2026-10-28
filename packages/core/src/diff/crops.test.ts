@@ -211,3 +211,41 @@ test('output is byte-stable across renders', async () => {
     two.map((c) => c.png.toString('base64')),
   );
 });
+
+test('explicit context shows a button below a thin changed band at native scale', async () => {
+  const region = { x: 21, y: 206, width: 348, height: 18 };
+  const a = await frame(390, 844, { x: 278, y: 258, w: 74, h: 30 });
+  const b = await frame(390, 844, { x: 278, y: 264, w: 74, h: 30 });
+  const [original] = await renderCrops(a, b, [region]);
+  const [zero] = await renderCrops(a, b, [region], { padding: 0 });
+  const [context] = await renderCrops(a, b, [region], { padding: 96 });
+  expect(zero.png).toEqual(original.png);
+  expect(original.box).toEqual({ x: 0, y: 197, width: 390, height: 36 });
+  expect(context.box).toEqual({ x: 0, y: 110, width: 390, height: 210 });
+  expect(context.scale).toBe(1);
+  expect(await pixel(context.png, 283, 153)).toEqual([220, 38, 38]);
+  expect(await pixel(context.png, 390 + 4 + 283, 159)).toEqual([220, 38, 38]);
+  expect(context.region).toEqual(region);
+});
+
+test('large context clamps to the shared extent without unsafe arithmetic', async () => {
+  const a = await frame(100, 80),
+    b = await frame(70, 60);
+  const [crop] = await renderCrops(a, b, [{ x: 1, y: 1, width: 2, height: 2 }], {
+    padding: Number.MAX_SAFE_INTEGER,
+  });
+  expect(crop.box).toEqual({ x: 0, y: 0, width: 70, height: 60 });
+});
+
+test.each([
+  -1,
+  1.5,
+  NaN,
+  Infinity,
+  Number.MAX_SAFE_INTEGER + 1,
+  null as unknown as number,
+])('invalid context padding %s is refused', (padding) => {
+  expect(() =>
+    cropBox({ x: 1, y: 1, width: 2, height: 2 }, { width: 100, height: 80 }, { padding }),
+  ).toThrow('non-negative safe integer');
+});

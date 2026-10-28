@@ -24,6 +24,10 @@ import { matchElements } from './structural/match.js';
 import { synthesizeShifts } from './structural/shift.js';
 import { buildChange, buildSummary } from './structural/summary.js';
 import { componentStructure, contextPrefixes } from './structural/context.js';
+import {
+  observeControlGeometry,
+  type SuppressedControlResizes,
+} from './control-geometry.js';
 
 export interface StructuralDiffInput {
   baseline?: StructureSnapshot;
@@ -46,6 +50,8 @@ export interface StructuralDiffInput {
   /** The current capture's settle flag, if any (`settle-timeout`,
    *  `settle-fallback`): appended to the verdict's flags. */
   settleFlag?: SettleFlag;
+  /** Save optional measured detail separately from the bounded verdict. */
+  includeControlGeometry?: boolean;
 }
 
 export const MAX_DELTAS = 20;
@@ -67,6 +73,7 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
    *  old and new rects, rounded outward to whole px. What `--crops` shows
    *  when the pixel diff marked nothing (sub-threshold). */
   elementRegions: ChangedRegion[];
+  controlGeometry?: ReturnType<typeof observeControlGeometry>;
 } {
   const { pixels, imagesIdentical } = input;
   // Apply either side's adapter context to both, including older baselines.
@@ -91,6 +98,11 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
     !pixels.dimensionMismatch &&
     baseline.viewport.width === current.viewport.width &&
     baseline.viewport.height === current.viewport.height;
+  const suppressed = {
+    ids: new Set<string>(),
+    testIds: new Set<string>(),
+    namedPairs: [] as NonNullable<SuppressedControlResizes['namedPairs']>[number][],
+  };
 
   // With a truncated side, the elements past the cap exist but were not
   // recorded; reporting them as removed would be a lie the summary already
@@ -100,7 +112,23 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
   const facts: Fact[] = comparable
     ? disambiguate(
         synthesizeShifts(
-          computeFacts(baseline, current, matchElements(baseline, current)).filter(
+          computeFacts(
+            baseline,
+            current,
+            matchElements(baseline, current),
+            input.includeControlGeometry
+              ? (index, currentIndex) => {
+                  const element = baseline.elements[index]!;
+                  if (element.id) suppressed.ids.add(element.id);
+                  else if (element.testId) suppressed.testIds.add(element.testId);
+                  else
+                    suppressed.namedPairs.push([
+                      element,
+                      current.elements[currentIndex]!,
+                    ]);
+                }
+              : undefined,
+          ).filter(
             (f) =>
               !(f.delta.kind === 'removed' && current.truncated) &&
               !(f.delta.kind === 'added' && baseline.truncated),
@@ -211,10 +239,29 @@ export function structuralDiffWithCoverage(input: StructuralDiffInput): {
     return out;
   };
   const kept = fit(deltas);
+  let controlGeometry: ReturnType<typeof observeControlGeometry> | undefined;
+  if (
+    input.includeControlGeometry &&
+    !imagesIdentical &&
+    comparable &&
+    input.baseline &&
+    input.current
+  ) {
+    try {
+      // Use the original snapshots for global identity uniqueness: adapter
+      // context filtering must not hide an ID collision on a removed wrapper.
+      const measured = observeControlGeometry(input.baseline, input.current, suppressed);
+      if (measured.observations.length || measured.omitted || measured.unavailable)
+        controlGeometry = measured;
+    } catch {
+      // Optional evidence never discards the existing structural verdict.
+    }
+  }
   return {
     verdict: build(kept, fit(cov.unexplainedRegions)),
     unexplainedRegions: cov.unexplainedRegions,
     elementRegions: elementRegions(facts),
+    ...(controlGeometry ? { controlGeometry } : {}),
   };
 }
 

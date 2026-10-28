@@ -46,7 +46,7 @@ const TAG_ORDER: StyleTag[] = [
 ];
 
 export function styleTagOf(prop: string): StyleTag {
-  if (prop === 'grid-template-columns') return 'layout';
+  if (prop === 'grid-template-columns' || prop === 'grid-template-areas') return 'layout';
   if (/^(padding|margin)-|^gap$/.test(prop)) return 'spacing';
   if (/^border-.*-(width|radius)$/.test(prop) || /^border-.*-color$/.test(prop))
     return 'border';
@@ -113,7 +113,9 @@ export function classify(ctx: ClassifyContext): {
   if (kinds.has('moved') || kinds.has('resized'))
     return { classification: 'geometry', styleTags: none };
   // Bytes differ, nothing marked, nothing structural: antialiasing-scale drift.
-  if (pixels.subThreshold) return { classification: 'render-drift', styleTags: none };
+  // Missing style capability could instead hide a real layout change.
+  if (pixels.subThreshold && comparableStyles(baseline, current))
+    return { classification: 'render-drift', styleTags: none };
   return { classification: 'unknown', styleTags: none };
 }
 

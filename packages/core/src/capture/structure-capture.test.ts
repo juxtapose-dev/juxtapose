@@ -6,7 +6,7 @@ import type { Page } from '../browser/page.js';
 import { queryAllExpression } from '../browser/selectors.js';
 import { chromeForTests } from '../browser/__tests__/helpers.js';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
-import { captureStructure, MASK_ATTR } from './structure.js';
+import { captureStructure, MASK_ATTR, STRUCTURE_PROPS } from './structure.js';
 
 const fixture = JSON.parse(
   readFileSync(
@@ -15,6 +15,14 @@ const fixture = JSON.parse(
   ),
 );
 const viewport = fixture.viewport;
+// Adapt the older CDP fixture's property slots; real browser calls request v3.
+for (const doc of fixture.raw.documents)
+  for (const styles of doc.layout.styles)
+    styles.splice(
+      STRUCTURE_PROPS.indexOf('grid-template-areas'),
+      0,
+      fixture.raw.strings.indexOf('none'),
+    );
 
 function fakePage(opts: {
   send?: () => Promise<unknown>;
@@ -48,7 +56,7 @@ test('returns a normalized snapshot', async () => {
   const { page, send } = fakePage({});
   const s = await captureStructure(page, viewport, []);
   expect(s?.schema).toBe('juxtapose.structure/v1');
-  expect(s?.styleCaptureVersion).toBe(2);
+  expect(s?.styleCaptureVersion).toBe(3);
   expect(send).toHaveBeenCalledWith(
     'DOMSnapshot.captureSnapshot',
     expect.objectContaining({ includePaintOrder: true }),
@@ -58,7 +66,10 @@ test('returns a normalized snapshot', async () => {
   const params = (send.mock.calls[0] as unknown[] | undefined)?.[1];
   expect(params).not.toHaveProperty('includeDOMRects');
   expect(params).toMatchObject({
-    computedStyles: expect.arrayContaining(['grid-template-columns']),
+    computedStyles: expect.arrayContaining([
+      'grid-template-columns',
+      'grid-template-areas',
+    ]),
   });
 });
 
@@ -213,7 +224,7 @@ describe.skipIf(!chrome)('captureStructure on a real page', () => {
       await ctx.close();
     }
   });
-  test('records the computed responsive grid column template', async () => {
+  test('records computed grid columns and named areas', async () => {
     const ctx = await browser.newContext({ viewport: { width: 200, height: 100 } });
     try {
       const page = await ctx.newPage();
@@ -222,13 +233,17 @@ describe.skipIf(!chrome)('captureStructure on a real page', () => {
         const grid = document.createElement('div');
         grid.id = 'grid';
         grid.style.cssText =
-          'display:grid;grid-template-columns:40px 60px;width:100px;height:10px';
+          'display:grid;grid-template-columns:40px 60px;grid-template-areas:"main badge" "meta action";width:100px;height:10px';
         document.body.append(grid);
       });
       const s = await captureStructure(page, { width: 200, height: 100 }, []);
       expect(
         s?.elements.find((e) => e.id === 'grid')?.styles['grid-template-columns'],
       ).toBe('40px 60px');
+      expect(s?.styleCaptureVersion).toBe(3);
+      expect(
+        s?.elements.find((e) => e.id === 'grid')?.styles['grid-template-areas'],
+      ).toBe('"main badge" "meta action"');
     } finally {
       await ctx.close();
     }

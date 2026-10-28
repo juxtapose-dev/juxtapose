@@ -46,6 +46,13 @@ test('relative paths retain omitted ancestors and absolute fallback, with exact 
   expect(() => expandStructure(compact)).toThrow('invalid structure parent');
 });
 
+test('compact saved evidence preserves v3 grid capabilities and measured areas', () => {
+  const captured = structuredClone(snapshot);
+  captured.styleCaptureVersion = 3;
+  captured.elements[0]!.styles['grid-template-areas'] = '"main badge" "meta action"';
+  expect(expandStructure(compactStructure(captured))).toEqual(captured);
+});
+
 test('files are readable, checksum-bound, and referenced from a small annotated manifest', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'jux-structure-'));
   try {

@@ -1,7 +1,14 @@
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { parseRunReport, type DiffResult, type RunReport } from '@juxtapose/core';
 import { latestRunDir } from '../run-dir.js';
+import { controlGeometrySummary } from './control-geometry-summary.js';
+
+interface SummaryOptions {
+  designReferencesCompared?: boolean;
+  /** Internal benchmark override; selective measurements are enabled by default. */
+  controlMeasurements?: boolean;
+}
 
 const MAX_STORIES = 8;
 const MAX_CACHED_REPORTS = 8;
@@ -36,16 +43,74 @@ export async function savedRunReportPath(
   return file;
 }
 
+const MAX_LISTED_RUNS = 20;
+
+/** Saved runs newest first, so an agent can pick a checkpoint without having
+ *  kept every run ID. Only the newest reports are parsed; runs are never
+ *  pruned, so the directory can hold hundreds. */
+export async function recentSavedRunIds(project: string) {
+  const root = path.join(project, '.juxtapose', 'runs');
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  const dated = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && /^[a-zA-Z0-9_-]+$/.test(entry.name))
+      .map(async (entry) => {
+        const file = path.join(root, entry.name, 'report.json');
+        const info = await stat(file).catch(() => null);
+        return info ? { runId: entry.name, file, mtime: info.mtimeMs } : null;
+      }),
+  );
+  const runs = dated
+    .filter((run): run is NonNullable<typeof run> => run !== null)
+    .sort(
+      (a, b) => b.mtime - a.mtime || (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0),
+    );
+  return {
+    runIds: runs.slice(0, MAX_LISTED_RUNS).map((run) => run.runId),
+    omitted: Math.max(0, runs.length - MAX_LISTED_RUNS),
+  };
+}
+
+export async function savedRuns(project: string) {
+  const { runIds, omitted } = await recentSavedRunIds(project);
+  const listed = await Promise.all(
+    runIds.map(async (runId) => {
+      try {
+        // The same containment checks as a report lookup: no symlinked escape.
+        const file = await savedRunReportPath(project, runId);
+        const report = parseRunReport(await readFile(file, 'utf8'), file);
+        return {
+          runId: report.runId,
+          startedAt: report.startedAt,
+          capturedCount: report.capturedCount,
+          summary: report.summary,
+        };
+      } catch {
+        return { runId, error: 'report unreadable' };
+      }
+    }),
+  );
+  return {
+    schema: 'juxtapose.saved-runs/v1',
+    runs: listed,
+    omitted,
+  };
+}
+
+type CachedReport = {
+  signature: string;
+  report: RunReport;
+  byStory: Map<string, DiffResult>;
+  summary: ReturnType<typeof agentRunSummary>;
+};
+
 /** Parsed reports are shared by repeated story/full lookups in one MCP session. */
 export class SavedReportCache {
-  private readonly reports = new Map<
+  constructor(private readonly options: SummaryOptions = {}) {}
+  private readonly reports = new Map<string, CachedReport>();
+  private readonly pending = new Map<
     string,
-    {
-      signature: string;
-      report: RunReport;
-      byStory: Map<string, DiffResult>;
-      summary: ReturnType<typeof agentRunSummary>;
-    }
+    { signature: string; load: Promise<CachedReport> }
   >();
 
   private async entry(project: string, runId?: string) {
@@ -58,18 +123,33 @@ export class SavedReportCache {
       this.reports.set(file, cached);
       return cached;
     }
-    const report = parseRunReport(await readFile(file, 'utf8'), file);
-    this.reports.delete(file);
-    const entry = {
-      signature,
-      report,
-      byStory: new Map(report.results.map((result) => [result.storyId, result])),
-      summary: agentRunSummary(report),
-    };
-    this.reports.set(file, entry);
-    if (this.reports.size > MAX_CACHED_REPORTS)
-      this.reports.delete(this.reports.keys().next().value!);
-    return entry;
+    const pending = this.pending.get(file);
+    if (pending?.signature === signature) return pending.load;
+    // Three simultaneous element queries read/parsed the same report three
+    // times on a cold cache. Share that work as well as the structure sidecar.
+    const load: Promise<CachedReport> = readFile(file, 'utf8').then((raw) => {
+      const report = parseRunReport(raw, file);
+      const entry = {
+        signature,
+        report,
+        byStory: new Map(report.results.map((result) => [result.storyId, result])),
+        summary: agentRunSummary(report, this.options),
+      };
+      // An older in-flight read must not replace a newer file revision.
+      if (this.pending.get(file)?.load === load) {
+        this.reports.delete(file);
+        this.reports.set(file, entry);
+        if (this.reports.size > MAX_CACHED_REPORTS)
+          this.reports.delete(this.reports.keys().next().value!);
+      }
+      return entry;
+    });
+    this.pending.set(file, { signature, load });
+    try {
+      return await load;
+    } finally {
+      if (this.pending.get(file)?.load === load) this.pending.delete(file);
+    }
   }
 
   async get(project: string, runId?: string): Promise<RunReport> {
@@ -96,6 +176,7 @@ function priority(result: DiffResult): number {
 }
 
 const MAX_CHANGES = 6;
+const MAX_CHANGE_BYTES = 800;
 /** Up to this many failing captures, a change seen in one is still listed:
  *  it is usually a different viewport or state of the same page (a mobile-only
  *  grid). Beyond it, single-capture changes are noise a handoff can name. */
@@ -113,7 +194,8 @@ const px = (n: number) => (n > 0 ? `+${n}` : `${n}`);
  *  changed computed properties, and resizes that repeat. Each verdict stores a
  *  budgeted prefix of its deltas, so a count is "listed in", not "affected".
  *  It states what the structure sidecars measured, not which rule caused it. */
-export function observedChanges(results: DiffResult[]): string[] {
+function observedChangeSummary(results: DiffResult[]) {
+  let omittedLongObservations = 0;
   const failing = results.filter(
     (r) => r.status === 'fail' && !r.error && r.structural?.deltas.length,
   );
@@ -122,7 +204,7 @@ export function observedChanges(results: DiffResult[]): string[] {
   for (const r of failing) {
     const own = new Set<string>();
     for (const d of r.structural!.deltas) {
-      const el = 'el' in d ? d.el.replace(/ \(\d+(?:st|nd|rd|th)\)$/, '') : '';
+      const el = 'el' in d ? d.el : '';
       let text: string;
       if (d.kind === 'style') text = `${el} ${d.prop} ${hex(d.from)}→${hex(d.to)}`;
       else if (d.kind === 'resized' && !CONTAINER_LABELS.has(el))
@@ -130,6 +212,11 @@ export function observedChanges(results: DiffResult[]): string[] {
           .filter(Boolean)
           .join(' ')}px`;
       else continue;
+      // Keep a measurement intact; long selectors/values belong in the saved result.
+      if (text.length > 240) {
+        omittedLongObservations++;
+        continue;
+      }
       if (own.has(text)) continue;
       own.add(text);
       const entry = found.get(text) ?? { style: d.kind === 'style', ids: [] };
@@ -145,22 +232,48 @@ export function observedChanges(results: DiffResult[]): string[] {
         b.ids.length - a.ids.length ||
         (ta < tb ? -1 : ta > tb ? 1 : 0),
     );
-  const lines = listed.slice(0, MAX_CHANGES).map(([text, e]) => {
+  const lines: string[] = [];
+  let omitted = 0;
+  for (const [text, e] of listed) {
     const where =
       e.ids.length === failing.length
         ? `all ${failing.length}`
         : e.ids.length <= 2
           ? e.ids.join(', ')
           : `${e.ids.length}/${failing.length}`;
-    return `${text} (${where})`;
-  });
-  if (listed.length > MAX_CHANGES) lines.push(`+${listed.length - MAX_CHANGES} more`);
-  return lines;
+    const line = `${text} (${where})`;
+    // Reserve 32 bytes for the omission marker, including JSON punctuation.
+    if (
+      lines.length < MAX_CHANGES &&
+      Buffer.byteLength(JSON.stringify([...lines, line])) <= MAX_CHANGE_BYTES - 32
+    )
+      lines.push(line);
+    else omitted++;
+  }
+  if (omitted) lines.push(`+${omitted} more`);
+  return { lines, omittedLongObservations };
+}
+
+export function observedChanges(results: DiffResult[]): string[] {
+  return observedChangeSummary(results).lines;
 }
 
 /** Bounded MCP overview. Full evidence remains in the saved report. */
-export function agentRunSummary(report: RunReport) {
-  const changes = observedChanges(report.results);
+export function agentRunSummary(report: RunReport, options: SummaryOptions = {}) {
+  const controlMeasurements =
+    options.controlMeasurements !== false
+      ? controlGeometrySummary(report.results)
+      : undefined;
+  const { lines: changes, omittedLongObservations } = observedChangeSummary(
+    report.results,
+  );
+  const captured = report.results.filter((r) => r.status !== 'skip');
+  // No approved baseline exists for any captured story, so a baseline verdict
+  // says nothing; the design targets are the only comparison this run made.
+  const targetsOnly =
+    options.designReferencesCompared === true &&
+    captured.length > 0 &&
+    captured.every((r) => r.status === 'new');
   const attention = report.results.filter((r) => priority(r) < 5);
   const onlyStaleAttention =
     attention.length > 0 &&
@@ -181,15 +294,20 @@ export function agentRunSummary(report: RunReport) {
     capturedCount: report.capturedCount,
     totalCount: report.totalCount,
     summary: report.summary,
-    durationMs: report.durationMs,
     recheck: report.recheck,
+    ...(controlMeasurements ? { controlMeasurements } : {}),
     // The deduplicated facts subsume the truncated group lines, so only one
     // of the two is sent.
     ...(changes.length
-      ? { changesFromApproved: changes }
+      ? {
+          changesFromApproved: changes,
+          evidence:
+            'structure; approved→current; saved element labels, not guaranteed unique CSS selectors or CSS causes',
+        }
       : groups.length
         ? { groups, omittedGroups: Math.max(0, (report.groups?.length ?? 0) - 3) }
         : {}),
+    ...(omittedLongObservations ? { omittedLongObservations } : {}),
     attention: attention.slice(0, MAX_STORIES).map((r) => ({
       storyId: r.storyId,
       status: r.status,
@@ -205,8 +323,12 @@ export function agentRunSummary(report: RunReport) {
             'Stale baseline image bytes match; the approval commit is outside current branch ancestry.',
         }
       : {}),
-    next: onlyStaleAttention
-      ? 'These stale captures match saved baseline bytes. Their approval commits are outside current branch ancestry; no visual edit, detailed report, or recapture is needed. Re-approval is a separate decision to re-anchor the baselines.'
-      : 'Call report with story for one full result, or detail=full for the saved RunReport. No recapture is needed.',
+    next: targetsOnly
+      ? 'No approved baseline; use the design-reference hint below for target mismatches.'
+      : onlyStaleAttention
+        ? 'Baseline bytes match; approval commits are outside current branch ancestry; no visual edit, detailed report, or recapture is needed. Re-approval only re-anchors baselines.'
+        : attention.length === 0
+          ? 'No listed blockers. Stop only after required capture coverage, target comparisons and behavior checks pass.'
+          : 'Use returned facts. report(story, runId) only for missing baseline detail; these are not design-target instructions. No recapture.',
   };
 }

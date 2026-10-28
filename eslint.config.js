@@ -17,6 +17,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/node_modules/**',
       '**/storybook-static/**',
+      'examples/storybook/.storybook/.msw/**',
       '**/storybook-profile/**',
       'examples/*/build/**',
       '**/.juxtapose/**',

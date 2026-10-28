@@ -771,3 +771,87 @@ test('grid column changes are reported only when both snapshots captured the pro
   expect(run(withOtherChange).flags).toContain('incomplete-style-comparison');
   expect(run(withOtherChange).summary).toContain('Grid style comparison incomplete');
 });
+
+test.each([
+  [2, 3],
+  [3, 2],
+] as const)(
+  'grid columns remain comparable between capture versions %s and %s',
+  (a, b) => {
+    const baseline = structuredClone(fixture.cases.noop.structure);
+    const current = structuredClone(baseline);
+    baseline.styleCaptureVersion = a;
+    current.styleCaptureVersion = b;
+    baseline.elements[0]!.styles['grid-template-columns'] = '40px 60px';
+    current.elements[0]!.styles['grid-template-columns'] = '100px';
+    current.elements[0]!.styles['grid-template-areas'] = '"main"';
+    current.structureHash = 'changed';
+    const result = structuralDiff({
+      baseline,
+      current,
+      imagesIdentical: false,
+      pixels: { changedRegions: [], dimensionMismatch: false },
+      escalate: ESC,
+    });
+    expect(result.deltas).toContainEqual(
+      expect.objectContaining({
+        kind: 'style',
+        prop: 'grid-template-columns',
+        from: '40px 60px',
+        to: '100px',
+      }),
+    );
+    expect(result.deltas).not.toContainEqual(
+      expect.objectContaining({ prop: 'grid-template-areas' }),
+    );
+    expect(result.styleTags).toContain('layout');
+    expect(result.flags).toContain('incomplete-style-comparison');
+  },
+);
+
+test('named-area changes are measured layout even when columns and bounds do not change', () => {
+  const baseline = structuredClone(fixture.cases.noop.structure);
+  const current = structuredClone(baseline);
+  baseline.styleCaptureVersion = current.styleCaptureVersion = 3;
+  baseline.elements[0]!.styles['grid-template-columns'] = '200px 80px';
+  current.elements[0]!.styles['grid-template-columns'] = '200px 80px';
+  baseline.elements[0]!.styles['grid-template-areas'] = '"main badge" "meta action"';
+  current.elements[0]!.styles['grid-template-areas'] =
+    '"main main" "meta badge" "action action"';
+  current.structureHash = 'changed';
+  const compare = () =>
+    structuralDiff({
+      baseline,
+      current,
+      imagesIdentical: false,
+      pixels: { changedRegions: [], dimensionMismatch: false },
+      escalate: ESC,
+    });
+  expect(compare()).toMatchObject({
+    classification: 'style-only',
+    styleTags: ['layout'],
+    deltas: [
+      expect.objectContaining({
+        kind: 'style',
+        prop: 'grid-template-areas',
+        from: '"main badge" "meta action"',
+        to: '"main main" "meta badge" "action action"',
+      }),
+    ],
+  });
+  delete current.elements[0]!.styles['grid-template-areas'];
+  expect(compare().deltas).toContainEqual(
+    expect.objectContaining({
+      prop: 'grid-template-areas',
+      to: 'none',
+    }),
+  );
+  delete baseline.styleCaptureVersion;
+  // Equal hashes with different capabilities must not become render-drift.
+  current.structureHash = baseline.structureHash;
+  expect(compare()).toMatchObject({
+    classification: 'unknown',
+    deltas: [],
+    flags: expect.arrayContaining(['incomplete-style-comparison']),
+  });
+});

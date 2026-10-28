@@ -94,6 +94,46 @@ test('same-label elements under different labelled ancestors read by ancestor', 
   ]);
 });
 
+test.each(['row-2', 'row-3'])(
+  'one changed sibling keeps its page identity: %s',
+  (changedId) => {
+    const a = snap('noop');
+    const b = snap('noop');
+    const changedName = changedId === 'row-2' ? 'Row two' : 'Row three';
+    for (const s of [a, b]) {
+      for (const e of s.elements) {
+        if (e.id === 'row-2' || e.id === 'row-3') delete e.id;
+      }
+    }
+    const changed = b.elements.find((e) => e.name === changedName)!;
+    changed.styles = { ...changed.styles, color: 'rgb(1, 2, 3)' };
+    const result = diff(a, b);
+    const expected = changedId === 'row-2' ? 'div.row (1st)' : 'div.row (2nd)';
+    expect(result.deltas).toEqual([
+      expect.objectContaining({ kind: 'style', el: expected, prop: 'color' }),
+    ]);
+  },
+);
+
+test('unchanged peers also invalidate an apparently unique ancestor scope', () => {
+  const a = snap('noop');
+  const b = snap('noop');
+  for (const s of [a, b]) {
+    for (const e of s.elements) {
+      if (['row-2', 'row-3', 'row-4'].includes(e.id ?? '')) {
+        e.parent = e.id === 'row-3' ? 3 : 1;
+        delete e.id;
+      }
+    }
+  }
+  for (const e of b.elements.filter(
+    (e) => e.name === 'Row two' || e.name === 'Row three',
+  ))
+    e.styles = { ...e.styles, color: 'rgb(1, 2, 3)' };
+  const labels = diff(a, b).deltas.map((d) => ('el' in d ? d.el : d.after));
+  expect(labels).toEqual(['div.row (1st)', 'div.row (2nd)']);
+});
+
 test('a lone label is left alone', () => {
   expect(corpus('color').deltas.map((d) => 'el' in d && d.el)).toEqual([
     'button[name="Save"]',

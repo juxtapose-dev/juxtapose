@@ -1,5 +1,6 @@
 import type { Viewport } from './browser/types.js';
 import type { StructureCaptureTimings } from './capture/structure.js';
+import type { observeControlGeometry } from './diff/control-geometry.js';
 export type { StructureCaptureTimings } from './capture/structure.js';
 // Core data model. Deliberately free of any platform (Storybook/Ladle) types —
 // adapters map their world onto these.
@@ -233,9 +234,9 @@ export interface StructureElement {
 
 export interface StructureSnapshot {
   schema: 'juxtapose.structure/v1';
-  /** Version 2 includes computed grid-template-columns. Older sidecars omit
-   * this field, so comparisons skip that property until both sides have it. */
-  styleCaptureVersion?: 2;
+  /** Version 2 captures grid-template-columns; version 3 also captures
+   * grid-template-areas. Compare a property only when both versions support it. */
+  styleCaptureVersion?: 2 | 3;
   /** Captured image bounds, which can exceed the layout viewport for full-page captures. */
   viewport: Viewport;
   /** Original browser layout viewport, present for full-page captures. */
@@ -472,6 +473,9 @@ export interface DiffResult {
   /** Tier-0 explanation of a failure. Present only when status is 'fail' and
    *  the current capture produced a structure; never consulted on pass. */
   structural?: StructuralVerdict;
+  /** Requested report detail: measured approved/current native-control sizes.
+   * Saved on failure alongside structural evidence; never changes the verdict. */
+  controlGeometry?: ReturnType<typeof observeControlGeometry>;
   /** Present only when non-empty. Never changes `status`. */
   flags?: CaptureFlag[];
   /** Present only with the `settle-timeout` flag. */

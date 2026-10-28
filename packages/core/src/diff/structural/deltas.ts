@@ -10,6 +10,7 @@
 import {
   INHERITED_PROPS,
   STRUCTURE_PROPS,
+  hasCapturedStyle,
   elementAt,
   styleReader,
   round,
@@ -67,6 +68,7 @@ export function computeFacts(
   a: StructureSnapshot,
   b: StructureSnapshot,
   match: ElementMatch,
+  onSuppressedResize?: (baselineIndex: number, currentIndex: number) => void,
 ): Fact[] {
   const facts: Fact[] = [];
   const aToB = new Map(match.pairs);
@@ -129,13 +131,9 @@ export function computeFacts(
       }
 
       for (const prop of STRUCTURE_PROPS) {
-        // A pre-v2 baseline never captured this value. Comparing its empty
-        // default with a current grid would invent a change on every grid.
-        if (
-          prop === 'grid-template-columns' &&
-          (a.styleCaptureVersion !== 2 || b.styleCaptureVersion !== 2)
-        )
-          continue;
+        // Keep v2 columns comparable with v3, but never turn missing old area
+        // capture into a fabricated `none`→layout regression.
+        if (!hasCapturedStyle(a, prop) || !hasCapturedStyle(b, prop)) continue;
         // An unstored border colour resolves to currentColor, so a plain
         // `color` change would also report four phantom border-colour deltas
         // on every borderless element. No border, no border-colour fact.
@@ -181,6 +179,11 @@ export function computeFacts(
     const moved = dx !== 0 || dy !== 0;
     const followedSize = resized && p !== undefined && p.dw === dw && p.dh === dh;
     const followedPos = moved && p !== undefined && p.dx === dx && p.dy === dy;
+    // Billing lost its useful input dimensions when parent and control shrank
+    // together. Held-out padding/line-height repairs already had direct facts.
+    // Expose only suppressed resizes without another own fact to an optional
+    // evidence collector; leave facts, coverage and signatures unchanged.
+    if (followedSize && !byElement.has(i)) onSuppressedResize?.(i, j);
     if (resized && !followedSize) facts.push(fact({ kind: 'resized', el, dw, dh }));
     if (moved && !followedPos) facts.push(fact({ kind: 'moved', el, dx, dy }));
     if ((followedSize || followedPos) && !byElement.has(i))

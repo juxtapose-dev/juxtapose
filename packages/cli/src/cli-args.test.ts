@@ -134,3 +134,32 @@ describe('jux argument validation', () => {
     expect(r.err).not.toContain('unexpected argument');
   });
 });
+
+describe('reference crop context arguments', () => {
+  it('rejects missing region and invalid padding values', () => {
+    for (const args of [
+      ['--padding', '96', '--json'],
+      ['--region', 'id', '--padding', '-1', '--json'],
+      ['--region', 'id', '--padding', '1.5', '--json'],
+      ['--region', 'id', '--padding=', '--json'],
+    ]) {
+      const result = jux('reference', 'mobile', ...args);
+      expect(result.code).toBe(2);
+      expect(result.err).toContain('--padding');
+    }
+  });
+  it('accepts a numeric crop context and reports missing project evidence rather than an argument error', () => {
+    const result = jux(
+      'reference',
+      'mobile',
+      '--region',
+      'id',
+      '--padding',
+      '96',
+      '--json',
+    );
+    expect(result.code).toBe(3);
+    expect(result.err).toContain("unknown design reference 'mobile'");
+    expect(jux('reference', '--help').out).toContain('--padding');
+  });
+});

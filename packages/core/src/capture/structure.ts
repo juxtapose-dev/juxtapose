@@ -75,7 +75,18 @@ export const STRUCTURE_PROPS: readonly string[] = [
   // A pseudo-element's visible text lives here, not in a text node: without it
   // a CSS icon swap (`content: "★"` → `"☆"`) is unexplained pixels.
   'content',
+  // Shipment's measured mobile regression kept its columns but changed named
+  // areas. Without areas, reports exposed only displaced/resized children.
+  'grid-template-areas',
 ];
+
+/** Missing capture capability is unknown, not the property's initial value. */
+export function hasCapturedStyle(snapshot: StructureSnapshot, property: string): boolean {
+  if (property === 'grid-template-columns')
+    return snapshot.styleCaptureVersion === 2 || snapshot.styleCaptureVersion === 3;
+  if (property === 'grid-template-areas') return snapshot.styleCaptureVersion === 3;
+  return true;
+}
 
 /** Inherited properties are stored only where they differ from the parent. */
 export const INHERITED_PROPS: ReadonlySet<string> = new Set([
@@ -122,6 +133,7 @@ export const INITIAL_VALUES: Readonly<Record<string, string>> = {
   'box-shadow': 'none',
   gap: 'normal',
   'grid-template-columns': 'none',
+  'grid-template-areas': 'none',
   'z-index': 'auto',
   content: 'normal',
 };
@@ -202,6 +214,12 @@ export function normalizeStructure(
   // node, layout.* one per layout row, and each styles row one value per
   // requested property. The indexed reads marked `!` below rely on that.
   const { layout } = doc;
+  // The scrolled review fixture painted a card at y=16 while CDP bounds said
+  // y=371 (scrollOffsetY=355). Visibility and pixel regions use viewport space.
+  const scrollX = doc.scrollOffsetX ?? 0;
+  const scrollY = doc.scrollOffsetY ?? 0;
+  if (!Number.isFinite(scrollX) || !Number.isFinite(scrollY))
+    throw new Error('DOMSnapshot returned invalid document scroll offsets');
   // Optional in the protocol, always sent by Chromium. A missing one is a
   // broken snapshot: say which, rather than fail on a later read (or, for
   // nodeValue on a page without text, not at all).
@@ -326,8 +344,8 @@ export function normalizeStructure(
         h: round((b[3] as number) * scale),
       };
     return {
-      x: round(b[0] as number),
-      y: round(b[1] as number),
+      x: round((b[0] as number) - scrollX),
+      y: round((b[1] as number) - scrollY),
       w: round(b[2] as number),
       h: round(b[3] as number),
     };
@@ -471,7 +489,7 @@ export function normalizeStructure(
 
   const snapshot: StructureSnapshot = {
     schema: 'juxtapose.structure/v1',
-    styleCaptureVersion: 2,
+    styleCaptureVersion: 3,
     viewport,
     structureHash: hashElements(elements),
     // Compared with viewport.height (below-fold), so in the same image pixels.
@@ -703,6 +721,9 @@ function isStructureSnapshot(v: unknown): v is StructureSnapshot {
   return (
     isRecord(v) &&
     v['schema'] === 'juxtapose.structure/v1' &&
+    (v['styleCaptureVersion'] === undefined ||
+      v['styleCaptureVersion'] === 2 ||
+      v['styleCaptureVersion'] === 3) &&
     typeof v['structureHash'] === 'string' &&
     typeof v['contentHeight'] === 'number' &&
     isRecord(v['viewport']) &&
