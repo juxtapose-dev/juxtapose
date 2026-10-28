@@ -4,15 +4,9 @@
 
 ### Minor Changes
 
-- 129c399: Compare saved runs as checkpoints and optionally return the checkpoint change and target progress with an MCP run. Keep saved-run selection stable when analysis caches change, and reject invalid checkpoints before capturing.
+- 129c399: Add saved-element and ancestor inspection, measured control geometry, named grid-area evidence, and structured target typography. Preserve repeated element identity and normalize scrolled structure coordinates to the captured viewport.
 
-  Inspect saved elements and their ancestors, measured control geometry, named grid areas, exact pixel counts, and all saved changed regions. Read configured design targets before the first capture and request focused paired crops with context padding. Keep explanations distinct from approval and inferred CSS causes distinct from measured facts.
-
-  Bound compact MCP evidence while preserving complete observations, repeated positions, and explicit omissions. Reuse validated analysis caches and allow exact MCP tool selection with `jux mcp --tools`. Experimental OCR/paint providers remain opt-in and are not enabled by the public CLI.
-
-  Compare full-page reference extent mismatches over their shared pixels, count pixels present in only one image, and report a failing extent comparison instead of incompatible geometry. Preserve main's device emulation and full-page capture support; normalize scrolled structure coordinates against the captured viewport.
-
-  Label the Storybook panel and test provider Juxtapose. Validate real MSW-backed stories in CI without adding MSW to the published addon dependencies.
+  Compare full-page reference extent mismatches over shared pixels and count pixels present in only one image. These comparisons fail with explicit extent evidence instead of reporting incompatible geometry. Add contextual crop padding and target-image access before a capture; experimental target evidence APIs remain opt-in and do not change approval policy.
 
 - d22d8db: Add device presets. A `device` (`iphone-15`, `pixel-8`, `ipad`, the aliases `mobile`, `tablet` and `desktop`, or one you define under `devices`) sets the viewport and emulates the device: mobile layout, touch, user agent and client hints, at device scale factor 1. `orientation` rotates it. Use them with `jux snap --device` and `--orientation` (and the MCP `snap` tool), in project config, story parameters, URL entry `params` and variants. A baseline approved on another device is reported as `previous device emulation`. `jux snap --help` now lists `--viewport`. Captures with no device and no orientation are unchanged.
 - eabc743: Add opt-in full-document capture: `jux snap <url> --full-page`, or `fullPage: true` for a story. The image covers the whole rendered document while the browser keeps its layout viewport, which full-page captures record as `layoutViewport`. Before capturing, the page is scrolled through once so lazy images and scroll-triggered reveals load and finish animating.
