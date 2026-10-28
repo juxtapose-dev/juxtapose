@@ -1,6 +1,6 @@
 {
   "name": "@juxtapose/core",
-  "version": "0.24.2",
+  "version": "0.25.0",
   "type": "module",
   "description": "Platform-agnostic capture, diff, baseline and analysis core for juxtapose.",
   "keywords": [

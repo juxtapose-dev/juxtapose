@@ -1,5 +1,18 @@
 # @juxtapose/storybook
 
+## 0.12.9
+
+### Patch Changes
+
+- 129c399: Label the addon panel and test-provider row **Juxtapose**. Document MSW setup and verify real service-worker-mocked responses in CI across repeated captures. MSW remains an application dependency, not a dependency of the published addon.
+
+- Updated dependencies [129c399]
+- Updated dependencies [d22d8db]
+- Updated dependencies [eabc743]
+  - @juxtapose/core@0.25.0
+  - @juxtapose/adapter-storybook@0.4.30
+  - @juxtapose/server@0.9.9
+
 ## 0.12.8
 
 ### Patch Changes
