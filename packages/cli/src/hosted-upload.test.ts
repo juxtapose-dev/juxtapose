@@ -560,6 +560,10 @@ const createBatchRun = () => ({
 
 it('uses advertised verified hash reuse without re-sending cached WebP bytes', async () => {
   const report = await parallelFixture(3);
+  const progress: string[] = [];
+  const imageBytes = await readFile(
+    path.join(dir, 'images', `${encodeStoryId(report.results[0]!.storyId)}-current.webp`),
+  );
   let batchItems = 0,
     finalized = false;
   const config = await serve(async (url, bytes, headers) => {
@@ -590,7 +594,16 @@ it('uses advertised verified hash reuse without re-sending cached WebP bytes', a
     }
     return { status: 418 };
   });
-  await expect(uploadRun(dir, config)).resolves.toEqual({ runId, reportUrl: null });
+  await expect(
+    uploadRun(dir, config, (message) => progress.push(message)),
+  ).resolves.toEqual({ runId, reportUrl: null });
+  expect(
+    progress.some((message) =>
+      message.includes(
+        `1/1 artifacts reusable; ${imageBytes.length} bytes initially skipped, 0 unique bytes initially needed`,
+      ),
+    ),
+  ).toBe(true);
   expect(finalized).toBe(true);
 });
 
@@ -1049,4 +1062,35 @@ it('sends skipped batch items without hashing or uploading stale leftover images
   });
   await uploadRun(dir, config);
   expect(probes).toBe(0);
+});
+
+it('reports initial unique missing bytes separately from actual upload traffic', async () => {
+  await parallelFixture(2);
+  const progress: string[] = [];
+  let artifactBytes = 0;
+  const config = await serve(async (url, bytes, headers) => {
+    if (url === '/v1/runs') return createBatchRun();
+    if (url === protocol.probePath) {
+      const { artifacts } = JSON.parse(bytes.toString());
+      artifactBytes = artifacts.reduce(
+        (sum: number, ref: { bytes: number }) => sum + ref.bytes,
+        0,
+      );
+      return { body: { available: [], missing: artifacts } };
+    }
+    if (url === protocol.batchPath) {
+      const { items } = await batchForm(bytes, headers);
+      return { body: { results: items.map(success) } };
+    }
+    if (url.endsWith('/finalize')) return { body: { reportUrl: null } };
+    return { status: 418 };
+  });
+  await uploadRun(dir, config, (message) => progress.push(message));
+  expect(
+    progress.some((message) =>
+      message.includes(
+        `0/1 artifacts reusable; 0 bytes initially skipped, ${artifactBytes} unique bytes initially needed`,
+      ),
+    ),
+  ).toBe(true);
 });

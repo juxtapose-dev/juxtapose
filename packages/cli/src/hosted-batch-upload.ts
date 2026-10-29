@@ -188,6 +188,13 @@ export async function uploadVerifiedBatches(
       }
     if (seen.size !== requested.size) throw invalid();
   }
+  const reusableBytes = refs
+    .filter((ref) => available.has(ref.hash))
+    .reduce((sum, ref) => sum + ref.bytes, 0);
+  const missingBytes = refs.reduce((sum, ref) => sum + ref.bytes, 0) - reusableBytes;
+  onProgress?.(
+    `jux: verified cache ${available.size}/${refs.length} artifacts reusable; ${reusableBytes} bytes initially skipped, ${missingBytes} unique bytes initially needed\n`,
+  );
   const queue = partition(snapshots, available, new Set(), protocol);
   let next = 0,
     completed = 0,
