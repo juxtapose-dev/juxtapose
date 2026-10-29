@@ -50,17 +50,18 @@ async function fixture() {
   await writeFile(path.join(dir, 'report.json'), JSON.stringify(report));
   return report;
 }
+type Reply = { status?: number; body?: unknown; location?: string; disconnect?: boolean };
 async function serve(
   handler: (
     url: string,
     body: Buffer,
     headers: import('node:http').IncomingHttpHeaders,
-  ) => { status?: number; body?: unknown; location?: string; disconnect?: boolean },
+  ) => Reply | Promise<Reply>,
 ) {
   server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(Buffer.from(chunk));
-    const result = handler(req.url!, Buffer.concat(chunks), req.headers);
+    const result = await handler(req.url!, Buffer.concat(chunks), req.headers);
     if (result.disconnect) {
       req.socket.destroy();
       return;
@@ -395,4 +396,122 @@ describe('hosted uploads', () => {
     });
     expect(await uploadRun(dir, config)).toEqual({ runId, reportUrl: null });
   });
+});
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+async function parallelFixture(count: number) {
+  const report = await fixture();
+  const bytes = await readFile(
+    path.join(dir, 'images', `${encodeStoryId(id)}-current.webp`),
+  );
+  const results = Array.from({ length: count }, (_, index) => ({
+    ...report.results[0]!,
+    storyId: `button--parallel-${index}`,
+  }));
+  for (const result of results)
+    await writeFile(
+      path.join(dir, 'images', `${encodeStoryId(result.storyId)}-current.webp`),
+      bytes,
+    );
+  const next = {
+    ...report,
+    capturedCount: count,
+    totalCount: count,
+    results,
+    summary: { ...report.summary, fail: count },
+  };
+  await writeFile(path.join(dir, 'report.json'), JSON.stringify(next));
+  return next;
+}
+it('overlaps at most four snapshot uploads and finalizes only after every response', async () => {
+  await parallelFixture(9);
+  let active = 0,
+    maximum = 0,
+    completed = 0;
+  const progress: string[] = [];
+  const config = await serve(async (url, bytes) => {
+    if (url === '/v1/runs')
+      return { body: { runId, snapshotPutUrlTemplate: '/snapshots/{storyIdSafe}' } };
+    if (url.startsWith('/snapshots/')) {
+      active++;
+      maximum = Math.max(maximum, active);
+      await pause(25);
+      active--;
+      completed++;
+      return { body: { deduped: true } };
+    }
+    expect(active).toBe(0);
+    expect(completed).toBe(9);
+    expect(JSON.parse(bytes.toString()).report.dedupedCount).toBe(9);
+    return { body: { reportUrl: null } };
+  });
+  await uploadRun(dir, config, (message) => progress.push(message));
+  expect(maximum).toBe(4);
+  expect(progress.some((message) => message.includes('0/9'))).toBe(true);
+  expect(progress.some((message) => message.includes('9/9'))).toBe(true);
+  expect(progress.at(-1)).toContain('finalizing');
+});
+it('drains in-flight uploads on failure, stops scheduling and never finalizes', async () => {
+  const report = await parallelFixture(9);
+  let active = 0,
+    started = 0,
+    completed = 0,
+    finalized = false;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const config = await serve(async (url) => {
+    if (url === '/v1/runs')
+      return { body: { runId, snapshotPutUrlTemplate: '/snapshots/{storyIdSafe}' } };
+    if (url.startsWith('/snapshots/')) {
+      const order = ++started;
+      active++;
+      if (started === 4) release();
+      if (order === 1) {
+        await Promise.race([entered, pause(100)]);
+        active--;
+        return { status: 401 };
+      }
+      await pause(60);
+      active--;
+      completed++;
+      return {};
+    }
+    finalized = true;
+    return { body: { reportUrl: null } };
+  });
+  await expect(uploadRun(dir, config)).rejects.toThrow('HTTP 401');
+  expect(started).toBe(4);
+  expect(active).toBe(0);
+  expect(completed).toBe(3);
+  expect(finalized).toBe(false);
+  expect(JSON.parse(await readFile(path.join(dir, 'report.json'), 'utf8'))).toEqual(
+    report,
+  );
+});
+it('retries within a worker without double-counting successful progress or final counts', async () => {
+  await parallelFixture(6);
+  const attempts = new Map<string, number>();
+  let retryUrl = '';
+  const progress: string[] = [];
+  const config = await serve((url, bytes) => {
+    if (url === '/v1/runs')
+      return { body: { runId, snapshotPutUrlTemplate: '/snapshots/{storyIdSafe}' } };
+    if (url.startsWith('/snapshots/')) {
+      if (!retryUrl) retryUrl = url;
+      const attempt = (attempts.get(url) ?? 0) + 1;
+      attempts.set(url, attempt);
+      if (url === retryUrl && attempt === 1) return { status: 503 };
+      return { body: { deduped: true } };
+    }
+    expect(JSON.parse(bytes.toString()).report.dedupedCount).toBe(6);
+    return { body: { reportUrl: null } };
+  });
+  await uploadRun(dir, config, (message) => progress.push(message));
+  expect(attempts.get(retryUrl)).toBe(2);
+  expect(progress.filter((message) => message.startsWith('jux: uploaded '))).toHaveLength(
+    6,
+  );
+  expect(progress.some((message) => message.includes('6/6'))).toBe(true);
 });

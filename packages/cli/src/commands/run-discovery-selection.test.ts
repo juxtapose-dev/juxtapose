@@ -137,7 +137,9 @@ test.each([undefined, []])(
   '--all with project variants and story=%j uses whole-store discovery',
   async (story) => {
     const f = fixture();
-    await f.run({ all: true, ...(story ? { story } : {}) });
+    const output = await f.run({ all: true, ...(story ? { story } : {}) });
+    expect(output).toContain('captures to take (all requested via --all)');
+    expect(output).not.toContain('no-baseline');
     expect(f.discover.mock.calls[0]?.[2]).toBeUndefined();
     expect(f.key.mock.calls[0]?.[1]).toBeUndefined();
     expect(captured[0]).toEqual(['a', 'a__dark', 'b', 'b__dark']);

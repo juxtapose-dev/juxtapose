@@ -13,6 +13,7 @@ export interface UploadResult {
   reportUrl: string | null;
 }
 const MAX_IMAGE = 1024 * 1024;
+const UPLOAD_WORKERS = 4;
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
 export function uploadConfig(env = process.env): UploadConfig {
@@ -106,6 +107,7 @@ async function request(
 export async function uploadRun(
   runDir: string,
   config: UploadConfig,
+  onProgress?: (message: string) => void,
 ): Promise<UploadResult> {
   let report: RunReport;
   try {
@@ -229,6 +231,7 @@ export async function uploadRun(
       version: string;
     }
   ).version;
+  onProgress?.(`jux: creating hosted run (${snapshots.length} snapshots)\n`);
   const created = await request(
     config,
     '/v1/runs',
@@ -249,8 +252,9 @@ export async function uploadRun(
     typeof created.snapshotPutUrlTemplate !== 'string'
   )
     throw new UserError('Hosted service returned an invalid run response.', 1);
+  const snapshotPutUrlTemplate = created.snapshotPutUrlTemplate;
   let dedupedCount = 0;
-  for (const snapshot of snapshots) {
+  const uploadSnapshot = async (snapshot: (typeof snapshots)[number]) => {
     const { result, contentHash, storyIdSafe } = snapshot;
     const form = new FormData();
     form.set(
@@ -303,12 +307,39 @@ export async function uploadRun(
     }
     const uploaded = await request(
       config,
-      created.snapshotPutUrlTemplate.replace('{storyIdSafe}', storyIdSafe),
+      snapshotPutUrlTemplate.replace('{storyIdSafe}', storyIdSafe),
       'PUT',
       form,
     );
     if (uploaded.deduped === true) dedupedCount++;
-  }
+  };
+  let next = 0;
+  let completed = 0;
+  let failed = false;
+  let failure: unknown;
+  onProgress?.(
+    `jux: uploading 0/${snapshots.length} snapshots (up to ${UPLOAD_WORKERS} at once)\n`,
+  );
+  const worker = async () => {
+    while (!failed && next < snapshots.length) {
+      const snapshot = snapshots[next++]!;
+      try {
+        await uploadSnapshot(snapshot);
+        completed++;
+        onProgress?.(`jux: uploaded ${completed}/${snapshots.length} snapshots\n`);
+      } catch (error) {
+        if (!failed) failure = error;
+        failed = true;
+      }
+    }
+  };
+  // Drain every in-flight request before returning a failure. A retry must not
+  // race this attempt, and a partial upload must never reach finalization.
+  await Promise.all(
+    Array.from({ length: Math.min(UPLOAD_WORKERS, snapshots.length) }, worker),
+  );
+  if (failed) throw failure;
+  onProgress?.(`jux: finalizing hosted run (${snapshots.length} snapshots)\n`);
   const count = (status: string) =>
     snapshots.filter((s) => s.result.status === status).length;
   const finished = await request(

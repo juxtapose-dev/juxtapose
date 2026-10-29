@@ -11,6 +11,7 @@ export async function uploadCommand(flags: CommonFlags, io: Io = stdio): Promise
   const result = await uploadRun(
     path.resolve(flags.project ?? process.cwd(), flags.run),
     config,
+    (message) => io.err(message),
   );
   if (flags.json) io.out(`${JSON.stringify(result)}\n`);
   else io.out(uploadMessage(result));
