@@ -6,7 +6,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { uploadCommand } from './commands/upload.js';
 import { runCommand } from './commands/run.js';
-import { encodeStoryId } from '@juxtapose/core';
+import { encodeStructure, encodeStoryId } from '@juxtapose/core';
+import { hashElements } from '../../core/src/capture/structure.js';
 import { uploadConfig, uploadRun } from './hosted-upload.js';
 
 let server: Server | undefined;
@@ -77,6 +78,83 @@ async function serve(
   return { origin: `http://127.0.0.1:${address.port}`, token: 'secret-test-token' };
 }
 describe('hosted uploads', () => {
+  it.each(['legacy', 'batch'])(
+    'transports image-bound DOM trees in the actual %s finalization wire payload',
+    async (mode) => {
+      const report = await fixture();
+      const image = await readFile(
+        path.join(dir, 'images', `${encodeStoryId(id)}-current.webp`),
+      );
+      const digest = createHash('sha256').update(image).digest('hex');
+      await writeFile(
+        path.join(dir, 'images', `${encodeStoryId(id)}-baseline.webp`),
+        image,
+      );
+      const elements = [
+        {
+          path: 'button',
+          parent: null,
+          tag: 'button',
+          text: 'Save',
+          rect: { x: 0, y: 0, w: 100, h: 30 },
+          paintOrder: 0,
+          styles: {},
+        },
+      ];
+      const structure = {
+        schema: 'juxtapose.structure/v1' as const,
+        viewport: { width: 800, height: 600 },
+        contentHeight: 600,
+        elements,
+        structureHash: hashElements(elements),
+        captureIdentity: {
+          storyId: id,
+          imageHash: digest,
+          structureHash: hashElements(elements),
+        },
+      };
+      for (const role of ['baseline', 'current'])
+        await writeFile(
+          path.join(dir, 'images', `${encodeStoryId(id)}-${role}.structure.json.gz`),
+          encodeStructure(structure),
+        );
+      let finalized = false;
+      const config = await serve(async (url, bytes, headers) => {
+        if (url === '/v1/runs')
+          return {
+            body: {
+              runId,
+              snapshotPutUrlTemplate: '/snapshots/{storyIdSafe}',
+              ...(mode === 'batch' ? { uploadProtocol: protocol } : {}),
+            },
+          };
+        if (url.endsWith('/artifacts/probe'))
+          return {
+            body: { available: JSON.parse(bytes.toString()).artifacts, missing: [] },
+          };
+        if (url.endsWith('/snapshots/batch')) {
+          const { items } = await batchForm(bytes, headers);
+          return { body: { results: items.map(success) } };
+        }
+        if (url.startsWith('/snapshots/')) return { body: { deduped: false } };
+        const wire = JSON.parse(bytes.toString()).report;
+        expect(wire.sourceReport.results[0].domEvidence).toMatchObject({
+          schema: 'juxtapose.dom-evidence/v1',
+          totalChanges: 0,
+          trees: { baseline: { totalNodes: 1 }, current: { totalNodes: 1 } },
+        });
+        expect(wire.sourceReport.results[0].hash).toBe(digest);
+        finalized = true;
+        return { body: { reportUrl: null } };
+      });
+      await uploadRun(dir, config);
+      expect(finalized).toBe(true);
+      expect(JSON.parse(await readFile(path.join(dir, 'report.json'), 'utf8'))).toEqual(
+        report,
+      );
+    },
+  );
+
   it('uploads a real multipart run preserving variants, local verdicts, and diagnostic evidence', async () => {
     const report = await fixture();
     const requests: string[] = [];

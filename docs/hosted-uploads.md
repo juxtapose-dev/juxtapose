@@ -49,3 +49,16 @@ Current limits: at least one result, at most 50,000 captures, capture IDs up to
 200 characters, and each WebP image up to 1 MiB. Capture errors must be fixed and
 recaptured before upload. Viewport-size changes with valid image evidence upload as failures.
 Empty affected runs do not create hosted runs.
+
+DOM inspection is available for new hosted captures when both the current and
+approved baseline structures are available and match their captured image hashes.
+The CLI carries those verified sidecars with the run, including passing snapshots;
+retrying an upload never substitutes a newer baseline. Older run directories and
+new stories without an approved baseline honestly show DOM evidence unavailable.
+
+Hosted trees are a sanitized projection of the original hashed structures, not
+React component metadata. Masked subtrees, typed form values and URL-bearing
+metadata are omitted. Trees preserve parent relationships and include explicit
+truncation metadata: at most 100 nodes per side and 64 KiB per snapshot, fairly
+shared within the complete report's 5 MiB limit. Missing, corrupt or over-budget
+optional DOM never changes a pixel verdict or blocks an otherwise valid upload.

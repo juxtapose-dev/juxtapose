@@ -1,7 +1,10 @@
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, expect, test, vi } from 'vitest';
+import { createHash } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
+import { encodeStoryId, encodeStructure } from '@juxtapose/core';
 import type { Browser } from '@juxtapose/core';
 import { captureIo } from '../io.js';
 
@@ -91,5 +94,76 @@ test.each(['upload failure', 'unlinked project'])(
     await expect(
       runCommand({ project: root, upload: true, 'review-in-github': true }, session),
     ).rejects.toThrow();
+  },
+);
+
+test.each(['valid', 'corrupt', 'error', 'mismatched'])(
+  'hosted capture binds sidecars and tolerates optional baseline DOM: %s',
+  async (mode) => {
+    const { root, session } = await setup();
+    const image = Buffer.from('capture-image'),
+      hash = createHash('sha256').update(image).digest('hex');
+    const structure = {
+      schema: 'juxtapose.structure/v1' as const,
+      viewport: { width: 800, height: 600 },
+      contentHeight: 600,
+      elements: [],
+      structureHash: 'b'.repeat(64),
+    };
+    await writeFile(
+      path.join(root, 'juxtapose.manifest.json'),
+      JSON.stringify({
+        version: 1,
+        baselines: {
+          A: {
+            hash,
+            structureHash:
+              mode === 'mismatched' ? 'f'.repeat(64) : structure.structureHash,
+            commit: 'a'.repeat(40),
+            approvedBy: 'test',
+            approvedAt: new Date().toISOString(),
+          },
+        },
+      }),
+    );
+    const report = await capture();
+    capture.mockImplementation(async (opts) => {
+      opts.store.get = async () => image;
+      opts.store.getStructure = async () => {
+        if (mode === 'error') throw new Error('unavailable');
+        return mode === 'corrupt' ? Buffer.from('{broken') : encodeStructure(structure);
+      };
+      await opts.onArtifact({ storyId: 'A', status: 'pass', current: image, structure });
+      return report;
+    });
+    await expect(
+      runCommand(
+        { project: root, all: true, upload: true, 'review-in-github': true },
+        session,
+      ),
+    ).resolves.toBe(0);
+    const runDir = upload.mock.calls[0]![0] as string;
+    const current = JSON.parse(
+      gunzipSync(
+        await readFile(
+          path.join(runDir, 'images', `${encodeStoryId('A')}-current.structure.json.gz`),
+        ),
+      ).toString(),
+    );
+    expect(current.captureIdentity).toEqual({
+      storyId: 'A',
+      imageHash: hash,
+      structureHash: structure.structureHash,
+    });
+    const baselineFile = path.join(
+      runDir,
+      'images',
+      `${encodeStoryId('A')}-baseline.structure.json.gz`,
+    );
+    if (mode === 'valid')
+      expect(
+        JSON.parse(gunzipSync(await readFile(baselineFile)).toString()).captureIdentity,
+      ).toEqual(current.captureIdentity);
+    else await expect(readFile(baselineFile)).rejects.toThrow();
   },
 );

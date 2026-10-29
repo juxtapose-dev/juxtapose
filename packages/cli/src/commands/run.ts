@@ -62,6 +62,7 @@ import {
   isGitRepo,
   type CommonFlags,
 } from '../context.js';
+import { decodeHostedStructure } from '../hosted-dom.js';
 import { serveStatic } from '../serve-static.js';
 import { EXIT } from '../exit-codes.js';
 import { stdio, type Io, type Session } from '../io.js';
@@ -347,14 +348,38 @@ export async function runCommand(
         await writeArtifact(runDir, a);
         if (hosted) {
           const baseline = await ctx.store.get(a.storyId);
-          if (
-            baseline &&
-            hashImage(baseline) === uploadBaselines?.baselines[a.storyId]?.hash
-          )
+          const entry = uploadBaselines?.baselines[a.storyId];
+          const baselineStructureFile = path.join(
+            runDir,
+            'images',
+            `${encodeStoryId(a.storyId)}-baseline.structure.json.gz`,
+          );
+          await rm(baselineStructureFile, { force: true }).catch(() => {});
+          if (baseline && hashImage(baseline) === entry?.hash) {
             await writeFile(
               path.join(runDir, 'images', `${encodeStoryId(a.storyId)}-baseline.webp`),
               baseline,
             );
+            const bytes = await ctx.store
+              .getStructure?.(a.storyId)
+              .catch(() => undefined);
+            if (bytes) {
+              const structure = decodeHostedStructure(bytes);
+              if (structure && structure.structureHash === entry.structureHash) {
+                const bound = {
+                  ...structure,
+                  captureIdentity: {
+                    storyId: a.storyId,
+                    imageHash: entry.hash,
+                    structureHash: structure.structureHash,
+                  },
+                };
+                await writeFile(baselineStructureFile, encodeStructure(bound)).catch(
+                  () => {},
+                );
+              }
+            }
+          }
         }
         // A pass matches the manifest hash, so this capture is the approved
         // image: keep it for the failure that needs it later.
@@ -531,7 +556,14 @@ async function writeArtifact(runDir: string, a: RunArtifact): Promise<void> {
   if (a.structure) {
     await writeFile(
       path.join(images, `${safe}-current.structure.json.gz`),
-      encodeStructure(a.structure),
+      encodeStructure({
+        ...a.structure,
+        captureIdentity: {
+          storyId: a.storyId,
+          imageHash: hashImage(a.current),
+          structureHash: a.structure.structureHash,
+        },
+      } as typeof a.structure),
     );
   } else
     await rm(path.join(images, `${safe}-current.structure.json.gz`), { force: true });
