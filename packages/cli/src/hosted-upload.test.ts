@@ -515,3 +515,538 @@ it('retries within a worker without double-counting successful progress or final
   );
   expect(progress.some((message) => message.includes('6/6'))).toBe(true);
 });
+
+const protocol = {
+  version: 1,
+  probePath: `/v1/runs/${runId}/artifacts/probe`,
+  batchPath: `/v1/runs/${runId}/snapshots/batch`,
+  maxItems: 16,
+  maxBlobs: 32,
+  maxRequestBytes: 8388608,
+  maxArtifactBytes: 1048576,
+  maxProbeItems: 256,
+};
+type BatchItem = {
+  storyIdSafe: string;
+  meta: { storyId: string; contentHash: string };
+  artifacts: Record<string, { hash: string; bytes: number }>;
+};
+async function batchForm(
+  bytes: Buffer,
+  headers: import('node:http').IncomingHttpHeaders,
+) {
+  const form = await new Response(new Uint8Array(bytes), {
+    headers: { 'content-type': headers['content-type']! },
+  }).formData();
+  return {
+    form,
+    items: (JSON.parse(String(form.get('manifest'))) as { items: BatchItem[] }).items,
+  };
+}
+const success = (item: BatchItem) => ({
+  storyIdSafe: item.storyIdSafe,
+  status: 201,
+  snapshotId: `00000000-0000-4000-8000-${item.storyIdSafe.slice(0, 12)}`,
+  deduped: true,
+  retryable: false,
+});
+const createBatchRun = () => ({
+  body: {
+    runId,
+    snapshotPutUrlTemplate: '/legacy/{storyIdSafe}',
+    uploadProtocol: protocol,
+  },
+});
+
+it('uses advertised verified hash reuse without re-sending cached WebP bytes', async () => {
+  const report = await parallelFixture(3);
+  let batchItems = 0,
+    finalized = false;
+  const config = await serve(async (url, bytes, headers) => {
+    if (url === '/v1/runs') return createBatchRun();
+    if (url === protocol.probePath) {
+      const artifacts = JSON.parse(bytes.toString()).artifacts;
+      expect(artifacts).toHaveLength(1);
+      return { body: { available: artifacts, missing: [] } };
+    }
+    if (url === protocol.batchPath) {
+      const { form, items } = await batchForm(bytes, headers);
+      expect([...form.keys()]).toEqual(['manifest']);
+      expect(items.map((item) => item.meta.storyId)).toEqual(
+        report.results.map((result) => result.storyId),
+      );
+      expect(
+        items.every(
+          (item) => item.artifacts.current?.hash === item.artifacts.thumb?.hash,
+        ),
+      ).toBe(true);
+      batchItems += items.length;
+      return { body: { results: items.map(success) } };
+    }
+    if (url.endsWith('/finalize')) {
+      finalized = true;
+      expect(batchItems).toBe(3);
+      return { body: { reportUrl: null } };
+    }
+    return { status: 418 };
+  });
+  await expect(uploadRun(dir, config)).resolves.toEqual({ runId, reportUrl: null });
+  expect(finalized).toBe(true);
+});
+
+it.each(['items', 'bytes', 'blobs'] as const)(
+  'bounds real batch requests by %s before finalizing',
+  async (mode) => {
+    const count = mode === 'items' ? 17 : mode === 'bytes' ? 9 : 12;
+    const report = await parallelFixture(count);
+    if (mode !== 'items') {
+      for (const [index, result] of report.results.entries()) {
+        for (const role of mode === 'bytes'
+          ? ['current']
+          : ['current', 'diff', 'baseline']) {
+          const data = Buffer.alloc(mode === 'bytes' ? 1048576 : 64, index + role.length);
+          data.write('RIFF', 0);
+          data.write('WEBP', 8);
+          data.write(`${index}-${role}`, 16);
+          await writeFile(
+            path.join(dir, 'images', `${encodeStoryId(result.storyId)}-${role}.webp`),
+            data,
+          );
+        }
+      }
+    }
+    let batches = 0,
+      uploaded = 0;
+    const config = await serve(async (url, bytes, headers) => {
+      if (url === '/v1/runs') return createBatchRun();
+      if (url === protocol.probePath)
+        return {
+          body: { available: [], missing: JSON.parse(bytes.toString()).artifacts },
+        };
+      if (url === protocol.batchPath) {
+        batches++;
+        expect(bytes.length).toBeLessThanOrEqual(protocol.maxRequestBytes);
+        const { form, items } = await batchForm(bytes, headers);
+        expect(items.length).toBeLessThanOrEqual(protocol.maxItems);
+        expect(
+          [...form.keys()].filter((key) => key.startsWith('blob:')).length,
+        ).toBeLessThanOrEqual(protocol.maxBlobs);
+        uploaded += items.length;
+        return { body: { results: items.map(success) } };
+      }
+      if (url.endsWith('/finalize')) {
+        expect(uploaded).toBe(count);
+        return { body: { reportUrl: null } };
+      }
+      return { status: 418 };
+    });
+    await uploadRun(dir, config);
+    expect(batches).toBe(2);
+  },
+);
+
+it.each(['missing', 'transient', 'server500'] as const)(
+  'retries only failed batch items after %s failures',
+  async (mode) => {
+    await parallelFixture(3);
+    const batches: string[][] = [];
+    let missingHash = '';
+    const progress: string[] = [];
+    const config = await serve(async (url, bytes, headers) => {
+      if (url === '/v1/runs') return createBatchRun();
+      if (url === protocol.probePath)
+        return {
+          body: { available: JSON.parse(bytes.toString()).artifacts, missing: [] },
+        };
+      if (url === protocol.batchPath) {
+        const { form, items } = await batchForm(bytes, headers);
+        batches.push(items.map((item) => item.storyIdSafe));
+        if (batches.length === 1) {
+          expect([...form.keys()]).toEqual(['manifest']);
+          missingHash = items[0]!.artifacts.current!.hash;
+          return {
+            body: {
+              results: [
+                {
+                  storyIdSafe: items[0]!.storyIdSafe,
+                  status: mode === 'missing' ? 409 : mode === 'server500' ? 500 : 503,
+                  error: mode === 'missing' ? 'missing_artifacts' : 'temporary_failure',
+                  ...(mode === 'missing' ? { missingHashes: [missingHash] } : {}),
+                  retryable: true,
+                },
+                ...items.slice(1).map(success),
+              ],
+            },
+          };
+        }
+        expect(items).toHaveLength(1);
+        expect(form.has(`blob:${missingHash}`)).toBe(mode === 'missing');
+        return { body: { results: items.map(success) } };
+      }
+      if (url.endsWith('/finalize')) {
+        expect(JSON.parse(bytes.toString()).report.dedupedCount).toBe(3);
+        return { body: { reportUrl: null } };
+      }
+      return { status: 418 };
+    });
+    await uploadRun(dir, config, (message) => progress.push(message));
+    expect(batches).toHaveLength(2);
+    expect(batches[1]).toEqual([batches[0]![0]]);
+    expect(
+      progress.filter((message) => message.startsWith('jux: uploaded ')),
+    ).toHaveLength(3);
+  },
+);
+
+it.each([
+  'auth',
+  'malformed-probe',
+  'unrequested-probe',
+  'missing-receipt',
+  'duplicate-snapshot',
+  'terminal-item',
+] as const)(
+  'fails closed on %s without legacy fallback or finalization',
+  async (mode) => {
+    const report = await parallelFixture(2);
+    let finalized = false,
+      legacy = false;
+    const config = await serve(async (url, bytes, headers) => {
+      if (url === '/v1/runs') return createBatchRun();
+      if (url.startsWith('/legacy/')) {
+        legacy = true;
+        return { status: 418 };
+      }
+      if (url === protocol.probePath) {
+        if (mode === 'auth') return { status: 403 };
+        if (mode === 'unrequested-probe')
+          return { body: { available: [{ hash: 'f'.repeat(64) }], missing: [] } };
+        return {
+          body:
+            mode === 'malformed-probe'
+              ? { available: [], missing: [] }
+              : { available: JSON.parse(bytes.toString()).artifacts, missing: [] },
+        };
+      }
+      if (url === protocol.batchPath) {
+        const { items } = await batchForm(bytes, headers);
+        return {
+          body: {
+            results:
+              mode === 'missing-receipt'
+                ? []
+                : mode === 'duplicate-snapshot'
+                  ? items.map((item) => ({ ...success(item), snapshotId: runId }))
+                  : items.map((item) => ({
+                      storyIdSafe: item.storyIdSafe,
+                      status: 409,
+                      error: 'snapshot_conflict',
+                      retryable: false,
+                    })),
+          },
+        };
+      }
+      finalized = true;
+      return { body: { reportUrl: null } };
+    });
+    await expect(uploadRun(dir, config)).rejects.toThrow();
+    expect(legacy).toBe(false);
+    expect(finalized).toBe(false);
+    expect(JSON.parse(await readFile(path.join(dir, 'report.json'), 'utf8'))).toEqual(
+      report,
+    );
+  },
+);
+
+it.each([
+  null,
+  { ...protocol, version: 2 },
+  { ...protocol, probePath: 'https://attacker.invalid/' },
+  { ...protocol, maxRequestBytes: 16777216 },
+])(
+  'does not fall back when advertised capabilities are malformed or unsupported',
+  async (advertised) => {
+    await fixture();
+    let calls = 0;
+    const config = await serve(() => {
+      calls++;
+      return { body: { ...createBatchRun().body, uploadProtocol: advertised } };
+    });
+    await expect(uploadRun(dir, config)).rejects.toThrow('invalid batch');
+    expect(calls).toBe(1);
+  },
+);
+it('overlaps at most four bounded batches and waits for all receipts before finalization', async () => {
+  await parallelFixture(65);
+  let active = 0,
+    maximum = 0,
+    completed = 0;
+  const config = await serve(async (url, bytes, headers) => {
+    if (url === '/v1/runs') return createBatchRun();
+    if (url === protocol.probePath)
+      return { body: { available: JSON.parse(bytes.toString()).artifacts, missing: [] } };
+    if (url === protocol.batchPath) {
+      const { items } = await batchForm(bytes, headers);
+      active++;
+      maximum = Math.max(maximum, active);
+      await pause(30);
+      active--;
+      completed += items.length;
+      return { body: { results: items.map(success) } };
+    }
+    if (url.endsWith('/finalize')) {
+      expect(active).toBe(0);
+      expect(completed).toBe(65);
+      return { body: { reportUrl: null } };
+    }
+    return { status: 418 };
+  });
+  await uploadRun(dir, config);
+  expect(maximum).toBe(4);
+});
+it.each(['success', 'retryable'] as const)(
+  'drains active batches after a terminal request failure without scheduling %s follow-up work',
+  async (mode) => {
+    await parallelFixture(65);
+    let active = 0,
+      started = 0,
+      completed = 0,
+      finalized = false;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const config = await serve(async (url, bytes, headers) => {
+      if (url === '/v1/runs') return createBatchRun();
+      if (url === protocol.probePath)
+        return {
+          body: { available: JSON.parse(bytes.toString()).artifacts, missing: [] },
+        };
+      if (url === protocol.batchPath) {
+        const { items } = await batchForm(bytes, headers);
+        const order = ++started;
+        active++;
+        if (started === 4) release();
+        if (order === 1) {
+          await Promise.race([entered, pause(100)]);
+          active--;
+          return { status: 401 };
+        }
+        await pause(60);
+        active--;
+        completed++;
+        return {
+          body: {
+            results:
+              mode === 'success'
+                ? items.map(success)
+                : items.map((item) => ({
+                    storyIdSafe: item.storyIdSafe,
+                    status: 500,
+                    error: 'upload_failed',
+                    retryable: true,
+                  })),
+          },
+        };
+      }
+      finalized = true;
+      return { body: { reportUrl: null } };
+    });
+    await expect(uploadRun(dir, config)).rejects.toThrow('HTTP 401');
+    expect(started).toBe(4);
+    expect(active).toBe(0);
+    expect(completed).toBe(3);
+    expect(finalized).toBe(false);
+  },
+);
+it('exhausts bounded per-item retries without publishing an incomplete result', async () => {
+  await parallelFixture(2);
+  let batches = 0,
+    finalized = false;
+  const config = await serve(async (url, bytes, headers) => {
+    if (url === '/v1/runs') return createBatchRun();
+    if (url === protocol.probePath)
+      return { body: { available: JSON.parse(bytes.toString()).artifacts, missing: [] } };
+    if (url === protocol.batchPath) {
+      batches++;
+      const { items } = await batchForm(bytes, headers);
+      return {
+        body: {
+          results: items.map((item) => ({
+            storyIdSafe: item.storyIdSafe,
+            status: 503,
+            error: 'temporary_failure',
+            retryable: true,
+          })),
+        },
+      };
+    }
+    finalized = true;
+    return { body: { reportUrl: null } };
+  });
+  await expect(uploadRun(dir, config)).rejects.toThrow('retries exhausted');
+  expect(batches).toBe(3);
+  expect(finalized).toBe(false);
+});
+it('rejects local byte changes after a missing-hash probe before sending a batch', async () => {
+  const report = await parallelFixture(1);
+  let batchCalls = 0,
+    finalized = false;
+  const config = await serve(async (url, bytes) => {
+    if (url === '/v1/runs') return createBatchRun();
+    if (url === protocol.probePath) {
+      const file = path.join(
+        dir,
+        'images',
+        `${encodeStoryId(report.results[0]!.storyId)}-current.webp`,
+      );
+      const changed = await readFile(file);
+      changed[changed.length - 1] ^= 1;
+      await writeFile(file, changed);
+      return { body: { available: [], missing: JSON.parse(bytes.toString()).artifacts } };
+    }
+    if (url === protocol.batchPath) {
+      batchCalls++;
+      return { body: { results: [] } };
+    }
+    finalized = true;
+    return { body: { reportUrl: null } };
+  });
+  await expect(uploadRun(dir, config)).rejects.toThrow('artifacts changed');
+  expect(batchCalls).toBe(0);
+  expect(finalized).toBe(false);
+});
+
+it('repartitions cache-eviction retries when newly missing blobs exceed one batch', async () => {
+  const report = await parallelFixture(12);
+  for (const [index, result] of report.results.entries())
+    for (const role of ['current', 'diff', 'baseline']) {
+      const data = Buffer.alloc(64, index);
+      data.write('RIFF', 0);
+      data.write('WEBP', 8);
+      data.write(`${index}-${role}`, 16);
+      await writeFile(
+        path.join(dir, 'images', `${encodeStoryId(result.storyId)}-${role}.webp`),
+        data,
+      );
+    }
+  const sizes: number[] = [];
+  let calls = 0;
+  const config = await serve(async (url, bytes, headers) => {
+    if (url === '/v1/runs') return createBatchRun();
+    if (url === protocol.probePath)
+      return { body: { available: JSON.parse(bytes.toString()).artifacts, missing: [] } };
+    if (url === protocol.batchPath) {
+      calls++;
+      const { form, items } = await batchForm(bytes, headers);
+      if (calls === 1) {
+        expect(items).toHaveLength(12);
+        expect([...form.keys()]).toEqual(['manifest']);
+        return {
+          body: {
+            results: items.map((item) => ({
+              storyIdSafe: item.storyIdSafe,
+              status: 409,
+              error: 'missing_artifacts',
+              missingHashes: [
+                ...new Set(Object.values(item.artifacts).map((ref) => ref.hash)),
+              ],
+              retryable: true,
+            })),
+          },
+        };
+      }
+      sizes.push([...form.keys()].filter((key) => key.startsWith('blob:')).length);
+      expect(bytes.length).toBeLessThanOrEqual(protocol.maxRequestBytes);
+      return { body: { results: items.map(success) } };
+    }
+    if (url.endsWith('/finalize')) return { body: { reportUrl: null } };
+    return { status: 418 };
+  });
+  await uploadRun(dir, config);
+  expect(calls).toBe(3);
+  expect(sizes).toEqual([30, 6]);
+});
+it('chunks verified hash probes within advertised item and JSON byte limits', async () => {
+  const report = await parallelFixture(257);
+  for (const [index, result] of report.results.entries()) {
+    const data = Buffer.alloc(64);
+    data.write('RIFF', 0);
+    data.write('WEBP', 8);
+    data.write(String(index), 16);
+    await writeFile(
+      path.join(dir, 'images', `${encodeStoryId(result.storyId)}-current.webp`),
+      data,
+    );
+  }
+  let probes = 0,
+    completed = 0;
+  const config = await serve(async (url, bytes, headers) => {
+    if (url === '/v1/runs') return createBatchRun();
+    if (url === protocol.probePath) {
+      probes++;
+      const { artifacts } = JSON.parse(bytes.toString());
+      expect(artifacts.length).toBeLessThanOrEqual(256);
+      expect(bytes.length).toBeLessThanOrEqual(32768);
+      return { body: { available: artifacts, missing: [] } };
+    }
+    if (url === protocol.batchPath) {
+      const { form, items } = await batchForm(bytes, headers);
+      expect([...form.keys()]).toEqual(['manifest']);
+      completed += items.length;
+      return { body: { results: items.map(success) } };
+    }
+    if (url.endsWith('/finalize')) {
+      expect(completed).toBe(257);
+      return { body: { reportUrl: null } };
+    }
+    return { status: 418 };
+  });
+  await uploadRun(dir, config);
+  expect(probes).toBe(2);
+});
+
+it('sends skipped batch items without hashing or uploading stale leftover images', async () => {
+  const report = await fixture();
+  await writeFile(
+    path.join(dir, 'report.json'),
+    JSON.stringify({
+      ...report,
+      results: [
+        { ...report.results[0], status: 'skip', mismatchPixels: 0, mismatchPercent: 0 },
+      ],
+      summary: { ...report.summary, fail: 0, skip: 1 },
+    }),
+  );
+  await writeFile(
+    path.join(dir, 'images', `${encodeStoryId(id)}-current.webp`),
+    'invalid leftover',
+  );
+  let probes = 0;
+  const config = await serve(async (url, bytes, headers) => {
+    if (url === '/v1/runs') return createBatchRun();
+    if (url === protocol.probePath) {
+      probes++;
+      return { body: { available: [], missing: [] } };
+    }
+    if (url === protocol.batchPath) {
+      const { form, items } = await batchForm(bytes, headers);
+      expect([...form.keys()]).toEqual(['manifest']);
+      expect(items[0]!.artifacts).toEqual({});
+      expect((items[0]!.meta as Record<string, unknown>).status).toBe('skipped');
+      return {
+        body: { results: items.map((item) => ({ ...success(item), deduped: false })) },
+      };
+    }
+    if (url.endsWith('/finalize')) {
+      const wire = JSON.parse(bytes.toString()).report;
+      expect(wire.skippedCount).toBe(1);
+      expect(wire.dedupedCount).toBe(0);
+      expect(wire.snapshots[0].contentHash).toBeNull();
+      return { body: { reportUrl: null } };
+    }
+    return { status: 418 };
+  });
+  await uploadRun(dir, config);
+  expect(probes).toBe(0);
+});
