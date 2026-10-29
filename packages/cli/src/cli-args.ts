@@ -31,6 +31,7 @@ export const SPECS: Record<string, Spec> = {
       'all',
       'comment',
       'upload',
+      'review-in-github',
       'html',
       'story',
       'dry-run',

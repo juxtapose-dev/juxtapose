@@ -72,12 +72,21 @@ import { UserError } from '../user-error.js';
 
 import { uploadConfig, uploadRun, uploadMessage } from '../hosted-upload.js';
 
+import { validateGitHubReview, assertReviewEvidence } from '../github-review.js';
+
 const MAX_GROUPS_SHOWN = 10;
 
 export async function runCommand(
   flags: CommonFlags,
   { io = stdio, browser: lent, signal }: Session = {},
 ): Promise<number> {
+  if (flags['review-in-github']) {
+    await validateGitHubReview(
+      flags,
+      gitSha(path.resolve(flags.project ?? process.cwd())),
+    );
+    flags = { ...flags, all: true, recheck: 'changed' };
+  }
   const hosted = flags.upload && !flags['dry-run'] ? uploadConfig() : undefined;
   // Checked first: a mistyped ref used to fall through to `git-unavailable`,
   // capture everything, and give every story an unexplained `unknown` cause.
@@ -388,9 +397,21 @@ export async function runCommand(
     if (flags.comment)
       await comment(report, ctx.json, Boolean(flags.html), io, ctx.config.storage);
 
+    if (flags['review-in-github']) assertReviewEvidence(report);
     if (hosted) {
       const uploaded = await uploadRun(runDir, hosted);
       io.err(uploadMessage(uploaded));
+      if (flags['review-in-github']) {
+        if (!uploaded.reportUrl)
+          throw new UserError(
+            'GitHub review requires a linked repository. Link this project and rerun.',
+            1,
+          );
+        io.err(
+          'jux: capture uploaded; the required juxtapose GitHub App check owns visual approval.\n',
+        );
+        return EXIT.clean;
+      }
     }
 
     // Anything needing human or agent judgement blocks. `pass` and `skip` do not.

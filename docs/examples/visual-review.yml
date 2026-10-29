@@ -1,0 +1,70 @@
+# Copy to .github/workflows/visual-review.yml after installing the CLI release
+# containing --review-in-github. Adapt build command/project paths as needed.
+name: Visual review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions:
+  contents: read
+concurrency:
+  group: visual-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  capture:
+    name: Visual capture
+    runs-on: ubuntu-24.04
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      CI: 'true'
+      TZ: UTC
+      LANG: C.UTF-8
+      JUX_NO_DAEMON: '1'
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install pinned Chrome and system libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec jux browser install
+          chrome_dir=$(dirname "$(pnpm exec jux browser path)")
+          sudo apt-get update
+          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$chrome_dir/deb.deps")"
+      - name: Capture merge-base baseline and build head
+        shell: bash
+        run: |
+          set -euo pipefail
+          jux_bin=$(realpath node_modules/.bin/jux)
+          base_dir="$RUNNER_TEMP/juxtapose-base"
+          merge_base=$(git merge-base HEAD "$BASE_SHA")
+          git worktree add --detach "$base_dir" "$merge_base"
+          # Default cache storage only. Both worktrees are ephemeral CI copies.
+          (
+            cd "$base_dir"
+            pnpm install --frozen-lockfile
+            pnpm build-storybook
+            rm -rf .juxtapose juxtapose.manifest.json juxtapose.structures
+            "$jux_bin" init
+          )
+          rm -rf .juxtapose juxtapose.manifest.json juxtapose.structures
+          cp "$base_dir/juxtapose.manifest.json" .
+          if test -d "$base_dir/juxtapose.structures"; then
+            cp -R "$base_dir/juxtapose.structures" .
+          fi
+          mkdir -p .juxtapose/cache
+          cp -R "$base_dir/.juxtapose/cache/baselines" .juxtapose/cache/
+          pnpm build-storybook
+      - name: Capture head and hand review to the App
+        env:
+          JUXTAPOSE_TOKEN: ${{ secrets.JUXTAPOSE_TOKEN }}
+        run: pnpm exec jux run --upload --review-in-github

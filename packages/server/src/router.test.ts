@@ -66,15 +66,30 @@ afterEach(async () => {
   await handle.close();
 });
 
+const reviewFetch: typeof fetch = (url, init) =>
+  fetch(
+    url,
+    init?.method === 'POST'
+      ? {
+          ...init,
+          headers: {
+            'content-type': 'application/json',
+            'x-jux-csrf': '1',
+            ...init.headers,
+          },
+        }
+      : init,
+  );
+
 describe('review API', () => {
   it('serves the bundle the panel polls', async () => {
-    const res = await fetch(api('/bundle'));
+    const res = await reviewFetch(api('/bundle'));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ report: null, approved: [], running: false });
   });
 
   it('reports run progress', async () => {
-    expect(await (await fetch(api('/progress'))).json()).toEqual({
+    expect(await (await reviewFetch(api('/progress'))).json()).toEqual({
       running: true,
       done: 2,
       total: 5,
@@ -84,7 +99,7 @@ describe('review API', () => {
 
   it('serves images as webp and caches them hard', async () => {
     source.images.set('current:a--b', Buffer.from('webp-bytes'));
-    const res = await fetch(api('/image/current/a--b'));
+    const res = await reviewFetch(api('/image/current/a--b'));
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/webp');
     // The client cache-busts with ?v=, so bytes at a given URL never change.
@@ -92,32 +107,34 @@ describe('review API', () => {
   });
 
   it('404s a missing image rather than serving an empty body', async () => {
-    expect((await fetch(api('/image/current/nope'))).status).toBe(404);
+    expect((await reviewFetch(api('/image/current/nope'))).status).toBe(404);
   });
 
   it('rejects an unknown image kind', async () => {
-    expect((await fetch(api('/image/bogus/a--b'))).status).toBe(400);
+    expect((await reviewFetch(api('/image/bogus/a--b'))).status).toBe(400);
   });
 
   it('handles story ids containing slashes', async () => {
     source.images.set('current:group/a--b', Buffer.from('x'));
-    const res = await fetch(api(`/image/current/${encodeURIComponent('group/a--b')}`));
+    const res = await reviewFetch(
+      api(`/image/current/${encodeURIComponent('group/a--b')}`),
+    );
     expect(res.status).toBe(200);
   });
 
   it('serves the handoff prompt as plain text', async () => {
-    const res = await fetch(api('/handoff/a--b'));
+    const res = await reviewFetch(api('/handoff/a--b'));
     expect(res.headers.get('content-type')).toContain('text/plain');
     expect(await res.text()).toBe('PROMPT');
   });
 
   it('404s a handoff for a story not in the run', async () => {
     source.handoffText = null;
-    expect((await fetch(api('/handoff/ghost'))).status).toBe(404);
+    expect((await reviewFetch(api('/handoff/ghost'))).status).toBe(404);
   });
 
   it('approves a story', async () => {
-    const res = await fetch(api('/approve'), {
+    const res = await reviewFetch(api('/approve'), {
       method: 'POST',
       body: JSON.stringify({ storyId: 'a--b' }),
     });
@@ -126,14 +143,14 @@ describe('review API', () => {
   });
 
   it('rejects an approve with no storyId', async () => {
-    const res = await fetch(api('/approve'), { method: 'POST', body: '{}' });
+    const res = await reviewFetch(api('/approve'), { method: 'POST', body: '{}' });
     expect(res.status).toBe(400);
     expect(source.approved).toEqual([]);
   });
 
   it('surfaces a failed approval as a 500 rather than a silent success', async () => {
     source.approveError = new Error('no capture for that story');
-    const res = await fetch(api('/approve'), {
+    const res = await reviewFetch(api('/approve'), {
       method: 'POST',
       body: JSON.stringify({ storyId: 'a--b' }),
     });
@@ -144,12 +161,12 @@ describe('review API', () => {
   it('returns 202 immediately for a run instead of blocking', async () => {
     // A capture takes seconds; holding the request open would time out. The
     // client polls /progress instead.
-    const res = await fetch(api('/run'), { method: 'POST', body: '{}' });
+    const res = await reviewFetch(api('/run'), { method: 'POST', body: '{}' });
     expect(res.status).toBe(202);
   });
 
   it('passes a story subset through to a partial run', async () => {
-    await fetch(api('/run'), {
+    await reviewFetch(api('/run'), {
       method: 'POST',
       body: JSON.stringify({ storyIds: ['a--b'] }),
     });
@@ -159,7 +176,7 @@ describe('review API', () => {
   });
 
   it('refuses a storyIds that is not a list of ids, instead of running on it', async () => {
-    const res = await fetch(api('/run'), {
+    const res = await reviewFetch(api('/run'), {
       method: 'POST',
       body: JSON.stringify({ storyIds: 'a--b' }),
     });
@@ -169,41 +186,41 @@ describe('review API', () => {
   });
 
   it('cancels a run', async () => {
-    expect((await fetch(api('/cancel'), { method: 'POST' })).status).toBe(200);
+    expect((await reviewFetch(api('/cancel'), { method: 'POST' })).status).toBe(200);
     expect(source.cancelled).toBe(1);
   });
 
   it('404s an unknown route under the prefix', async () => {
-    expect((await fetch(api('/nope'))).status).toBe(404);
+    expect((await reviewFetch(api('/nope'))).status).toBe(404);
   });
 
   it('answers which stories a rerender should recapture', async () => {
-    const res = await fetch(api('/affected?storyId=a--b'));
+    const res = await reviewFetch(api('/affected?storyId=a--b'));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ storyIds: ['a--b', 'a--c'] });
     expect(source.affectedCalls).toEqual(['a--b']);
   });
 
   it('rejects an affected query with no story', async () => {
-    expect((await fetch(api('/affected'))).status).toBe(400);
+    expect((await reviewFetch(api('/affected'))).status).toBe(400);
   });
 
   it('preserves a story id containing a query character', async () => {
     // Ids come from the platform. Splitting the URL on every '?' would
     // truncate one, and the recapture would silently target the wrong story.
-    await fetch(api(`/affected?storyId=${encodeURIComponent('a--b?c')}`));
+    await reviewFetch(api(`/affected?storyId=${encodeURIComponent('a--b?c')}`));
     expect(source.affectedCalls).toEqual(['a--b?c']);
   });
 
   it('flushes the story index when the workbench says it changed', async () => {
-    expect((await fetch(api('/flush-index'), { method: 'POST' })).status).toBe(200);
+    expect((await reviewFetch(api('/flush-index'), { method: 'POST' })).status).toBe(200);
     expect(source.flushes).toBe(1);
   });
 
   it('does not claim requests outside its prefix', async () => {
     // The addon mounts this inside a dev server; anything not ours has to
     // fall through so the workbench can serve it.
-    const res = await fetch(`${handle.url}/iframe.html`);
+    const res = await reviewFetch(`${handle.url}/iframe.html`);
     expect(res.status).toBe(404);
     expect(await res.text()).toBe('not found');
   });
@@ -214,13 +231,36 @@ describe('variant config errors', () => {
     source.storiesError = new VariantConfigError(
       "story 'a--b' variant 'dark' extends unknown variant 'nope'",
     );
-    const stories = await fetch(api('/stories'));
+    const stories = await reviewFetch(api('/stories'));
     expect(stories.status).toBe(400);
     expect(((await stories.json()) as { error: string }).error).toContain(
       "story 'a--b' variant 'dark'",
     );
-    const run = await fetch(api('/run'), { method: 'POST', body: '{}' });
+    const run = await reviewFetch(api('/run'), { method: 'POST', body: '{}' });
     expect(run.status).toBe(400);
     expect(source.runCalls).toEqual([]);
+  });
+});
+
+describe('local review API security', () => {
+  it('rejects foreign-origin approval with a CORS-simple JSON body', async () => {
+    const response = await fetch(api('/approve'), {
+      method: 'POST',
+      headers: { origin: 'https://attacker.invalid', 'content-type': 'text/plain' },
+      body: JSON.stringify({ storyId: 'a--b' }),
+    });
+    expect(response.status).toBe(403);
+    expect(source.approved).toEqual([]);
+  });
+  it('rejects mutations without the explicit review header', async () => {
+    const response = await fetch(api('/cancel'), { method: 'POST' });
+    expect(response.status).toBe(403);
+    expect(source.cancelled).toBe(0);
+  });
+  it('rejects a rebound hostname even when origin matches it', async () => {
+    const response = await fetch(api('/bundle'), {
+      headers: { host: 'attacker.invalid', origin: 'http://attacker.invalid' },
+    });
+    expect(response.status).toBe(403);
   });
 });

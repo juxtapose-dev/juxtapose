@@ -57,6 +57,7 @@ Common options
   --padding <px>                 reference crop: minimum surrounding context (page pixels)
   --chrome <path>                use this Chromium binary instead of the pinned one (or set JUX_CHROME=<path>)
   --no-daemon                    snap, run, init, approve: launch a private browser instead of the warm one (JUX_NO_DAEMON=1)
+  --review-in-github            run: let the required GitHub App check gate visual approval (requires --upload)
   --upload                      run: upload captured results to hosted review (JUXTAPOSE_TOKEN)
   --no-fresh-renderer            snap, run: reuse each page's renderer between captures (config freshRenderer:
                                  false); faster, but a capture can depend on the one before it
@@ -188,6 +189,7 @@ async function main(argv: string[]): Promise<number> {
       comment: { type: 'boolean', default: false },
       html: { type: 'boolean', default: false },
       upload: { type: 'boolean', default: false },
+      'review-in-github': { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },
       'dry-run': { type: 'boolean' },
       run: { type: 'string' },

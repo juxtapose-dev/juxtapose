@@ -43,7 +43,7 @@ export async function fetchProgress(): Promise<Progress> {
 export async function approveStory(storyId: string): Promise<void> {
   const res = await fetch(`${API}/approve`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-jux-csrf': '1' },
     body: JSON.stringify({ storyId }),
   });
   await checkResponse(res, 'approve');
@@ -52,7 +52,7 @@ export async function approveStory(storyId: string): Promise<void> {
 export async function startRun(storyIds?: string[]): Promise<void> {
   const res = await fetch(`${API}/run`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-jux-csrf': '1' },
     body: JSON.stringify(storyIds ? { storyIds } : {}),
   });
   await checkResponse(res, 'run');
@@ -87,14 +87,20 @@ export async function fetchAffected(storyId: string): Promise<string[]> {
 /** Tell the server its cached story index is stale. */
 export async function flushIndex(): Promise<void> {
   try {
-    await fetch(`${API}/flush-index`, { method: 'POST' });
+    await fetch(`${API}/flush-index`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-jux-csrf': '1' },
+    });
   } catch {
     // Best effort: a stale index self-corrects on the next real run.
   }
 }
 
 export async function cancelRun(): Promise<void> {
-  const res = await fetch(`${API}/cancel`, { method: 'POST' });
+  const res = await fetch(`${API}/cancel`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-jux-csrf': '1' },
+  });
   await checkResponse(res, 'cancel');
 }
 

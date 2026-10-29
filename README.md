@@ -150,3 +150,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) to get set up, and
 ## License
 
 MIT © Magic Factory LLC. See [LICENSE](LICENSE).
+
+For hosted PR approval, see [GitHub PR review](docs/github-pr-review.md): canonical CI rendering, inline evidence, and a required GitHub App check.
