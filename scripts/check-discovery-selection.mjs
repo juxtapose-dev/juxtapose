@@ -268,7 +268,7 @@ if (process.argv[2] === '--prepare') {
     });
     save();
   };
-  run('full', ['--all'], all, 'no-baseline');
+  run('full', ['--all'], all, 'all requested via --all');
   run('unchanged', ['--since', 'HEAD'], [], 'no-changes');
   const component = path.join(fixture, 'stories/A.jsx');
   writeFileSync(component, readFileSync(component, 'utf8') + '// comment-only change\n');
@@ -300,7 +300,7 @@ if (process.argv[2] === '--prepare') {
     ['a--default', 'a--default__dark', 'a--default__mobile'],
     'graph-walk',
   );
-  run('full-after-subset', ['--all'], all, 'no-baseline');
+  run('full-after-subset', ['--all'], all, 'all requested via --all');
   run('variant', ['--story', 'a--default__mobile'], ['a--default__mobile'], 'requested');
   writeFileSync(component, readFileSync(component, 'utf8') + '// stale graph\n');
   run('stale', ['--since', 'HEAD'], all, 'stale-graph');
