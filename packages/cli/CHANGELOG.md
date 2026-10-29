@@ -1,5 +1,17 @@
 # @juxtapose/cli
 
+## 0.27.0
+
+### Minor Changes
+
+- c47a075: Add `jux run --upload --review-in-github` for PR workflows where the required Juxtapose GitHub App check owns visual approval. Require a full, stable capture of the PR head and preserve capture/upload failures. Document canonical base/head CI rendering and required-check setup.
+
+### Patch Changes
+
+- c47a075: Restrict the local review API to loopback callers with trusted loopback hosts and same-origin browser requests. Require an explicit review header and JSON content type for mutations, and update the Storybook client to send them. This blocks cross-site baseline approvals and capture cancellation; directly exposed network review APIs are no longer accepted.
+
+  Keep static workbench reads within the real build directory, including symlinks. Malformed request URLs now return an error instead of terminating the capture process.
+
 ## 0.26.0
 
 ### Minor Changes
