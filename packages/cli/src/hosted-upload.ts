@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { encodeStoryId, type RunReport } from '@juxtapose/core';
+import { attachHostedDom } from './hosted-dom.js';
 import { UserError } from './user-error.js';
 import {
   readUploadProtocol,
@@ -406,28 +407,33 @@ export async function uploadRun(
   onProgress?.(`jux: finalizing hosted run (${snapshots.length} snapshots)\n`);
   const count = (status: string) =>
     snapshots.filter((s) => s.result.status === status).length;
+  const finalReport = await attachHostedDom(
+    {
+      sourceReport: report,
+      runId: created.runId,
+      totalCount: snapshots.length,
+      failCount: count('fail'),
+      newCount: count('new'),
+      skippedCount: count('skip'),
+      dedupedCount,
+      durationMs: Math.round(report.durationMs),
+      snapshots: snapshots.map((s) => ({
+        storyId: s.result.storyId,
+        storyIdSafe: s.storyIdSafe,
+        status: s.result.status === 'skip' ? 'skipped' : s.result.status,
+        mismatchPercent: s.result.mismatchPercent,
+        contentHash: s.result.status === 'skip' ? null : s.contentHash,
+      })),
+    },
+    runDir,
+    snapshots,
+  );
   const finished = await request(
     config,
     `/v1/runs/${created.runId}/finalize`,
     'POST',
     JSON.stringify({
-      report: {
-        sourceReport: report,
-        runId: created.runId,
-        totalCount: snapshots.length,
-        failCount: count('fail'),
-        newCount: count('new'),
-        skippedCount: count('skip'),
-        dedupedCount,
-        durationMs: Math.round(report.durationMs),
-        snapshots: snapshots.map((s) => ({
-          storyId: s.result.storyId,
-          storyIdSafe: s.storyIdSafe,
-          status: s.result.status === 'skip' ? 'skipped' : s.result.status,
-          mismatchPercent: s.result.mismatchPercent,
-          contentHash: s.result.status === 'skip' ? null : s.contentHash,
-        })),
-      },
+      report: finalReport,
     }),
   );
   if (finished.reportUrl === null) return { runId: created.runId, reportUrl: null };

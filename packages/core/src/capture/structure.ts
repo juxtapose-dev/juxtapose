@@ -699,7 +699,7 @@ function canonical(v: unknown): string {
   return JSON.stringify(v);
 }
 
-function hashElements(elements: StructureElement[]): string {
+export function hashElements(elements: StructureElement[]): string {
   // `external` is evidence for the flake classifier, not structure. Leaving it
   // out keeps every structureHash (and so every committed sidecar's) what it
   // was before the field existed.

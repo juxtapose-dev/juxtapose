@@ -406,3 +406,9 @@ export {
   type ElementQuery,
   type ElementInspection,
 } from './agent/inspect-element.js';
+
+// Bounded, sanitized DOM trees for the existing hosted review report contract.
+export {
+  buildHostedDomEvidence,
+  type HostedDomEvidence,
+} from './report/hosted-dom-evidence.js';
