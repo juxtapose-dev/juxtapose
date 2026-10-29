@@ -1,5 +1,12 @@
 # @juxtapose/cli
 
+## 0.27.1
+
+### Patch Changes
+
+- 94d8c7e: Label full runs as explicitly requested via --all rather than incorrectly claiming no baseline exists. Image comparison and baseline selection remain unchanged.
+- 94d8c7e: Upload hosted snapshots with four bounded workers and report upload/finalization progress on stderr. Preserve per-request retries, stable counts and artifact identities; drain in-flight work after a failure and never finalize incomplete uploads.
+
 ## 0.27.0
 
 ### Minor Changes
