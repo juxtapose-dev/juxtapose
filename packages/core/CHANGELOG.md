@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.25.1
+
+### Patch Changes
+
+- c58e1bc: Carry bounded, capture-bound before/after DOM trees into hosted visual review, preserving masks and explicit truncation without changing pixel verdicts or approval policy.
+
 ## 0.25.0
 
 ### Minor Changes

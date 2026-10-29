@@ -1,5 +1,15 @@
 # @juxtapose/cli
 
+## 0.27.3
+
+### Patch Changes
+
+- c58e1bc: Carry bounded, capture-bound before/after DOM trees into hosted visual review, preserving masks and explicit truncation without changing pixel verdicts or approval policy.
+- Updated dependencies [c58e1bc]
+  - @juxtapose/core@0.25.1
+  - @juxtapose/adapter-ladle@0.3.34
+  - @juxtapose/adapter-storybook@0.4.31
+
 ## 0.27.2
 
 ### Patch Changes
