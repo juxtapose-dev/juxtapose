@@ -3,6 +3,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { encodeStoryId, type RunReport } from '@juxtapose/core';
 import { UserError } from './user-error.js';
+import {
+  readUploadProtocol,
+  uploadVerifiedBatches,
+  type ArtifactRef,
+  type ArtifactRole,
+  type BatchSnapshot,
+} from './hosted-batch-upload.js';
 
 export interface UploadConfig {
   origin: string;
@@ -313,32 +320,89 @@ export async function uploadRun(
     );
     if (uploaded.deduped === true) dedupedCount++;
   };
-  let next = 0;
-  let completed = 0;
-  let failed = false;
-  let failure: unknown;
-  onProgress?.(
-    `jux: uploading 0/${snapshots.length} snapshots (up to ${UPLOAD_WORKERS} at once)\n`,
-  );
-  const worker = async () => {
-    while (!failed && next < snapshots.length) {
-      const snapshot = snapshots[next++]!;
-      try {
-        await uploadSnapshot(snapshot);
-        completed++;
-        onProgress?.(`jux: uploaded ${completed}/${snapshots.length} snapshots\n`);
-      } catch (error) {
-        if (!failed) failure = error;
-        failed = true;
+  const protocol = readUploadProtocol(created.uploadProtocol, created.runId);
+  if (protocol) {
+    const files = new Map<string, string>();
+    const batch: BatchSnapshot[] = [];
+    for (const snapshot of snapshots) {
+      const { result } = snapshot;
+      const artifacts: Partial<Record<ArtifactRole, ArtifactRef>> = {};
+      const add = async (role: ArtifactRole, file: string, expected?: string) => {
+        const bytes = await image(file),
+          digest = hash(bytes);
+        if (expected && digest !== expected)
+          throw new UserError(
+            'Run artifacts changed during upload; retry after capture completes.',
+            1,
+          );
+        const ref = { hash: digest, bytes: bytes.length };
+        artifacts[role] = ref;
+        files.set(digest, file);
+        return ref;
+      };
+      if (result.status !== 'skip') {
+        artifacts.thumb = await add('current', snapshot.imagePath, snapshot.contentHash);
+        if (snapshot.hasDiff) await add('diff', snapshot.diffPath);
+        if (snapshot.baselineHash)
+          await add('baseline', snapshot.baselinePath, snapshot.baselineHash);
       }
+      batch.push({
+        storyIdSafe: snapshot.storyIdSafe,
+        meta: {
+          storyId: result.storyId,
+          status: result.status === 'skip' ? 'skipped' : result.status,
+          mismatchPixels: result.mismatchPixels,
+          mismatchPercent: result.mismatchPercent,
+          durationMs: Math.round(result.durationMs),
+          contentHash: snapshot.contentHash,
+          ...(snapshot.baselineHash ? { baselineHash: snapshot.baselineHash } : {}),
+        },
+        artifacts,
+      });
     }
-  };
-  // Drain every in-flight request before returning a failure. A retry must not
-  // race this attempt, and a partial upload must never reach finalization.
-  await Promise.all(
-    Array.from({ length: Math.min(UPLOAD_WORKERS, snapshots.length) }, worker),
-  );
-  if (failed) throw failure;
+    dedupedCount = await uploadVerifiedBatches(
+      protocol,
+      batch,
+      async (ref) => {
+        const file = files.get(ref.hash);
+        if (!file)
+          throw new UserError(
+            'A batch artifact is unavailable. Local artifacts are retained.',
+            1,
+          );
+        return image(file);
+      },
+      (route, body) => request(config, route, 'POST', body),
+      onProgress,
+    );
+  } else {
+    let next = 0;
+    let completed = 0;
+    let failed = false;
+    let failure: unknown;
+    onProgress?.(
+      `jux: uploading 0/${snapshots.length} snapshots (up to ${UPLOAD_WORKERS} at once)\n`,
+    );
+    const worker = async () => {
+      while (!failed && next < snapshots.length) {
+        const snapshot = snapshots[next++]!;
+        try {
+          await uploadSnapshot(snapshot);
+          completed++;
+          onProgress?.(`jux: uploaded ${completed}/${snapshots.length} snapshots\n`);
+        } catch (error) {
+          if (!failed) failure = error;
+          failed = true;
+        }
+      }
+    };
+    // Drain every in-flight request before returning a failure. A retry must not
+    // race this attempt, and a partial upload must never reach finalization.
+    await Promise.all(
+      Array.from({ length: Math.min(UPLOAD_WORKERS, snapshots.length) }, worker),
+    );
+    if (failed) throw failure;
+  }
   onProgress?.(`jux: finalizing hosted run (${snapshots.length} snapshots)\n`);
   const count = (status: string) =>
     snapshots.filter((s) => s.result.status === status).length;
