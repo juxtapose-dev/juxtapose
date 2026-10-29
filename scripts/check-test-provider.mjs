@@ -131,7 +131,7 @@ try {
   if (ok && process.argv.includes('--capture')) {
     const response = await fetch(`${url}jux/api/run`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-jux-csrf': '1' },
       body: JSON.stringify({ storyIds: [storyId] }),
     });
     if (!response.ok) throw new Error(`Capture start failed: ${await response.text()}`);

@@ -8,7 +8,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createRouter, RunDirSource } from '@juxtapose/server';
+import { createRouter, RunDirSource, localReviewOrigin } from '@juxtapose/server';
 import { createBaselineStore, type ProjectConfig } from '@juxtapose/core';
 import { juxtaposeModuleGraph } from '@juxtapose/core/vite';
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
@@ -89,8 +89,8 @@ function juxtaposePlugin(): VitePlugin {
     name: 'juxtapose',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const host = req.headers.host;
-        if (host) source.setBaseUrl(`http://${host}`);
+        const origin = localReviewOrigin(req);
+        if (origin) source.setBaseUrl(origin);
 
         void handler(req, res).then((handled) => {
           if (!handled) next();

@@ -6,8 +6,8 @@
 // re-fetching it per context.
 
 import { createServer, type Server } from 'node:http';
-import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { stat, realpath, open } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
 const MIME: Record<string, string> = {
@@ -57,11 +57,36 @@ export interface StaticServer {
 }
 
 export async function serveStatic(dir: string): Promise<StaticServer> {
-  const root = resolve(dir);
+  const root = await realpath(resolve(dir));
 
   const server: Server = createServer((req, res) => {
+    try {
+      const origin = new URL(`http://${req.headers.host ?? ''}`);
+      if (
+        origin.username ||
+        origin.password ||
+        origin.pathname !== '/' ||
+        origin.search ||
+        origin.hash ||
+        !['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname) ||
+        (req.headers.origin !== undefined && req.headers.origin !== origin.origin)
+      ) {
+        res.writeHead(403).end('forbidden origin');
+        return;
+      }
+    } catch {
+      res.writeHead(403).end('forbidden host');
+      return;
+    }
+
     // split always returns at least one element.
-    const urlPath = decodeURIComponent((req.url ?? '/').split('?')[0]!);
+    let urlPath: string;
+    try {
+      urlPath = decodeURIComponent((req.url ?? '/').split('?')[0]!);
+    } catch {
+      res.writeHead(400).end('malformed URI');
+      return;
+    }
     const rel = normalize(urlPath).replace(/^(\.\.[/\\])+/, '');
     let filePath = join(root, rel);
 
@@ -73,12 +98,27 @@ export async function serveStatic(dir: string): Promise<StaticServer> {
 
     void (async () => {
       try {
+        filePath = await realpath(filePath);
+        if (!filePath.startsWith(root + sep) && filePath !== root) {
+          res.writeHead(403).end('forbidden');
+          return;
+        }
         let info = await stat(filePath);
         if (info.isDirectory()) {
-          filePath = join(filePath, 'index.html');
+          filePath = await realpath(join(filePath, 'index.html'));
+          if (!filePath.startsWith(root + sep)) {
+            res.writeHead(403).end('forbidden');
+            return;
+          }
           info = await stat(filePath);
         }
 
+        if (!info.isFile()) {
+          res.writeHead(404).end('not found');
+          return;
+        }
+        const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+        info = await file.stat();
         const ext = extname(filePath);
         res.writeHead(200, {
           'content-type': MIME[ext] ?? 'application/octet-stream',
@@ -87,7 +127,10 @@ export async function serveStatic(dir: string): Promise<StaticServer> {
             ? 'public, max-age=31536000, immutable'
             : 'no-store',
         });
-        createReadStream(filePath).pipe(res);
+        file
+          .createReadStream()
+          .on('error', () => res.destroy())
+          .pipe(res);
       } catch {
         res.writeHead(404).end('not found');
       }

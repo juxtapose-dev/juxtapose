@@ -21,6 +21,7 @@ import type { SettleFlags } from './settle-flags.js';
 export interface CommonFlags extends SettleFlags, RecheckFlags {
   json?: boolean;
   upload?: boolean;
+  'review-in-github'?: boolean;
   project?: string;
   'build-dir'?: string;
   origin?: string;

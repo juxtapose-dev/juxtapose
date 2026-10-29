@@ -7,6 +7,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { UnstableCaptureError, VariantConfigError } from '@juxtapose/core';
 import type { ImageKind, ReviewSource } from './types.js';
+import { localReviewOrigin } from './request-origin.js';
 
 /** Mounted under this prefix so it cannot collide with workbench routes. */
 export const API_PREFIX = '/jux/api';
@@ -35,6 +36,25 @@ export function createRouter(source: ReviewSource): Handler {
 
     const [path, query = ''] = splitOnce(url.slice(API_PREFIX.length), '?');
     const method = req.method ?? 'GET';
+    const origin = localReviewOrigin(req);
+    if (!origin || (req.headers.origin !== undefined && req.headers.origin !== origin)) {
+      json(res, 403, { error: 'forbidden origin' });
+      return true;
+    }
+    if (
+      !['GET', 'HEAD', 'OPTIONS'].includes(method) &&
+      req.headers['x-jux-csrf'] !== '1'
+    ) {
+      json(res, 403, { error: 'review request header required' });
+      return true;
+    }
+    if (
+      !['GET', 'HEAD', 'OPTIONS'].includes(method) &&
+      req.headers['content-type']?.split(';')[0]?.trim() !== 'application/json'
+    ) {
+      json(res, 415, { error: 'application/json required' });
+      return true;
+    }
 
     try {
       await route(source, method, path, query, req, res);
