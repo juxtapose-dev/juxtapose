@@ -38,7 +38,9 @@ jobs:
       # first CI publish, 2026-10-13, failed exactly that way.
       - run: npm install -g npm@11
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+
+      # The publish script builds immediately before publishing. Version PRs
+      # only update metadata, so building here duplicates release work.
 
       # Opens (or updates) a "Version Packages" PR when changesets are pending,
       # and publishes when that PR is merged — but only once publishing has
