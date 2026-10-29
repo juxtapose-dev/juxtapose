@@ -401,7 +401,7 @@ export async function runCommand(
 
     if (flags['review-in-github']) assertReviewEvidence(report);
     if (hosted) {
-      const uploaded = await uploadRun(runDir, hosted);
+      const uploaded = await uploadRun(runDir, hosted, (message) => io.err(message));
       io.err(uploadMessage(uploaded));
       if (flags['review-in-github']) {
         if (!uploaded.reportUrl)
