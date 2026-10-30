@@ -60,6 +60,8 @@ export async function submitCommand(flags: SubmitFlags, io: Io = stdio): Promise
     '--wait-timeout',
   );
   const pollMs = numeric(flags['poll-interval'], 2000, 250, 30000, '--poll-interval');
+  if (flags['review-in-github'] && !flags.wait && !flags.resume)
+    throw new UserError('--review-in-github requires --wait or --resume.');
   const config = uploadConfig();
   if (flags.resume) {
     if (
@@ -201,6 +203,7 @@ async function completeManagedWait(
   try {
     let progress = '';
     const options = {
+      requireGithubDelivery: flags['review-in-github'] === true,
       timeoutMs,
       pollMs,
       signal: controller.signal,
@@ -217,20 +220,30 @@ async function completeManagedWait(
     const workflow = await (result
       ? waitForManagedBuild(result, config, options)
       : resumeManagedBuild(buildId, config, options));
+    const handoff =
+      flags['review-in-github'] === true &&
+      workflow.review.state === 'ready' &&
+      workflow.githubReview?.state === 'delivered';
     const code =
       workflow.phase === 'reference'
         ? EXIT.clean
         : workflow.review.state === 'ready'
-          ? ['unchanged', 'approved'].includes(workflow.review.verdict)
+          ? handoff || ['unchanged', 'approved'].includes(workflow.review.verdict)
             ? EXIT.clean
             : EXIT.review
           : workflow.recovery === 'capture_baseline'
             ? EXIT.review
             : EXIT.failure;
     if (flags.json)
-      io.out(`${JSON.stringify({ ...(result ?? {}), buildId, workflow })}\n`);
+      io.out(
+        `${JSON.stringify({ ...(result ?? {}), buildId, workflow, ...(handoff ? { handoff: { status: 'published', reviewUrl: workflow.review.url, approval: 'required_app_check' } } : {}) })}\n`,
+      );
     else if (workflow.phase === 'reference')
       io.out('jux: reference capture completed; this is not a PR review verdict.\n');
+    else if (handoff)
+      io.out(
+        `jux: hosted review published; GitHub delivery is recorded. Require the Juxtapose App check for approval.\n${workflow.review.url}\n`,
+      );
     else if (workflow.review.url)
       io.out(`jux: hosted review ${workflow.review.verdict}\n${workflow.review.url}\n`);
     else if (workflow.recovery === 'capture_baseline')

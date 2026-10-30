@@ -29,6 +29,7 @@ export const SPECS: Record<string, Spec> = {
       'branch',
       'pr',
       'experimental',
+      'review-in-github',
       'wait',
       'resume',
       'wait-timeout',

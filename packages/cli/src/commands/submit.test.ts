@@ -118,8 +118,22 @@ it('round trips a compiled fixture and retains the request ID across command ret
             status: waitVerdict === 'reference' ? 'not_started' : 'completed',
           },
           publication: {
-            status: waitVerdict === 'reference' ? 'not_started' : 'completed',
+            status:
+              waitVerdict === 'reference'
+                ? 'not_started'
+                : waitVerdict === 'unpublished'
+                  ? 'running'
+                  : 'completed',
           },
+          githubReview: ['reference', 'baseline', 'no_delivery'].includes(waitVerdict)
+            ? undefined
+            : {
+                state: 'delivered',
+                runId: id,
+                headSha: input.sourceSha,
+                checkRunId: 123,
+                summarySha256: 'b'.repeat(64),
+              },
           review: {
             state:
               waitVerdict === 'reference'
@@ -130,10 +144,14 @@ it('round trips a compiled fixture and retains the request ID across command ret
             runId: ['baseline', 'reference'].includes(waitVerdict) ? null : id,
             url: ['baseline', 'reference'].includes(waitVerdict)
               ? null
-              : `https://app.juxtapose.dev/acme/app/runs/${id}`,
+              : waitVerdict === 'missing_url'
+                ? null
+                : `https://app.juxtapose.dev/acme/app/runs/${id}`,
             verdict: ['baseline', 'reference'].includes(waitVerdict)
               ? 'incomplete'
-              : waitVerdict,
+              : ['unpublished', 'missing_url', 'no_delivery'].includes(waitVerdict)
+                ? 'needs_review'
+                : waitVerdict,
           },
         }),
       );
@@ -206,12 +224,51 @@ it('round trips a compiled fixture and retains the request ID across command ret
       verdict: 'needs_review',
       runId: id,
     });
+    for (const verdict of ['needs_review', 'rejected']) {
+      waitVerdict = verdict;
+      const handoff = captureIo();
+      expect(
+        await submitCommand({ ...flags, wait: true, 'review-in-github': true }, handoff),
+      ).toBe(0);
+      expect(JSON.parse(handoff.stdout()).handoff).toEqual({
+        status: 'published',
+        reviewUrl: `https://app.juxtapose.dev/acme/app/runs/${id}`,
+        approval: 'required_app_check',
+      });
+    }
     waitVerdict = 'unchanged';
     expect(await submitCommand({ ...flags, wait: true }, captureIo())).toBe(0);
     waitVerdict = 'reference';
     expect(await submitCommand({ ...flags, wait: true }, captureIo())).toBe(0);
+    const reference = captureIo();
+    expect(
+      await submitCommand({ ...flags, wait: true, 'review-in-github': true }, reference),
+    ).toBe(0);
+    expect(JSON.parse(reference.stdout()).workflow.review.state).toBe('reference');
+    expect(JSON.parse(reference.stdout()).handoff).toBeUndefined();
     waitVerdict = 'baseline';
     expect(await submitCommand({ ...flags, wait: true }, captureIo())).toBe(1);
+    expect(
+      await submitCommand(
+        { ...flags, wait: true, 'review-in-github': true },
+        captureIo(),
+      ),
+    ).toBe(1);
+    waitVerdict = 'paused';
+    expect(
+      await submitCommand(
+        { experimental: true, resume: id, 'review-in-github': true },
+        captureIo(),
+      ),
+    ).toBe(3);
+    for (const mode of ['unpublished', 'missing_url', 'no_delivery']) {
+      waitVerdict = mode;
+      const invalid = captureIo();
+      expect(
+        await submitCommand({ ...flags, wait: true, 'review-in-github': true }, invalid),
+      ).toBe(3);
+      expect(JSON.parse(invalid.stdout()).handoff).toBeUndefined();
+    }
     waitVerdict = 'needs_review';
     const built = spawn(
       process.execPath,
@@ -247,6 +304,8 @@ it('round trips a compiled fixture and retains the request ID across command ret
     for (const expected of [
       { mode: 'unchanged', exit: 0 },
       { mode: 'paused', exit: 3 },
+      { mode: 'needs_review', exit: 0 },
+      { mode: 'baseline', exit: 1 },
     ]) {
       waitVerdict = expected.mode;
       const child = spawn(
@@ -257,6 +316,7 @@ it('round trips a compiled fixture and retains the request ID across command ret
           '--experimental',
           '--resume',
           id,
+          '--review-in-github',
           '--json',
         ],
         { cwd: tmpdir(), env: { ...process.env } },
@@ -286,6 +346,8 @@ it('round trips a compiled fixture and retains the request ID across command ret
     expect(resumeRequests).toEqual([
       `GET /v1/builds/${id}/status`,
       `GET /v1/builds/${id}/status`,
+      `GET /v1/builds/${id}/status`,
+      `GET /v1/builds/${id}/status`,
     ]);
 
     expect(JSON.parse(io.stdout()).build).toMatchObject({
@@ -301,4 +363,10 @@ it('round trips a compiled fixture and retains the request ID across command ret
 });
 it('requires explicit experimental opt-in', async () => {
   await expect(submitCommand({}, captureIo())).rejects.toThrow(/experimental/);
+});
+
+it('requires waiting for GitHub review handoff', async () => {
+  await expect(
+    submitCommand({ experimental: true, 'review-in-github': true }, captureIo()),
+  ).rejects.toThrow(/requires --wait or --resume/);
 });
