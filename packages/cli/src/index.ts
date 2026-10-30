@@ -22,6 +22,7 @@ Usage
   jux init                       set up juxtapose and capture first baselines
   jux run [selector…] [options]  capture affected stories and compare to baselines
   jux list [selector…]           list story IDs, titles and variants without capturing
+  jux submit --build-dir <dir> --experimental  submit a compiled Storybook build (preview)
   jux upload --run <directory>   upload an existing run to hosted review
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
@@ -147,6 +148,11 @@ function commandHelp(command: string): string {
   }
   let text = `Usage\n${out.join('\n')}\n`;
   if (command === 'browser') return text + '\n' + BROWSER_HELP;
+  if (command === 'submit')
+    return (
+      text +
+      '\n  --project <dir>   Git checkout (default: current directory)\n  --build-dir <dir> Compiled Storybook output\n  --branch <name>   Branch for detached checkouts\n  --experimental    Required preview opt-in; upload only, no capture result yet\n  --json            Print the build receipt\n'
+    );
   text += COMMON;
   if (command === 'run' || command === 'list') text += SELECTION_HELP;
   if (command === 'run' || command === 'config') text += RECHECK_HELP;
@@ -189,6 +195,8 @@ async function main(argv: string[]): Promise<number> {
       comment: { type: 'boolean', default: false },
       html: { type: 'boolean', default: false },
       upload: { type: 'boolean', default: false },
+      experimental: { type: 'boolean', default: false },
+      branch: { type: 'string' },
       'review-in-github': { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },
       'dry-run': { type: 'boolean' },
@@ -247,6 +255,10 @@ async function main(argv: string[]): Promise<number> {
     case 'init': {
       const { initCommand } = await import('./commands/init.js');
       return initCommand(flags);
+    }
+    case 'submit': {
+      const { submitCommand } = await import('./commands/submit.js');
+      return submitCommand(flags);
     }
     case 'upload': {
       const { uploadCommand } = await import('./commands/upload.js');
@@ -310,6 +322,7 @@ async function main(argv: string[]): Promise<number> {
 
 const COMMANDS = [
   'init',
+  'submit',
   'run',
   'list',
   'approve',
