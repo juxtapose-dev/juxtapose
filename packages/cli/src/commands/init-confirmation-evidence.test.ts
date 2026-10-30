@@ -1,9 +1,13 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, test, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ root: '', approved: [] as string[] }));
+const state = vi.hoisted(() => ({
+  root: '',
+  approved: [] as string[],
+  failWrite: false,
+}));
 vi.mock('../context.js', () => ({
   resolveContext: async () => ({
     projectRoot: state.root,
@@ -40,6 +44,11 @@ vi.mock('@juxtapose/core', async (original) => ({
     onUnstableCapture?: (a: unknown) => Promise<void>;
   }) => {
     await opts.onArtifact({ storyId: 'spinner--small', current: Buffer.from('first') });
+    if (state.failWrite) {
+      const runs = path.join(state.root, '.juxtapose', 'runs');
+      const run = (await readdir(runs)).find((x) => x !== '.cache')!;
+      await mkdir(path.join(runs, run, 'images', 'spinner--small-confirmation.webp'));
+    }
     await opts.onUnstableCapture?.({
       storyId: 'spinner--small',
       image: Buffer.from('second'),
@@ -58,6 +67,7 @@ import { initCommand } from './init.js';
 afterEach(async () => {
   if (state.root) await rm(state.root, { recursive: true, force: true });
   state.approved = [];
+  state.failWrite = false;
 });
 test('refused unstable init preserves both images and approves no baseline', async () => {
   state.root = await mkdtemp(path.join(os.tmpdir(), 'jux-init-confirm-'));
@@ -71,5 +81,14 @@ test('refused unstable init preserves both images and approves no baseline', asy
   expect(
     await readFile(path.join(images, 'spinner--small-confirmation.webp'), 'utf8'),
   ).toBe('second');
+  expect(state.approved).toEqual([]);
+});
+
+test('a confirmation write error stops init before any baseline approval', async () => {
+  state.root = await mkdtemp(path.join(os.tmpdir(), 'jux-init-confirm-'));
+  state.failWrite = true;
+  await expect(initCommand({ json: true })).rejects.toThrow(
+    /EISDIR|illegal operation on a directory/i,
+  );
   expect(state.approved).toEqual([]);
 });
