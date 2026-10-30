@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -39,11 +39,107 @@ it('round trips a compiled fixture and retains the request ID across command ret
     );
   const requests: Record<string, unknown>[] = [];
   let uploaded: Buffer | undefined;
+  let waitVerdict = 'needs_review';
+  let waiting = false;
+  let trackResume = false;
+  const resumeRequests: string[] = [];
   const id = '019a0000-0000-7000-8000-000000000001';
   const server = createServer(async (req, res) => {
     const parts: Buffer[] = [];
     for await (const part of req) parts.push(Buffer.from(part));
     const body = Buffer.concat(parts);
+    if (trackResume) resumeRequests.push(`${req.method} ${req.url}`);
+    if (waitVerdict === 'paused' && req.method !== 'GET') {
+      res.statusCode = 404;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'not_found' }));
+      return;
+    }
+
+    if (req.url === `/v1/builds/${id}/capture`) {
+      waiting = true;
+      res.statusCode = 202;
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          capture: { buildId: id, status: 'ready', jobId: id, error: null },
+        }),
+      );
+      return;
+    }
+    if (req.url === `/v1/builds/${id}/status`) {
+      const input = requests.at(-1)!;
+      if (waitVerdict === 'paused') {
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            schema: 'juxtapose.managed-status/v1',
+            buildId: id,
+            sourceSha: input.sourceSha,
+            phase: 'capture',
+            terminal: true,
+            reason: 'execution_disabled',
+            recovery: 'operator',
+            retryAfterMs: 2000,
+            validation: { status: 'ready' },
+            execution: { status: 'queued' },
+            comparison: { status: 'not_started' },
+            publication: { status: 'not_started' },
+            review: { state: 'pending', runId: null, url: null, verdict: 'incomplete' },
+          }),
+        );
+        return;
+      }
+
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          schema: 'juxtapose.managed-status/v1',
+          buildId: id,
+          sourceSha: input.sourceSha,
+          phase:
+            waitVerdict === 'baseline'
+              ? 'baseline'
+              : waitVerdict === 'reference'
+                ? 'reference'
+                : 'review',
+          terminal: true,
+          reason:
+            waitVerdict === 'baseline'
+              ? 'baseline_missing'
+              : waitVerdict === 'reference'
+                ? 'reference_only'
+                : null,
+          recovery: waitVerdict === 'baseline' ? 'capture_baseline' : 'none',
+          retryAfterMs: 250,
+          validation: { status: 'ready' },
+          execution: { status: 'completed' },
+          comparison: {
+            status: waitVerdict === 'reference' ? 'not_started' : 'completed',
+          },
+          publication: {
+            status: waitVerdict === 'reference' ? 'not_started' : 'completed',
+          },
+          review: {
+            state:
+              waitVerdict === 'reference'
+                ? 'reference'
+                : waitVerdict === 'baseline'
+                  ? 'blocked'
+                  : 'ready',
+            runId: ['baseline', 'reference'].includes(waitVerdict) ? null : id,
+            url: ['baseline', 'reference'].includes(waitVerdict)
+              ? null
+              : `https://app.juxtapose.dev/acme/app/runs/${id}`,
+            verdict: ['baseline', 'reference'].includes(waitVerdict)
+              ? 'incomplete'
+              : waitVerdict,
+          },
+        }),
+      );
+      return;
+    }
+
     if (req.method === 'POST') requests.push(JSON.parse(body.toString()));
     else uploaded = body;
     const input = requests.at(-1)!;
@@ -101,6 +197,97 @@ it('round trips a compiled fixture and retains the request ID across command ret
     expect(createHash('sha256').update(uploaded!).digest('hex')).toBe(
       requests[0]!.archiveSha256,
     );
+    expect(waiting).toBe(false);
+    const completed = captureIo();
+    expect(
+      await submitCommand({ ...flags, wait: true, 'wait-timeout': '5000' }, completed),
+    ).toBe(1);
+    expect(JSON.parse(completed.stdout()).workflow.review).toMatchObject({
+      verdict: 'needs_review',
+      runId: id,
+    });
+    waitVerdict = 'unchanged';
+    expect(await submitCommand({ ...flags, wait: true }, captureIo())).toBe(0);
+    waitVerdict = 'reference';
+    expect(await submitCommand({ ...flags, wait: true }, captureIo())).toBe(0);
+    waitVerdict = 'baseline';
+    expect(await submitCommand({ ...flags, wait: true }, captureIo())).toBe(1);
+    waitVerdict = 'needs_review';
+    const built = spawn(
+      process.execPath,
+      [
+        path.resolve(import.meta.dirname, '../../dist/index.js'),
+        'submit',
+        '--project',
+        root,
+        '--build-dir',
+        'storybook-static',
+        '--branch',
+        'main',
+        '--experimental',
+        '--wait',
+        '--wait-timeout',
+        '5000',
+        '--json',
+      ],
+      { env: { ...process.env } },
+    );
+    let stdout = '',
+      stderr = '';
+    built.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    built.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    const code = await new Promise<number | null>((resolve) => built.on('exit', resolve));
+    expect(code, stderr).toBe(1);
+    expect(JSON.parse(stdout).workflow.review.verdict).toBe('needs_review');
+    trackResume = true;
+    for (const expected of [
+      { mode: 'unchanged', exit: 0 },
+      { mode: 'paused', exit: 3 },
+    ]) {
+      waitVerdict = expected.mode;
+      const child = spawn(
+        process.execPath,
+        [
+          path.resolve(import.meta.dirname, '../../dist/index.js'),
+          'submit',
+          '--experimental',
+          '--resume',
+          id,
+          '--json',
+        ],
+        { cwd: tmpdir(), env: { ...process.env } },
+      );
+      let output = '',
+        errors = '';
+      child.stdout.on('data', (chunk) => {
+        output += String(chunk);
+      });
+      child.stderr.on('data', (chunk) => {
+        errors += String(chunk);
+      });
+      const exit = await new Promise<number | null>((resolve) =>
+        child.on('exit', resolve),
+      );
+      expect(exit, errors).toBe(expected.exit);
+      const value = JSON.parse(output);
+      expect(value.buildId).toBe(id);
+      expect(value.workflow.buildId).toBe(id);
+      if (expected.mode === 'paused')
+        expect(value.workflow).toMatchObject({
+          reason: 'execution_disabled',
+          execution: { status: 'queued' },
+          review: { verdict: 'incomplete' },
+        });
+    }
+    expect(resumeRequests).toEqual([
+      `GET /v1/builds/${id}/status`,
+      `GET /v1/builds/${id}/status`,
+    ]);
+
     expect(JSON.parse(io.stdout()).build).toMatchObject({
       status: 'uploaded',
       captureStatus: 'not_started',
