@@ -4,6 +4,7 @@ export interface BuildMetadata {
   requestId: string;
   sourceSha: string;
   branch: string;
+  pullRequestNumber?: number;
   archiveSha256: string;
   archiveBytes: number;
 }
@@ -12,6 +13,8 @@ export interface BuildReceipt {
     id: string;
     status: string;
     sourceSha: string;
+    branch: string;
+    pullRequestNumber?: number | null;
     archiveSha256: string;
     archiveBytes: number;
     captureStatus: string;
@@ -108,6 +111,8 @@ function receipt(
     !UUID.test(build.id) ||
     (expectedId && build.id !== expectedId) ||
     build.sourceSha !== metadata.sourceSha ||
+    build.branch !== metadata.branch ||
+    (build.pullRequestNumber ?? null) !== (metadata.pullRequestNumber ?? null) ||
     build.archiveSha256 !== metadata.archiveSha256 ||
     build.archiveBytes !== metadata.archiveBytes ||
     !['awaiting_upload', 'uploading', 'uploaded'].includes(build.status) ||

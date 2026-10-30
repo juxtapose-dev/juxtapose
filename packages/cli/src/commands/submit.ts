@@ -13,6 +13,7 @@ import { firstSymlink, writeFresh } from '../symlink-guard.js';
 interface SubmitFlags extends CommonFlags {
   experimental?: boolean;
   branch?: string;
+  pr?: string;
 }
 /** Upload-only while managed execution remains gated; never reports a passing visual check. */
 export async function submitCommand(flags: SubmitFlags, io: Io = stdio): Promise<number> {
@@ -52,10 +53,27 @@ export async function submitCommand(flags: SubmitFlags, io: Io = stdio): Promise
     throw new UserError(
       'Submission needs a full source SHA and branch. For a detached checkout, provide --branch <name>.',
     );
+  const prInput =
+    flags.pr ??
+    /^refs\/pull\/([1-9][0-9]*)\/(?:head|merge)$/.exec(process.env.GITHUB_REF ?? '')?.[1];
+  const pullRequestNumber = prInput === undefined ? undefined : Number(prInput);
+  if (
+    prInput !== undefined &&
+    (!/^[1-9][0-9]*$/.test(prInput) || !Number.isSafeInteger(pullRequestNumber))
+  )
+    throw new UserError('--pr must be a positive pull request number.');
   const archive = await packStorybook(path.resolve(root, flags['build-dir']));
   const archiveSha256 = createHash('sha256').update(archive).digest('hex');
   const key = createHash('sha256')
-    .update(JSON.stringify([config.origin, sourceSha, branch, archiveSha256]))
+    .update(
+      JSON.stringify([
+        config.origin,
+        sourceSha,
+        branch,
+        pullRequestNumber ?? null,
+        archiveSha256,
+      ]),
+    )
     .digest('hex');
   const segments = ['.juxtapose', 'managed-builds', `${key}.json`];
   if (await firstSymlink(root, segments))
@@ -88,7 +106,14 @@ export async function submitCommand(flags: SubmitFlags, io: Io = stdio): Promise
   );
   const result = await submitBuild(
     archive,
-    { requestId, sourceSha, branch, archiveSha256, archiveBytes: archive.length },
+    {
+      requestId,
+      sourceSha,
+      branch,
+      ...(pullRequestNumber === undefined ? {} : { pullRequestNumber }),
+      archiveSha256,
+      archiveBytes: archive.length,
+    },
     config,
   );
   if (flags.json) io.out(`${JSON.stringify(result)}\n`);

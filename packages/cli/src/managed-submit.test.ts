@@ -14,6 +14,7 @@ const receipt = (status = 'awaiting_upload') => ({
     id,
     status,
     sourceSha: metadata.sourceSha,
+    branch: metadata.branch,
     archiveSha256: metadata.archiveSha256,
     archiveBytes: 100,
     captureStatus: 'not_started',
@@ -57,4 +58,14 @@ it('explains disabled intake without claiming a passed review', async () => {
   await expect(submitBuild(Buffer.alloc(100), metadata, config)).rejects.toThrow(
     /not enabled/i,
   );
+});
+
+it('rejects a receipt associated with a different pull request or branch', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(receipt('uploaded'))));
+  await expect(
+    submitBuild(Buffer.alloc(100), { ...metadata, pullRequestNumber: 42 }, config),
+  ).rejects.toThrow(/Invalid build receipt/);
+  await expect(
+    submitBuild(Buffer.alloc(100), { ...metadata, branch: 'different' }, config),
+  ).rejects.toThrow(/Invalid build receipt/);
 });
