@@ -1,5 +1,18 @@
 # @juxtapose/cli
 
+## 0.28.0
+
+### Minor Changes
+
+- 4d02313: Add experimental `jux submit --build-dir ... --experimental` for compiled Storybook intake without a local browser. Pack deterministic bounded archives, retain retry identities, and validate upload receipts. This preview uploads bytes only; hosted execution remains gated and it does not replace production visual checks.
+- 7a64837: Add opt-in `jux submit --experimental --wait` for hosted capture and review publication. Trigger the existing idempotent capture request, poll exact build/source status with bounded I/O, timeout and interruption handling, and report the canonical hosted review URL. Preserve upload-only defaults and receipt validation. Exit separately for ready unchanged/approved reviews, review needs, explicit reference capture, actionable missing ancestor baselines and operational failures. No automatic baseline approval or local browser capture.
+
+  Add read-only `submit --resume <buildId>` for existing builds without local checkout or archive assumptions. Preserve exact server build/source identity across polls and recover scoped diagnostics when capture intake pauses after upload.
+
+### Patch Changes
+
+- f67fbe8: Carry pull request identity in experimental managed build submissions. Detect GitHub Actions PR refs automatically or use `jux submit --pr <number>`. Keep retry identities separate across PRs and verify branch/PR identity in build receipts. The actual Git checkout SHA remains authoritative; check out the PR head rather than GitHub's synthetic merge commit. Submission remains upload-only while hosted execution is gated.
+
 ## 0.27.3
 
 ### Patch Changes
