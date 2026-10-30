@@ -22,7 +22,18 @@ interface Spec {
 export const SPECS: Record<string, Spec> = {
   init: { flags: ['json', ...CONTEXT, 'chrome', 'no-daemon', 'allow-unstable'], max: 0 },
   submit: {
-    flags: ['json', 'project', 'build-dir', 'branch', 'pr', 'experimental'],
+    flags: [
+      'json',
+      'project',
+      'build-dir',
+      'branch',
+      'pr',
+      'experimental',
+      'wait',
+      'resume',
+      'wait-timeout',
+      'poll-interval',
+    ],
     max: 0,
   },
   upload: { flags: ['json', 'run', 'project'], max: 0 },
@@ -104,6 +115,9 @@ export const SPECS: Record<string, Spec> = {
 
 /** Flags whose value is a string, so a bare `--story` is an error. */
 const TAKES_VALUE = new Set([
+  'resume',
+  'wait-timeout',
+  'poll-interval',
   'branch',
   ...CONTEXT,
   'since',

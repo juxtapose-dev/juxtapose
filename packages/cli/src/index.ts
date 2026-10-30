@@ -151,7 +151,7 @@ function commandHelp(command: string): string {
   if (command === 'submit')
     return (
       text +
-      '\n  --project <dir>   Git checkout (default: current directory)\n  --build-dir <dir> Compiled Storybook output\n  --branch <name>   Branch for detached checkouts\n  --experimental    Required preview opt-in; upload only, no capture result yet\n  --json            Print the build receipt\n'
+      '\n  --project <dir>   Git checkout (default: current directory)\n  --build-dir <dir> Compiled Storybook output\n  --branch <name>   Branch for detached checkouts\n  --experimental    Required preview opt-in; service must enable hosted execution\n  --pr <number>    Explicit PR identity (check out its exact head SHA)\n  --resume <buildId> Read/wait for an existing build without a checkout or upload\n  --wait            Trigger hosted capture and wait until review publication\n  --wait-timeout <ms> Absolute wait deadline (default 1800000, max 10800000)\n  --poll-interval <ms> Minimum polling interval (250-30000; default 2000)\n  --json            Print the build receipt and, with --wait, workflow status\n'
     );
   text += COMMON;
   if (command === 'run' || command === 'list') text += SELECTION_HELP;
@@ -196,6 +196,10 @@ async function main(argv: string[]): Promise<number> {
       html: { type: 'boolean', default: false },
       upload: { type: 'boolean', default: false },
       experimental: { type: 'boolean', default: false },
+      wait: { type: 'boolean', default: false },
+      resume: { type: 'string' },
+      'wait-timeout': { type: 'string' },
+      'poll-interval': { type: 'string' },
       branch: { type: 'string' },
       pr: { type: 'string' },
       'review-in-github': { type: 'boolean', default: false },
