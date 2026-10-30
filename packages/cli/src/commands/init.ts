@@ -150,6 +150,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
 
   const runId = Date.now().toString(36);
   const runDir = path.join(ctx.projectRoot, '.juxtapose', 'runs', runId);
+  const confirmationPaths = new Map<string, string>();
   try {
     // Inside the try, so a failed mkdir still closes the browser below.
     await mkdir(path.join(runDir, 'images'), { recursive: true });
@@ -204,6 +205,15 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
       onArtifact: (a) => writeArtifact(runDir, a),
+      onUnstableCapture: async ({ storyId, image }) => {
+        const file = path.join(
+          runDir,
+          'images',
+          `${encodeStoryId(storyId)}-confirmation.webp`,
+        );
+        await writeFile(file, image);
+        confirmationPaths.set(storyId, file);
+      },
       readFirstCapture: (id) => readRunCapture(runDir, id),
       onRecheck: (done, total) => {
         if (!ctx.json) {
@@ -244,6 +254,9 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       flags['allow-unstable'] === true,
     );
     for (const r of refused) {
+      const confirmation = confirmationPaths.get(r.storyId);
+      if (confirmation)
+        process.stderr.write(`jux: confirmation image: ${confirmation}\n`);
       process.stderr.write(
         `jux: skipped ${r.storyId}: ${
           new UnstableCaptureError(r.storyId, r.unstable!, {

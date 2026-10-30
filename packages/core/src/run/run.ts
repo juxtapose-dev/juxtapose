@@ -68,6 +68,12 @@ export interface RunOptions {
   commitSha: string;
   /** Receives each story's images so the caller decides where they land. */
   onArtifact?: (artifact: RunArtifact) => Promise<void>;
+  /** Optional local diagnostic for a verified differing recheck; never replaces the first capture. */
+  onUnstableCapture?: (artifact: {
+    storyId: string;
+    image: Buffer;
+    hash: string;
+  }) => Promise<void>;
   onProgress?: (done: number, total: number, storyId: string) => void;
   /** Progress of the second-capture pass over new and failing stories. */
   onRecheck?: (done: number, total: number, storyId: string) => void;
@@ -407,6 +413,19 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
       const second = hashImage(outcome.snapshot.image);
       if (second !== first.hash) {
         first.unstable = { hashes: [first.hash!, second] };
+        if (opts.onUnstableCapture) {
+          try {
+            await opts.onUnstableCapture({
+              storyId: first.storyId,
+              image: outcome.snapshot.image,
+              hash: second,
+            });
+          } catch (error) {
+            throw new Error(`Unable to save unstable confirmation for ${first.storyId}`, {
+              cause: error,
+            });
+          }
+        }
         const flake = opts.readFirstCapture
           ? await tryFlake(
               first.storyId,
