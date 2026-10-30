@@ -282,3 +282,74 @@ it('retains non-disabled trigger conflicts instead of falling back to an old rev
   ).rejects.toThrow(/HTTP 409/);
   expect(fetcher).toHaveBeenCalledOnce();
 });
+
+it('requires exact durable GitHub delivery for handoff and waits within the same deadline', async () => {
+  const config = { origin: 'https://api.test', token: 'secret' };
+  const delivery = {
+    state: 'delivered',
+    runId: buildId,
+    headSha: sourceSha,
+    checkRunId: 123,
+    summarySha256: 'b'.repeat(64),
+  };
+  for (const invalid of [
+    undefined,
+    { ...delivery, runId: '20000000-0000-4000-8000-000000000001' },
+    { ...delivery, headSha: 'c'.repeat(40) },
+    { ...delivery, checkRunId: null },
+  ]) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ ...status(true), githubReview: invalid })),
+    );
+    await expect(
+      resumeManagedBuild(buildId, config, {
+        timeoutMs: 1000,
+        pollMs: 1,
+        requireGithubDelivery: true,
+      }),
+    ).rejects.toThrow();
+  }
+  let reads = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        ...status(true),
+        githubReview:
+          ++reads === 1
+            ? { ...delivery, state: 'pending', checkRunId: null, summarySha256: null }
+            : delivery,
+      }),
+    ),
+  );
+  await expect(
+    resumeManagedBuild(buildId, config, {
+      timeoutMs: 1000,
+      pollMs: 1,
+      requireGithubDelivery: true,
+    }),
+  ).resolves.toMatchObject({ githubReview: delivery });
+  expect(reads).toBe(2);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        ...status(true),
+        githubReview: {
+          ...delivery,
+          state: 'pending',
+          checkRunId: null,
+          summarySha256: null,
+        },
+      }),
+    ),
+  );
+  await expect(
+    resumeManagedBuild(buildId, config, {
+      timeoutMs: 20,
+      pollMs: 1,
+      requireGithubDelivery: true,
+    }),
+  ).rejects.toThrow(/timed out/);
+});

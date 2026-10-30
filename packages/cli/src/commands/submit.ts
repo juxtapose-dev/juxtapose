@@ -203,6 +203,7 @@ async function completeManagedWait(
   try {
     let progress = '';
     const options = {
+      requireGithubDelivery: flags['review-in-github'] === true,
       timeoutMs,
       pollMs,
       signal: controller.signal,
@@ -220,7 +221,9 @@ async function completeManagedWait(
       ? waitForManagedBuild(result, config, options)
       : resumeManagedBuild(buildId, config, options));
     const handoff =
-      flags['review-in-github'] === true && workflow.review.state === 'ready';
+      flags['review-in-github'] === true &&
+      workflow.review.state === 'ready' &&
+      workflow.githubReview?.state === 'delivered';
     const code =
       workflow.phase === 'reference'
         ? EXIT.clean
@@ -239,7 +242,7 @@ async function completeManagedWait(
       io.out('jux: reference capture completed; this is not a PR review verdict.\n');
     else if (handoff)
       io.out(
-        `jux: hosted review published; the required Juxtapose App check owns approval.\n${workflow.review.url}\n`,
+        `jux: hosted review published; GitHub delivery is recorded. Require the Juxtapose App check for approval.\n${workflow.review.url}\n`,
       );
     else if (workflow.review.url)
       io.out(`jux: hosted review ${workflow.review.verdict}\n${workflow.review.url}\n`);

@@ -24,6 +24,13 @@ export interface ManagedStatus {
   execution: { status: string };
   comparison: { status: string };
   publication: { status: string };
+  githubReview?: {
+    state: 'pending' | 'delivered';
+    runId: string;
+    headSha: string;
+    checkRunId: number | null;
+    summarySha256: string | null;
+  };
   review: {
     state: string;
     runId: string | null;
@@ -32,6 +39,7 @@ export interface ManagedStatus {
   };
 }
 export interface WaitOptions {
+  requireGithubDelivery?: boolean;
   timeoutMs: number;
   pollMs: number;
   signal?: AbortSignal;
@@ -166,6 +174,22 @@ function readStatus(value: unknown, identity: StatusIdentity): ManagedStatus {
     (!value['terminal'] ||
       review['state'] !== 'reference' ||
       (value['execution'] as Record<string, unknown>)['status'] !== 'completed')
+  )
+    throw invalid();
+  const delivery = value['githubReview'];
+  if (
+    delivery !== undefined &&
+    (!record(delivery) ||
+      review['state'] !== 'ready' ||
+      !['pending', 'delivered'].includes(String(delivery['state'])) ||
+      delivery['runId'] !== review['runId'] ||
+      delivery['headSha'] !== value['sourceSha'] ||
+      (delivery['state'] === 'delivered'
+        ? !Number.isSafeInteger(delivery['checkRunId']) ||
+          Number(delivery['checkRunId']) <= 0 ||
+          typeof delivery['summarySha256'] !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(delivery['summarySha256'])
+        : delivery['checkRunId'] !== null || delivery['summarySha256'] !== null))
   )
     throw invalid();
   return value as unknown as ManagedStatus;
@@ -381,7 +405,19 @@ async function waitForBuildStatus(
       );
       identity.sourceSha ??= lastStatus.sourceSha;
       options.onProgress?.(lastStatus);
-      if (lastStatus.terminal) return lastStatus;
+      const needsDelivery =
+        options.requireGithubDelivery && lastStatus.review.state === 'ready';
+      if (needsDelivery && lastStatus.githubReview === undefined)
+        throw new ManagedWaitError(
+          'github_delivery_unavailable',
+          'Published review has no durable GitHub delivery receipt. Require the Juxtapose App check; retry after compatible service delivery is available.',
+          lastStatus,
+        );
+      if (
+        lastStatus.terminal &&
+        (!needsDelivery || lastStatus.githubReview?.state === 'delivered')
+      )
+        return lastStatus;
       if (
         !trigger &&
         ['capture_not_requested', 'upload_required'].includes(lastStatus.reason ?? '')

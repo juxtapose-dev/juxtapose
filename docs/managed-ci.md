@@ -33,7 +33,11 @@ On GitHub Actions, check out the PR's **head SHA**, not the synthetic merge comm
 
 Require the **Juxtapose App review check** in branch protection. A green submit
 job with `--review-in-github` means a complete published review was handed off;
-it is not visual approval. The flag exits 0 for ready needs-review/rejected
+it is not visual approval. A durable delivery receipt must match the exact run,
+head and current review summary, with no pending sync. Missing delivery is
+polled within the same timeout; an older service without receipts fails closed.
+The receipt records a successful delivery, not live GitHub retention or branch
+protection configuration. Configure the App check as required yourself. The flag exits 0 for ready needs-review/rejected
 reviews too, while the App check continues to enforce the actual decision.
 Baseline, execution, stale-source and evidence failures still fail the job.
 Without the flag, `--wait` exits 1 for published reviews needing a decision; that

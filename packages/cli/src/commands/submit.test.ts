@@ -125,6 +125,15 @@ it('round trips a compiled fixture and retains the request ID across command ret
                   ? 'running'
                   : 'completed',
           },
+          githubReview: ['reference', 'baseline', 'no_delivery'].includes(waitVerdict)
+            ? undefined
+            : {
+                state: 'delivered',
+                runId: id,
+                headSha: input.sourceSha,
+                checkRunId: 123,
+                summarySha256: 'b'.repeat(64),
+              },
           review: {
             state:
               waitVerdict === 'reference'
@@ -140,7 +149,7 @@ it('round trips a compiled fixture and retains the request ID across command ret
                 : `https://app.juxtapose.dev/acme/app/runs/${id}`,
             verdict: ['baseline', 'reference'].includes(waitVerdict)
               ? 'incomplete'
-              : ['unpublished', 'missing_url'].includes(waitVerdict)
+              : ['unpublished', 'missing_url', 'no_delivery'].includes(waitVerdict)
                 ? 'needs_review'
                 : waitVerdict,
           },
@@ -252,7 +261,7 @@ it('round trips a compiled fixture and retains the request ID across command ret
         captureIo(),
       ),
     ).toBe(3);
-    for (const mode of ['unpublished', 'missing_url']) {
+    for (const mode of ['unpublished', 'missing_url', 'no_delivery']) {
       waitVerdict = mode;
       const invalid = captureIo();
       expect(
