@@ -197,6 +197,7 @@ async function main(argv: string[]): Promise<number> {
       upload: { type: 'boolean', default: false },
       experimental: { type: 'boolean', default: false },
       branch: { type: 'string' },
+      pr: { type: 'string' },
       'review-in-github': { type: 'boolean', default: false },
       story: { type: 'string', multiple: true },
       'dry-run': { type: 'boolean' },

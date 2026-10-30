@@ -13,6 +13,7 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 it('round trips a compiled fixture and retains the request ID across command retries', async () => {
+  vi.stubEnv('GITHUB_REF', 'refs/heads/main');
   const root = await mkdtemp(path.join(tmpdir(), 'jux-submit-'));
   dirs.push(root);
   const git = (args: string[]) =>
@@ -53,6 +54,8 @@ it('round trips a compiled fixture and retains the request ID across command ret
           id,
           status: req.method === 'POST' ? 'awaiting_upload' : 'uploaded',
           sourceSha: input.sourceSha,
+          branch: input.branch,
+          pullRequestNumber: input.pullRequestNumber ?? null,
           archiveSha256: input.archiveSha256,
           archiveBytes: input.archiveBytes,
           captureStatus: 'not_started',
@@ -83,6 +86,18 @@ it('round trips a compiled fixture and retains the request ID across command ret
     expect(await submitCommand(flags, io)).toBe(0);
     expect(await submitCommand(flags, captureIo())).toBe(0);
     expect(requests[0]).toEqual(requests[1]);
+    vi.stubEnv('GITHUB_REF', 'refs/pull/42/merge');
+    expect(await submitCommand(flags, captureIo())).toBe(0);
+    expect(requests[2]!.pullRequestNumber).toBe(42);
+    expect(requests[2]!.requestId).not.toBe(requests[0]!.requestId);
+    expect(await submitCommand(flags, captureIo())).toBe(0);
+    expect(requests[3]).toEqual(requests[2]);
+    expect(await submitCommand({ ...flags, pr: '77' }, captureIo())).toBe(0);
+    expect(requests[4]!.pullRequestNumber).toBe(77);
+    expect(requests[4]!.requestId).not.toBe(requests[2]!.requestId);
+    await expect(submitCommand({ ...flags, pr: '1.5' }, captureIo())).rejects.toThrow(
+      /positive pull request/,
+    );
     expect(createHash('sha256').update(uploaded!).digest('hex')).toBe(
       requests[0]!.archiveSha256,
     );

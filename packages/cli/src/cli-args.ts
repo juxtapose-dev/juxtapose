@@ -21,7 +21,10 @@ interface Spec {
 
 export const SPECS: Record<string, Spec> = {
   init: { flags: ['json', ...CONTEXT, 'chrome', 'no-daemon', 'allow-unstable'], max: 0 },
-  submit: { flags: ['json', 'project', 'build-dir', 'branch', 'experimental'], max: 0 },
+  submit: {
+    flags: ['json', 'project', 'build-dir', 'branch', 'pr', 'experimental'],
+    max: 0,
+  },
   upload: { flags: ['json', 'run', 'project'], max: 0 },
   list: { flags: ['json', ...CONTEXT, 'story', 'chrome', 'no-daemon'], max: Infinity },
   run: {
