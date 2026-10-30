@@ -1,5 +1,15 @@
 # @juxtapose/cli
 
+## 0.28.2
+
+### Patch Changes
+
+- 0a27b1c: Save the differing confirmation capture from `jux init` and `jux run` beside its first image when a story is unstable, making the refusal easier to diagnose.
+- Updated dependencies [0a27b1c]
+  - @juxtapose/core@0.25.2
+  - @juxtapose/adapter-ladle@0.3.35
+  - @juxtapose/adapter-storybook@0.4.32
+
 ## 0.28.1
 
 ### Patch Changes

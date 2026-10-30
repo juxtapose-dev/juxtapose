@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.25.2
+
+### Patch Changes
+
+- 0a27b1c: Save the differing confirmation capture from `jux init` and `jux run` beside its first image when a story is unstable, making the refusal easier to diagnose.
+
 ## 0.25.1
 
 ### Patch Changes
