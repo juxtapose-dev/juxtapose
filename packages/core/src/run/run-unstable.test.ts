@@ -49,7 +49,16 @@ async function hashOf(body: string): Promise<string> {
   return hashImage(Buffer.from(body));
 }
 
-async function run(ids: string[], baselined: string[] = [], signal?: AbortSignal) {
+async function run(
+  ids: string[],
+  baselined: string[] = [],
+  signal?: AbortSignal,
+  onUnstableCapture?: (value: {
+    storyId: string;
+    image: Buffer;
+    hash: string;
+  }) => Promise<void>,
+) {
   captures.length = 0;
   const baselines = Object.fromEntries(
     await Promise.all(
@@ -77,6 +86,7 @@ async function run(ids: string[], baselined: string[] = [], signal?: AbortSignal
     branch: 'b',
     commitSha: 'c',
     ...(signal ? { signal } : {}),
+    ...(onUnstableCapture ? { onUnstableCapture } : {}),
   });
 }
 
@@ -126,4 +136,29 @@ test('an abort during the second pass leaves the unchecked stories unconfirmed',
   // The mock yields all three; the abort lands mid-pass, so the later ones
   // are unverified by the loop's own check.
   expect(r.results.filter((x) => x.unstable?.unconfirmed).length).toBeGreaterThan(0);
+});
+
+test('emits only mismatched confirmation bytes with their exact hash', async () => {
+  flaky = new Set(['rand']);
+  failSecond = new Set(['slow']);
+  const artifacts: { storyId: string; image: Buffer; hash: string }[] = [];
+  const report = await run(['rand', 'steady', 'slow'], [], undefined, async (a) => {
+    artifacts.push(a);
+  });
+  expect(artifacts).toEqual([
+    { storyId: 'rand', image: Buffer.from('rand-2'), hash: await hashOf('rand-2') },
+  ]);
+  expect(report.results.find((r) => r.storyId === 'rand')?.unstable?.hashes[1]).toBe(
+    artifacts[0]!.hash,
+  );
+  failSecond = new Set();
+});
+
+test('reports confirmation artifact write failure instead of silently losing evidence', async () => {
+  flaky = new Set(['rand']);
+  await expect(
+    run(['rand'], [], undefined, async () => {
+      throw new Error('disk full');
+    }),
+  ).rejects.toThrow('Unable to save unstable confirmation for rand');
 });

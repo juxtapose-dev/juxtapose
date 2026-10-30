@@ -387,6 +387,15 @@ export async function runCommand(
           await ctx.store.keepImage?.(a.current).catch(() => {});
         }
       },
+      onUnstableCapture: async ({ storyId, image }) => {
+        const file = path.join(
+          runDir,
+          'images',
+          `${encodeStoryId(storyId)}-confirmation.webp`,
+        );
+        await writeFile(file, image);
+        io.err(`jux: confirmation image: ${file}\n`);
+      },
       readFirstCapture: (id) => readRunCapture(runDir, id),
       onWarning: warn,
       onProgress: (done, total, storyId) => {

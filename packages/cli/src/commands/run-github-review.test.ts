@@ -167,3 +167,31 @@ test.each(['valid', 'corrupt', 'error', 'mismatched'])(
     else await expect(readFile(baselineFile)).rejects.toThrow();
   },
 );
+
+test('ordinary run retains a differing confirmation beside the original capture', async () => {
+  const { root, session } = await setup();
+  const report = await capture();
+  capture.mockImplementation(async (opts) => {
+    await opts.onArtifact({ storyId: 'A', status: 'new', current: Buffer.from('first') });
+    await opts.onUnstableCapture?.({
+      storyId: 'A',
+      image: Buffer.from('second'),
+      hash: 'b',
+    });
+    return report;
+  });
+  await runCommand({ project: root, all: true, upload: true }, session);
+  const runDir = upload.mock.calls[0]![0] as string;
+  expect(
+    await readFile(
+      path.join(runDir, 'images', `${encodeStoryId('A')}-current.webp`),
+      'utf8',
+    ),
+  ).toBe('first');
+  expect(
+    await readFile(
+      path.join(runDir, 'images', `${encodeStoryId('A')}-confirmation.webp`),
+      'utf8',
+    ),
+  ).toBe('second');
+});
