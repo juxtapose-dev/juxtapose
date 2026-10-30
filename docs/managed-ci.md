@@ -1,6 +1,7 @@
 # Hosted capture in CI
 
-Use a CLI release whose `jux submit --help` lists `--wait`. The service must enable
+Use CLI 0.28.1 or later for the GitHub review handoff below. CLI 0.28.0 supports
+`--wait` and `--resume` with verdict-based exit codes. The service must enable
 managed validation, execution, comparison and publication for the project.
 Configure a project token with **ingest and read** permissions as `JUXTAPOSE_TOKEN`.
 `JUXTAPOSE_API_URL` defaults to `https://api.juxtapose.dev`.
@@ -8,7 +9,7 @@ Configure a project token with **ingest and read** permissions as `JUXTAPOSE_TOK
 Build Storybook normally, then submit its compiled output:
 
 ```sh
-pnpm exec jux submit --experimental --build-dir storybook-static --wait --json
+pnpm exec jux submit --experimental --build-dir storybook-static --wait --review-in-github --json
 ```
 
 The CLI uploads a deterministic archive, starts no local browser, requests hosted
@@ -25,10 +26,19 @@ On GitHub Actions, check out the PR's **head SHA**, not the synthetic merge comm
     ref: ${{ github.event.pull_request.head.sha || github.sha }}
 - run: pnpm install --frozen-lockfile
 - run: pnpm build-storybook
-- run: pnpm exec jux submit --experimental --build-dir storybook-static --wait --json
+- run: pnpm exec jux submit --experimental --build-dir storybook-static --wait --review-in-github --json
   env:
     JUXTAPOSE_TOKEN: ${{ secrets.JUXTAPOSE_TOKEN }}
 ```
+
+Require the **Juxtapose App review check** in branch protection. A green submit
+job with `--review-in-github` means a complete published review was handed off;
+it is not visual approval. The flag exits 0 for ready needs-review/rejected
+reviews too, while the App check continues to enforce the actual decision.
+Baseline, execution, stale-source and evidence failures still fail the job.
+Without the flag, `--wait` exits 1 for published reviews needing a decision; that
+completed Actions job stays red even if the App check is later approved.
+The flag requires `--wait` or read-only `--resume`.
 
 PR identity is inferred from GitHub Actions PR refs. Other CI systems can pass
 `--branch feature/name --pr 123`; the checked-out commit remains authoritative.
@@ -51,14 +61,18 @@ requires retrying the original compiled submission with `--wait`. A pause betwee
 upload and capture trigger also falls back to the exact scoped status endpoint;
 other trigger errors are retained.
 
-| Exit | Meaning                                                                                |
-| ---- | -------------------------------------------------------------------------------------- |
-| 0    | Ready unchanged/approved review, or explicitly completed default-branch reference      |
-| 1    | Published changes need review, rejected changes, or terminal missing-baseline recovery |
-| 2    | Invalid CLI arguments/configuration                                                    |
-| 3    | Operational failure, unavailable service, timeout, interruption or superseded source   |
+| Exit | Meaning                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------- |
+| 0    | With handoff: verified published review; otherwise unchanged/approved; or explicit reference |
+| 1    | Without handoff: needs review/rejected; always: terminal missing-baseline recovery           |
+| 2    | Invalid CLI arguments/configuration                                                          |
+| 3    | Operational failure, unavailable service, timeout, interruption or superseded source         |
 
 A completed reference is **not** a passing PR review. Capture the default branch
 before branching to establish a usable reference. Existing PRs may need to rebase
 onto a captured default-branch commit. A missing exact ancestor baseline is never
 replaced by the latest branch tip or automatically approved.
+
+In JSON mode, handoff adds `handoff.status: "published"`, `reviewUrl` and
+`approval: "required_app_check"`; it never changes the server verdict or creates
+an approval. Reference completion remains explicit and has no handoff receipt.
