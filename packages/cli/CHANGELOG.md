@@ -1,5 +1,17 @@
 # @juxtapose/cli
 
+## 0.29.0
+
+### Minor Changes
+
+- b3c2a2b: Use direct R2 uploads for Storybook archives and snapshot batches when the service advertises support.
+  Verify acceptance through the API after upload, recover ambiguous transfer and
+  response failures, and keep signed URLs out of returned receipts. Existing
+  services continue to use API uploads. Snapshot batches share artifact uploads,
+  limit concurrent PUTs, and recover missing cached artifacts through API finalization.
+  Add explicit inspection and cancellation commands for stuck direct snapshot
+  attempts, including when signing is disabled or local image files are missing.
+
 ## 0.28.3
 
 ### Patch Changes
