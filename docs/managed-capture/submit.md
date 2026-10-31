@@ -34,6 +34,14 @@ Archive bytes are stable across file timestamps and ownership. Symlinks, special
 files, credential files and incomplete Storybook output are refused. Limits are
 16 MiB compressed, 512 MiB expanded, 64 MiB per file and 10,000 entries.
 
+When the service advertises direct archive uploads, the CLI uploads the archive
+to a private, short-lived R2 URL and asks the API to verify and accept the original
+upload attempt. A lost PUT response or an existing-object response still requires
+API acceptance. External PUTs omit the project token and cookies and refuse
+redirects; signed URLs are omitted from saved identities and JSON receipts.
+Services without this advertisement continue to receive archive bytes through
+the API. Upgrading the CLI alone does not enable direct uploads on the service.
+
 Retry the same command after transient failures. Its request identity is retained
 for 23 hours in `.juxtapose/managed-builds/`; no token is stored. Changes to the
 source, branch, PR number, service origin or archive create a new identity. Keep

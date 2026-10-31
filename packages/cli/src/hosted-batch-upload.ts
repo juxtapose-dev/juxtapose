@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { UserError } from './user-error.js';
+import { uploadDirectBatches, type DirectBatchProtocol } from './hosted-direct-batch.js';
 
 export interface ArtifactRef {
   hash: string;
@@ -20,6 +21,7 @@ export interface BatchSnapshot {
   artifacts: Partial<Record<ArtifactRole, ArtifactRef>>;
 }
 export interface UploadProtocol {
+  direct?: DirectBatchProtocol;
   version: 1;
   probePath: string;
   batchPath: string;
@@ -65,7 +67,35 @@ export function readUploadProtocol(raw: unknown, runId: string): UploadProtocol 
   };
   const maxRequestBytes = limit('maxRequestBytes', 8 * 1024 * 1024);
   if (maxRequestBytes <= 128 * 1024) throw invalid();
+  let direct: DirectBatchProtocol | undefined;
+  if (Object.hasOwn(raw, 'direct')) {
+    const value = raw.direct;
+    if (
+      !object(value) ||
+      Object.keys(value).length !== (Object.hasOwn(value, 'abandonPath') ? 5 : 4) ||
+      value.schema !== 'juxtapose.snapshot-upload/v1' ||
+      value.preparePath !== `/v1/runs/${runId}/snapshots/direct/prepare` ||
+      value.finalizePath !== `/v1/runs/${runId}/snapshots/direct/finalize` ||
+      (Object.hasOwn(value, 'abandonPath') &&
+        value.abandonPath !== `/v1/runs/${runId}/snapshots/direct/abandon`) ||
+      typeof value.maxConcurrentPuts !== 'number' ||
+      !Number.isInteger(value.maxConcurrentPuts) ||
+      value.maxConcurrentPuts < 1 ||
+      value.maxConcurrentPuts > 4
+    )
+      throw invalid();
+    direct = {
+      schema: value.schema,
+      preparePath: value.preparePath,
+      finalizePath: value.finalizePath,
+      maxConcurrentPuts: value.maxConcurrentPuts,
+      ...(typeof value.abandonPath === 'string'
+        ? { abandonPath: value.abandonPath }
+        : {}),
+    };
+  }
   return {
+    ...(direct ? { direct } : {}),
     version: 1,
     probePath: raw.probePath,
     batchPath: raw.batchPath,
@@ -94,7 +124,9 @@ function partition(
     bytes = 0;
   // Leave bounded space for the <=64KiB manifest, <=32 fixed-format multipart
   // headers and boundaries. Never serialize an unbounded request to size it.
-  const budget = Math.min(7 * 1024 * 1024, protocol.maxRequestBytes - 128 * 1024);
+  const budget = protocol.direct
+    ? Infinity // Direct control requests contain refs only; individual PUTs remain bounded.
+    : Math.min(7 * 1024 * 1024, protocol.maxRequestBytes - 128 * 1024);
   for (const item of items) {
     const needed = new Map(
       artifactRefs(item)
@@ -195,7 +227,21 @@ export async function uploadVerifiedBatches(
   onProgress?.(
     `jux: verified cache ${available.size}/${refs.length} artifacts reusable; ${reusableBytes} bytes initially skipped, ${missingBytes} unique bytes initially needed\n`,
   );
-  const queue = partition(snapshots, available, new Set(), protocol);
+  // Cache eviction can make every declared ref missing during a direct retry.
+  const queue = partition(
+    snapshots,
+    protocol.direct ? new Set() : available,
+    new Set(),
+    protocol,
+  );
+  if (protocol.direct)
+    return uploadDirectBatches(
+      protocol.direct,
+      queue.map((batch) => batch.items),
+      load,
+      send,
+      onProgress,
+    );
   let next = 0,
     completed = 0,
     deduped = 0,

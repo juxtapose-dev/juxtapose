@@ -32,6 +32,55 @@ Redirects are rejected to keep tokens from reaching another server. Requests hav
 a 30-second timeout; transient network errors and HTTP 502/503/504 responses are retried at most
 twice using stable run identity. Authentication, quota, and conflict errors are not retried. Re-running the upload uses a stable external run identifier.
 
+When the API advertises direct snapshot uploads, the CLI sends image bytes to
+private, short-lived R2 upload URLs and sends metadata and acceptance requests
+to the API. Shared artifacts reuse the same in-flight transfer, with at most
+four image loads and PUTs running at once. The API must verify and accept each
+snapshot before the run is finalized. An interrupted response retries the same
+control request; a missing cached artifact is uploaded before acceptance is
+retried. Older services continue to receive API uploads. An invalid direct
+advertisement or a failed direct upload exits nonzero and retains local artifacts.
+When another upload owns an uncached current image, the CLI waits for its verified
+result before retrying that snapshot's admission. This preserves existing usage
+accounting for shared images. The wait is bounded to five minutes plus the API's
+finalization retry budget (about 6.5 minutes); exhaustion retains local artifacts
+for a later retry.
+
+Direct upload URLs stay in memory and are omitted from command output and saved
+receipts. External PUTs omit the project token and cookies and reject redirects.
+Service-side direct upload enablement is required; upgrading the CLI alone does
+not activate it.
+
+To inspect a stuck direct attempt without uploading, using its original local
+run directory:
+
+```sh
+jux upload --run .juxtapose/runs/<run-id> --recover-direct
+```
+
+This resolves only an existing hosted run and prints opaque story/attempt IDs.
+It works without local image files and while new direct upload signing is
+disabled. It does not issue upload URLs or change reservations. Unknown runs
+return an error without creating a hosted run. Both recovery commands require
+the original project token with ingest permission and a service supporting this
+recovery protocol.
+
+To permanently abandon one inspected attempt, explicitly copy its identifiers:
+
+```sh
+jux upload --run .juxtapose/runs/<run-id> --abandon-direct <storyIdSafe>:<attemptId>
+```
+
+Abandonment is never automatic after a transfer or service failure. This command
+cancels only the entered attempt and performs no upload or run finalization.
+The story cannot resume in that hosted run. To submit again, capture a new run
+with `jux run --upload`; these commands do not reuse the old capture as a new run.
+The cancellation receipt's `cleanupPending: true` means physical cleanup may
+still be pending, including waiting for an active internal writer to settle.
+`--recover-direct` and `--abandon-direct` are mutually exclusive. `--json` returns
+only the scoped run/story/attempt identities and cancellation receipt, without
+upload URLs.
+
 On GitHub pull request jobs, `GITHUB_EVENT_PATH` supplies the PR number when its
 head/merge commit matches the captured commit. Detached `HEAD` uses the PR branch
 name; the actual captured commit stays unchanged, including merge checkouts.

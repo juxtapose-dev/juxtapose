@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { access, open, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { encodeStoryId, type RunReport } from '@juxtapose/core';
 import { attachHostedDom } from './hosted-dom.js';
@@ -20,7 +20,23 @@ export interface UploadResult {
   runId: string;
   reportUrl: string | null;
 }
+export interface AbandonSnapshot {
+  storyIdSafe: string;
+  attemptId: string;
+}
+export interface AbandonResult {
+  runId: string;
+  storyIdSafe: string;
+  abandoned: true;
+  cleanupPending: true;
+}
+export interface RecoverDirectResult {
+  runId: string;
+  attempts: AbandonSnapshot[];
+}
 const MAX_IMAGE = 1024 * 1024;
+// A direct preparation can contain 32 signed URLs of up to 4 KiB each, plus descriptors and rows.
+const MAX_CONTROL_RESPONSE = 256 * 1024;
 const UPLOAD_WORKERS = 4;
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
@@ -88,35 +104,96 @@ async function request(
       );
     }
     if (attempt < 2 && [502, 503, 504].includes(response.status)) {
-      await response.body?.cancel();
+      await response.body?.cancel().catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
       continue;
     }
-    if (response.status >= 300 && response.status < 400)
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => {});
       throw new UserError(
         'Hosted upload refused a redirect. Local artifacts are retained.',
         1,
       );
+    }
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
       const hint =
         response.status === 401 || response.status === 403
           ? 'Check the project token and its permissions.'
           : 'Local artifacts are retained; retry with jux upload --run <directory>.';
       throw new UserError(`Hosted upload failed (HTTP ${response.status}). ${hint}`, 1);
     }
+    const reader = response.body?.getReader();
+    if (!reader) throw new UserError('Hosted service returned an invalid response.', 1);
+    const chunks: Uint8Array[] = [];
+    let size = 0;
     try {
-      return (await response.json()) as Record<string, unknown>;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > MAX_CONTROL_RESPONSE)
+          throw new UserError('Hosted service returned an invalid response.', 1);
+        chunks.push(value);
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      if (error instanceof UserError) throw error;
+      // The API may have committed before its response stream was lost.
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        continue;
+      }
+      throw new UserError(
+        'Hosted upload lost its response. Local artifacts are retained; retry with jux upload --run <directory>.',
+        1,
+      );
+    } finally {
+      reader.releaseLock();
+    }
+    try {
+      const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        throw new Error();
+      return parsed as Record<string, unknown>;
     } catch {
       throw new UserError('Hosted service returned an invalid response.', 1);
     }
   }
 }
 
+export function uploadRun(
+  runDir: string,
+  config: UploadConfig,
+  onProgress?: (message: string) => void,
+): Promise<UploadResult>;
+export function uploadRun(
+  runDir: string,
+  config: UploadConfig,
+  onProgress: ((message: string) => void) | undefined,
+  abandon: AbandonSnapshot,
+): Promise<AbandonResult>;
+export function uploadRun(
+  runDir: string,
+  config: UploadConfig,
+  onProgress: ((message: string) => void) | undefined,
+  recover: { recoverOnly: true },
+): Promise<RecoverDirectResult>;
 export async function uploadRun(
   runDir: string,
   config: UploadConfig,
   onProgress?: (message: string) => void,
-): Promise<UploadResult> {
+  recovery?: AbandonSnapshot | { recoverOnly: true },
+): Promise<UploadResult | AbandonResult | RecoverDirectResult> {
+  const abandon = recovery && 'attemptId' in recovery ? recovery : undefined;
+  if (
+    abandon &&
+    (!/^[a-f0-9]{24}$/.test(abandon.storyIdSafe) ||
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+        abandon.attemptId,
+      ))
+  )
+    throw new UserError('Invalid direct snapshot abandonment identity.');
   let report: RunReport;
   try {
     report = JSON.parse(
@@ -203,9 +280,9 @@ export async function uploadRun(
     let hasDiff = false;
     // A skipped capture has no image evidence, even if a reused directory
     // contains files from a previous attempt.
-    if (result.status !== 'skip') {
+    if (result.status !== 'skip' && !recovery) {
       try {
-        await readFile(baselinePath);
+        await access(baselinePath);
         baselineHash = hash(await image(baselinePath));
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
@@ -216,7 +293,7 @@ export async function uploadRun(
           'A run image no longer matches its report hash. Recapture before uploading.',
         );
       try {
-        await readFile(diffPath);
+        await access(diffPath);
         hasDiff = true;
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
@@ -234,33 +311,145 @@ export async function uploadRun(
       storyIdSafe: hash(result.storyId).slice(0, 24),
     });
   }
+  if (
+    abandon &&
+    !snapshots.some((snapshot) => snapshot.storyIdSafe === abandon.storyIdSafe)
+  )
+    throw new UserError('The abandonment story does not belong to this local run.');
   const cliVersion = (
     JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
       version: string;
     }
   ).version;
-  onProgress?.(`jux: creating hosted run (${snapshots.length} snapshots)\n`);
+  onProgress?.(
+    `jux: ${recovery ? 'resolving existing' : 'creating'} hosted run (${snapshots.length} snapshots)\n`,
+  );
   const created = await request(
     config,
     '/v1/runs',
     'POST',
-    JSON.stringify({
-      branch: report.branch,
-      commitSha: report.commitSha,
-      ...(await pullRequest(report)),
-      affectedStoryIds: [...ids],
-      storybookVersion: 'unknown',
-      cliVersion,
-      runExternalId: `${hash(JSON.stringify(report)).slice(0, 32)}-${Date.parse(report.startedAt)}`,
-    }),
+    JSON.stringify(
+      recovery
+        ? {
+            runExternalId: `${hash(JSON.stringify(report)).slice(0, 32)}-${Date.parse(report.startedAt)}`,
+            recoverOnly: true,
+          }
+        : {
+            branch: report.branch,
+            commitSha: report.commitSha,
+            ...(await pullRequest(report)),
+            affectedStoryIds: [...ids],
+            storybookVersion: 'unknown',
+            cliVersion,
+            runExternalId: `${hash(JSON.stringify(report)).slice(0, 32)}-${Date.parse(report.startedAt)}`,
+          },
+    ),
   );
   if (
     typeof created.runId !== 'string' ||
-    !/^[a-f0-9-]{36}$/i.test(created.runId) ||
+    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+      created.runId,
+    ) ||
     typeof created.snapshotPutUrlTemplate !== 'string'
   )
     throw new UserError('Hosted service returned an invalid run response.', 1);
   const snapshotPutUrlTemplate = created.snapshotPutUrlTemplate;
+  // These are explicit control-only commands. Their exact scoped routes remain
+  // usable when incident response has disabled capability issuance/advertisement.
+  if (recovery && !abandon) {
+    const attempts: AbandonSnapshot[] = [];
+    const route = `/v1/runs/${created.runId}/snapshots/direct/prepare`;
+    const expectedAbandonPath = `/v1/runs/${created.runId}/snapshots/direct/abandon`;
+    for (let offset = 0; offset < snapshots.length; offset += 16) {
+      const items = snapshots
+        .slice(offset, offset + 16)
+        .map(({ storyIdSafe }) => ({ storyIdSafe }));
+      const response = await request(
+        config,
+        route,
+        'POST',
+        JSON.stringify({ recoverOnly: true, items }),
+      );
+      const expected = new Set(items.map(({ storyIdSafe }) => storyIdSafe));
+      if (
+        response.schema !== 'juxtapose.snapshot-upload-preparation/v1' ||
+        !Array.isArray(response.artifacts) ||
+        response.artifacts.length !== 0 ||
+        !Array.isArray(response.results) ||
+        response.results.length !== expected.size
+      )
+        throw new UserError('The service returned invalid direct recovery evidence.');
+      for (const raw of response.results) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+          throw new UserError('The service returned invalid direct recovery evidence.');
+        const row = raw as Record<string, unknown>;
+        if (typeof row.storyIdSafe !== 'string' || !expected.delete(row.storyIdSafe))
+          throw new UserError('The service returned invalid direct recovery evidence.');
+        if (
+          row.recovery === undefined &&
+          ((row.status === 200 &&
+            typeof row.snapshotId === 'string' &&
+            /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+              row.snapshotId,
+            ) &&
+            typeof row.deduped === 'boolean') ||
+            (row.status === 404 && row.error === 'upload_not_found') ||
+            (row.status === 410 && row.error === 'upload_abandoned'))
+        )
+          continue;
+        const detail = row.recovery;
+        if (!detail || typeof detail !== 'object' || Array.isArray(detail))
+          throw new UserError('The service returned invalid direct recovery evidence.');
+        const value = detail as Record<string, unknown>;
+        if (
+          row.status !== 409 ||
+          row.error !== 'snapshot_upload_pending' ||
+          row.retryable !== false ||
+          Object.keys(value).length !== 3 ||
+          value.abandonPath !== expectedAbandonPath ||
+          value.storyIdSafe !== row.storyIdSafe ||
+          typeof value.attemptId !== 'string' ||
+          !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+            value.attemptId,
+          )
+        )
+          throw new UserError('The service returned invalid direct recovery evidence.');
+        attempts.push({ storyIdSafe: row.storyIdSafe, attemptId: value.attemptId });
+      }
+    }
+    return { runId: created.runId, attempts };
+  }
+  if (abandon) {
+    const route = `/v1/runs/${created.runId}/snapshots/direct/abandon`;
+    const response = await request(
+      config,
+      route,
+      'POST',
+      JSON.stringify({ items: [abandon] }),
+    );
+    if (!Array.isArray(response.results) || response.results.length !== 1)
+      throw new UserError('The service returned an invalid abandonment receipt.');
+    const result: unknown = response.results[0];
+    if (!result || typeof result !== 'object' || Array.isArray(result))
+      throw new UserError('The service returned an invalid abandonment receipt.');
+    const row = result as Record<string, unknown>;
+    if (
+      row.storyIdSafe !== abandon.storyIdSafe ||
+      row.status !== 200 ||
+      row.abandoned !== true ||
+      row.cleanupPending !== true
+    )
+      throw new UserError(
+        'The snapshot abandonment was not accepted. Local artifacts are retained.',
+      );
+    return {
+      runId: created.runId,
+      storyIdSafe: abandon.storyIdSafe,
+      abandoned: true,
+      cleanupPending: true,
+    };
+  }
+  const protocol = readUploadProtocol(created.uploadProtocol, created.runId);
   let dedupedCount = 0;
   const uploadSnapshot = async (snapshot: (typeof snapshots)[number]) => {
     const { result, contentHash, storyIdSafe } = snapshot;
@@ -321,7 +510,6 @@ export async function uploadRun(
     );
     if (uploaded.deduped === true) dedupedCount++;
   };
-  const protocol = readUploadProtocol(created.uploadProtocol, created.runId);
   if (protocol) {
     const files = new Map<string, string>();
     const batch: BatchSnapshot[] = [];
@@ -375,7 +563,14 @@ export async function uploadRun(
       },
       (route, body) => request(config, route, 'POST', body),
       onProgress,
-    );
+    ).catch((error: unknown) => {
+      if (protocol.direct && error instanceof UserError)
+        throw new UserError(
+          `${error.message} Inspect existing attempts without uploading with jux upload --run <directory> --recover-direct.`,
+          error.exit,
+        );
+      throw error;
+    });
   } else {
     let next = 0;
     let completed = 0;
@@ -456,21 +651,39 @@ export async function uploadRun(
 
 async function image(file: string): Promise<Buffer> {
   let bytes: Buffer;
+  let handle;
+  const invalid = () =>
+    new UserError(
+      'Hosted uploads require WebP images no larger than 1 MiB. Local artifacts are retained.',
+    );
   try {
-    bytes = await readFile(file);
-  } catch {
+    handle = await open(file, 'r');
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > MAX_IMAGE) throw invalid();
+    // A file may grow after fstat. Never read or allocate beyond the bound to detect it.
+    const buffer = Buffer.alloc(MAX_IMAGE + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const result = await handle.read(buffer, length, buffer.length - length, null);
+      if (!result.bytesRead) break;
+      length += result.bytesRead;
+    }
+    if (length > MAX_IMAGE) throw invalid();
+    bytes = buffer.subarray(0, length);
+  } catch (error) {
+    if (error instanceof UserError) throw error;
     throw new UserError(
       'A run image is missing or unreadable. Recapture before uploading.',
     );
+  } finally {
+    await handle?.close().catch(() => {});
   }
   if (
     bytes.length > MAX_IMAGE ||
     bytes.toString('ascii', 0, 4) !== 'RIFF' ||
     bytes.toString('ascii', 8, 12) !== 'WEBP'
   )
-    throw new UserError(
-      'Hosted uploads require WebP images no larger than 1 MiB. Local artifacts are retained.',
-    );
+    throw invalid();
   return bytes;
 }
 

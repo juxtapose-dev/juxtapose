@@ -1,6 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
+import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,9 +12,19 @@ import { encodeStructure, encodeStoryId } from '@juxtapose/core';
 import { hashElements } from '../../core/src/capture/structure.js';
 import { uploadConfig, uploadRun } from './hosted-upload.js';
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile), open: vi.fn(actual.open) };
+});
+const actualFs =
+  await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+
 let server: Server | undefined;
 let dir: string;
 afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.mocked(fs.open).mockReset().mockImplementation(actualFs.open);
+  vi.mocked(fs.readFile).mockReset().mockImplementation(actualFs.readFile);
   vi.unstubAllEnvs();
   await new Promise<void>((resolve) =>
     server ? server.close(() => resolve()) : resolve(),
@@ -51,7 +63,14 @@ async function fixture() {
   await writeFile(path.join(dir, 'report.json'), JSON.stringify(report));
   return report;
 }
-type Reply = { status?: number; body?: unknown; location?: string; disconnect?: boolean };
+type Reply = {
+  status?: number;
+  body?: unknown;
+  location?: string;
+  disconnect?: boolean;
+  truncatedBody?: boolean;
+  rawBody?: string;
+};
 async function serve(
   handler: (
     url: string,
@@ -71,13 +90,127 @@ async function serve(
       'content-type': 'application/json',
       ...(result.location ? { location: result.location } : {}),
     });
-    res.end(JSON.stringify(result.body ?? {}));
+    if (result.truncatedBody) {
+      res.write('{"lost":');
+      setTimeout(() => res.destroy(), 5);
+      return;
+    }
+    res.end(result.rawBody ?? JSON.stringify(result.body ?? {}));
   });
   await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
   const address = server.address() as { port: number };
   return { origin: `http://127.0.0.1:${address.port}`, token: 'secret-test-token' };
 }
 describe('hosted uploads', () => {
+  it.each(['current', 'baseline', 'diff'])(
+    'rejects an oversized %s image without using an unbounded image read',
+    async (role) => {
+      await fixture();
+      const file = path.join(dir, 'images', `${encodeStoryId(id)}-${role}.webp`);
+      const bytes = Buffer.alloc(1024 * 1024 + 65536);
+      bytes.write('RIFF');
+      bytes.write('WEBP', 8);
+      await writeFile(file, bytes);
+      vi.mocked(fs.readFile).mockClear();
+      await expect(
+        uploadRun(dir, { origin: 'https://unused.invalid', token: 'test' }),
+      ).rejects.toThrow(/no larger than 1 MiB/);
+      expect(
+        vi
+          .mocked(fs.readFile)
+          .mock.calls.filter(([path]) => String(path).endsWith('.webp')),
+      ).toEqual([]);
+    },
+  );
+
+  it('bounds partial reads if an image grows after fstat, and closes the opened descriptor', async () => {
+    await fixture();
+    const file = path.join(dir, 'images', `${encodeStoryId(id)}-current.webp`);
+    let opened = false,
+      closed = false,
+      readBytes = 0,
+      readCalls = 0;
+    vi.mocked(fs.open).mockImplementation(async (...args) => {
+      const handle = await actualFs.open(...args);
+      if (String(args[0]) !== file) return handle;
+      opened = true;
+      const stat = handle.stat.bind(handle),
+        read = handle.read.bind(handle),
+        close = handle.close.bind(handle);
+      vi.spyOn(handle, 'stat').mockImplementation(async () => {
+        const before = await stat();
+        await actualFs.appendFile(file, Buffer.alloc(1024 * 1024 + 65536));
+        return before;
+      });
+      vi.spyOn(handle, 'read').mockImplementation(
+        async (
+          buffer: Buffer,
+          offset: number,
+          length: number,
+          position: number | null,
+        ) => {
+          expect(length).toBeLessThanOrEqual(1024 * 1024 + 1 - readBytes);
+          const result = await read(buffer, offset, Math.min(length, 8192), position);
+          readBytes += result.bytesRead;
+          readCalls++;
+          return result;
+        },
+      );
+      vi.spyOn(handle, 'close').mockImplementation(async () => {
+        closed = true;
+        await close();
+      });
+      return handle;
+    });
+    const config = await serve((url) =>
+      url === '/v1/runs'
+        ? { body: { runId, snapshotPutUrlTemplate: '/snapshots/{storyIdSafe}' } }
+        : {
+            body: url.startsWith('/snapshots/')
+              ? { deduped: false }
+              : { reportUrl: null },
+          },
+    );
+    await expect(uploadRun(dir, config)).rejects.toThrow(/no larger than 1 MiB/);
+    expect(opened).toBe(true);
+    expect(closed).toBe(true);
+    expect(readBytes).toBe(1024 * 1024 + 1);
+    expect(readCalls).toBeGreaterThan(1);
+  });
+
+  it('rejects an oversized replacement after validation/probe without loading or sending it', async () => {
+    const report = await fixture();
+    const file = path.join(dir, 'images', `${encodeStoryId(id)}-current.webp`);
+    let sent = false,
+      finalized = false;
+    const config = await serve(async (url, bytes) => {
+      if (url === '/v1/runs') return createBatchRun();
+      if (url === protocol.probePath) {
+        const replacement = `${file}.replacement`;
+        await actualFs.writeFile(replacement, Buffer.alloc(1024 * 1024 + 65536));
+        await actualFs.rename(replacement, file);
+        return {
+          body: { available: [], missing: JSON.parse(bytes.toString()).artifacts },
+        };
+      }
+      if (url === protocol.batchPath) sent = true;
+      else finalized = true;
+      return { body: {} };
+    });
+    vi.mocked(fs.readFile).mockClear();
+    await expect(uploadRun(dir, config)).rejects.toThrow(/no larger than 1 MiB/);
+    expect(
+      vi
+        .mocked(fs.readFile)
+        .mock.calls.filter(([path]) => String(path).endsWith('.webp')),
+    ).toEqual([]);
+    expect(sent).toBe(false);
+    expect(finalized).toBe(false);
+    expect(JSON.parse(await readFile(path.join(dir, 'report.json'), 'utf8'))).toEqual(
+      report,
+    );
+  });
+
   it.each(['legacy', 'batch'])(
     'transports image-bound DOM trees in the actual %s finalization wire payload',
     async (mode) => {
@@ -636,6 +769,159 @@ const createBatchRun = () => ({
   },
 });
 
+it.each(['prepare', 'finalize'] as const)(
+  'recovers a lost direct %s response through the actual uploader without replaying the external PUT',
+  async (lostRoute) => {
+    const report = await fixture();
+    const image = await readFile(
+      path.join(dir, 'images', `${encodeStoryId(id)}-current.webp`),
+    );
+    const digest = createHash('sha256').update(image).digest('hex'),
+      attemptId = '00000000-0000-4000-8000-000000000002';
+    const issuedAtMs = Math.floor(Date.now() / 1000) * 1000,
+      date = new Date(issuedAtMs).toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const url = new URL(
+      `https://${'a'.repeat(32)}.r2.cloudflarestorage.com/private/snapshot-attempt`,
+    );
+    for (const [key, value] of Object.entries({
+      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+      'X-Amz-Credential': `TESTACCESSKEY123456/${date.slice(0, 8)}/auto/s3/aws4_request`,
+      'X-Amz-Date': date,
+      'X-Amz-Expires': '300',
+      'X-Amz-SignedHeaders': 'content-length;content-type;host;if-none-match',
+      'X-Amz-Signature': 'f'.repeat(64),
+    }))
+      url.searchParams.set(key, value);
+    const descriptor = {
+      schema: 'juxtapose.direct-put/v1',
+      method: 'PUT',
+      url: url.href,
+      bytes: image.length,
+      issuedAtMs,
+      expiresAtMs: issuedAtMs + 300000,
+      headers: {
+        'content-type': 'image/webp',
+        'content-length': String(image.length),
+        'if-none-match': '*',
+      },
+    };
+    const direct = {
+      schema: 'juxtapose.snapshot-upload/v1',
+      preparePath: `/v1/runs/${runId}/snapshots/direct/prepare`,
+      finalizePath: `/v1/runs/${runId}/snapshots/direct/finalize`,
+      maxConcurrentPuts: 4,
+    };
+    const bodies = new Map<string, string[]>();
+    let prepared: BatchItem[] = [];
+    const config = await serve((route, bytes, headers) => {
+      expect(headers.authorization).toBe('Bearer secret-test-token');
+      expect(bytes.toString()).not.toContain('X-Amz-');
+      const calls = bodies.get(route) ?? [];
+      calls.push(bytes.toString());
+      bodies.set(route, calls);
+      if (route === '/v1/runs') {
+        const created = createBatchRun();
+        return {
+          body: { ...created.body, uploadProtocol: { ...protocol, direct } },
+        };
+      }
+      if (route === protocol.probePath)
+        return {
+          body: { available: [], missing: [{ hash: digest, bytes: image.length }] },
+        };
+      if (route === direct.preparePath) {
+        prepared = JSON.parse(bytes.toString()).items;
+        if (lostRoute === 'prepare' && calls.length === 1) return { truncatedBody: true };
+        return {
+          body: {
+            schema: 'juxtapose.snapshot-upload-preparation/v1',
+            results: prepared.map((item) => ({
+              storyIdSafe: item.storyIdSafe,
+              status: 202,
+              directUpload: { attemptId, requiredHashes: [digest] },
+            })),
+            artifacts: [{ hash: digest, bytes: image.length, descriptor }],
+          },
+        };
+      }
+      if (route === direct.finalizePath) {
+        expect(JSON.parse(bytes.toString())).toEqual({
+          items: prepared.map((item) => ({ storyIdSafe: item.storyIdSafe, attemptId })),
+        });
+        if (lostRoute === 'finalize' && calls.length === 1)
+          return { truncatedBody: true };
+        return { body: { results: prepared.map(success) } };
+      }
+      expect(route).toBe(`/v1/runs/${runId}/finalize`);
+      expect(JSON.parse(bytes.toString()).report.sourceReport).toEqual(report);
+      return { body: { reportUrl: null } };
+    });
+    const nativeFetch = globalThis.fetch.bind(globalThis),
+      external = vi.fn(async (_input: unknown, options?: RequestInit) => {
+        expect(options?.method).toBe('PUT');
+        expect(options?.headers).toEqual(descriptor.headers);
+        expect(options?.redirect).toBe('error');
+        expect(options?.credentials).toBe('omit');
+        expect(Buffer.from(options?.body as Uint8Array)).toEqual(image);
+        return new Response(null, { status: 412 });
+      });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, options) =>
+      String(input).startsWith(config.origin)
+        ? nativeFetch(input, options)
+        : external(input, options),
+    );
+    const progress: string[] = [];
+    const result = await uploadRun(dir, config, (message) => progress.push(message));
+    expect(result).toEqual({ runId, reportUrl: null });
+    expect(external).toHaveBeenCalledTimes(1);
+    expect(bodies.get(direct[`${lostRoute}Path`])).toHaveLength(2);
+    expect(new Set(bodies.get(direct[`${lostRoute}Path`])).size).toBe(1);
+    expect(JSON.stringify({ result, progress })).not.toContain('X-Amz-');
+    expect(JSON.parse(await readFile(path.join(dir, 'report.json'), 'utf8'))).toEqual(
+      report,
+    );
+  },
+);
+
+it.each(['malformed', 'oversized'] as const)(
+  'rejects a complete %s control response without retrying or exposing its body',
+  async (kind) => {
+    await fixture();
+    let calls = 0;
+    const config = await serve(() => {
+      calls++;
+      return {
+        rawBody:
+          kind === 'malformed'
+            ? '{"secret":"X-Amz-Signature=do-not-print"'
+            : JSON.stringify({
+                secret: 'X-Amz-Signature=do-not-print',
+                extra: 'x'.repeat(256 * 1024),
+              }),
+      };
+    });
+    await expect(uploadRun(dir, config)).rejects.toThrow(/invalid response/i);
+    expect(calls).toBe(1);
+  },
+);
+
+it.each([302, 401])(
+  'discards HTTP %i response bodies and redacts disposal failures',
+  async (status) => {
+    await fixture();
+    const cancel = vi.fn(() => {
+      throw new Error('secret-test-token X-Amz-Signature=do-not-print');
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new ReadableStream({ cancel }), { status }),
+    );
+    await expect(
+      uploadRun(dir, { origin: 'https://api.invalid', token: 'secret-test-token' }),
+    ).rejects.toThrow(status === 302 ? /redirect/i : /HTTP 401/);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  },
+);
+
 it('uses advertised verified hash reuse without re-sending cached WebP bytes', async () => {
   const report = await parallelFixture(3);
   const progress: string[] = [];
@@ -1171,4 +1457,264 @@ it('reports initial unique missing bytes separately from actual upload traffic',
       ),
     ),
   ).toBe(true);
+});
+
+it('discovers and explicitly abandons a signer-disabled attempt without images, PUTs, or finalization', async () => {
+  const report = await fixture();
+  await rm(path.join(dir, 'images'), { recursive: true });
+  const storyIdSafe = createHash('sha256').update(id).digest('hex').slice(0, 24),
+    attemptId = '00000000-0000-4000-8000-000000000002';
+  const calls: string[] = [],
+    bodies: string[] = [];
+  const config = await serve((route, bytes) => {
+    calls.push(route);
+    const input = JSON.parse(bytes.toString());
+    if (route === '/v1/runs') {
+      expect(input.recoverOnly).toBe(true);
+      bodies.push(bytes.toString());
+      const created = createBatchRun();
+      return {
+        body: { ...created.body, uploadProtocol: { malformed: 'disabled-issuance' } },
+      };
+    }
+    if (route.endsWith('/direct/prepare')) {
+      expect(input).toEqual({ recoverOnly: true, items: [{ storyIdSafe }] });
+      return {
+        body: {
+          schema: 'juxtapose.snapshot-upload-preparation/v1',
+          artifacts: [],
+          results: [
+            {
+              storyIdSafe,
+              status: 409,
+              error: 'snapshot_upload_pending',
+              retryable: false,
+              recovery: {
+                abandonPath: `/v1/runs/${runId}/snapshots/direct/abandon`,
+                storyIdSafe,
+                attemptId,
+              },
+            },
+          ],
+        },
+      };
+    }
+    expect(route).toBe(`/v1/runs/${runId}/snapshots/direct/abandon`);
+    expect(input).toEqual({ items: [{ storyIdSafe, attemptId }] });
+    return {
+      body: {
+        results: [
+          {
+            storyIdSafe,
+            status: 200,
+            abandoned: true,
+            cleanupPending: true,
+            descriptor: 'X-Amz-Signature=do-not-print',
+          },
+        ],
+      },
+    };
+  });
+  vi.stubEnv('JUXTAPOSE_TOKEN', config.token);
+  vi.stubEnv('JUXTAPOSE_API_URL', config.origin);
+  const out = vi.fn(),
+    err = vi.fn();
+  expect(
+    await uploadCommand({ run: dir, 'recover-direct': true, json: true }, { out, err }),
+  ).toBe(0);
+  expect(JSON.parse(out.mock.calls[0]![0] as string)).toEqual({
+    runId,
+    attempts: [{ storyIdSafe, attemptId }],
+  });
+  out.mockClear();
+  for (let n = 0; n < 2; n++)
+    expect(
+      await uploadCommand(
+        { run: dir, 'abandon-direct': `${storyIdSafe}:${attemptId}`, json: true },
+        { out, err },
+      ),
+    ).toBe(0);
+  expect(JSON.parse(out.mock.calls[0]![0] as string)).toEqual({
+    runId,
+    storyIdSafe,
+    abandoned: true,
+    cleanupPending: true,
+  });
+  expect(err.mock.calls.flat().join('')).toContain(
+    'Capture a new run with jux run --upload',
+  );
+  expect(JSON.stringify({ out: out.mock.calls, err: err.mock.calls })).not.toContain(
+    'X-Amz-',
+  );
+  expect(new Set(bodies).size).toBe(1);
+  expect(calls).toEqual([
+    '/v1/runs',
+    `/v1/runs/${runId}/snapshots/direct/prepare`,
+    '/v1/runs',
+    `/v1/runs/${runId}/snapshots/direct/abandon`,
+    '/v1/runs',
+    `/v1/runs/${runId}/snapshots/direct/abandon`,
+  ]);
+  expect(JSON.parse(await readFile(path.join(dir, 'report.json'), 'utf8'))).toEqual(
+    report,
+  );
+});
+
+it.each(['recover', 'abandon'] as const)(
+  'does not create a new remote run when %s cannot resolve an existing identity',
+  async (mode) => {
+    await fixture();
+    await rm(path.join(dir, 'images'), { recursive: true });
+    let calls = 0;
+    const config = await serve((route, bytes) => {
+      calls++;
+      expect(route).toBe('/v1/runs');
+      expect(JSON.parse(bytes.toString()).recoverOnly).toBe(true);
+      return { status: 404, body: { error: 'run_not_found' } };
+    });
+    const target = {
+      storyIdSafe: createHash('sha256').update(id).digest('hex').slice(0, 24),
+      attemptId: '00000000-0000-4000-8000-000000000002',
+    };
+    await expect(
+      mode === 'recover'
+        ? uploadRun(dir, config, undefined, { recoverOnly: true })
+        : uploadRun(dir, config, undefined, target),
+    ).rejects.toThrow('HTTP 404');
+    expect(calls).toBe(1);
+  },
+);
+
+it.each([
+  'https://evil.invalid/abandon',
+  `/v1/runs/${'0'.repeat(36)}/snapshots/direct/abandon`,
+])('rejects unsafe recovery instruction %s without cancellation', async (abandonPath) => {
+  await fixture();
+  const storyIdSafe = createHash('sha256').update(id).digest('hex').slice(0, 24);
+  let calls = 0;
+  const config = await serve((route) => {
+    calls++;
+    if (route === '/v1/runs') return createBatchRun();
+    expect(route).toBe(`/v1/runs/${runId}/snapshots/direct/prepare`);
+    return {
+      body: {
+        schema: 'juxtapose.snapshot-upload-preparation/v1',
+        artifacts: [],
+        results: [
+          {
+            storyIdSafe,
+            status: 409,
+            error: 'snapshot_upload_pending',
+            retryable: false,
+            recovery: {
+              abandonPath,
+              storyIdSafe,
+              attemptId: '00000000-0000-4000-8000-000000000002',
+            },
+          },
+        ],
+      },
+    };
+  });
+  await expect(uploadRun(dir, config, undefined, { recoverOnly: true })).rejects.toThrow(
+    /invalid direct recovery/i,
+  );
+  expect(calls).toBe(2);
+});
+
+it('rejects mutually exclusive recovery flags, invalid attempts, and foreign stories before any service request', async () => {
+  await fixture();
+  vi.stubEnv('JUXTAPOSE_TOKEN', 'test-token');
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  await expect(
+    uploadCommand({ run: dir, 'recover-direct': true, 'abandon-direct': 'bad' }),
+  ).rejects.toThrow(/mutually exclusive/);
+  await expect(uploadCommand({ run: dir, 'abandon-direct': 'bad' })).rejects.toThrow(
+    /needs.*storyIdSafe/,
+  );
+  await expect(
+    uploadCommand({
+      run: dir,
+      'abandon-direct': `${'f'.repeat(24)}:00000000-0000-4000-8000-000000000002`,
+    }),
+  ).rejects.toThrow(/does not belong/);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('parses the recovery flag through the compiled CLI and sends only read-only control requests', async () => {
+  await fixture();
+  await rm(path.join(dir, 'images'), { recursive: true });
+  const storyIdSafe = createHash('sha256').update(id).digest('hex').slice(0, 24),
+    attemptId = '00000000-0000-4000-8000-000000000002';
+  const calls: string[] = [];
+  const config = await serve((route, bytes) => {
+    calls.push(route);
+    const body = JSON.parse(bytes.toString());
+    expect(body.recoverOnly).toBe(true);
+    if (route === '/v1/runs') {
+      expect(Object.keys(body).sort()).toEqual(['recoverOnly', 'runExternalId']);
+      return { body: { runId, snapshotPutUrlTemplate: '/unused/{storyIdSafe}' } };
+    }
+    expect(route).toBe(`/v1/runs/${runId}/snapshots/direct/prepare`);
+    expect(body.items).toEqual([{ storyIdSafe }]);
+    return {
+      body: {
+        schema: 'juxtapose.snapshot-upload-preparation/v1',
+        artifacts: [],
+        results: [
+          {
+            storyIdSafe,
+            status: 409,
+            error: 'snapshot_upload_pending',
+            retryable: false,
+            recovery: {
+              abandonPath: `/v1/runs/${runId}/snapshots/direct/abandon`,
+              storyIdSafe,
+              attemptId,
+            },
+          },
+        ],
+      },
+    };
+  });
+  const result = await new Promise<{ code: number | null; out: string; err: string }>(
+    (resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [
+          path.resolve('packages/cli/dist/index.js'),
+          'upload',
+          '--run',
+          dir,
+          '--recover-direct',
+          '--json',
+        ],
+        {
+          env: {
+            ...process.env,
+            JUXTAPOSE_TOKEN: config.token,
+            JUXTAPOSE_API_URL: config.origin,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      let out = '',
+        err = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        out += chunk.toString();
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        err += chunk.toString();
+      });
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, out, err }));
+    },
+  );
+  expect(result.code, result.err).toBe(0);
+  expect(JSON.parse(result.out)).toEqual({
+    runId,
+    attempts: [{ storyIdSafe, attemptId }],
+  });
+  expect(result.err).toContain('resolving existing hosted run');
+  expect(calls).toEqual(['/v1/runs', `/v1/runs/${runId}/snapshots/direct/prepare`]);
 });

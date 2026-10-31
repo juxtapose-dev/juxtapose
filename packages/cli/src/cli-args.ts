@@ -37,7 +37,10 @@ export const SPECS: Record<string, Spec> = {
     ],
     max: 0,
   },
-  upload: { flags: ['json', 'run', 'project'], max: 0 },
+  upload: {
+    flags: ['json', 'run', 'project', 'recover-direct', 'abandon-direct'],
+    max: 0,
+  },
   list: { flags: ['json', ...CONTEXT, 'story', 'chrome', 'no-daemon'], max: Infinity },
   run: {
     flags: [
@@ -116,6 +119,7 @@ export const SPECS: Record<string, Spec> = {
 
 /** Flags whose value is a string, so a bare `--story` is an error. */
 const TAKES_VALUE = new Set([
+  'abandon-direct',
   'resume',
   'wait-timeout',
   'poll-interval',

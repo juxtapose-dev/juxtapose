@@ -38,6 +38,8 @@ export interface CommonFlags extends SettleFlags, RecheckFlags {
   /** Resolve and print selection without taking screenshots or writing a run. */
   'dry-run'?: boolean;
   run?: string;
+  'abandon-direct'?: string;
+  'recover-direct'?: boolean;
   comment?: boolean;
   html?: boolean;
   chrome?: string;

@@ -1,5 +1,6 @@
 import type { UploadConfig } from './hosted-upload.js';
 import { UserError } from './user-error.js';
+import { DirectPutError, putDirect } from './direct-put.js';
 export interface BuildMetadata {
   requestId: string;
   sourceSha: string;
@@ -19,6 +20,8 @@ export interface BuildReceipt {
     archiveBytes: number;
     captureStatus: string;
     sourceVerified: boolean;
+    createdAt?: number;
+    expiresAt?: number;
   };
   upload: { path: string; method: string; contentType: string };
 }
@@ -87,6 +90,13 @@ async function request(
         }
         chunks.push(value);
       }
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      if (error instanceof UserError) throw error;
+      if (attempt < 2) continue;
+      throw new UserError(
+        'Build submission lost its response. Retry the same command; the request identity is retained.',
+      );
     } finally {
       reader.releaseLock();
     }
@@ -118,23 +128,99 @@ function receipt(
     !['awaiting_upload', 'uploading', 'uploaded'].includes(build.status) ||
     build.captureStatus !== 'not_started' ||
     build.sourceVerified !== false ||
+    [build.createdAt, build.expiresAt].some(
+      (stamp) => stamp !== undefined && (!Number.isSafeInteger(stamp) || stamp < 0),
+    ) ||
     upload?.path !== `/v1/builds/${build.id}/archive` ||
     upload.method !== 'PUT' ||
     upload.contentType !== 'application/gzip'
   )
     throw new UserError('Invalid build receipt.');
-  return parsed;
+  // Never retain transient capabilities or unrecognized service fields in CLI receipts.
+  return {
+    build: {
+      id: build.id,
+      status: build.status,
+      sourceSha: build.sourceSha,
+      branch: build.branch,
+      ...(build.pullRequestNumber === undefined
+        ? {}
+        : { pullRequestNumber: build.pullRequestNumber }),
+      archiveSha256: build.archiveSha256,
+      archiveBytes: build.archiveBytes,
+      captureStatus: build.captureStatus,
+      sourceVerified: build.sourceVerified,
+      ...(build.createdAt === undefined ? {} : { createdAt: build.createdAt }),
+      ...(build.expiresAt === undefined ? {} : { expiresAt: build.expiresAt }),
+    },
+    upload: { path: upload.path, method: upload.method, contentType: upload.contentType },
+  };
+}
+function object(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+function directPaths(value: unknown, id: string) {
+  const upload = object(object(value)?.upload);
+  if (!upload || !Object.hasOwn(upload, 'direct')) return undefined;
+  const direct = object(upload.direct);
+  const preparePath = `/v1/builds/${id}/archive/direct/prepare`;
+  const finalizePath = `/v1/builds/${id}/archive/direct/finalize`;
+  if (
+    !direct ||
+    Object.keys(direct).length !== 3 ||
+    direct.schema !== 'juxtapose.archive-upload/v1' ||
+    direct.preparePath !== preparePath ||
+    direct.finalizePath !== finalizePath
+  )
+    throw new UserError('Invalid direct upload advertisement.');
+  return { preparePath, finalizePath };
 }
 export async function submitBuild(
   archive: Buffer,
   metadata: BuildMetadata,
   config: UploadConfig,
 ): Promise<BuildReceipt> {
-  const created = receipt(
-    await request(config, '/v1/builds', 'POST', JSON.stringify(metadata)),
-    metadata,
-  );
+  const raw = await request(config, '/v1/builds', 'POST', JSON.stringify(metadata));
+  const created = receipt(raw, metadata);
+  const direct = directPaths(raw, created.build.id);
   if (created.build.status === 'uploaded') return created;
+  if (direct) {
+    const prepared = await request(config, direct.preparePath, 'POST', '{}');
+    const ready = receipt(prepared, metadata, created.build.id);
+    if (ready.build.status === 'uploaded') return ready;
+    const session = object(object(prepared)?.directUpload);
+    if (
+      ready.build.status !== 'uploading' ||
+      !session ||
+      Object.keys(session).length !== 3 ||
+      session.schema !== 'juxtapose.archive-upload-session/v1' ||
+      typeof session.attemptId !== 'string' ||
+      !UUID.test(session.attemptId) ||
+      !Object.hasOwn(session, 'descriptor')
+    )
+      throw new UserError('Invalid direct upload session.');
+    try {
+      await putDirect(session.descriptor, archive, 'application/gzip');
+    } catch (error) {
+      // A lost PUT response can conceal success. Only the API can settle the attempt.
+      if (!(error instanceof DirectPutError) || error.reason === 'invalid') throw error;
+    }
+    const accepted = receipt(
+      await request(
+        config,
+        direct.finalizePath,
+        'POST',
+        JSON.stringify({ attemptId: session.attemptId }),
+      ),
+      metadata,
+      created.build.id,
+    );
+    if (accepted.build.status !== 'uploaded')
+      throw new UserError('The archive upload is incomplete. Retry the same command.');
+    return accepted;
+  }
   const uploaded = receipt(
     await request(config, created.upload.path, 'PUT', archive),
     metadata,
