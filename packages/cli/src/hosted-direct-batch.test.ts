@@ -89,7 +89,313 @@ const accepted = (items: { storyIdSafe: string }[]) => ({
     deduped: false,
   })),
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+it('waits for a sibling batch current owner through three legal PUT attempts before dedup acceptance', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout'] });
+  const snapshots = [item(1), item(2)],
+    config = protocol(),
+    load = vi.fn(async () => body);
+  config.maxItems = 1;
+  let ownerCommitted = false,
+    puts = 0,
+    deferredPrepares = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      const attempt = ++puts;
+      await new Promise((resolve) => setTimeout(resolve, 59999));
+      return new Response(null, { status: attempt < 3 ? 503 : 200 });
+    }),
+  );
+  const send = async (route: string, raw: string | FormData) => {
+    const data = JSON.parse(raw as string);
+    if (route.endsWith('/probe'))
+      return { available: [], missing: [{ hash, bytes: 100 }] };
+    if (route.endsWith('/prepare')) {
+      if (data.items[0].storyIdSafe === snapshots[0]!.storyIdSafe)
+        return preparation([snapshots[0]!]);
+      deferredPrepares++;
+      if (!ownerCommitted)
+        return {
+          schema: 'juxtapose.snapshot-upload-preparation/v1',
+          artifacts: [],
+          results: [
+            {
+              storyIdSafe: snapshots[1]!.storyIdSafe,
+              status: 409,
+              error: 'snapshot_current_pending',
+              retryable: true,
+            },
+          ],
+        };
+      const existing = accepted([snapshots[1]!]);
+      existing.results[0]!.status = 200;
+      existing.results[0]!.deduped = true;
+      return {
+        schema: 'juxtapose.snapshot-upload-preparation/v1',
+        artifacts: [],
+        ...existing,
+      };
+    }
+    expect(data.items).toEqual([{ storyIdSafe: snapshots[0]!.storyIdSafe, attemptId }]);
+    expect(puts).toBe(3);
+    ownerCommitted = true;
+    return accepted([snapshots[0]!]);
+  };
+  const pending = uploadVerifiedBatches(config, snapshots, load, send).catch(
+    (error: unknown) => error,
+  );
+  await vi.advanceTimersByTimeAsync(182000);
+  expect(await pending).toBe(1);
+  expect(deferredPrepares).toBeGreaterThan(180);
+  expect(load).toHaveBeenCalledTimes(1);
+});
+
+it('finishes prepared owners in the same batch before retrying deferred current items', async () => {
+  const snapshots = [item(1), item(2)],
+    load = vi.fn(async () => body);
+  let committed = false;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(null, { status: 200 })),
+  );
+  const send = async (route: string, raw: string | FormData) => {
+    const data = JSON.parse(raw as string);
+    if (route.endsWith('/probe'))
+      return { available: [], missing: [{ hash, bytes: 100 }] };
+    if (route.endsWith('/prepare')) {
+      if (!committed)
+        return {
+          ...preparation([snapshots[0]!]),
+          results: [
+            preparation([snapshots[0]!]).results[0],
+            {
+              storyIdSafe: snapshots[1]!.storyIdSafe,
+              status: 409,
+              error: 'snapshot_current_pending',
+              retryable: true,
+            },
+          ],
+        };
+      expect(data.items).toEqual([snapshots[1]]);
+      const existing = accepted([snapshots[1]!]);
+      existing.results[0]!.status = 200;
+      return {
+        schema: 'juxtapose.snapshot-upload-preparation/v1',
+        artifacts: [],
+        ...existing,
+      };
+    }
+    expect(data.items).toEqual([{ storyIdSafe: snapshots[0]!.storyIdSafe, attemptId }]);
+    committed = true;
+    return accepted([snapshots[0]!]);
+  };
+  expect(await uploadVerifiedBatches(protocol(), snapshots, load, send)).toBe(0);
+  expect(load).toHaveBeenCalledTimes(1);
+});
+
+it('bounds current-owner dependency waits without renewing the deadline', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout'] });
+  const snapshots = [item(1)],
+    load = vi.fn(async () => body);
+  let prepares = 0;
+  const start = Date.now();
+  const send = async (route: string) => {
+    if (route.endsWith('/probe'))
+      return { available: [], missing: [{ hash, bytes: 100 }] };
+    prepares++;
+    return {
+      schema: 'juxtapose.snapshot-upload-preparation/v1',
+      artifacts: [],
+      results: [
+        {
+          storyIdSafe: snapshots[0]!.storyIdSafe,
+          status: 409,
+          error: 'snapshot_current_pending',
+          retryable: true,
+        },
+      ],
+    };
+  };
+  const pending = uploadVerifiedBatches(protocol(), snapshots, load, send).catch(
+    (error: unknown) => error,
+  );
+  await vi.advanceTimersByTimeAsync(1000);
+  vi.setSystemTime(Date.now() - 60000);
+  await vi.advanceTimersByTimeAsync(389750);
+  expect(await pending).toMatchObject({
+    message: expect.stringMatching(/dependency.*retained/i),
+  });
+  expect(Date.now() - start).toBe(330750);
+  expect(prepares).toBeGreaterThan(3);
+  expect(prepares).toBeLessThanOrEqual(391);
+  expect(load).not.toHaveBeenCalled();
+});
+
+it.each([401, 403, 429, 503])(
+  'does not treat HTTP %i as a pending-current dependency',
+  async (status) => {
+    const snapshots = [item(1)];
+    let prepares = 0;
+    const send = async (route: string) => {
+      if (route.endsWith('/probe'))
+        return { available: [], missing: [{ hash, bytes: 100 }] };
+      prepares++;
+      return {
+        schema: 'juxtapose.snapshot-upload-preparation/v1',
+        artifacts: [],
+        results: [
+          {
+            storyIdSafe: snapshots[0]!.storyIdSafe,
+            status,
+            error: 'snapshot_current_pending',
+            retryable: status !== 503,
+          },
+        ],
+      };
+    };
+    await expect(
+      uploadVerifiedBatches(protocol(), snapshots, async () => body, send),
+    ).rejects.toThrow(`HTTP ${status}`);
+    expect(prepares).toBe(1);
+  },
+);
+
+it.each(['prepare', 'finalize'] as const)(
+  'retains three ordinary %s failure attempts alongside the dependency wait budget',
+  async (phase) => {
+    vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout'] });
+    const snapshots = [item(1)],
+      load = vi.fn(async () => body);
+    let failures = 0;
+    const send = async (route: string) => {
+      if (route.endsWith('/probe'))
+        return { available: [{ hash, bytes: 100 }], missing: [] };
+      const failed = {
+        storyIdSafe: snapshots[0]!.storyIdSafe,
+        status: 503,
+        error: 'busy',
+        retryable: true,
+      };
+      if (route.endsWith('/prepare')) {
+        if (phase === 'prepare') {
+          failures++;
+          return {
+            schema: 'juxtapose.snapshot-upload-preparation/v1',
+            artifacts: [],
+            results: [failed],
+          };
+        }
+        return {
+          schema: 'juxtapose.snapshot-upload-preparation/v1',
+          artifacts: [],
+          results: [
+            {
+              storyIdSafe: snapshots[0]!.storyIdSafe,
+              status: 202,
+              directUpload: { attemptId, requiredHashes: [] },
+            },
+          ],
+        };
+      }
+      failures++;
+      return { results: [failed] };
+    };
+    const pending = uploadVerifiedBatches(protocol(), snapshots, load, send).catch(
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await pending).toMatchObject({
+      message: expect.stringMatching(/retries exhausted/i),
+    });
+    expect(failures).toBe(3);
+    expect(load).not.toHaveBeenCalled();
+  },
+);
+
+it('rejects pending-current evidence after admission instead of starting a new dependency wait', async () => {
+  const snapshots = [item(1)];
+  const send = async (route: string) => {
+    if (route.endsWith('/probe'))
+      return { available: [{ hash, bytes: 100 }], missing: [] };
+    if (route.endsWith('/prepare'))
+      return {
+        schema: 'juxtapose.snapshot-upload-preparation/v1',
+        artifacts: [],
+        results: [
+          {
+            storyIdSafe: snapshots[0]!.storyIdSafe,
+            status: 202,
+            directUpload: { attemptId, requiredHashes: [] },
+          },
+        ],
+      };
+    return {
+      results: [
+        {
+          storyIdSafe: snapshots[0]!.storyIdSafe,
+          status: 409,
+          error: 'snapshot_current_pending',
+          retryable: true,
+        },
+      ],
+    };
+  };
+  await expect(
+    uploadVerifiedBatches(protocol(), snapshots, async () => body, send),
+  ).rejects.toThrow('HTTP 409');
+});
+
+it('rejects pending-current evidence on reprepare after this item was already admitted', async () => {
+  const snapshots = [item(1)];
+  let prepares = 0;
+  const send = async (route: string) => {
+    if (route.endsWith('/probe'))
+      return { available: [{ hash, bytes: 100 }], missing: [] };
+    if (route.endsWith('/prepare')) {
+      prepares++;
+      return {
+        schema: 'juxtapose.snapshot-upload-preparation/v1',
+        artifacts: [],
+        results:
+          prepares === 1
+            ? [
+                {
+                  storyIdSafe: snapshots[0]!.storyIdSafe,
+                  status: 202,
+                  directUpload: { attemptId, requiredHashes: [] },
+                },
+              ]
+            : [
+                {
+                  storyIdSafe: snapshots[0]!.storyIdSafe,
+                  status: 409,
+                  error: 'snapshot_current_pending',
+                  retryable: true,
+                },
+              ],
+      };
+    }
+    return {
+      results: [
+        {
+          storyIdSafe: snapshots[0]!.storyIdSafe,
+          status: 503,
+          error: 'temporarily_unavailable',
+          retryable: true,
+        },
+      ],
+    };
+  };
+  await expect(
+    uploadVerifiedBatches(protocol(), snapshots, async () => body, send),
+  ).rejects.toThrow(/invalid/i);
+  expect(prepares).toBe(2);
+});
+
 it('coalesces identical in-flight capabilities across batches without retaining their payloads', async () => {
   const snapshots = [item(1), item(2)],
     config = protocol();

@@ -90,16 +90,19 @@ async function request(
       );
     }
     if (attempt < 2 && [502, 503, 504].includes(response.status)) {
-      await response.body?.cancel();
+      await response.body?.cancel().catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
       continue;
     }
-    if (response.status >= 300 && response.status < 400)
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => {});
       throw new UserError(
         'Hosted upload refused a redirect. Local artifacts are retained.',
         1,
       );
+    }
     if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
       const hint =
         response.status === 401 || response.status === 403
           ? 'Check the project token and its permissions.'

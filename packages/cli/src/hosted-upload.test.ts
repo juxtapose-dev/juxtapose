@@ -904,6 +904,23 @@ it.each(['malformed', 'oversized'] as const)(
   },
 );
 
+it.each([302, 401])(
+  'discards HTTP %i response bodies and redacts disposal failures',
+  async (status) => {
+    await fixture();
+    const cancel = vi.fn(() => {
+      throw new Error('secret-test-token X-Amz-Signature=do-not-print');
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new ReadableStream({ cancel }), { status }),
+    );
+    await expect(
+      uploadRun(dir, { origin: 'https://api.invalid', token: 'secret-test-token' }),
+    ).rejects.toThrow(status === 302 ? /redirect/i : /HTTP 401/);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  },
+);
+
 it('uses advertised verified hash reuse without re-sending cached WebP bytes', async () => {
   const report = await parallelFixture(3);
   const progress: string[] = [];

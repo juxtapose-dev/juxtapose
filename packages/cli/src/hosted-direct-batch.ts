@@ -11,6 +11,8 @@ export interface DirectBatchProtocol {
 }
 type Send = (route: string, body: string | FormData) => Promise<Record<string, unknown>>;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+// A fixed five-minute snapshot capability plus one full API finalization retry budget.
+const CURRENT_DEPENDENCY_WAIT_MS = 5 * 60_000 + 3 * 30_000 + 250 + 500;
 const invalid = () =>
   new UserError(
     'Hosted service returned invalid direct batch upload evidence. Local artifacts are retained.',
@@ -72,8 +74,11 @@ export async function uploadDirectBatches(
     deduped = 0;
   const waiters: (() => void)[] = [],
     accepted = new Set<string>(),
-    snapshotIds = new Set<string>();
+    snapshotIds = new Set<string>(),
+    admitted = new Set<string>();
   const inFlight = new Map<string, Promise<void>>();
+  const dependencyDeadlines = new Map<string, number>(),
+    retryCounts = new Map<string, number>();
   const total = batches.reduce((n, batch) => n + batch.length, 0);
   const fail = (error: unknown) => {
     if (!failed) failure = error;
@@ -103,8 +108,32 @@ export async function uploadDirectBatches(
     inFlight.set(key, pending);
     return pending;
   };
-  const consume = (values: Row[], forced: Set<string>): BatchSnapshot[] => {
+  const dependencyExpired = () =>
+    new UserError(
+      'Hosted snapshot dependency wait expired. Local artifacts are retained; retry with jux upload --run <directory>.',
+      1,
+    );
+  const checkDeadline = (item: BatchSnapshot) => {
+    const deadline = dependencyDeadlines.get(item.storyIdSafe);
+    if (deadline !== undefined && performance.now() >= deadline)
+      throw dependencyExpired();
+  };
+  const consume = (
+    values: Row[],
+    forced: Set<string>,
+    preparing = false,
+  ): BatchSnapshot[] => {
     const retry: BatchSnapshot[] = [];
+    const retryFailure = (item: BatchSnapshot) => {
+      const count = (retryCounts.get(item.storyIdSafe) ?? 0) + 1;
+      if (count >= 3)
+        throw new UserError(
+          'Hosted direct batch retries exhausted. Local artifacts are retained; retry with jux upload --run <directory>.',
+          1,
+        );
+      retryCounts.set(item.storyIdSafe, count);
+      retry.push(item);
+    };
     for (const { item, result } of values) {
       if (result.status === 200 || result.status === 201) {
         const snapshotId = result.snapshotId as string;
@@ -112,8 +141,25 @@ export async function uploadDirectBatches(
           throw invalid();
         accepted.add(item.storyIdSafe);
         snapshotIds.add(snapshotId);
+        dependencyDeadlines.delete(item.storyIdSafe);
         if (result.deduped) deduped++;
         onProgress?.(`jux: uploaded ${accepted.size}/${total} snapshots\n`);
+      } else if (
+        preparing &&
+        result.status === 409 &&
+        result.error === 'snapshot_current_pending' &&
+        result.retryable === true
+      ) {
+        if (admitted.has(item.storyIdSafe)) throw invalid();
+        // No admission has occurred. Wait for the current owner to establish
+        // verified cache state before the service freezes this item's billing.
+        if (!dependencyDeadlines.has(item.storyIdSafe))
+          dependencyDeadlines.set(
+            item.storyIdSafe,
+            performance.now() + CURRENT_DEPENDENCY_WAIT_MS,
+          );
+        checkDeadline(item);
+        retry.push(item);
       } else if (
         result.status === 409 &&
         result.error === 'missing_artifacts' &&
@@ -130,12 +176,12 @@ export async function uploadDirectBatches(
         )
           throw invalid();
         for (const hash of result.missingHashes as string[]) forced.add(hash);
-        retry.push(item);
+        retryFailure(item);
       } else if (
         result.retryable === true &&
         [500, 502, 503, 504].includes(result.status as number)
       )
-        retry.push(item);
+        retryFailure(item);
       else
         throw new UserError(
           `Hosted direct batch upload failed (HTTP ${String(result.status)}). Local artifacts are retained; retry with jux upload --run <directory>.`,
@@ -147,7 +193,8 @@ export async function uploadDirectBatches(
   const upload = async (initial: BatchSnapshot[]) => {
     let pending = initial;
     const forced = new Set<string>();
-    for (let attempt = 0; pending.length && attempt < 3 && !failed; attempt++) {
+    while (pending.length && !failed) {
+      for (const item of pending) checkDeadline(item);
       const allowed = new Map(
         pending.flatMap((item) => refs(item).map((ref) => [ref.hash, ref] as const)),
       );
@@ -186,6 +233,8 @@ export async function uploadDirectBatches(
           )
             throw invalid();
           for (const hash of session.requiredHashes as string[]) needed.add(hash);
+          admitted.add(item.storyIdSafe);
+          dependencyDeadlines.delete(item.storyIdSafe);
           sessions.push({ storyIdSafe: item.storyIdSafe, attemptId: session.attemptId });
           prepared.push(item);
         }
@@ -220,6 +269,7 @@ export async function uploadDirectBatches(
       const retry = consume(
         results.filter((row) => row.result.status !== 202),
         forced,
+        true,
       );
       const transfers = await Promise.allSettled(
         artifacts.map((artifact) =>
@@ -254,14 +304,17 @@ export async function uploadDirectBatches(
         retry.push(...consume(rows(final, prepared, false), forced));
       }
       pending = retry;
-      if (pending.length && attempt < 2 && !failed)
-        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+      if (pending.length && !failed) {
+        const earliestDependency = Math.min(
+          ...pending.map((item) => dependencyDeadlines.get(item.storyIdSafe) ?? Infinity),
+        );
+        const delay = Number.isFinite(earliestDependency)
+          ? Math.min(1000, Math.max(0, earliestDependency - performance.now()))
+          : 250 *
+            Math.max(1, ...pending.map((item) => retryCounts.get(item.storyIdSafe) ?? 0));
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
-    if (pending.length && !failed)
-      throw new UserError(
-        'Hosted direct batch retries exhausted. Local artifacts are retained; retry with jux upload --run <directory>.',
-        1,
-      );
   };
   const worker = async () => {
     while (!failed && next < batches.length) {

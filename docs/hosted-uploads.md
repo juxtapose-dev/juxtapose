@@ -40,6 +40,11 @@ snapshot before the run is finalized. An interrupted response retries the same
 control request; a missing cached artifact is uploaded before acceptance is
 retried. Older services continue to receive API uploads. An invalid direct
 advertisement or a failed direct upload exits nonzero and retains local artifacts.
+When another upload owns an uncached current image, the CLI waits for its verified
+result before retrying that snapshot's admission. This preserves existing usage
+accounting for shared images. The wait is bounded to five minutes plus the API's
+finalization retry budget (about 6.5 minutes); exhaustion retains local artifacts
+for a later retry.
 
 Direct upload URLs stay in memory and are omitted from command output and saved
 receipts. External PUTs omit the project token and cookies and reject redirects.
