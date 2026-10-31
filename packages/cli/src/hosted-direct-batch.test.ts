@@ -800,3 +800,13 @@ it.each([
   expect(load).not.toHaveBeenCalled();
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it('accepts the optional exact abandonment path without accepting another service or run', () => {
+  const config = protocol();
+  config.direct!.abandonPath = `/v1/runs/${run}/snapshots/direct/abandon`;
+  expect(readUploadProtocol(config, run)?.direct?.abandonPath).toBe(
+    config.direct!.abandonPath,
+  );
+  config.direct!.abandonPath = 'https://evil.invalid/abandon';
+  expect(() => readUploadProtocol(config, run)).toThrow(/invalid/i);
+});

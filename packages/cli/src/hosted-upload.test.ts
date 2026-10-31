@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -1456,4 +1457,264 @@ it('reports initial unique missing bytes separately from actual upload traffic',
       ),
     ),
   ).toBe(true);
+});
+
+it('discovers and explicitly abandons a signer-disabled attempt without images, PUTs, or finalization', async () => {
+  const report = await fixture();
+  await rm(path.join(dir, 'images'), { recursive: true });
+  const storyIdSafe = createHash('sha256').update(id).digest('hex').slice(0, 24),
+    attemptId = '00000000-0000-4000-8000-000000000002';
+  const calls: string[] = [],
+    bodies: string[] = [];
+  const config = await serve((route, bytes) => {
+    calls.push(route);
+    const input = JSON.parse(bytes.toString());
+    if (route === '/v1/runs') {
+      expect(input.recoverOnly).toBe(true);
+      bodies.push(bytes.toString());
+      const created = createBatchRun();
+      return {
+        body: { ...created.body, uploadProtocol: { malformed: 'disabled-issuance' } },
+      };
+    }
+    if (route.endsWith('/direct/prepare')) {
+      expect(input).toEqual({ recoverOnly: true, items: [{ storyIdSafe }] });
+      return {
+        body: {
+          schema: 'juxtapose.snapshot-upload-preparation/v1',
+          artifacts: [],
+          results: [
+            {
+              storyIdSafe,
+              status: 409,
+              error: 'snapshot_upload_pending',
+              retryable: false,
+              recovery: {
+                abandonPath: `/v1/runs/${runId}/snapshots/direct/abandon`,
+                storyIdSafe,
+                attemptId,
+              },
+            },
+          ],
+        },
+      };
+    }
+    expect(route).toBe(`/v1/runs/${runId}/snapshots/direct/abandon`);
+    expect(input).toEqual({ items: [{ storyIdSafe, attemptId }] });
+    return {
+      body: {
+        results: [
+          {
+            storyIdSafe,
+            status: 200,
+            abandoned: true,
+            cleanupPending: true,
+            descriptor: 'X-Amz-Signature=do-not-print',
+          },
+        ],
+      },
+    };
+  });
+  vi.stubEnv('JUXTAPOSE_TOKEN', config.token);
+  vi.stubEnv('JUXTAPOSE_API_URL', config.origin);
+  const out = vi.fn(),
+    err = vi.fn();
+  expect(
+    await uploadCommand({ run: dir, 'recover-direct': true, json: true }, { out, err }),
+  ).toBe(0);
+  expect(JSON.parse(out.mock.calls[0]![0] as string)).toEqual({
+    runId,
+    attempts: [{ storyIdSafe, attemptId }],
+  });
+  out.mockClear();
+  for (let n = 0; n < 2; n++)
+    expect(
+      await uploadCommand(
+        { run: dir, 'abandon-direct': `${storyIdSafe}:${attemptId}`, json: true },
+        { out, err },
+      ),
+    ).toBe(0);
+  expect(JSON.parse(out.mock.calls[0]![0] as string)).toEqual({
+    runId,
+    storyIdSafe,
+    abandoned: true,
+    cleanupPending: true,
+  });
+  expect(err.mock.calls.flat().join('')).toContain(
+    'Capture a new run with jux run --upload',
+  );
+  expect(JSON.stringify({ out: out.mock.calls, err: err.mock.calls })).not.toContain(
+    'X-Amz-',
+  );
+  expect(new Set(bodies).size).toBe(1);
+  expect(calls).toEqual([
+    '/v1/runs',
+    `/v1/runs/${runId}/snapshots/direct/prepare`,
+    '/v1/runs',
+    `/v1/runs/${runId}/snapshots/direct/abandon`,
+    '/v1/runs',
+    `/v1/runs/${runId}/snapshots/direct/abandon`,
+  ]);
+  expect(JSON.parse(await readFile(path.join(dir, 'report.json'), 'utf8'))).toEqual(
+    report,
+  );
+});
+
+it.each(['recover', 'abandon'] as const)(
+  'does not create a new remote run when %s cannot resolve an existing identity',
+  async (mode) => {
+    await fixture();
+    await rm(path.join(dir, 'images'), { recursive: true });
+    let calls = 0;
+    const config = await serve((route, bytes) => {
+      calls++;
+      expect(route).toBe('/v1/runs');
+      expect(JSON.parse(bytes.toString()).recoverOnly).toBe(true);
+      return { status: 404, body: { error: 'run_not_found' } };
+    });
+    const target = {
+      storyIdSafe: createHash('sha256').update(id).digest('hex').slice(0, 24),
+      attemptId: '00000000-0000-4000-8000-000000000002',
+    };
+    await expect(
+      mode === 'recover'
+        ? uploadRun(dir, config, undefined, { recoverOnly: true })
+        : uploadRun(dir, config, undefined, target),
+    ).rejects.toThrow('HTTP 404');
+    expect(calls).toBe(1);
+  },
+);
+
+it.each([
+  'https://evil.invalid/abandon',
+  `/v1/runs/${'0'.repeat(36)}/snapshots/direct/abandon`,
+])('rejects unsafe recovery instruction %s without cancellation', async (abandonPath) => {
+  await fixture();
+  const storyIdSafe = createHash('sha256').update(id).digest('hex').slice(0, 24);
+  let calls = 0;
+  const config = await serve((route) => {
+    calls++;
+    if (route === '/v1/runs') return createBatchRun();
+    expect(route).toBe(`/v1/runs/${runId}/snapshots/direct/prepare`);
+    return {
+      body: {
+        schema: 'juxtapose.snapshot-upload-preparation/v1',
+        artifacts: [],
+        results: [
+          {
+            storyIdSafe,
+            status: 409,
+            error: 'snapshot_upload_pending',
+            retryable: false,
+            recovery: {
+              abandonPath,
+              storyIdSafe,
+              attemptId: '00000000-0000-4000-8000-000000000002',
+            },
+          },
+        ],
+      },
+    };
+  });
+  await expect(uploadRun(dir, config, undefined, { recoverOnly: true })).rejects.toThrow(
+    /invalid direct recovery/i,
+  );
+  expect(calls).toBe(2);
+});
+
+it('rejects mutually exclusive recovery flags, invalid attempts, and foreign stories before any service request', async () => {
+  await fixture();
+  vi.stubEnv('JUXTAPOSE_TOKEN', 'test-token');
+  const fetch = vi.spyOn(globalThis, 'fetch');
+  await expect(
+    uploadCommand({ run: dir, 'recover-direct': true, 'abandon-direct': 'bad' }),
+  ).rejects.toThrow(/mutually exclusive/);
+  await expect(uploadCommand({ run: dir, 'abandon-direct': 'bad' })).rejects.toThrow(
+    /needs.*storyIdSafe/,
+  );
+  await expect(
+    uploadCommand({
+      run: dir,
+      'abandon-direct': `${'f'.repeat(24)}:00000000-0000-4000-8000-000000000002`,
+    }),
+  ).rejects.toThrow(/does not belong/);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('parses the recovery flag through the compiled CLI and sends only read-only control requests', async () => {
+  await fixture();
+  await rm(path.join(dir, 'images'), { recursive: true });
+  const storyIdSafe = createHash('sha256').update(id).digest('hex').slice(0, 24),
+    attemptId = '00000000-0000-4000-8000-000000000002';
+  const calls: string[] = [];
+  const config = await serve((route, bytes) => {
+    calls.push(route);
+    const body = JSON.parse(bytes.toString());
+    expect(body.recoverOnly).toBe(true);
+    if (route === '/v1/runs') {
+      expect(Object.keys(body).sort()).toEqual(['recoverOnly', 'runExternalId']);
+      return { body: { runId, snapshotPutUrlTemplate: '/unused/{storyIdSafe}' } };
+    }
+    expect(route).toBe(`/v1/runs/${runId}/snapshots/direct/prepare`);
+    expect(body.items).toEqual([{ storyIdSafe }]);
+    return {
+      body: {
+        schema: 'juxtapose.snapshot-upload-preparation/v1',
+        artifacts: [],
+        results: [
+          {
+            storyIdSafe,
+            status: 409,
+            error: 'snapshot_upload_pending',
+            retryable: false,
+            recovery: {
+              abandonPath: `/v1/runs/${runId}/snapshots/direct/abandon`,
+              storyIdSafe,
+              attemptId,
+            },
+          },
+        ],
+      },
+    };
+  });
+  const result = await new Promise<{ code: number | null; out: string; err: string }>(
+    (resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [
+          path.resolve('packages/cli/dist/index.js'),
+          'upload',
+          '--run',
+          dir,
+          '--recover-direct',
+          '--json',
+        ],
+        {
+          env: {
+            ...process.env,
+            JUXTAPOSE_TOKEN: config.token,
+            JUXTAPOSE_API_URL: config.origin,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+      let out = '',
+        err = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        out += chunk.toString();
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        err += chunk.toString();
+      });
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, out, err }));
+    },
+  );
+  expect(result.code, result.err).toBe(0);
+  expect(JSON.parse(result.out)).toEqual({
+    runId,
+    attempts: [{ storyIdSafe, attemptId }],
+  });
+  expect(result.err).toContain('resolving existing hosted run');
+  expect(calls).toEqual(['/v1/runs', `/v1/runs/${runId}/snapshots/direct/prepare`]);
 });

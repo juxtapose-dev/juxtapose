@@ -72,10 +72,12 @@ export function readUploadProtocol(raw: unknown, runId: string): UploadProtocol 
     const value = raw.direct;
     if (
       !object(value) ||
-      Object.keys(value).length !== 4 ||
+      Object.keys(value).length !== (Object.hasOwn(value, 'abandonPath') ? 5 : 4) ||
       value.schema !== 'juxtapose.snapshot-upload/v1' ||
       value.preparePath !== `/v1/runs/${runId}/snapshots/direct/prepare` ||
       value.finalizePath !== `/v1/runs/${runId}/snapshots/direct/finalize` ||
+      (Object.hasOwn(value, 'abandonPath') &&
+        value.abandonPath !== `/v1/runs/${runId}/snapshots/direct/abandon`) ||
       typeof value.maxConcurrentPuts !== 'number' ||
       !Number.isInteger(value.maxConcurrentPuts) ||
       value.maxConcurrentPuts < 1 ||
@@ -87,6 +89,9 @@ export function readUploadProtocol(raw: unknown, runId: string): UploadProtocol 
       preparePath: value.preparePath,
       finalizePath: value.finalizePath,
       maxConcurrentPuts: value.maxConcurrentPuts,
+      ...(typeof value.abandonPath === 'string'
+        ? { abandonPath: value.abandonPath }
+        : {}),
     };
   }
   return {

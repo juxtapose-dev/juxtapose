@@ -24,6 +24,8 @@ Usage
   jux list [selector…]           list story IDs, titles and variants without capturing
   jux submit --build-dir <dir> --experimental  submit a compiled Storybook build (preview)
   jux upload --run <directory>   upload an existing run to hosted review
+                    --abandon-direct <storyIdSafe>:<attemptId>  explicitly cancel one direct snapshot attempt
+                    --recover-direct              inspect existing direct attempts without uploading
   jux approve [options]          promote current captures to baselines
   jux check [options]            exit non-zero if anything needs review
   jux doctor [--fix] [--json]    warn if snapshot images are committed, and print the fix;
@@ -206,6 +208,8 @@ async function main(argv: string[]): Promise<number> {
       story: { type: 'string', multiple: true },
       'dry-run': { type: 'boolean' },
       run: { type: 'string' },
+      'abandon-direct': { type: 'string' },
+      'recover-direct': { type: 'boolean', default: false },
       region: { type: 'string' },
       padding: { type: 'string' },
       as: { type: 'string' },

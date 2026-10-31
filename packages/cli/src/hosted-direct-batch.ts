@@ -7,6 +7,7 @@ export interface DirectBatchProtocol {
   schema: 'juxtapose.snapshot-upload/v1';
   preparePath: string;
   finalizePath: string;
+  abandonPath?: string;
   maxConcurrentPuts: number;
 }
 type Send = (route: string, body: string | FormData) => Promise<Record<string, unknown>>;
