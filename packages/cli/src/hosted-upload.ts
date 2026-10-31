@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { access, open, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { encodeStoryId, type RunReport } from '@juxtapose/core';
 import { attachHostedDom } from './hosted-dom.js';
@@ -205,7 +205,7 @@ export async function uploadRun(
     // contains files from a previous attempt.
     if (result.status !== 'skip') {
       try {
-        await readFile(baselinePath);
+        await access(baselinePath);
         baselineHash = hash(await image(baselinePath));
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
@@ -216,7 +216,7 @@ export async function uploadRun(
           'A run image no longer matches its report hash. Recapture before uploading.',
         );
       try {
-        await readFile(diffPath);
+        await access(diffPath);
         hasDiff = true;
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
@@ -456,21 +456,39 @@ export async function uploadRun(
 
 async function image(file: string): Promise<Buffer> {
   let bytes: Buffer;
+  let handle;
+  const invalid = () =>
+    new UserError(
+      'Hosted uploads require WebP images no larger than 1 MiB. Local artifacts are retained.',
+    );
   try {
-    bytes = await readFile(file);
-  } catch {
+    handle = await open(file, 'r');
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > MAX_IMAGE) throw invalid();
+    // A file may grow after fstat. Never read or allocate beyond the bound to detect it.
+    const buffer = Buffer.alloc(MAX_IMAGE + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const result = await handle.read(buffer, length, buffer.length - length, null);
+      if (!result.bytesRead) break;
+      length += result.bytesRead;
+    }
+    if (length > MAX_IMAGE) throw invalid();
+    bytes = buffer.subarray(0, length);
+  } catch (error) {
+    if (error instanceof UserError) throw error;
     throw new UserError(
       'A run image is missing or unreadable. Recapture before uploading.',
     );
+  } finally {
+    await handle?.close().catch(() => {});
   }
   if (
     bytes.length > MAX_IMAGE ||
     bytes.toString('ascii', 0, 4) !== 'RIFF' ||
     bytes.toString('ascii', 8, 12) !== 'WEBP'
   )
-    throw new UserError(
-      'Hosted uploads require WebP images no larger than 1 MiB. Local artifacts are retained.',
-    );
+    throw invalid();
   return bytes;
 }
 

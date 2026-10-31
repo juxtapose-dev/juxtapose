@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
+import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,9 +11,19 @@ import { encodeStructure, encodeStoryId } from '@juxtapose/core';
 import { hashElements } from '../../core/src/capture/structure.js';
 import { uploadConfig, uploadRun } from './hosted-upload.js';
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile), open: vi.fn(actual.open) };
+});
+const actualFs =
+  await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+
 let server: Server | undefined;
 let dir: string;
 afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.mocked(fs.open).mockReset().mockImplementation(actualFs.open);
+  vi.mocked(fs.readFile).mockReset().mockImplementation(actualFs.readFile);
   vi.unstubAllEnvs();
   await new Promise<void>((resolve) =>
     server ? server.close(() => resolve()) : resolve(),
@@ -78,6 +89,115 @@ async function serve(
   return { origin: `http://127.0.0.1:${address.port}`, token: 'secret-test-token' };
 }
 describe('hosted uploads', () => {
+  it.each(['current', 'baseline', 'diff'])(
+    'rejects an oversized %s image without using an unbounded image read',
+    async (role) => {
+      await fixture();
+      const file = path.join(dir, 'images', `${encodeStoryId(id)}-${role}.webp`);
+      const bytes = Buffer.alloc(1024 * 1024 + 65536);
+      bytes.write('RIFF');
+      bytes.write('WEBP', 8);
+      await writeFile(file, bytes);
+      vi.mocked(fs.readFile).mockClear();
+      await expect(
+        uploadRun(dir, { origin: 'https://unused.invalid', token: 'test' }),
+      ).rejects.toThrow(/no larger than 1 MiB/);
+      expect(
+        vi
+          .mocked(fs.readFile)
+          .mock.calls.filter(([path]) => String(path).endsWith('.webp')),
+      ).toEqual([]);
+    },
+  );
+
+  it('bounds partial reads if an image grows after fstat, and closes the opened descriptor', async () => {
+    await fixture();
+    const file = path.join(dir, 'images', `${encodeStoryId(id)}-current.webp`);
+    let opened = false,
+      closed = false,
+      readBytes = 0,
+      readCalls = 0;
+    vi.mocked(fs.open).mockImplementation(async (...args) => {
+      const handle = await actualFs.open(...args);
+      if (String(args[0]) !== file) return handle;
+      opened = true;
+      const stat = handle.stat.bind(handle),
+        read = handle.read.bind(handle),
+        close = handle.close.bind(handle);
+      vi.spyOn(handle, 'stat').mockImplementation(async () => {
+        const before = await stat();
+        await actualFs.appendFile(file, Buffer.alloc(1024 * 1024 + 65536));
+        return before;
+      });
+      vi.spyOn(handle, 'read').mockImplementation(
+        async (
+          buffer: Buffer,
+          offset: number,
+          length: number,
+          position: number | null,
+        ) => {
+          expect(length).toBeLessThanOrEqual(1024 * 1024 + 1 - readBytes);
+          const result = await read(buffer, offset, Math.min(length, 8192), position);
+          readBytes += result.bytesRead;
+          readCalls++;
+          return result;
+        },
+      );
+      vi.spyOn(handle, 'close').mockImplementation(async () => {
+        closed = true;
+        await close();
+      });
+      return handle;
+    });
+    const config = await serve((url) =>
+      url === '/v1/runs'
+        ? { body: { runId, snapshotPutUrlTemplate: '/snapshots/{storyIdSafe}' } }
+        : {
+            body: url.startsWith('/snapshots/')
+              ? { deduped: false }
+              : { reportUrl: null },
+          },
+    );
+    await expect(uploadRun(dir, config)).rejects.toThrow(/no larger than 1 MiB/);
+    expect(opened).toBe(true);
+    expect(closed).toBe(true);
+    expect(readBytes).toBe(1024 * 1024 + 1);
+    expect(readCalls).toBeGreaterThan(1);
+  });
+
+  it('rejects an oversized replacement after validation/probe without loading or sending it', async () => {
+    const report = await fixture();
+    const file = path.join(dir, 'images', `${encodeStoryId(id)}-current.webp`);
+    let sent = false,
+      finalized = false;
+    const config = await serve(async (url, bytes) => {
+      if (url === '/v1/runs') return createBatchRun();
+      if (url === protocol.probePath) {
+        const replacement = `${file}.replacement`;
+        await actualFs.writeFile(replacement, Buffer.alloc(1024 * 1024 + 65536));
+        await actualFs.rename(replacement, file);
+        return {
+          body: { available: [], missing: JSON.parse(bytes.toString()).artifacts },
+        };
+      }
+      if (url === protocol.batchPath) sent = true;
+      else finalized = true;
+      return { body: {} };
+    });
+    vi.mocked(fs.readFile).mockClear();
+    await expect(uploadRun(dir, config)).rejects.toThrow(/no larger than 1 MiB/);
+    expect(
+      vi
+        .mocked(fs.readFile)
+        .mock.calls.filter(([path]) => String(path).endsWith('.webp')),
+    ).toEqual([]);
+    expect(sent).toBe(false);
+    expect(finalized).toBe(false);
+    expect(JSON.parse(await readFile(path.join(dir, 'report.json'), 'utf8'))).toEqual(
+      report,
+    );
+  });
+
   it.each(['legacy', 'batch'])(
     'transports image-bound DOM trees in the actual %s finalization wire payload',
     async (mode) => {
