@@ -924,6 +924,13 @@ more specific one wins a conflict:
 mask only hides more. `settle`, `network` and `freeze` merge field by field, and the
 `settle.network` lists combine.
 
+Every selected capture skipped by its own `skip: true` parameter appears exactly
+once in the run report as `status: "skip"`, contributes to `summary.skip`, and
+has no captured hash or image. Live-only skips follow the same reporting rule.
+A skip known during variant expansion still suppresses that story's variants;
+variants disabled with `false` are not selected captures. Skips do not make a local run fail. This reporting
+correction does not change hosted capture completeness requirements.
+
 **Skipped by config.** A story the config skips is not dropped silently. It is
 a `skip` result in the run report with `skippedBy` naming the keys, `jux run`
 prints how many were skipped by `stories`, the PR comment says so, and `jux

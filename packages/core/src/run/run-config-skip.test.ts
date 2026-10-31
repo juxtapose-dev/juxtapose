@@ -5,8 +5,8 @@ import { buildHandoffPrompt } from '../agent/handoff.js';
 import { expandVariants } from '../capture/variants.js';
 import { runCapture } from './run.js';
 
-// The real pool drops `skip` captures silently; mirror that, so the test
-// proves runCapture is what reports the config skip.
+// The pool does not yield pre-known skips; orchestration accounts for them
+// and retains config attribution for the handoff.
 vi.mock('../capture/pool.js', () => ({
   capturePool: (stories: StoryManifest[]) =>
     (async function* () {
@@ -36,7 +36,7 @@ const store: BaselineStore = {
   readManifest: async () => ({ version: 1, baselines: {} }),
 } as unknown as BaselineStore;
 
-test('a story skipped by config is a skip result naming the glob; one skipped by its own params stays silent', async () => {
+test('config and story skips are reported, with glob attribution only for config skips', async () => {
   const mk = (storyId: string, params = {}) => ({
     storyId,
     title: 'T',
@@ -61,8 +61,11 @@ test('a story skipped by config is a skip result naming the glob; one skipped by
     commitSha: 'c',
   });
   const skip = report.results.filter((r) => r.status === 'skip');
-  expect(skip.map((r) => [r.storyId, r.skippedBy])).toEqual([['a--clock', ['a--cl*']]]);
-  expect(report.summary.skip).toBe(1);
+  expect(skip.map((r) => [r.storyId, r.skippedBy])).toEqual([
+    ['a--clock', ['a--cl*']],
+    ['a--own', undefined],
+  ]);
+  expect(report.summary.skip).toBe(2);
 
   const prompt = buildHandoffPrompt({
     storyId: 'a--clock',

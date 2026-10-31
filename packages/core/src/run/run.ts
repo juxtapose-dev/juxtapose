@@ -161,16 +161,16 @@ export async function runCapture(opts: RunOptions): Promise<RunReport> {
   // report several times the wall-clock actually spent.
   const captureStarted = Date.now();
 
-  // The pool drops any `skip` capture without a word. One the project config
-  // asked for is reported, with the globs, so a skipped story is never a
-  // mystery in the run or the handoff.
+  // The pool does not capture pre-known skips. Account for every selected key
+  // here, including a story's own skip, so the report never silently omits it.
+  // Config skips keep their attribution for the handoff.
   for (const story of opts.stories) {
-    if (story.params.skip !== true || !story.skippedBy) continue;
+    if (story.params.skip !== true) continue;
     results.push({
       storyId: story.storyId,
       ...variantOf(story),
       status: 'skip',
-      skippedBy: story.skippedBy,
+      ...(story.skippedBy ? { skippedBy: story.skippedBy } : {}),
       mismatchPixels: 0,
       mismatchPercent: 0,
       changedRegions: [],
