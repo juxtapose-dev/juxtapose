@@ -90,6 +90,39 @@ const accepted = (items: { storyIdSafe: string }[]) => ({
   })),
 });
 afterEach(() => vi.unstubAllGlobals());
+it('coalesces identical in-flight capabilities across batches without retaining their payloads', async () => {
+  const snapshots = [item(1), item(2)],
+    config = protocol();
+  config.maxItems = 1;
+  let release!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const fetch = vi.fn(async () => {
+    await hold;
+    return new Response(null, { status: 200 });
+  });
+  vi.stubGlobal('fetch', fetch);
+  const shared = descriptor('same-private-generation');
+  const load = vi.fn(async () => body);
+  const send = async (route: string, raw: string | FormData) => {
+    const data = JSON.parse(raw as string);
+    if (route.endsWith('/probe'))
+      return { available: [], missing: [{ hash, bytes: 100 }] };
+    if (route.endsWith('/prepare'))
+      return {
+        ...preparation(data.items),
+        artifacts: [{ hash, bytes: 100, descriptor: shared }],
+      };
+    return accepted(data.items);
+  };
+  const pending = uploadVerifiedBatches(config, snapshots, load, send);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  release();
+  expect(await pending).toBe(0);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(load).toHaveBeenCalledTimes(1);
+});
 it('bounds declared hashes even when every artifact is initially cached', async () => {
   const snapshots = Array.from({ length: 10 }, (_, i) => {
     const snapshot = item(i + 1);
@@ -129,6 +162,45 @@ it('bounds declared hashes even when every artifact is initially cached', async 
   expect(await uploadVerifiedBatches(protocol(), snapshots, load, send)).toBe(0);
   expect(prepares).toBe(2);
   expect(load).not.toHaveBeenCalled();
+});
+it('repeats a settled capability after a missing-artifact finalize instead of caching PUT success', async () => {
+  const snapshots = [item(1)],
+    shared = descriptor('retry-same-private-generation'),
+    load = vi.fn(async () => body),
+    fetch = vi.fn(async () => new Response(null, { status: 200 }));
+  vi.stubGlobal('fetch', fetch);
+  let prepares = 0,
+    finals = 0;
+  const send = async (route: string, raw: string | FormData) => {
+    const data = JSON.parse(raw as string);
+    if (route.endsWith('/probe'))
+      return { available: [], missing: [{ hash, bytes: 100 }] };
+    if (route.endsWith('/prepare')) {
+      expect(data.forceHashes).toEqual(++prepares === 1 ? undefined : [hash]);
+      return {
+        ...preparation(snapshots),
+        artifacts: [{ hash, bytes: 100, descriptor: shared }],
+      };
+    }
+    expect(data.items).toEqual([{ storyIdSafe: snapshots[0]!.storyIdSafe, attemptId }]);
+    if (++finals === 1)
+      return {
+        results: [
+          {
+            storyIdSafe: snapshots[0]!.storyIdSafe,
+            status: 409,
+            error: 'missing_artifacts',
+            retryable: true,
+            missingHashes: [hash],
+          },
+        ],
+      };
+    return accepted(snapshots);
+  };
+  expect(await uploadVerifiedBatches(protocol(), snapshots, load, send)).toBe(0);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(finals).toBe(2);
 });
 it('shares one external PUT across stories and roles before authenticated batch acceptance', async () => {
   const snapshots = [item(1), item(2)],
@@ -312,7 +384,7 @@ it('rejects malformed direct advertisement instead of selecting old batch transp
   config.direct!.preparePath = 'https://evil.invalid/';
   expect(() => readUploadProtocol(config, run)).toThrow(/invalid/i);
 });
-it('drains an in-flight PUT before rejecting a sibling invalid descriptor', async () => {
+it('drains an in-flight PUT before rejecting a changed sibling file', async () => {
   const secondBody = Buffer.alloc(100, 2),
     secondHash = createHash('sha256').update(secondBody).digest('hex');
   const second = item(2);
@@ -351,7 +423,7 @@ it('drains an in-flight PUT before rejecting a sibling invalid descriptor', asyn
           })),
           artifacts: [
             { hash, bytes: 100, descriptor: descriptor('ok') },
-            { hash: secondHash, bytes: 100, descriptor: { invalid: true } },
+            { hash: secondHash, bytes: 100, descriptor: descriptor('second') },
           ],
         },
   );
@@ -359,7 +431,7 @@ it('drains an in-flight PUT before rejecting a sibling invalid descriptor', asyn
   const pending = uploadVerifiedBatches(
     protocol(),
     snapshots,
-    async (ref) => (ref.hash === hash ? body : secondBody),
+    async () => body,
     send,
   ).then(
     () => {

@@ -49,7 +49,7 @@ function keys(value: Record<string, unknown>, expected: string[]): boolean {
 
 function capability(
   value: unknown,
-  bytes: Uint8Array,
+  byteLength: number,
   contentType: ContentType,
 ): Capability {
   try {
@@ -69,10 +69,10 @@ function capability(
       typeof value.url !== 'string' ||
       Buffer.byteLength(value.url) > MAX_URL_BYTES ||
       !/^https:\/\/[a-f0-9]{32}\.r2\.cloudflarestorage\.com\//.test(value.url) ||
-      !(bytes instanceof Uint8Array) ||
-      bytes.byteLength < 1 ||
-      bytes.byteLength > MAX_BYTES ||
-      value.bytes !== bytes.byteLength ||
+      !Number.isSafeInteger(byteLength) ||
+      byteLength < 1 ||
+      byteLength > MAX_BYTES ||
+      value.bytes !== byteLength ||
       !Number.isSafeInteger(value.issuedAtMs) ||
       !Number.isSafeInteger(value.expiresAtMs) ||
       typeof value.issuedAtMs !== 'number' ||
@@ -84,7 +84,7 @@ function capability(
       !keys(value.headers, ['content-type', 'content-length', 'if-none-match']) ||
       !['application/gzip', 'image/webp'].includes(contentType) ||
       value.headers['content-type'] !== contentType ||
-      value.headers['content-length'] !== String(bytes.byteLength) ||
+      value.headers['content-length'] !== String(byteLength) ||
       value.headers['if-none-match'] !== '*'
     )
       throw new Error();
@@ -121,7 +121,7 @@ function capability(
       expiresAtMs: value.expiresAtMs,
       headers: {
         'content-type': contentType,
-        'content-length': String(bytes.byteLength),
+        'content-length': String(byteLength),
         'if-none-match': '*',
       },
     };
@@ -129,6 +129,16 @@ function capability(
     // Descriptors and provider errors contain credentials; never attach their cause.
     throw new DirectPutError('invalid');
   }
+}
+
+/** Transient credential-bearing identity; use only for in-flight coalescing, never logs or receipts. */
+export function directPutTransferKey(
+  descriptor: unknown,
+  byteLength: number,
+  contentType: ContentType,
+): string {
+  const value = capability(descriptor, byteLength, contentType);
+  return JSON.stringify([value.url, value.headers, value.expiresAtMs]);
 }
 
 function discard(response: Response): void {
@@ -180,7 +190,8 @@ export async function putDirect(
   bytes: Uint8Array,
   contentType: ContentType,
 ): Promise<{ requiresFinalization: true; putStatus: number }> {
-  const value = capability(descriptor, bytes, contentType);
+  if (!(bytes instanceof Uint8Array)) throw new DirectPutError('invalid');
+  const value = capability(descriptor, bytes.byteLength, contentType);
   const body = new Uint8Array(bytes);
   for (let attempt = 0; attempt < 3; attempt++) {
     const remaining = value.expiresAtMs - Date.now();

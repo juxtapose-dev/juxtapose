@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { ArtifactRef, BatchSnapshot } from './hosted-batch-upload.js';
-import { DirectPutError, putDirect } from './direct-put.js';
+import { DirectPutError, directPutTransferKey, putDirect } from './direct-put.js';
 import { UserError } from './user-error.js';
 
 export interface DirectBatchProtocol {
@@ -73,6 +73,7 @@ export async function uploadDirectBatches(
   const waiters: (() => void)[] = [],
     accepted = new Set<string>(),
     snapshotIds = new Set<string>();
+  const inFlight = new Map<string, Promise<void>>();
   const total = batches.reduce((n, batch) => n + batch.length, 0);
   const fail = (error: unknown) => {
     if (!failed) failure = error;
@@ -92,6 +93,15 @@ export async function uploadDirectBatches(
       if (waiter) waiter();
       else active--;
     }
+  };
+  const sharedTransfer = (key: string, work: () => Promise<void>) => {
+    const existing = inFlight.get(key);
+    if (existing) return existing;
+    const pending = slot(work).finally(() => {
+      inFlight.delete(key);
+    });
+    inFlight.set(key, pending);
+    return pending;
   };
   const consume = (values: Row[], forced: Set<string>): BatchSnapshot[] => {
     const retry: BatchSnapshot[] = [];
@@ -179,7 +189,8 @@ export async function uploadDirectBatches(
           sessions.push({ storyIdSafe: item.storyIdSafe, attemptId: session.attemptId });
           prepared.push(item);
         }
-      const artifacts: { ref: ArtifactRef; descriptor: unknown }[] = [],
+      const artifacts: { ref: ArtifactRef; descriptor: unknown; transferKey: string }[] =
+          [],
         seen = new Set<string>();
       for (const artifact of preparation.artifacts) {
         if (
@@ -196,6 +207,13 @@ export async function uploadDirectBatches(
         artifacts.push({
           ref: allowed.get(artifact.hash)!,
           descriptor: artifact.descriptor,
+          transferKey:
+            artifact.hash +
+            directPutTransferKey(
+              artifact.descriptor,
+              allowed.get(artifact.hash)!.bytes,
+              'image/webp',
+            ),
         });
       }
       if (seen.size !== needed.size) throw invalid();
@@ -205,7 +223,7 @@ export async function uploadDirectBatches(
       );
       const transfers = await Promise.allSettled(
         artifacts.map((artifact) =>
-          slot(async () => {
+          sharedTransfer(artifact.transferKey, async () => {
             const bytes = await load(artifact.ref);
             if (failed) return;
             if (
