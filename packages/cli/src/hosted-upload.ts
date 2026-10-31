@@ -21,6 +21,8 @@ export interface UploadResult {
   reportUrl: string | null;
 }
 const MAX_IMAGE = 1024 * 1024;
+// A direct preparation can contain 32 signed URLs of up to 4 KiB each, plus descriptors and rows.
+const MAX_CONTROL_RESPONSE = 256 * 1024;
 const UPLOAD_WORKERS = 4;
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
@@ -104,8 +106,39 @@ async function request(
           : 'Local artifacts are retained; retry with jux upload --run <directory>.';
       throw new UserError(`Hosted upload failed (HTTP ${response.status}). ${hint}`, 1);
     }
+    const reader = response.body?.getReader();
+    if (!reader) throw new UserError('Hosted service returned an invalid response.', 1);
+    const chunks: Uint8Array[] = [];
+    let size = 0;
     try {
-      return (await response.json()) as Record<string, unknown>;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > MAX_CONTROL_RESPONSE)
+          throw new UserError('Hosted service returned an invalid response.', 1);
+        chunks.push(value);
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      if (error instanceof UserError) throw error;
+      // The API may have committed before its response stream was lost.
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+        continue;
+      }
+      throw new UserError(
+        'Hosted upload lost its response. Local artifacts are retained; retry with jux upload --run <directory>.',
+        1,
+      );
+    } finally {
+      reader.releaseLock();
+    }
+    try {
+      const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        throw new Error();
+      return parsed as Record<string, unknown>;
     } catch {
       throw new UserError('Hosted service returned an invalid response.', 1);
     }

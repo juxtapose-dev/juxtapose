@@ -62,7 +62,14 @@ async function fixture() {
   await writeFile(path.join(dir, 'report.json'), JSON.stringify(report));
   return report;
 }
-type Reply = { status?: number; body?: unknown; location?: string; disconnect?: boolean };
+type Reply = {
+  status?: number;
+  body?: unknown;
+  location?: string;
+  disconnect?: boolean;
+  truncatedBody?: boolean;
+  rawBody?: string;
+};
 async function serve(
   handler: (
     url: string,
@@ -82,7 +89,12 @@ async function serve(
       'content-type': 'application/json',
       ...(result.location ? { location: result.location } : {}),
     });
-    res.end(JSON.stringify(result.body ?? {}));
+    if (result.truncatedBody) {
+      res.write('{"lost":');
+      setTimeout(() => res.destroy(), 5);
+      return;
+    }
+    res.end(result.rawBody ?? JSON.stringify(result.body ?? {}));
   });
   await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
   const address = server.address() as { port: number };
@@ -755,6 +767,142 @@ const createBatchRun = () => ({
     uploadProtocol: protocol,
   },
 });
+
+it.each(['prepare', 'finalize'] as const)(
+  'recovers a lost direct %s response through the actual uploader without replaying the external PUT',
+  async (lostRoute) => {
+    const report = await fixture();
+    const image = await readFile(
+      path.join(dir, 'images', `${encodeStoryId(id)}-current.webp`),
+    );
+    const digest = createHash('sha256').update(image).digest('hex'),
+      attemptId = '00000000-0000-4000-8000-000000000002';
+    const issuedAtMs = Math.floor(Date.now() / 1000) * 1000,
+      date = new Date(issuedAtMs).toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const url = new URL(
+      `https://${'a'.repeat(32)}.r2.cloudflarestorage.com/private/snapshot-attempt`,
+    );
+    for (const [key, value] of Object.entries({
+      'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+      'X-Amz-Credential': `TESTACCESSKEY123456/${date.slice(0, 8)}/auto/s3/aws4_request`,
+      'X-Amz-Date': date,
+      'X-Amz-Expires': '300',
+      'X-Amz-SignedHeaders': 'content-length;content-type;host;if-none-match',
+      'X-Amz-Signature': 'f'.repeat(64),
+    }))
+      url.searchParams.set(key, value);
+    const descriptor = {
+      schema: 'juxtapose.direct-put/v1',
+      method: 'PUT',
+      url: url.href,
+      bytes: image.length,
+      issuedAtMs,
+      expiresAtMs: issuedAtMs + 300000,
+      headers: {
+        'content-type': 'image/webp',
+        'content-length': String(image.length),
+        'if-none-match': '*',
+      },
+    };
+    const direct = {
+      schema: 'juxtapose.snapshot-upload/v1',
+      preparePath: `/v1/runs/${runId}/snapshots/direct/prepare`,
+      finalizePath: `/v1/runs/${runId}/snapshots/direct/finalize`,
+      maxConcurrentPuts: 4,
+    };
+    const bodies = new Map<string, string[]>();
+    let prepared: BatchItem[] = [];
+    const config = await serve((route, bytes, headers) => {
+      expect(headers.authorization).toBe('Bearer secret-test-token');
+      expect(bytes.toString()).not.toContain('X-Amz-');
+      const calls = bodies.get(route) ?? [];
+      calls.push(bytes.toString());
+      bodies.set(route, calls);
+      if (route === '/v1/runs') {
+        const created = createBatchRun();
+        return {
+          body: { ...created.body, uploadProtocol: { ...protocol, direct } },
+        };
+      }
+      if (route === protocol.probePath)
+        return {
+          body: { available: [], missing: [{ hash: digest, bytes: image.length }] },
+        };
+      if (route === direct.preparePath) {
+        prepared = JSON.parse(bytes.toString()).items;
+        if (lostRoute === 'prepare' && calls.length === 1) return { truncatedBody: true };
+        return {
+          body: {
+            schema: 'juxtapose.snapshot-upload-preparation/v1',
+            results: prepared.map((item) => ({
+              storyIdSafe: item.storyIdSafe,
+              status: 202,
+              directUpload: { attemptId, requiredHashes: [digest] },
+            })),
+            artifacts: [{ hash: digest, bytes: image.length, descriptor }],
+          },
+        };
+      }
+      if (route === direct.finalizePath) {
+        expect(JSON.parse(bytes.toString())).toEqual({
+          items: prepared.map((item) => ({ storyIdSafe: item.storyIdSafe, attemptId })),
+        });
+        if (lostRoute === 'finalize' && calls.length === 1)
+          return { truncatedBody: true };
+        return { body: { results: prepared.map(success) } };
+      }
+      expect(route).toBe(`/v1/runs/${runId}/finalize`);
+      expect(JSON.parse(bytes.toString()).report.sourceReport).toEqual(report);
+      return { body: { reportUrl: null } };
+    });
+    const nativeFetch = globalThis.fetch.bind(globalThis),
+      external = vi.fn(async (_input: unknown, options?: RequestInit) => {
+        expect(options?.method).toBe('PUT');
+        expect(options?.headers).toEqual(descriptor.headers);
+        expect(options?.redirect).toBe('error');
+        expect(options?.credentials).toBe('omit');
+        expect(Buffer.from(options?.body as Uint8Array)).toEqual(image);
+        return new Response(null, { status: 412 });
+      });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, options) =>
+      String(input).startsWith(config.origin)
+        ? nativeFetch(input, options)
+        : external(input, options),
+    );
+    const progress: string[] = [];
+    const result = await uploadRun(dir, config, (message) => progress.push(message));
+    expect(result).toEqual({ runId, reportUrl: null });
+    expect(external).toHaveBeenCalledTimes(1);
+    expect(bodies.get(direct[`${lostRoute}Path`])).toHaveLength(2);
+    expect(new Set(bodies.get(direct[`${lostRoute}Path`])).size).toBe(1);
+    expect(JSON.stringify({ result, progress })).not.toContain('X-Amz-');
+    expect(JSON.parse(await readFile(path.join(dir, 'report.json'), 'utf8'))).toEqual(
+      report,
+    );
+  },
+);
+
+it.each(['malformed', 'oversized'] as const)(
+  'rejects a complete %s control response without retrying or exposing its body',
+  async (kind) => {
+    await fixture();
+    let calls = 0;
+    const config = await serve(() => {
+      calls++;
+      return {
+        rawBody:
+          kind === 'malformed'
+            ? '{"secret":"X-Amz-Signature=do-not-print"'
+            : JSON.stringify({
+                secret: 'X-Amz-Signature=do-not-print',
+                extra: 'x'.repeat(256 * 1024),
+              }),
+      };
+    });
+    await expect(uploadRun(dir, config)).rejects.toThrow(/invalid response/i);
+    expect(calls).toBe(1);
+  },
+);
 
 it('uses advertised verified hash reuse without re-sending cached WebP bytes', async () => {
   const report = await parallelFixture(3);

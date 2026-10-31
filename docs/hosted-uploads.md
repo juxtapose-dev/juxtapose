@@ -32,6 +32,20 @@ Redirects are rejected to keep tokens from reaching another server. Requests hav
 a 30-second timeout; transient network errors and HTTP 502/503/504 responses are retried at most
 twice using stable run identity. Authentication, quota, and conflict errors are not retried. Re-running the upload uses a stable external run identifier.
 
+When the API advertises direct snapshot uploads, the CLI sends image bytes to
+private, short-lived R2 upload URLs and sends metadata and acceptance requests
+to the API. Shared artifacts reuse the same in-flight transfer, with at most
+four image loads and PUTs running at once. The API must verify and accept each
+snapshot before the run is finalized. An interrupted response retries the same
+control request; a missing cached artifact is uploaded before acceptance is
+retried. Older services continue to receive API uploads. An invalid direct
+advertisement or a failed direct upload exits nonzero and retains local artifacts.
+
+Direct upload URLs stay in memory and are omitted from command output and saved
+receipts. External PUTs omit the project token and cookies and reject redirects.
+Service-side direct upload enablement is required; upgrading the CLI alone does
+not activate it.
+
 On GitHub pull request jobs, `GITHUB_EVENT_PATH` supplies the PR number when its
 head/merge commit matches the captured commit. Detached `HEAD` uses the PR branch
 name; the actual captured commit stays unchanged, including merge checkouts.
