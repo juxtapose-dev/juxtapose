@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.25.3
+
+### Patch Changes
+
+- c4e4976: Report selected captures with static story-level `skip: true` parameters as explicit skip rows instead of silently omitting them. Preserve config attribution, live-only skips, variant selection and nonblocking local CLI exits. This does not change hosted capture completeness requirements.
+
 ## 0.25.2
 
 ### Patch Changes
