@@ -1,8 +1,8 @@
 # Browser
 
 jux drives a pinned `chrome-headless-shell` 151.0.7922.34 from Chrome for
-Testing — the same build Playwright 1.62 ships, so baselines captured with
-earlier jux versions still match.
+Testing. Reuse baselines only with a compatible capture environment; the browser
+pin alone does not guarantee matching pixels across versions, fonts or operating systems.
 
 ```bash
 npx -p @juxtapose/cli jux browser install   # once, ~100 MB

@@ -6,7 +6,7 @@ pnpm build
 pnpm test
 ```
 
-Node 22.2+ and pnpm 9+. Capturing anything also needs the pinned browser (a one-time ~100 MB download):
+Node 22.2+ and the pnpm version pinned in the root `package.json`. Capturing anything also needs the pinned browser (a one-time ~100 MB download):
 
 ```bash
 # from a checkout, after `pnpm build` (the published form is
@@ -79,3 +79,24 @@ Merging to main without one publishes nothing, so this is how a change ships.
 
 `ARCHITECTURE.md` covers the design; `CLAUDE.md` covers the invariants worth
 knowing before changing capture or diff internals.
+
+## Documentation review
+
+[User documentation](docs/README.md) describes verified, released behavior and
+supported setup. Check commands and defaults against the published package before
+changing them. Mark unreleased features explicitly; do not present proposals,
+synthetic timings or untested integrations as product capabilities.
+
+Contributor references explain reviewed implementation contracts, tests and
+reproducible measurement methods. Keep them consistent with source, identify the
+version and limits of historical results, and update or retire superseded advice.
+Review links when removing a document.
+
+Keep personal handoffs, generated execution plans, speculative roadmaps and raw
+scratch output out of the public docs by default. A useful experiment can become
+a concise contributor reference after human review of its evidence, scope and
+publication intent. Do not copy an agent's approval label as proof of that review.
+
+Contributor entry points: [architecture](ARCHITECTURE.md),
+[design references](docs/README.md#contributor-references),
+[field-test reproduction](docs/field-tests.md) and [profiling](docs/profiling.md).

@@ -13,13 +13,13 @@ same check name. A green capture job alone does not approve visual changes.
 ## Setup
 
 1. Install the Juxtapose GitHub App, link the repository to the SaaS project, and
-   create a project-scoped upload token. Store it as `JUXTAPOSE_TOKEN` in Actions.
+   create a project token with **ingest** scope; leave **approve** off.
+   Store it as the `JUXTAPOSE_TOKEN` Actions secret.
 2. Give human reviewers an owner, admin, or reviewer role on the Juxtapose team.
    They must sign in with the GitHub account they use to review. Repository write
    access alone does not grant Juxtapose approval permission.
-3. Pin a CLI release containing `--review-in-github` in the repository's
-   devDependencies and lockfile. This flag is new in this changeset and is not
-   available in the previously published 0.25.1 release.
+3. Pin the published `@juxtapose/cli@0.29.0` in the repository's devDependencies
+   and lockfile. This release includes `--review-in-github`.
 4. Adapt [the workflow example](examples/visual-review.yml) to your build command
    and project layout. It assumes a root pnpm project with a `build-storybook`
    script, default cache storage, and a committed Juxtapose configuration.

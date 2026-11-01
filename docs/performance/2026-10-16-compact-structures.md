@@ -1,5 +1,9 @@
 # Readable compact baseline structures
 
+Historical contributor measurements from October 16, 2026. These results cover
+the stated replay workload and method, not current end-to-end capture performance.
+See [profiling](../profiling.md) to measure a new revision.
+
 New approvals store image hashes, approval metadata, a relative structure filename
 and a file checksum in `juxtapose.manifest.json`. The manifest carries a generated
 `$comment`; `juxtapose.structures/README.md` supplies shared instructions. Neither

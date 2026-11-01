@@ -1,6 +1,9 @@
 # Field tests
 
-<!-- COPY: one-paragraph headline/positioning, written by the maintainer -->
+Contributor reproduction and investigation guide. Results below describe their
+recorded revisions, environments and selected corpora; they are not a guarantee
+of compatibility, stability or throughput for every project. Start with the
+[user documentation](README.md) for supported setup and commands.
 
 This page lists what jux measured on three public Storybooks, how jux keeps
 those captures stable, what still varies, and how to repeat the measurements.

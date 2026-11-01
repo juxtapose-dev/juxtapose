@@ -1,17 +1,21 @@
 # Submit a compiled Storybook build (experimental)
 
-This preview uploads a build without installing Chromium or taking local
-screenshots. Hosted execution is still gated: **an uploaded build is not a passed
-visual test**. Continue using `jux run --upload --review-in-github` for production
-PR checks until the managed runner is available.
+Submit a compiled build without installing Chromium or taking local screenshots.
+By default this only uploads the build: **an uploaded build is not a passed visual
+test**. For projects with hosted execution enabled, use `--wait` to request capture
+and wait for review publication; see [hosted capture in CI](../managed-ci.md).
+Projects without that enablement can capture locally with
+`jux run --upload --review-in-github`.
 
 ```sh
 npm run build-storybook
-JUXTAPOSE_TOKEN=... jux submit --build-dir storybook-static --experimental
+npx -p @juxtapose/cli@0.29.0 jux submit --build-dir storybook-static --experimental
 ```
 
-Use a project token with `ingest` permission. The service must explicitly enable
-managed build intake. A disabled service returns an actionable error; the command
+Supply `JUXTAPOSE_TOKEN` through the process environment or a CI secret. Upload-only
+submission requires `ingest`; `--wait` needs `read` and `ingest`, while read-only
+`--resume` needs `read`. The service
+must explicitly enable managed build intake. A disabled service returns an actionable error; the command
 does not silently fall back to running a browser.
 
 The command reads the full checked-out Git SHA. For detached checkouts, pass
@@ -45,6 +49,6 @@ the API. Upgrading the CLI alone does not enable direct uploads on the service.
 Retry the same command after transient failures. Its request identity is retained
 for 23 hours in `.juxtapose/managed-builds/`; no token is stored. Changes to the
 source, branch, PR number, service origin or archive create a new identity. Keep
-`.juxtapose/` ignored as with other local jux artifacts. `--json` emits the service
-receipt, including `captureStatus: "not_started"`; automation must not interpret
-an upload-only exit code as visual approval.
+`.juxtapose/` ignored as with other local jux artifacts. Without `--wait`, `--json`
+emits the upload receipt, including `captureStatus: "not_started"`; automation
+must not interpret an upload-only exit code as visual approval.

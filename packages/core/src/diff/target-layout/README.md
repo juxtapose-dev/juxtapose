@@ -75,5 +75,6 @@ three scoped displacement facts. It does not depend on DOM matching or change
 verdicts. The real website's one-pixel map shift is recovered over 192000 pixels
 in about 1.4ms median locally (decode excluded). Negative periodic/flat/changed
 content cases abstain. Agent usefulness remains untested; no root export or MCP
-caller is added. See `docs/briefs/automatic-displacement-evidence.md` for bounds,
-independent crop verification, timings and the next gate.
+caller is added. The bounds and negative cases are guarded by
+[displacement.test.ts](displacement.test.ts). Any public integration still needs
+independent output verification and a demonstrated agent-value gate.

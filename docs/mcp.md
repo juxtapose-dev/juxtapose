@@ -1,8 +1,9 @@
 # jux MCP server
 
 `jux mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io/specification)
-server on stdio. A coding agent connects to it to capture pages, compare them,
-and review workbench runs without a shell.
+local server on stdio. A coding agent connects to it to capture pages, compare
+them, and review workbench runs without a shell. For read-only access to existing
+hosted runs, use the separate [hosted MCP connection](https://www.juxtapose.dev/docs/hosted-mcp/).
 
 Most tools return the same versioned JSON as the matching `jux` command with
 `--json`. `run` returns a bounded `juxtapose.agent-run/v1` summary by default;
