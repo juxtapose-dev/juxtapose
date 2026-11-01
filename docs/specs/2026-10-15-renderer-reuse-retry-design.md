@@ -25,8 +25,10 @@ first pool closes. The recovery limit is `ceil(0.1 * non-skipped captures)`;
 completion order must not decide which stories receive that budget.
 
 The pipeline can try a cache pulse, then an isolated fresh renderer. A successful
-recovery must satisfy the existing judgment and exact baseline-hash checks. Keep
-the reviewed artifact unless recovery actually passes. Unconfirmed captures,
+recovery must satisfy the existing judgment and exact baseline-hash checks. A
+cache-pulse result replaces the initial result only after those checks pass. A
+fresh retry is reported even if it still mismatches, retaining the initial hash
+and retry evidence. Unconfirmed captures,
 errors, a reused supposedly fresh renderer and exhausted recovery capacity must
 remain visible in results.
 
