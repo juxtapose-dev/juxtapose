@@ -3,6 +3,11 @@ import { hashElements, STRUCTURE_PROPS } from '../capture/structure.js';
 import { matchElements } from '../diff/structural/match.js';
 import { computeFacts } from '../diff/structural/deltas.js';
 import { label } from '../diff/structural/label.js';
+import {
+  parseComponentSnapshot,
+  type ComponentSnapshot,
+} from '../components/evidence.js';
+import { projectComponents } from '../components/projection.js';
 
 interface Node {
   index: number;
@@ -23,6 +28,7 @@ interface Element {
   ancestors: Array<{ selector: string; label: string }>;
 }
 export interface HostedDomEvidence {
+  components?: { baseline?: ComponentSnapshot; current?: ComponentSnapshot };
   schema: 'juxtapose.dom-evidence/v1';
   baselineStructureHash: string;
   currentStructureHash: string;
@@ -179,6 +185,10 @@ export function buildHostedDomEvidence(
     const a = sanitize(baseline),
       b = sanitize(current);
     if (!a || !b || !a.elements.length || !b.elements.length) return;
+    const componentA = parseComponentSnapshot(a.components, a.elements.length);
+    const componentB = parseComponentSnapshot(b.components, b.elements.length);
+    const maskedA = a.elements.some((element) => element.tag === 'masked');
+    const maskedB = b.elements.some((element) => element.tag === 'masked');
     const matches = matchElements(a, b),
       forward = new Map(matches.pairs),
       reverse = new Map(matches.pairs.map(([i, j]) => [j, i]));
@@ -296,7 +306,17 @@ export function buildHostedDomEvidence(
           .slice(0, 100)
           .map(([baselineIndex, currentIndex]) => ({ baselineIndex, currentIndex })),
       };
+      const projectedA = projectComponents(componentA, as, limit, maskedA);
+      const projectedB = projectComponents(componentB, bs, limit, maskedB);
       const evidence: HostedDomEvidence = {
+        ...(projectedA || projectedB
+          ? {
+              components: {
+                ...(projectedA ? { baseline: projectedA } : {}),
+                ...(projectedB ? { current: projectedB } : {}),
+              },
+            }
+          : {}),
         schema: 'juxtapose.dom-evidence/v1',
         baselineStructureHash: baseline.structureHash,
         currentStructureHash: current.structureHash,

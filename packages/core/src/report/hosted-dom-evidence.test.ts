@@ -113,3 +113,60 @@ test('enforces original hash, valid topology, node and UTF-8 byte budgets with h
   }
   expect(buildHostedDomEvidence(a, a, 100)).toBeUndefined();
 });
+
+test('retains component ownership and source provenance for hosted review without changing verdicts', () => {
+  const a = snapshot([node(), node({ parent: 0, path: 'main>button', tag: 'button' })]);
+  a.components = {
+    schema: 'juxtapose.components/v1',
+    trees: [
+      {
+        framework: 'react',
+        parentRelation: 'rendered-parent',
+        elementRelation: 'rendered-by',
+        coverage: 'runtime',
+        status: 'available',
+        truncated: false,
+        nodes: [
+          { id: 0, parent: null, name: 'App', elements: [0] },
+          {
+            id: 1,
+            parent: 0,
+            name: 'Button',
+            elements: [1],
+            source: { file: 'src/Button.tsx', line: 4, provenance: 'compiler' },
+          },
+        ],
+      },
+    ],
+  };
+  const evidence = buildHostedDomEvidence(a, a)!;
+  expect(evidence.components?.current).toEqual(a.components);
+  expect(evidence.components?.baseline).toEqual(a.components);
+  expect(evidence.totalChanges).toBe(0);
+  expect(evidence.currentStructureHash).toBe(a.structureHash);
+});
+
+test('does not publish component identities when any retained capture element is masked', () => {
+  const a = snapshot([node({ tag: 'masked' })]);
+  a.components = {
+    schema: 'juxtapose.components/v1',
+    trees: [
+      {
+        framework: 'react',
+        parentRelation: 'rendered-parent',
+        elementRelation: 'rendered-by',
+        coverage: 'runtime',
+        status: 'available',
+        truncated: false,
+        nodes: [{ id: 0, parent: null, name: 'PRIVATE_COMPONENT', elements: [0] }],
+      },
+    ],
+  };
+  const evidence = buildHostedDomEvidence(a, a)!;
+  expect(evidence.components?.current?.trees[0]).toMatchObject({
+    status: 'unavailable',
+    reason: 'masked',
+    nodes: [],
+  });
+  expect(JSON.stringify(evidence)).not.toContain('PRIVATE_COMPONENT');
+});
