@@ -5,6 +5,7 @@
 // node scripts/check-svelte-components.mjs <svelte-project> [artifact-parent]
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
@@ -29,7 +30,10 @@ const chrome = resolveChrome();
 if (!chrome) throw new Error('Install jux’s pinned browser before this check.');
 const parent = path.resolve(process.argv[3] ?? tmpdir());
 await mkdir(parent, { recursive: true });
-const root = await mkdtemp(path.join(parent, 'jux-svelte-components-'));
+const repository = await mkdtemp(path.join(parent, 'jux-svelte-components-'));
+execFileSync('git', ['init', '--quiet', repository]);
+const root = path.join(repository, 'apps/workbench');
+await mkdir(root, { recursive: true });
 await symlink(path.join(project, 'node_modules'), path.join(root, 'node_modules'), 'dir');
 await writeFile(path.join(root, 'package.json'), '{"type":"module"}\n');
 const fixtures = {
@@ -141,7 +145,11 @@ try {
             assert.equal(fragments[2].parent, wrapper.id);
             for (const name of ['Empty', 'Text'])
               assert.deepEqual(graph.nodes.find((n) => n.name === name).elements, []);
-            assert.ok(graph.nodes.every((n) => n.source.file === `${n.name}.svelte`));
+            assert.ok(
+              graph.nodes.every(
+                (n) => n.source.file === `apps/workbench/${n.name}.svelte`,
+              ),
+            );
             const nativeSnippetIndex = await page.evaluate(() =>
               [...document.querySelectorAll('main, main *')].indexOf(
                 document.querySelector('b'),
