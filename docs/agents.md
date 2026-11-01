@@ -78,7 +78,7 @@ inputs:
 }
 ```
 
-## Why structure: a change the pixel diff cannot see
+## Inspect a sub-threshold color change
 
 A `background-color` change from `#2563eb` to `#1d4ed8` is under the pixel
 diff's tolerance: the images differ, but nothing is marked. The verdict still
@@ -94,8 +94,8 @@ flags: sub-threshold
 next: jux diff before after-bg --crops  (opens the pixels)
 ```
 
-`flags: sub-threshold` is how you know the pixels alone would have told you
-nothing; the deltas are the change.
+`flags: sub-threshold` means the image hashes differ while Pixelmatch marked
+no pixels. The recorded DOM values still identify the color change.
 
 ## Several pages at once
 
@@ -218,7 +218,7 @@ pairing survives a dev-server port change.
 | 3    | the tool or environment failed: no browser, an unreadable input, any `errors[]` entry |
 
 For a page set, 3 beats 1 beats 0. One bad pair does not stop the others from
-being verdicted. An unexpected crash prints one line and exits 3; set
+being compared. An unexpected crash prints one line and exits 3; set
 `JUX_DEBUG=1` to also print the stack trace.
 
 ## Crops (`juxtapose.crops/v1`)
@@ -336,8 +336,7 @@ does nothing). Nothing is captured. See
 
 `plugins/claude-code/` is a Claude Code plugin with one skill,
 `visual-check`, that teaches the loop above: snap before editing, snap after,
-read the verdict, open crops only when the verdict cannot explain the pixels,
-never a full screenshot first. Load it for a session with:
+read the verdict, then open crops when the text leaves an appearance question. Load it for a session with:
 
 ```bash
 claude --plugin-dir path/to/juxtapose/plugins/claude-code

@@ -1,12 +1,12 @@
 # @juxtapose/adapter-storybook
 
-Teaches the juxtapose CLI to drive Storybook: enumerate stories, show one, and
-know when it has finished rendering. Runs in Node, not in the browser.
+Lists Storybook stories, renders them for capture, and waits for Storybook's
+ready signal. This adapter runs in Node.
 
 **Looking for the Storybook addon?** That is
 [`@juxtapose/storybook`](https://www.npmjs.com/package/@juxtapose/storybook) —
-the review panel you add to `.storybook/main.js`. This package is the capture
-half, and it comes along with the CLI.
+the review panel you add to `.storybook/main.js`. The CLI installs this capture
+adapter as a dependency.
 
 Part of [juxtapose](https://github.com/juxtapose-dev/juxtapose), visual
 regression testing for component workbenches.

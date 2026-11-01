@@ -12,7 +12,7 @@ style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure expla
 
 ## Why use it
 
-- **Give your agent visual feedback.** Start with a bounded change summary, then
+- **Give your agent visual feedback.** Read a short change summary, then
   inspect recorded properties and images where needed.
 - **Choose exact or visual comparison.** Exact SHA-256 comparison is the default.
   An opt-in [Pixelmatch policy](docs/configuration.md#visual-equivalence) can filter
@@ -23,17 +23,16 @@ style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure expla
 - **Reduce repeated work.** After capture, matching image hashes skip detailed
   pixel diffing. Affected-story analysis can limit captures, with a full-run
   fallback when uncertain; a reusable browser avoids some launches.
-- **Local baselines live in your repo.** Local approval updates the manifest and
+- **Keep local approvals in your repo.** Local approval updates the manifest and
   structure files without an account or hosted service. Hosted review decisions
   are separate.
-- **No Playwright to install.** jux drives a pinned Chrome for Testing build
-  directly over the DevTools protocol, and one command downloads it and
-  verifies its checksum.
+- **Install a pinned browser.** One command downloads Chrome for Testing and
+  verifies its checksum. jux drives it directly over the DevTools protocol.
 
 ## Get started with an agent
 
-The local MCP server exposes this loop as agent tools. It provides snap, diff
-and review steps and can reuse a browser across captures.
+The local MCP server lets an agent capture pages, compare screenshots, and
+inspect recorded changes. It can reuse a browser across captures.
 
 1. Install the CLI and the browser:
 
@@ -91,10 +90,10 @@ To focus on specific examples, use `jux list` to find IDs, then
 `jux run 'components-button--*'`. Add `--dry-run` to preview the selected captures.
 See [example selection](docs/cli.md#select-specific-examples) for variants and JSON.
 
-After that, run `jux run` whenever you change a component. It captures the
-stories your change can affect and compares them with their baselines. When it
-can't be sure what a change reaches, it captures everything. Approve an
-intended change with `jux approve --story <id>`.
+After editing a component, use `jux run` to capture all stories and compare them
+with their baselines. Add `--since <ref>` to limit captures to stories reachable
+from your changed files; uncertain selection falls back to a full run. Approve
+an intended change with `jux approve --story <id>`.
 
 To review diffs inside Storybook as you work, add the addon:
 
@@ -107,6 +106,12 @@ recaptures a component when you edit it. See [Watch mode](docs/watch-mode.md).
 
 The `jux` command comes from `@juxtapose/cli`. Without it installed, run it as
 `npx -p @juxtapose/cli jux …`: the unscoped `jux` package on npm is unrelated.
+
+## Hosted review
+
+To review captured changes on a pull request, see
+[GitHub PR review](docs/github-pr-review.md). It explains how to capture the
+base and head in CI and require the Juxtapose App check for review decisions.
 
 ## In CI
 
@@ -150,5 +155,3 @@ and [controlled profiling](docs/profiling.md).
 ## License
 
 MIT © Magic Factory LLC. See [LICENSE](LICENSE).
-
-For hosted PR approval, see [GitHub PR review](docs/github-pr-review.md): canonical CI rendering, inline evidence, and a required GitHub App check.

@@ -36,9 +36,9 @@ otherwise passed.
 
 ## Cache the baseline images
 
-Projects commit hashes and structure, not images, so pass/fail needs no image:
-a story passes when its hash matches the manifest. CI still tells you what
-changed without images, because the structure sidecars are committed. To also
+With the default exact comparison, a matching image hash passes without reading
+the approved image. Committed structure sidecars can still describe changes
+when baseline images are unavailable. To also
 get pixel diffs, crops and the report's overlay for a failing story, give the
 run the approved image by saving and restoring the cache directory.
 
