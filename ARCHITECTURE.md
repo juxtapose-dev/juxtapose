@@ -300,6 +300,7 @@ The semantic structure hash, image hash and stored-file checksum have different
 purposes. Compact structure files expand to the same semantic representation;
 missing, corrupt or unsafe sidecar paths yield unavailable structure, not a new
 image verdict. A batch of sidecar/manifest writes is not a filesystem transaction.
+Use one approval writer per project; batching does not provide cross-process locking.
 Preserve checksum validation, masks, parent indices and stable ordering in the
 [structure tests](packages/core/src/capture/structure.test.ts) and
 [baseline readers](packages/core/src/baseline/).
