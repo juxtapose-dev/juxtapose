@@ -1,5 +1,11 @@
 # @juxtapose/core
 
+## 0.26.2
+
+### Patch Changes
+
+- 0b3d015: Omit component source links into dependency installation and Git metadata directories. Component names, instances, and DOM associations remain available; authored repository source paths are unchanged.
+
 ## 0.26.1
 
 ### Patch Changes
