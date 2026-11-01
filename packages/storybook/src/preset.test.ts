@@ -16,6 +16,8 @@ test('a bad storage.dir warns and disables capture instead of throwing at startu
     const out = viteFinal({ plugins: [] });
     // Capture is off, but the build still records the module graph.
     expect(out.plugins?.map((pl) => (pl as { name: string }).name)).toEqual([
+      'juxtapose:component-evidence',
+      'juxtapose-svelte-component-evidence',
       'juxtapose',
       'juxtapose:module-graph',
     ]);

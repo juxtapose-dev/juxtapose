@@ -26,6 +26,7 @@ export interface ComponentTree {
   reason?:
     | 'not-detected'
     | 'instrumentation-required'
+    | 'instrumented-components-only'
     | 'unsupported-runtime'
     | 'capture-failed'
     | 'budget-exceeded'
@@ -43,6 +44,7 @@ export interface ComponentSnapshot {
 const reasons = new Set([
   'not-detected',
   'instrumentation-required',
+  'instrumented-components-only',
   'unsupported-runtime',
   'capture-failed',
   'budget-exceeded',

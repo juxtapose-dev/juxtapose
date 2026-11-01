@@ -9,6 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Browser } from '../browser/browser.js';
 import { chromeForTests } from '../browser/__tests__/helpers.js';
 import { collectVueComponents } from './vue.js';
+import { beginComponentCapture, finishComponentCapture } from '../capture/components.js';
+import { captureStructure } from '../capture/structure.js';
 
 const chrome = chromeForTests();
 const requireExample = createRequire(
@@ -256,6 +258,80 @@ describe.skipIf(!chrome)('Vue component metadata in a real Vite production build
         truncated: true,
       });
       expect(cycle.nodes.find((n) => n.name === 'FixtureRoot')?.parent).toBeNull();
+      await context.close();
+    } finally {
+      await browser.close();
+    }
+  });
+  it('joins real Vue ownership to captured DOM and refuses an identical replacement', async () => {
+    const browser = await Browser.launch({ executablePath: chrome!.path });
+    try {
+      const viewport = { width: 400, height: 300 };
+      const context = await browser.newContext({ viewport });
+      const page = await context.newPage();
+      await page.goto(`${base}/true/`);
+      await page.waitForFunction(() => Object.hasOwn(window, 'fixtureReady'));
+      const guard = await beginComponentCapture(page, false);
+      const structure = (await captureStructure(page, viewport, []))!;
+      const result = await finishComponentCapture(page, structure, guard, {
+        scale: 1,
+        origin: { x: 0, y: 0 },
+      });
+      const vue = result.trees.find((tree) => tree.framework === 'vue')!;
+      expect(vue.status).toBe('available');
+      const repeated = vue.nodes.filter((node) => node.name === 'RepeatedLeaf');
+      expect(repeated).toHaveLength(2);
+      expect(
+        repeated.map((node) =>
+          node.elements.map((index) => structure.elements[index]!.tag),
+        ),
+      ).toEqual([['b'], ['b']]);
+      const beforePixels = await page.screenshot();
+      const integrated = await captureStructure(
+        page,
+        viewport,
+        [],
+        undefined,
+        1,
+        { x: 0, y: 0 },
+        true,
+      );
+      expect(
+        integrated?.components?.trees.find((tree) => tree.framework === 'vue')?.status,
+      ).toBe('available');
+      const masked = await captureStructure(
+        page,
+        viewport,
+        ['b'],
+        undefined,
+        1,
+        { x: 0, y: 0 },
+        true,
+      );
+      expect(
+        masked?.components?.trees.every(
+          (tree) => tree.reason === 'masked' && !tree.nodes.length,
+        ),
+      ).toBe(true);
+      expect((await page.screenshot()).equals(beforePixels)).toBe(true);
+      const guard2 = await beginComponentCapture(page, false);
+      const structure2 = (await captureStructure(page, viewport, []))!;
+      await page.evaluate(() => {
+        const el = document.querySelector('b')!;
+        el.replaceWith(el.cloneNode(true));
+      });
+      const changed = await finishComponentCapture(page, structure2, guard2, {
+        scale: 1,
+        origin: { x: 0, y: 0 },
+      });
+      expect(
+        changed.trees.every(
+          (tree) =>
+            tree.status === 'unavailable' &&
+            tree.reason === 'dom-changed' &&
+            !tree.nodes.length,
+        ),
+      ).toBe(true);
       await context.close();
     } finally {
       await browser.close();

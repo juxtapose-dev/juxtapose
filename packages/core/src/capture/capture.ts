@@ -1,3 +1,4 @@
+import { installComponentCapture } from './components.js';
 import { resolveComparison } from '../diff/comparison.js';
 import { resolveRenderer } from './renderer.js';
 // Capture one story. The ordering here is load-bearing — see settle.ts for why
@@ -99,6 +100,8 @@ export interface CaptureDeps {
    * decides one. `JUXTAPOSE_NO_STRUCTURE=1` turns it off for A/B timing.
    */
   structure?: boolean;
+  /** Optional framework diagnostics; never part of snapshot verdicts. */
+  components?: boolean;
   /** Reports which step of the capture is about to run, so the pool's story
    *  budget can name where a wedged story was stuck. */
   onPhase?: (phase: string) => void;
@@ -225,6 +228,13 @@ async function captureStoryDocument(
   // Before the first navigation on this page: the init script applies to
   // documents created after it is installed.
   const idle = await installIdleDetector(page);
+  if (
+    deps.structure !== false &&
+    deps.components !== false &&
+    process.env.JUXTAPOSE_NO_STRUCTURE !== '1' &&
+    process.env.JUXTAPOSE_NO_COMPONENTS !== '1'
+  )
+    await installComponentCapture(page, deps.onWarning);
 
   // Read before it is applied: the warm decision below compares against what
   // the page's document was loaded under.
@@ -633,6 +643,7 @@ async function captureStoryDocument(
         structureTimings,
         scale,
         origin,
+        deps.components !== false && process.env.JUXTAPOSE_NO_COMPONENTS !== '1',
       )
     : undefined;
   if (structure && fullPage) structure.layoutViewport = layoutViewport;
