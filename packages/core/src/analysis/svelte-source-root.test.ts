@@ -75,3 +75,19 @@ test('symlinked external sources cannot acquire a false repository coordinate', 
     'registry.register("Card",null',
   );
 });
+
+test.each([
+  'node_modules/.pnpm/dependency/node_modules/ui/Wrapper.svelte',
+  'apps/dashboard/node_modules/ui/Wrapper.svelte',
+  '.git/Wrapper.svelte',
+])(
+  'omits non-repository source coordinates from %s but retains the component',
+  (relative) => {
+    const { plugin, file } = fixture();
+    const result = plugin.transform('<p>hello</p>', file(relative));
+    expect(result?.code).toContain('registry.register("Wrapper",null');
+    expect(result?.code).toContain('onDestroy');
+    expect(result?.code).toContain('<p>hello</p>');
+    expect(result?.code).not.toContain(relative);
+  },
+);

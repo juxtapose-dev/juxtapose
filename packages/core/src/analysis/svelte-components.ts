@@ -54,7 +54,9 @@ function componentSourceFile(
     return relative.length > 0 &&
       relative.length <= 512 &&
       !path.isAbsolute(relative) &&
-      !relative.split('/').some((part) => !part || part === '.' || part === '..') &&
+      !relative
+        .split('/')
+        .some((part) => !part || ['.', '..', 'node_modules', '.git'].includes(part)) &&
       !/[\\:%?#]/.test(relative) &&
       ![...relative].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
       ? relative
