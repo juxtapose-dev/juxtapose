@@ -18,6 +18,7 @@ import {
   ProvenanceLog,
   VariantConfigError,
   type Browser,
+  type BrowserContext,
   type Explanation,
   type Page,
   type Source,
@@ -89,17 +90,32 @@ export async function configCommand(
       ? lent()
       : acquireBrowser({ chrome: flags.chrome, noDaemon: flags['no-daemon'] === true }));
   const viewport = ctx.config.viewport ?? DEFAULT_VIEWPORT;
-  let close: (() => Promise<void>) | undefined;
-  const getPage = async (): Promise<Page> => {
-    const context = await (await getBrowser()).newContext({ viewport });
-    close = () => context.close().catch(() => {});
-    return context.newPage();
+  const contexts = new Set<BrowserContext>();
+  let finished = false;
+  const assertActive = () => {
+    if (finished || signal?.aborted) throw new Cancelled();
   };
+  const newContext: Browser['newContext'] = async (options) => {
+    assertActive();
+    const owner = await getBrowser();
+    assertActive();
+    const context = await owner.newContext(options);
+    // Cancellation may have already run finally while Chrome was creating it.
+    if (finished || signal?.aborted) {
+      await context.close().catch(() => {});
+      throw new Cancelled();
+    }
+    contexts.add(context);
+    return context;
+  };
+  const getPage = async (): Promise<Page> => (await newContext({ viewport })).newPage();
 
   // A cancelled call stops waiting at once (and releases what it holds in the
   // `finally`); the browser work it left behind is closed with the context.
+  let abortListener: (() => void) | undefined;
   const cancelled = new Promise<never>((_, reject) => {
     const stop = () => reject(new Cancelled());
+    abortListener = stop;
     if (signal?.aborted) stop();
     else signal?.addEventListener('abort', stop, { once: true });
   });
@@ -107,6 +123,7 @@ export async function configCommand(
   const until = <T>(p: Promise<T>): Promise<T> => Promise.race([p, cancelled]);
 
   try {
+    assertActive();
     const log = new ProvenanceLog();
     let captures: StoryManifest[];
     try {
@@ -115,16 +132,16 @@ export async function configCommand(
             prepareCaptures(enumerated, {
               platform: ctx.platform,
               // Only `newContext` is called, and only on a cache miss.
-              browser: {
-                newContext: async (o: Parameters<Browser['newContext']>[0]) =>
-                  (await getBrowser()).newContext(o),
-              } as unknown as Browser,
+              browser: { newContext },
+              ...(signal ? { signal } : {}),
               baseUrl,
               viewport,
               ...(ctx.config.variants ? { projectVariants: ctx.config.variants } : {}),
               ...(ctx.config.stories ? { projectStories: ctx.config.stories } : {}),
               trace: log,
-              onWarning: (m) => io.err(`${m}\n`),
+              onWarning: (m) => {
+                if (!signal?.aborted) io.err(`${m}\n`);
+              },
               cache: {
                 dir: path.join(ctx.projectRoot, '.juxtapose', 'runs', '.cache'),
                 target: {
@@ -197,7 +214,9 @@ export async function configCommand(
     io.err('jux: cancelled\n');
     return EXIT.failure;
   } finally {
-    await close?.();
+    finished = true;
+    if (abortListener) signal?.removeEventListener('abort', abortListener);
+    await Promise.all([...contexts].map((context) => context.close().catch(() => {})));
     if (!lent && browser) await (await browser).close().catch(() => {});
     await server?.close();
   }
