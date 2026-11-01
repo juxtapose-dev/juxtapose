@@ -1,5 +1,15 @@
 # @juxtapose/cli
 
+## 0.31.3
+
+### Patch Changes
+
+- d5a2319: Close all browser contexts owned by a cancelled configuration-explain call, including contexts that finish opening after cancellation. Stop waiting for discovery immediately, discard late results before caching, and preserve the caller's shared browser. Narrow the discovery browser interface to remove an unsafe double cast.
+- Updated dependencies [d5a2319]
+  - @juxtapose/core@0.26.3
+  - @juxtapose/adapter-ladle@0.3.40
+  - @juxtapose/adapter-storybook@0.4.37
+
 ## 0.31.2
 
 ### Patch Changes
