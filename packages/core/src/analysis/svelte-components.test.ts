@@ -1,17 +1,27 @@
-import { expect, it } from 'vitest';
+import { afterAll, expect, it } from 'vitest';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { SourceMap } from 'node:module';
 import {
   instrumentSvelteComponent,
   loadSvelteComponentCompiler,
   svelteComponentInstrumentation,
 } from './svelte-components.js';
-const root = '/project';
+const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'jux-svelte-transform-')));
+afterAll(() => rmSync(root, { recursive: true, force: true }));
+function file(relative: string): string {
+  const filename = path.join(root, relative);
+  mkdirSync(path.dirname(filename), { recursive: true });
+  writeFileSync(filename, '');
+  return filename;
+}
 const compiler = (ast: unknown) => ({ VERSION: '5.55.7', parse: () => ast });
 it('injects lifecycle and actions with collision-free bindings, without wrappers or attributes', () => {
   const source = '<script>const __jux_svelte_0=1;</script><p>one</p><span>two</span>';
   const result = instrumentSvelteComponent(
     source,
-    '/project/src/Fragment.svelte',
+    file('src/Fragment.svelte'),
     root,
     compiler({
       instance: { content: { start: 8 } },
@@ -35,7 +45,7 @@ it('injects lifecycle and actions with collision-free bindings, without wrappers
 it('registers empty/text-only components without fabricating DOM associations', () => {
   const result = instrumentSvelteComponent(
     'text only',
-    '/project/Text.svelte',
+    file('Text.svelte'),
     root,
     compiler({ fragment: { nodes: [{ type: 'Text', start: 0 }] } }),
   );
@@ -43,7 +53,7 @@ it('registers empty/text-only components without fabricating DOM associations', 
   expect(result?.code).toMatch(/<\/script>text only$/);
   expect(result?.code).not.toContain(' use:');
 });
-it('omits source outside the project, refuses non-component/SSR transforms and needs no Svelte dependency', () => {
+it('omits unverifiable source, refuses non-component/SSR transforms and needs no Svelte dependency', () => {
   expect(
     instrumentSvelteComponent(
       '',
@@ -70,7 +80,7 @@ it('fails explicitly on unsupported parser shapes', () => {
 
 it('preserves authored statement and markup locations in a high-resolution source map', () => {
   const source = '<script>\nconst answer = 42;\n</script>\n<p>{answer}</p>';
-  const filename = '/project/Answer.svelte';
+  const filename = file('Answer.svelte');
   const result = instrumentSvelteComponent(
     source,
     filename,
@@ -111,7 +121,7 @@ it('omits source identity containing URL delimiters', () => {
     expect(
       instrumentSvelteComponent(
         '',
-        `/project/${name}.svelte`,
+        file(`${name}.svelte`),
         root,
         compiler({ fragment: { nodes: [] } }),
       )?.code,

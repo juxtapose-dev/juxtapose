@@ -1,5 +1,6 @@
 /** Diagnostic metadata only: never part of image or structural verdict hashes. */
 export interface ComponentSource {
+  /** Repository-relative path; omitted when its repository cannot be verified. */
   file: string;
   line?: number;
   column?: number;
