@@ -44,6 +44,35 @@ green run doesn't prove much.
 
 `examples/README.md` explains what each example story is there to prove.
 
+## Reproducing capture issues
+
+Build the packages and one unchanged static workbench, then compare repeated
+captures with the existing diagnostic script:
+
+```bash
+pnpm build
+pnpm --filter example-storybook build
+node scripts/field-test.mjs examples/storybook/storybook-static 2
+```
+
+The script creates temporary project/state directories, launches a fresh browser
+for each pass and compares capture hashes. It does not change repository
+baselines. A completed probe is not proof that every capture matched: inspect
+errors, missing captures and reported differences.
+
+The [field-test workflow](.github/workflows/field-tests.yml) exercises pinned
+external Storybooks. Its inputs and [gate configuration](scripts/field-tests.config.json)
+define the workload and allowed differences. Those diagnostic tolerances are not
+visual approval rules or a compatibility guarantee for other projects. A story
+subset skips the full-suite gate; inspect its artifacts instead of treating a
+green subset run as determinism proof.
+
+For a focused text/font investigation, `scripts/probe-text-rendering.mjs` records
+repeated images and post-capture geometry/font observations. Run it against your
+own static build; its observations are diagnostic clues, not an atomic recording
+of the captured frame. Keep experiments and raw output private. For paired
+performance measurements and timing interpretation, use [controlled profiling](docs/profiling.md).
+
 ## Adding a workbench
 
 Implement the `Platform` interface in `packages/core/src/platform.ts`:
@@ -98,5 +127,4 @@ a concise contributor reference after human review of its evidence, scope and
 publication intent. Do not copy an agent's approval label as proof of that review.
 
 Contributor entry points: [architecture](ARCHITECTURE.md),
-[design references](docs/README.md#contributor-references),
-[field-test reproduction](docs/field-tests.md) and [profiling](docs/profiling.md).
+[capture issue reproduction](#reproducing-capture-issues) and [profiling](docs/profiling.md).

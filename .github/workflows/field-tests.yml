@@ -2,7 +2,7 @@ name: field tests
 
 # Runs jux against three large public Storybooks (built from pinned commits)
 # and fails on capture errors, unexpected cross-pass differences, or a slow
-# run. See docs/field-tests.md and scripts/field-tests.config.json.
+# run. See CONTRIBUTING.md#reproducing-capture-issues and scripts/field-tests.config.json.
 #
 # Nightly and on manual dispatch only: a full sweep takes about 30 minutes per
 # Storybook, too long to gate every pull request that touches capture code.
@@ -78,7 +78,7 @@ jobs:
         env:
           PICK: ${{ inputs.storybook || 'all' }}
         run: |
-          # `sha` is the commit docs/field-tests.md pins. `output` is where the
+          # `sha` pins the upstream build exercised by this job. `output` is where the
           # repo's own build leaves the static Storybook, relative to its root.
           all='[
             {"name":"chakra","repo":"chakra-ui/chakra-ui","sha":"fa9696f328ea5a0df8685c6d8460edbd779b63b9","node":"24","output":"storybook-static"},
@@ -161,7 +161,7 @@ jobs:
           git checkout -q FETCH_HEAD
           test "$(git rev-parse HEAD)" = "${{ matrix.sha }}"
 
-      # Build commands are the ones in docs/field-tests.md.
+      # Build commands match the pinned upstream projects below.
       - name: Build the static Storybook
         if: steps.sb.outputs.cache-hit != 'true'
         working-directory: ${{ runner.temp }}/sb-src

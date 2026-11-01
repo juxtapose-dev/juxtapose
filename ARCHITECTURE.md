@@ -3,15 +3,11 @@
 Visual regression testing for component workbenches. Captures screenshots of
 every story, diffs them against baselines, and tells you what changed.
 
-This is a ground-up rebuild of an internal Storybook-only tool. The goals are
-unchanged; the shape is different in three ways:
-
-1. **Platform-agnostic core.** Storybook is one adapter, not the architecture.
-   Ladle, Histoire and plain URL lists are peers.
-2. **Zero-infra by default.** Baselines live in the repo's git objects, not a
-   bucket you have to provision before the tool does anything.
-3. **Agent-first.** Every command is non-interactive and emits JSON. The review
-   loop is designed for an agent to close, not just a human.
+The core owns capture, comparison and baseline storage. Storybook and Ladle
+adapters supply workbench-specific navigation and readiness; URL-list projects
+use the same capture pipeline. Local use needs no hosted service: image hashes
+and readable structure metadata are committed, while baseline images live in a
+local cache by default. CLI commands expose JSON for automation.
 
 ## Package layout
 
@@ -237,8 +233,8 @@ Status resolution, in order:
 
 `stale` matters: a baseline approved on a branch that never merged is not a
 valid baseline for HEAD. Detecting it needs a `git merge-base --is-ancestor`
-call, which forks a process at ~40ms — so it is memoized across the run. At 738
-stories that is the difference between ~30s and ~50ms.
+call; results are memoized across the run rather than repeating the process for
+every story.
 
 ## Diff (the cold path)
 
@@ -266,12 +262,45 @@ task an agent can close, given the right context:
   verdict: intentional change → `jux approve --story <id>`; regression → propose
   a fix. The prompt footer records the project root so a session in the wrong
   repo detects the mismatch.
-- `jux approve` and `jux check` are non-interactive, so the loop closes without
-  a human.
+- `jux approve` and `jux check` are non-interactive. Approval is still an
+  explicit decision about selected captures and requires fresh confirmation.
+  Hosted PR review follows its separate [GitHub approval workflow](docs/github-pr-review.md).
 
-## Non-goals for v1
+## Capture identity and recovery
 
-Multi-browser, multi-viewport matrix, full-page scroll capture, interaction
-state matrices, perceptual/SSIM diffing. Each multiplies capture cost by the
-size of its matrix, and none of them change what exact comparison against a
-committed baseline is worth.
+[Variants](packages/core/src/capture/variants.ts) expand a platform story into
+independent capture keys (`baseStoryId__variant`). Navigation uses the base story
+ID; images, baselines and approval selection use the capture key. Merge project
+and story variants by name, validate inheritance/collisions, and preserve explicit
+selection. Device presets and viewports must be applied and reset for every job.
+A mobile-named preset emulates supported behavior in Chromium; it does not run
+Safari or native hardware. See [configuration](docs/configuration.md#devices).
+
+Shared renderer reuse, a warm browser daemon and warm story switching are
+separate policies. [Run recovery](packages/core/src/run/run.ts) selects candidates
+deterministically with a budget of `ceil(0.1 * non-skipped captures)`. A cache pulse
+replaces the initial result only after exact baseline-hash checks pass. A fresh
+retry is reported even when it still differs, retaining the initial hash and
+retry evidence. Recovery outcomes are observations, not proof of a cache cause.
+
+Approval requires fresh confirmation of the selected reviewed capture, including
+identity and environment checks. A stability override does not authorize different
+bytes. Preserve these checks across CLI, addon and server entry points. Relevant
+regressions live beside [run recovery](packages/core/src/run/run-recheck.test.ts)
+and [approval](packages/core/src/baseline/).
+
+## Structure evidence
+
+[Structure capture](packages/core/src/capture/structure.ts) records normalized DOM,
+geometry and selected computed styles alongside image capture. It explains observed
+changes; it does not decide the image verdict or establish a framework component
+tree. Missing, truncated, masked or ambiguous evidence must remain explicit.
+
+The semantic structure hash, image hash and stored-file checksum have different
+purposes. Compact structure files expand to the same semantic representation;
+missing, corrupt or unsafe sidecar paths yield unavailable structure, not a new
+image verdict. A batch of sidecar/manifest writes is not a filesystem transaction.
+Use one approval writer per project; batching does not provide cross-process locking.
+Preserve checksum validation, masks, parent indices and stable ordering in the
+[structure tests](packages/core/src/capture/structure.test.ts) and
+[baseline readers](packages/core/src/baseline/).

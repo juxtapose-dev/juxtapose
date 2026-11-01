@@ -144,9 +144,8 @@ Start with the [documentation index](docs/README.md).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to get set up, and
 [ARCHITECTURE.md](ARCHITECTURE.md) for the design and the reasoning behind it.
-Contributor measurement guides cover [field tests](docs/field-tests.md) and
-[profiling](docs/profiling.md); historical measurements are scoped evidence, not
-current product performance guarantees.
+For capture investigations, see [reproduction steps](CONTRIBUTING.md#reproducing-capture-issues)
+and [controlled profiling](docs/profiling.md).
 
 ## License
 
