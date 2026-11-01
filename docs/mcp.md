@@ -304,24 +304,11 @@ returns all accepted matches and changed regions from the existing bounded
 analysis. Region IDs stay valid beyond the eighth region for both target and
 checkpoint comparisons. `abstained` is not another inventory of accepted
 matches waiting there. Do not repeat a request for an unavailable fact.
-Experimental hypothesis probes are not part of the public tool set. These
-routing boundaries follow the recorded requests in the team decision replay;
-their effect on completed-task efficiency remains unmeasured.
+Experimental hypothesis probes are not part of the public tool set.
 
-Call advertised tool names directly when their arguments are known. If a client
-needs a catalog lookup, filter locally and return only the matching names; fetch
-a schema only for unknown arguments. Do not print full tool objects to confirm
-names already supplied. A recorded team repair printed 7,945 bytes of declarations
-before using those same known tools. This routing guidance avoids that repeated
-context; its effect on agent adherence and whole-task spend is not yet measured.
-
-For benchmark clients, collect optional tool feedback in the agent's existing
-final response rather than adding a separate tool call. Ask only for encountered
-friction: the needed observable, workaround actually used and a visible tool name
-with minimal arguments. An empty report is normal. Match reports to recorded
-calls before changing tools; a self-report does not prove a missing capability
-or a saving. Keep collection identical across comparison arms and include its
-output in token measurements. The MCP server does not upload this feedback.
+Call advertised tool names directly when you know their arguments. If your
+client needs to look up a tool, filter the catalog to the names you need and
+request a schema only for unfamiliar arguments.
 
 Experimental embeddings that supply `experimentalTargetTextProvider` may also
 include independent `paint.target` and `paint.current` inventories in requested
@@ -335,8 +322,8 @@ Repeated groups also provide up to three `boxes` as space permits, sorted by y t
 The group `count` includes unshown positions; `paint.omitted` counts components
 not represented by the groups, independently of `omittedBoxes`. Full cached text
 and positions remain in JSON detail without another recognition pass. These
-measurements do not change the verdict or default run hint; agent-value testing
-is still required.
+measurements are optional diagnostics and do not change the verdict or default
+run hint.
 
 Requested `reference({detail: "json"})` also adds `layout` to failing target
 states when the saved current DOM is available. It contains all accepted
@@ -367,7 +354,7 @@ without retaining decoded screenshots. Content-addressed derived files under
 `.juxtapose/analysis/target-layout-v2/` survive a restart. Keys include image
 bytes, current structure bytes and algorithm version. Changed inputs invalidate
 the analysis; corrupt caches are recomputed and a read-only cache does not
-change the verdict. These facts remain on demand pending agent-value testing.
+change the verdict. These measurements are available on request.
 When a full-page capture differs from its target only in size (same viewport,
 device scale factor and capture kind), the state is `fail`, never `incompatible`
 or `pass`. Jux compares the top-left overlap and counts every pixel present in
@@ -405,10 +392,7 @@ checkpoint, because it rewrites the committed baselines.
 The short response counts changed and unchanged captures, lists up to eight
 that changed with their changed pixel counts and region IDs, and adds up to
 six observed structural changes deduplicated across them, such as
-`main>section>form gap 12px→20px (all 4)`. On the four-capture billing
-fixture, comparing the regressed run with the repaired one took 88 ms and
-821 bytes and named all four edits. `detail: "json"`
-returns `juxtapose.saved-run-change/v1`, with each changed state's structural
+`main>section>form gap 12px→20px (all 4)`. `detail: "json"` returns `juxtapose.saved-run-change/v1`, with each changed state's structural
 deltas. A region request returns a paired
 previous/current PNG crop. The server caches a bounded number of these
 immutable saved-run comparisons for repeated lookups in the same session. A
@@ -583,9 +567,9 @@ is saved for focused, read-only lookups.
 `run` needs a built workbench or an `origin` in the project's juxtapose
 config.
 
-An unstable result also has `flake: { cause, confidence, evidence, fix }`:
-why the two captures differed, and the exact config patch that fixes it (`null`
-when none helps). See [Why it flaked](cli.md#why-it-flaked). `handoff` prints
+An unstable result may include `flake: { cause, confidence, evidence, fix }`:
+a candidate cause and a suggested configuration patch (`null` when there is no
+suggestion). Check the evidence before applying the patch. See [Why it flaked](cli.md#why-it-flaked). `handoff` prints
 the same fix as one line. A run-level `flakeGroups` lists stories that share one project-level fix.
 
 With `recheck: "off"` (or `"new"`, for a failing story) the run captures a
@@ -792,19 +776,18 @@ as `jux approve --story <id> --json`: `{ approved, failed }`. It writes the hash
 and structure the project commits; the image goes to the local cache, so never
 `git add` one.
 
-| Argument        | Type     | Description                                                                   |
-| --------------- | -------- | ----------------------------------------------------------------------------- |
-| `stories`       | string[] | Exact story ids from the last run. Required.                                  |
-| `allowUnstable` | boolean  | Approve stories the run captured twice with different results. Default false. |
+| Argument        | Type     | Description                                                                           |
+| --------------- | -------- | ------------------------------------------------------------------------------------- |
+| `stories`       | string[] | Exact story ids from the last run. Required.                                          |
+| `allowUnstable` | boolean  | Waive earlier instability; a fresh matching capture is still required. Default false. |
 
-A story the run captured only once (`unrechecked`) is captured again first, and
-approved only if the two captures match. This launches the session's browser and
-needs the same build or origin as `run`. `allowUnstable` skips it.
+Approval requires a fresh confirming capture for each selected story. Its
+hash must match the saved run you reviewed, using the same build or origin and
+capture environment. This includes stories already rechecked during the run.
 
-A story whose two run captures differed is `unstable` in the run result. It is
-refused with a reason in `failed` (the rest are still approved) unless
-`allowUnstable` is true. Fix it with a mask, a `stories` override or
-`freshRenderer` rather than passing the flag, unless the user insists.
+`allowUnstable` can waive an earlier instability result, but it still requires
+that fresh hash match. If captures keep differing, inspect the flake evidence
+and adjust fixtures, masks or renderer settings before approving.
 
 There is no "all". The server rejects an empty list, and any id that is not in
 the last run, without approving anything. Otherwise every requested id appears
@@ -870,9 +853,8 @@ Two calls overlap only when neither writes what the other reads or writes:
   with it and a `-`: `asPrefix: "before"` and `as: "before-home"` take turns.
 - By default, at most 4 `snap` calls capture at once (fewer on small
   machines). Each one uses its own browser
-  context, so parallel snaps share no cookies, storage or page. A snap taken in
-  parallel is byte-identical to the same snap taken alone. To change the limit,
-  see [Snap concurrency](#snap-concurrency).
+  context with separate cookies, storage and pages. Application data and timing
+  still need to be stable. To change the limit, see [Snap concurrency](#snap-concurrency).
 - A `diff` waits for any `snap` that writes one of its sides, and a `snap`
   waits for any `diff` reading the name it writes.
 - `run` and `approve` run alone: they wait for every call before them, and
@@ -913,9 +895,9 @@ limited by the core count; any other
 value stops the server with exit code 2 before it reads any input. The server
 reads the config from its `--project` directory once, at startup.
 
-On a 15-core machine, 8 snaps at once finished in 338 ms with a limit of 8 and
-in 604 ms with a limit of 4, and each capture took about 10% longer. On a
-machine with fewer cores, a higher limit can make captures slower.
+Higher concurrency can reduce total run time while making individual captures
+slower. Choose a limit that fits your machine and compare results using the
+same fixtures and capture settings.
 
 ### Renderer reuse and approval
 

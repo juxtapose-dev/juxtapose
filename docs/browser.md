@@ -11,8 +11,8 @@ npx -p @juxtapose/cli jux browser install   # once, ~100 MB
 It lands in `~/Library/Caches/jux` (macOS), `~/.cache/jux` (Linux) or
 `%LOCALAPPDATA%\jux` (Windows); `JUX_CACHE_DIR` overrides.
 `JUX_CHROME=<path>` or `--chrome <path>` uses your own Chromium instead; the
-version is recorded in each run's `env`, so a mismatch is reported rather
-than silently red.
+version is recorded in each run's `env`, so you can identify a browser change
+when comparing runs.
 
 Lookup order, first match wins:
 
@@ -20,7 +20,7 @@ Lookup order, first match wins:
 2. `JUX_CHROME=<path>`
 3. jux's own cache (the install above)
 4. Nothing: jux stops with `jux: no browser at <expected path>` and tells you
-   to run `jux browser install` (exit 1).
+   to run `jux browser install`.
 
 jux never runs a browser from Playwright's cache, because `playwright
 install`, a Playwright upgrade or a disk cleanup can delete it at any time.
@@ -48,8 +48,9 @@ Outside CI, the first `jux snap`, `jux run` or `jux init` starts one background
 `chrome-headless-shell` and later invocations reuse it, so each one skips the
 browser launch. It exits by itself after 10 minutes with no client
 (`JUX_BROWSER_IDLE_MINUTES` changes that). Every capture gets its own browser
-context, so pages share no cookies or storage, and the pixels are
-byte-identical to a fresh launch. If the warm browser cannot be reached, jux
+context with separate cookies and storage. Browser reuse follows the same
+capture settings; changing data or timing can still produce different pixels.
+If the warm browser cannot be reached, jux
 launches a private one as before.
 
 It is one browser per user and environment: the binary, its version and the

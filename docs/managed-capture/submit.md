@@ -55,9 +55,9 @@ must not interpret an upload-only exit code as visual approval.
 
 ## Wait for a private preview
 
-With a CLI release that supports `--wait-preview` and both preview publication
-and private viewing enabled on the service, upload a compiled build and wait
-for its private preview URL:
+CLI 0.30.0 adds `--wait-preview`. When the service enables preview publication
+and private viewing for your project, upload a compiled build and wait for its
+private preview URL:
 
 ```sh
 jux submit --experimental --build-dir storybook-static --wait-preview --json

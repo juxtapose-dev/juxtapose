@@ -11,14 +11,8 @@ exclude descendants; it is not a complete concatenated sentence. Child order and
 rectangles do not establish character offsets, line breaks, or logical reading
 order. Computed properties are observed values, not original CSS declarations.
 
-PNG-produced evidence has no text field. This converter does not infer fonts or
-DOM semantics from pixels, match target text to current elements, import Figma,
-or add text evidence to default MCP responses. A future adapter must preserve
-source provenance and the distinction between explicit design values and
-observations. The existing layout matcher continues to use geometry and paint.
-
-The motivating real-review diagnostic replaced a flattened sans-serif shortcut
-line with captured target inline typography: Pixelmatch differences fell from
-3,773 to 59 across six states, while 34 behavior checks remained green. Exact
-image equality still failed. This validates retaining those facts, not agent
-speed or token savings.
+PNG-produced evidence has no text field. The converter preserves captured DOM
+text and typography; it does not infer those values from pixels or establish
+matches between target text and current elements. It does not import Figma or
+add text evidence to default MCP responses. The layout matcher uses geometry
+and paint, with explicit provenance for each observation.

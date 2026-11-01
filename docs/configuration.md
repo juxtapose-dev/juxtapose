@@ -60,9 +60,9 @@ are reported explicitly.
 
 Also accepted: `devices`, `device` and `orientation` (see [Devices](#devices)), `buildDir` and `origin` (the CLI flags' defaults), `threshold`,
 `minDiffPercent`, `waitForSelector`, `delay`, `settle`, `network` and `freeze` as project-wide
-versions of the per-story options below, and `warmSwitch` — off by default, and best left there: it is ~4x faster but
-does not reproduce cold-load pixels exactly, which under a byte-exact hash
-makes a story's verdict depend on where it lands in the queue.
+versions of the per-story options below. `warmSwitch` is off by default: it
+reuses the rendered page between stories and can produce different pixels from
+a cold load. Leave it off unless you have checked that behavior for your stories.
 
 `stories` sets per-story options by story id glob, for a Storybook you don't
 own: see [Override stories you don't own](#override-stories-you-dont-own).
@@ -132,8 +132,8 @@ A `device` sets the viewport and emulates the device: mobile layout (so
 `(pointer: coarse)`, `(hover: none)`), the user agent and, for Android, its
 client hints. It is accepted wherever `viewport` is: `--device` on `jux snap`,
 the MCP `snap` tool, project config, `parameters.juxtapose` / `meta.juxtapose`,
-URL entries' `params` and variants (not `stories` overrides). Nothing fans out:
-a story is captured on one device unless you declare variants.
+URL entries' `params` and variants (not `stories` overrides). A device setting produces one capture per story. Use variants to capture more
+than one device.
 
 Device scale factor is always 1, so an image is 1 px per CSS px.
 
@@ -194,7 +194,7 @@ Layers are the project config, then story parameters, then a variant. For each:
   the emulation.
 - A story, variant or live `viewport` overrides only a device's size; the
   device's emulation stays. `{ "device": "pixel-8", "viewport": { "width": 412, "height": 600 } }`
-  is a short Pixel.
+  keeps Pixel 8 emulation with a 600-pixel viewport height.
 - A `device` at a higher layer replaces a lower layer's `viewport` too.
 - `orientation` layers on its own. The project's is a fallback for any layer.
 
@@ -273,10 +273,8 @@ The legacy top-level `threshold` and `minDiffPercent` tune the reported diff in
 exact mode; they do not enable visual equivalence or loosen its zero-pixel rule.
 
 Tolerance can hide real low-contrast changes. Use exact mode for captures where
-those changes matter. The initial 0.05 policy filtered 43 of 44 saved Linux noise
-pairs and detected six deliberate browser mutations: a changed digit, missing
-icon, removed one-pixel border, one-pixel shift, font-weight change, and text color
-`#222` to `#333`. This is bounded validation, not a guarantee for every UI.
+those changes matter, and review representative differences before enabling a
+visual-equivalence policy.
 
 ## Renderer settings
 
@@ -331,19 +329,10 @@ The check that every story starts in a new renderer process is
 fails only with the macOS system font, so on Linux the renderer-process tests
 in the same file are the guard.
 
-It costs time. A cold renderer runs the workbench's JavaScript again without
-the JIT state it had built up. Measured on Chrome 151, macOS, on a shared,
-loaded machine:
-
-|                                                    | renderer reused | fresh renderer |
-| -------------------------------------------------- | --------------- | -------------- |
-| trivial page navigation                            | 3 ms            | 34 ms          |
-| Spectrum story load, median                        | 125–142 ms      | 350–395 ms     |
-| full Spectrum pass (1,086 stories), concurrency 8  | 47 s            | 83 s           |
-| full Spectrum pass (1,086 stories), concurrency 16 | 36 s            | 70 s           |
-
-The V8 code cache does not recover the cost, and raising `concurrency` does not
-hide it: the work is CPU-bound.
+A fresh renderer runs the workbench's JavaScript again without its previous JIT
+state. Shared rendering avoids some of that work, but can retain state that
+changes a later capture. The retry budget below limits how much recovery work a
+run performs.
 
 On `jux run`, retry at most `ceil(10% * selected non-skipped captures)`.
 Variants count as separate captures. Candidates are sorted by capture key so
@@ -389,18 +378,6 @@ it cannot waive fresh capture or approve different bytes. Capture errors and
 environment mismatches refuse approval. `jux init` forces fresh captures and
 always rechecks. `unrechecked: true` still marks results without an ordinary
 stability recheck; `rendererRetry` separately records history retry evidence.
-
-Measured on examples/storybook, a first run of 18 captures (all new), with
-concurrency 4, on a shared machine (the run's own time, median of three):
-
-| `recheck`   | run time |
-| ----------- | -------- |
-| `"changed"` | 1.8 s    |
-| `"new"`     | 1.8 s    |
-| `"off"`     | 0.9 s    |
-
-`"changed"` and `"new"` match here because every story is new. They differ on a
-later run in which stories fail: `"new"` captures those once.
 
 Concurrency defaults to 8. Higher is not automatically better — past your core
 count, contention slows captures down rather than speeding them up.
@@ -484,8 +461,8 @@ captures it. Pending work is any of the following:
 - A network request in flight, unless it's ignored (see
   [Network requests](#network-requests)).
 
-A page with no pending work is captured within a few tens of milliseconds. A
-page that keeps working is captured when the wait reaches its cap,
+Capture proceeds when the observed pending work settles. A page that keeps
+working is captured when the wait reaches its cap,
 `settle.timeout`. The capture still happens, and the result is flagged
 `settle-timeout` with a list of what was pending, for example
 `1 request to /api/feed in flight (Fetch)`. The flag never changes a pass or a
@@ -648,8 +625,8 @@ applies to them. Requests that a service worker makes bypass the policy too
 }
 ```
 
-A `placeholder` answers the request at once with a fixed stand-in instead of
-fetching it, so the page renders the same pixels every run:
+A `placeholder` answers the request with a fixed stand-in. This stabilizes that
+resource; other page content can still change:
 
 | type     | `placeholder` answers with                                                      |
 | -------- | ------------------------------------------------------------------------------- |
@@ -817,8 +794,8 @@ values during initialization.
 
 ## Content that changes every run
 
-A clock, a random avatar, a generated id — under an exact hash these are
-red in exact mode; visual tolerance is not a reliable workaround for changing content.
+Live timestamps and other changing content can produce a different image hash
+every run. Visual tolerance is not a reliable way to stabilize them.
 `freeze` covers the browser’s own clock and random sources (see [Clock, random and animated images](#clock-random-and-animated-images)).
 For anything else, such as a server response or a third-party image, stub the
 data or pin the fixture. That keeps full pixel coverage.
@@ -832,17 +809,14 @@ export const Deploy = {
 };
 ```
 
-Everything outside the box is still compared exactly.
+Everything outside the masked box remains covered by the configured comparison policy.
 
 A mask hides what is inside the box, not the box itself. The box is the
-element's bounding box, so if the volatile content changes the element's
-_size_, the box changes with it and everything around it moves. A bare
-timestamp span failed at 0.015% that way, from a sliver leaking at the edge.
+element's bounding box. If changing content alters that box's size, the mask
+and surrounding layout move too.
 
-A fixed width alone is not enough. Our example clock had `width: 200px` and
-still flaked: some timestamps fit on one line and some wrapped to two, so the
-box went from 18 to 36 px tall and pushed the card around it. Pin both
-dimensions:
+A fixed width can still allow text to wrap and increase the element's height.
+Pin both dimensions and prevent wrapping:
 
 ```jsx
 <span
@@ -1028,8 +1002,9 @@ than treating it as empty.
 - `"fs"`: the repo-backed store pointed at a `dir` you choose.
 - `"s3"`: declared, but the CLI throws on it in this version.
 
-Pass/fail needs no image: a story passes when its captured hash equals the
-manifest's. The image is only for the pixel diff and the review UI. When a
+The default exact comparison checks image hashes without reading the baseline
+image. Pixel diffs and the review UI need that image; an opt-in visual
+equivalence check also needs it to evaluate a hash mismatch. When a
 story fails and its approved image is not in the cache (a fresh clone, a CI job
 with a cold cache), jux reports the failure by hash and structure and says
 "baseline image not available (not in cache); structure diff only". It does not
