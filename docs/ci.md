@@ -1,5 +1,9 @@
 # In CI
 
+The step excerpt below assumes checkout, Node.js 22.2 or later, project dependencies
+and the pinned browser plus Linux system libraries are installed. The complete
+job below includes that setup.
+
 `jux run --comment` posts a summary to the pull request, updating the same
 comment on every push rather than adding a new one:
 
@@ -45,10 +49,13 @@ commit first, but on a `pull_request` event `HEAD` is a test merge commit and
 the base branch may have moved, so in practice this finds the most recent main
 cache, which is usually the one you want.
 
+This job assumes a pnpm project with `@juxtapose/cli` pinned in devDependencies
+and its lockfile. Adapt the build command and paths for your project.
+
 ```yaml
 jobs:
   visual:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: write
@@ -56,6 +63,20 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # the merge-base lookup below needs history
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chrome and Linux system libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm exec jux browser install
+          chrome_dir=$(dirname "$(pnpm exec jux browser path)")
+          sudo apt-get update
+          sudo apt-get satisfy -y --no-install-recommends "$(paste -sd, "$chrome_dir/deb.deps")"
       - run: npx storybook build --quiet --disable-telemetry --loglevel error
 
       - id: base
@@ -80,7 +101,7 @@ jobs:
           key: juxtapose-cache-none
           restore-keys: juxtapose-cache-
 
-      - run: npx -p @juxtapose/cli jux run --comment --html
+      - run: pnpm exec jux run --comment --html
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -99,8 +120,8 @@ Things to know before you rely on it:
   the repository root. For a monorepo package, use `packages/web/.juxtapose/cache`
   (the package's own path); if you set `storage.dir`, use that directory
   instead.
-- Baselines must be approved on the platform that runs CI. Pixels differ
-  between macOS and Linux, so a hash approved on a laptop never matches the CI
+- Baselines must be approved on the platform that runs CI. Pixels can differ
+  between macOS and Linux, so a laptop-approved baseline may not match the CI
   runner. Approve in CI, or on the same OS in a container. Until the hashes
   match there is nothing to pass, so the main run keeps no images and the cache
   stays empty.

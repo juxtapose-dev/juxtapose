@@ -4,8 +4,9 @@ An agent with MCP support gets the same loop as tools, with one warm browser for
 the session: see [MCP server](mcp.md). This page covers the CLI form and the
 reference for every result it returns.
 
-Pixels say _where_ something changed. The verdict says _what_: which element,
-which property, old → new, and whether that explains every changed pixel.
+Pixel comparisons locate changed regions. The verdict adds recorded element,
+property and geometry changes, with spatial coverage estimates. These observations
+can be incomplete and do not prove which source edit caused the pixels.
 
 ```bash
 jux snap http://localhost:5173/settings --as before
@@ -17,7 +18,9 @@ jux diff before after
 A story with `unstable` in the run report was captured twice and came out
 differently. `jux approve` refuses it (exit 1, story named) until it is made
 deterministic or `--allow-unstable` is passed; see [cli.md](cli.md). Its
-`flake` field names the cause and the config patch to apply.
+`flake` field, when available, gives a candidate cause, confidence and evidence;
+a suggested configuration patch may be absent. Confirm the diagnosis before
+changing capture settings.
 
 Approving writes hashes to `juxtapose.manifest.json`, readable structure evidence
 to `juxtapose.structures/`, and images to a git-ignored cache under `.juxtapose/`.
@@ -151,8 +154,9 @@ op-noop: identical: images byte-identical, no structural change.
 | `cause`              | only from `jux run --since`: `{ kind, files, partial? }`. `in-closure`: changed files this story imports (≤ 5, nearest first, paths relative to the project root, ≤ 80 chars keeping the tail); `partial: true` when the trace was not complete, so the change may come from a file not listed (absent when complete). `config`: a root lockfile, root `tsconfig*.json` or workbench config dir changed, which reaches every story. `none-in-closure`: no changed file is in the story's traced imports. `unknown`: the trace could not be completed (see below) |
 | `escalate.command`   | the next command to run: `jux diff <a> <b> --crops` for a snap pair, `jux handoff <id>` for a story in a run. Arguments, `.webp` paths included, are shell-quoted when needed, so a verdict for two absolute paths names this machine's paths                                                                                                                                                                                                                                                                                                                    |
 
-The verdict never decides pass/fail — the pixel hash does. It explains a
-failure so an agent can compare the deltas with what it meant to change.
+Pass/fail follows the configured comparison policy: exact image hashes by default,
+or explicit opt-in visual equivalence, with baseline validity checks. Structural
+observations help inspect the result; they do not decide the verdict.
 `jux run` attaches the same object to each failing story as
 `results[].structural`. The compact `summary` is intended for display.
 `jux handoff` instead leads with classification and JSON observations: `deltas`,
@@ -283,7 +287,8 @@ and `file` is a forward-slash path relative to the project root:
 
 ## Groups and cause (`jux run`)
 
-A token bump that turns forty stories red is one decision, not forty.
+A shared token edit can affect many stories. Groups help inspect repeated
+observations; each story and required state still needs review.
 `jux run` groups failing stories whose verdicts share a `signature` (and have
 at least one delta), prints up to 10 groups largest first, and writes all of
 them to `report.json` as `groups[]`: `{ signature, summary, storyIds }`. The

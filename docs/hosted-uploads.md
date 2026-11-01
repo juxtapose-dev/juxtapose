@@ -1,6 +1,7 @@
 # Hosted review uploads
 
-Hosted review is opt-in. Local manifests remain the approval authority: uploading
+Hosted review is opt-in. Local `jux approve` and `jux check` use local manifests;
+hosted review decisions and the required GitHub App check are separate. Uploading
 never approves snapshots or changes your local comparison settings.
 
 Create a project-scoped token in the hosted dashboard and provide it through the
