@@ -3,7 +3,7 @@
 //
 // Why: pixels say WHERE something changed; this says WHAT — which element,
 // which property, old → new — so an agent can decide without reading an image
-// (spec: docs/specs/2026-10-12-sp0-structural-diff-agent-surface-design.md).
+// The structure types and adjacent Chromium fixture tests define this contract.
 // It explains a failure; it never decides one. The pixel hash still does.
 //
 // Everything here is a pure function of the CDP response so it can be tested

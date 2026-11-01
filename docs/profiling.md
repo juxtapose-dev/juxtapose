@@ -116,8 +116,7 @@ universal token saving or an agent-quality improvement. Keep failures and missin
 coverage visible; reject optimizations that improve timing by skipping work or
 weakening correctness checks.
 
-The historical notes on
-[approval batching](performance/2026-10-16-approval-batching.md) and
-[compact structures](performance/2026-10-16-compact-structures.md) demonstrate scoped
-reproduction and limitations. Use the retained benchmark scripts with your own
-captured inputs; do not rely on old local scratch paths or prototype patches.
+Use the retained benchmark scripts with your own captured inputs. Keep experiment
+plans, raw results, machine-specific paths and historical scorecards outside the
+public guides; publish only a reviewed conclusion with sufficient reproduction
+steps and limitations.

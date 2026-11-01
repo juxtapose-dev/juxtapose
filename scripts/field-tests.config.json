@@ -1,5 +1,5 @@
 {
-  "$comment": "Gates for scripts/field-test.mjs --storybook <name>. knownVariable: stories allowed to differ across passes. maxUnlistedDifferences: how many differing stories NOT on that list the gate tolerates (CI runners are slow and load-sensitive, so a few new ones appear every run). allowedErrors: stories allowed to error. maxWallSeconds: ceiling per pass. concurrency: jux capture workers. Seeded from the macOS 0.13.0 scorecard and extended from Linux CI runs; see docs/field-tests.md.",
+  "$comment": "Gates for scripts/field-test.mjs --storybook <name>. knownVariable: stories allowed to differ across passes. maxUnlistedDifferences: how many differing stories NOT on that list the gate tolerates (CI runners are slow and load-sensitive, so a few new ones appear every run). allowedErrors: stories allowed to error. maxWallSeconds: ceiling per pass. concurrency: jux capture workers. These are diagnostic workload gates, not baseline approval rules; see CONTRIBUTING.md#reproducing-capture-issues.",
   "storybooks": {
     "chakra": {
       "maxWallSeconds": 2400,

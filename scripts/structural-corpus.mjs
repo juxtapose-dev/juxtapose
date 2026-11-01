@@ -2,7 +2,7 @@
 // each mutated page (one browser launch for all of them), diff every one
 // against the base, and assert the classification and delta each operator
 // must produce. Also the tier-0 size budget: every verdict <= 1,500 chars,
-// distribution printed. Seed for the row-4 benchmark.
+// distribution printed for the fixed mutation corpus.
 // Run after `pnpm build`: node scripts/structural-corpus.mjs
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
