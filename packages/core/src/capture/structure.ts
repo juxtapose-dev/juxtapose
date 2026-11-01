@@ -1,14 +1,21 @@
 // Structure snapshot: the visible DOM and its computed styles, captured in the
-// same frame as the screenshot.
+// same settled capture window as the screenshot (not an atomic browser frame).
 //
 // Why: pixels say WHERE something changed; this says WHAT — which element,
 // which property, old → new — so an agent can decide without reading an image
 // The structure types and adjacent Chromium fixture tests define this contract.
 // It explains a failure; it never decides one. The pixel hash still does.
 //
-// Everything here is a pure function of the CDP response so it can be tested
-// against real Chromium output committed as a fixture.
+// Normalization is a pure function of the CDP response. Optional component
+// ownership is a separately guarded diagnostic observation.
 
+import { parseComponentSnapshot } from '../components/evidence.js';
+import {
+  beginComponentCapture,
+  finishComponentCapture,
+  abandonComponentCapture,
+  type ComponentCaptureGuard,
+} from './components.js';
 import type { Protocol } from 'devtools-protocol';
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -767,6 +774,10 @@ export function decodeStructure(b: Buffer): StructureSnapshot {
   const parsed: unknown = JSON.parse((isGzip(b) ? gunzipSync(b) : b).toString('utf8'));
   if (!isStructureSnapshot(parsed))
     throw new Error('not a juxtapose.structure/v1 sidecar');
+  // Invalid optional diagnostics must not discard independently valid DOM.
+  const components = parseComponentSnapshot(parsed.components, parsed.elements.length);
+  if (components) parsed.components = components;
+  else delete parsed.components;
   return parsed;
 }
 
@@ -801,6 +812,7 @@ export async function captureStructure(
   timings?: StructureCaptureTimings,
   scale = 1,
   origin: { x: number; y: number } = { x: 0, y: 0 },
+  componentEvidence = false,
 ): Promise<StructureSnapshot | undefined> {
   const mark = (sel: string) =>
     queryAllExpression(
@@ -832,6 +844,7 @@ export async function captureStructure(
   // out of the re-resolved list and `every` would pass on the survivors
   // (probe c: SECRET-C recorded). Comparing counts closes that.
   let markedCounts: number[] = [];
+  let componentGuard: ComponentCaptureGuard | undefined;
   const measured = async <T>(
     key: keyof StructureCaptureTimings,
     work: () => Promise<T>,
@@ -868,6 +881,11 @@ export async function captureStructure(
   }
 
   try {
+    if (componentEvidence)
+      componentGuard = await beginComponentCapture(
+        page,
+        markedCounts.some((count) => count > 0),
+      );
     // No includeDOMRects. It adds offset/scroll/client rects, which nothing
     // reads (rects come from layout.bounds, always sent), and reading an
     // element's offset rect makes Chrome lay out any content-visibility
@@ -899,14 +917,25 @@ export async function captureStructure(
       if (!intact) return undefined;
     }
     const start = timings ? performance.now() : 0;
-    try {
-      return normalizeStructure(raw, viewport, scale, origin);
-    } finally {
-      if (timings) timings.normalize = performance.now() - start;
+    const snapshot = normalizeStructure(raw, viewport, scale, origin);
+    if (timings) timings.normalize = performance.now() - start;
+    if (componentGuard) {
+      const guard = componentGuard;
+      componentGuard = undefined;
+      snapshot.components = await finishComponentCapture(page, snapshot, guard, {
+        scale,
+        origin,
+        scroll: {
+          x: raw.documents[0]?.scrollOffsetX ?? 0,
+          y: raw.documents[0]?.scrollOffsetY ?? 0,
+        },
+      });
     }
+    return snapshot;
   } catch {
     return undefined;
   } finally {
+    if (componentGuard) await abandonComponentCapture(page, componentGuard);
     if (mask.length) await measured('cleanup', unmark);
   }
 }

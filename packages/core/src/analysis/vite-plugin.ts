@@ -302,3 +302,5 @@ export function sourcePath(id: string, root: string): string | null {
   if (file.split('/').includes('node_modules')) return null;
   return path.relative(root, file).split(path.sep).join('/');
 }
+
+export { juxtaposeComponentEvidence } from './component-plugin.js';

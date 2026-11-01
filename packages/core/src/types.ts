@@ -1,3 +1,4 @@
+import type { ComponentSnapshot } from './components/evidence.js';
 import type { Viewport } from './browser/types.js';
 import type { StructureCaptureTimings } from './capture/structure.js';
 import type { observeControlGeometry } from './diff/control-geometry.js';
@@ -252,6 +253,8 @@ export interface StructureSnapshot {
    * from component diff facts. A current capture also applies these IDs to
    * older baselines that predate this metadata. */
   contextElementIds?: readonly string[];
+  /** Optional diagnostic component evidence; excluded from structure/image hashes. */
+  components?: ComponentSnapshot;
   truncated?: { kept: number; total: number };
 }
 

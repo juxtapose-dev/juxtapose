@@ -10,6 +10,7 @@ installed package version when behavior differs from the current repository.
 - [Browser setup](browser.md), [CI](ci.md) and [watch mode](watch-mode.md)
 - [Hosted uploads](hosted-uploads.md), [managed CI](managed-ci.md) and
   [GitHub PR review](github-pr-review.md)
+- [Component and DOM evidence](components.md)
 - [Package roles](packages.md)
 
 ## Contributor guides

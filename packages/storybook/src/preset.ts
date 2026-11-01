@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createRouter, RunDirSource, localReviewOrigin } from '@juxtapose/server';
 import { createBaselineStore, type ProjectConfig } from '@juxtapose/core';
-import { juxtaposeModuleGraph } from '@juxtapose/core/vite';
+import { juxtaposeModuleGraph, juxtaposeComponentEvidence } from '@juxtapose/core/vite';
 import { StorybookPlatform } from '@juxtapose/adapter-storybook';
 
 // Vite's connect middlewares receive Node's own request and response (its
@@ -39,7 +39,13 @@ export function viteFinal(config: ViteConfig): ViteConfig {
     // The module graph plugin only acts in `storybook build`; the dev-server
     // plugin only in `storybook dev`. Both are added in both: each is inert in
     // the other's mode.
-    plugins: [...(config.plugins ?? []), juxtaposePlugin(), juxtaposeModuleGraph()],
+    plugins: [
+      // Svelte source instrumentation must precede the framework compiler.
+      ...juxtaposeComponentEvidence(process.env.JUXTAPOSE_ROOT ?? process.cwd()),
+      ...(config.plugins ?? []),
+      juxtaposePlugin(),
+      juxtaposeModuleGraph(),
+    ],
   };
 }
 
