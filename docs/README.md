@@ -22,7 +22,7 @@ current contracts and link to source and checks:
 - [Browser driver boundaries](specs/2026-10-13-cdp-driver-warm-browser-design.md)
 - [Variant identity and resolution](specs/2026-10-13-variants-design.md)
 - [Renderer recovery](specs/2026-10-15-renderer-reuse-retry-design.md)
-- [Device emulation and consent](specs/2026-10-17-device-presets-and-consent-design.md)
+- [Device emulation](specs/2026-10-17-device-presets-and-consent-design.md)
 
 For measurements, use [field-test reproduction](field-tests.md) and
 [controlled profiling](profiling.md). Historical contributor notes cover
