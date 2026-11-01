@@ -104,7 +104,7 @@ DOM inspection is available for new hosted captures when both the current and
 approved baseline structures are available and match their captured image hashes.
 The CLI carries those verified sidecars with the run, including passing snapshots;
 retrying an upload never substitutes a newer baseline. Older run directories and
-new stories without an approved baseline honestly show DOM evidence unavailable.
+new stories without an approved baseline show DOM evidence as unavailable.
 
 Hosted trees are a sanitized projection of the original hashed structures, not
 React component metadata. Masked subtrees, typed form values and URL-bearing

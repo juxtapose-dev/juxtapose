@@ -17,8 +17,7 @@ export default {
 A **Juxtapose** tab appears in the addon panel. From there you can capture the
 current story or the whole suite, compare against the baseline four ways
 (side by side with a diff overlay, a draggable slider, an onion crossfade, or
-flicker), approve changes, and copy an agent-ready prompt describing exactly
-what moved.
+flicker), approve changes, and copy a prompt with the recorded changes and image paths for your agent.
 
 juxtapose also registers as a test provider: a **Juxtapose** row in Storybook's
 testing module at the bottom of the sidebar, and Storybook's **Run tests**

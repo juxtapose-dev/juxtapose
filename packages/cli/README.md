@@ -1,7 +1,8 @@
 # @juxtapose/cli
 
-Visual regression testing for Storybook and Ladle. Capture selected stories,
-compare them with approved baselines, and inspect screenshots and recorded DOM changes.
+Visual regression testing for pages by URL, Storybook and Ladle. Capture the
+pages or stories you need, compare them with approved baselines, and inspect
+screenshots and recorded DOM changes.
 
 Requires **Node.js 22.2 or later**. Local testing needs no hosted account: the repo
 holds configuration, hashes and structure; images stay in a local cache. Hosted
@@ -16,15 +17,16 @@ git add juxtapose.config.json juxtapose.manifest.json juxtapose.structures/ .git
 ```
 
 Review the initial captures before treating them as your reference. Subsequent
-`jux run` commands select affected stories when the dependency graph is usable,
-and fall back to a full run when selection is uncertain.
+`jux run` captures all stories by default. Use `--since <ref>` to select affected
+stories when the dependency graph is usable; uncertain selection falls back to
+a full run.
 
 | command                    | what it does                                          |
 | -------------------------- | ----------------------------------------------------- |
-| `jux run`                  | capture affected stories and compare to baselines     |
+| `jux run`                  | capture stories and compare to baselines              |
 | `jux approve --story <id>` | confirm captures and update local baselines           |
 | `jux check`                | exit non-zero if anything still needs review — for CI |
-| `jux handoff <id>`         | print an agent-ready prompt for one failing story     |
+| `jux handoff <id>`         | print a prompt to investigate one failing story       |
 | `jux browser`              | `install`, `status`, `path`, `start` or `stop`        |
 | `jux mcp`                  | MCP server on stdio for coding agents; [docs][mcp]    |
 
@@ -48,7 +50,7 @@ warm browser keeps the system fonts and time zone it started with, so after you
 install fonts or change the system time zone, run `jux browser stop`. See the
 [browser guide](https://github.com/juxtapose-dev/juxtapose/blob/main/docs/browser.md) for details.
 
-Reviewing diffs inside Storybook? Add
+To review diffs inside Storybook, add
 [`@juxtapose/storybook`](https://www.npmjs.com/package/@juxtapose/storybook).
 
 Full documentation: [juxtapose on GitHub](https://github.com/juxtapose-dev/juxtapose)

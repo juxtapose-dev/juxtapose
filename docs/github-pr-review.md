@@ -15,9 +15,10 @@ same check name. A green capture job alone does not approve visual changes.
 1. Install the Juxtapose GitHub App, link the repository to the SaaS project, and
    create a project token with **ingest** scope; leave **approve** off.
    Store it as the `JUXTAPOSE_TOKEN` Actions secret.
-2. Give human reviewers an owner, admin, or reviewer role on the Juxtapose team.
-   They must sign in with the GitHub account they use to review. Repository write
-   access alone does not grant Juxtapose approval permission.
+2. Reviewers sign in with GitHub. Juxtapose team owners, admins and reviewers
+   can approve changes. Explicit collaborators on the linked GitHub repository
+   can view and comment; repository write access also allows decisions on
+   eligible captures from that repository.
 3. Pin the published `@juxtapose/cli@0.29.0` in the repository's devDependencies
    and lockfile. This release includes `--review-in-github`.
 4. Adapt [the workflow example](examples/visual-review.yml) to your build command
@@ -27,9 +28,8 @@ same check name. A green capture job alone does not approve visual changes.
    approve, an authorized reviewer can, and a new changed head blocks again.
    Then require `Visual capture` and `juxtapose` in your ruleset.
 
-The App needs Checks write, Pull requests write (comments and head reads), and
-subscriptions to `pull_request` and `check_run` events. Enable these in the App
-registration before testing the new requested-action handler.
+The App uses Checks and Pull requests write permissions to publish review
+checks and comments, and handles `pull_request` and `check_run` events.
 
 ## What reviewers see
 
@@ -84,10 +84,12 @@ The current gate accounts for uploaded captures. It does **not** yet prove that
 removed stories, changed exclusions, renamed variants, or changed capture policy
 were reviewed. Existing service approvals carry forward by branch/story/current
 image hash, rather than the complete base/head/policy identity. These are release
-limitations for teams that require a strict “every UI change accounted for” gate;
-they are tracked in the service PR-review plan. Local addon approvals are not
-required by this workflow.
+limitations for teams that need every kind of UI change covered by the gate.
+Local addon approvals remain separate from this workflow.
+
+Repository access applies to captures with verified provenance for that
+repository. Older runs without that proof may require Juxtapose team access.
 
 Inline screenshots require explicit per-project publication opt-in in the service.
-They use bearer media URLs that GitHub may cache, even for private repositories.
-The service defaults to links only. See its `docs/pr-comment-previews.md` runbook.
+GitHub may cache the bearer media URLs, even for private repositories.
+Projects without publication enabled receive links to hosted review.

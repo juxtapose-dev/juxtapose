@@ -1,26 +1,24 @@
 # Packages
 
-Two of these are the ones you install:
+For most projects, install the CLI and optionally the Storybook addon:
 
 | package                | what it is                                           |
 | ---------------------- | ---------------------------------------------------- |
 | `@juxtapose/cli`       | the `jux` command — capture, approve, check, handoff |
 | `@juxtapose/storybook` | Storybook addon: review diffs in place, watch mode   |
 
-Ladle needs no second package — the CLI covers it, and Ladle has no addon slot
-to put a panel in.
+The CLI captures Ladle stories directly. Ladle does not provide an addon panel.
 
-The rest arrive as dependencies. You would reach for one directly only to build
-an adapter or a UI of your own:
+These packages are installed as dependencies. Use them directly when building
+an adapter or a review UI:
 
 | package                        | what it is                                                 |
 | ------------------------------ | ---------------------------------------------------------- |
 | `@juxtapose/core`              | capture, diff, baselines, analysis — no platform knowledge |
-| `@juxtapose/server`            | the local review API the addon is a skin over              |
-| `@juxtapose/adapter-storybook` | teaches the CLI to drive Storybook                         |
-| `@juxtapose/adapter-ladle`     | teaches the CLI to drive Ladle                             |
+| `@juxtapose/server`            | the local HTTP API used by the addon                       |
+| `@juxtapose/adapter-storybook` | lists and renders Storybook stories for capture            |
+| `@juxtapose/adapter-ladle`     | lists and renders Ladle stories for capture                |
 
-The two Storybook packages are not alternatives. `adapter-storybook` is how the
-CLI captures stories — it runs in Node, drives a browser, and you never import
-it. `@juxtapose/storybook` is the addon that renders the review UI inside
-Storybook itself. Installing the addon pulls the adapter in.
+`@juxtapose/adapter-storybook` runs in Node and drives the browser for capture.
+`@juxtapose/storybook` adds the review UI inside Storybook and installs the
+adapter as a dependency.

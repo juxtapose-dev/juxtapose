@@ -4,7 +4,7 @@
 | ------------------------------------ | --------------------------------------------------------------------------------- |
 | `jux init`                           | set up config and `.gitignore`, and capture the first baselines                   |
 | `jux doctor [--fix]`                 | warn if baseline images are tracked by git, and print the migration commands      |
-| `jux run`                            | capture affected stories and compare to baselines                                 |
+| `jux run`                            | capture stories and compare to baselines                                          |
 | `jux run --since <ref>`              | capture only the stories a change since `<ref>` can reach (see below)             |
 | `jux run --all`                      | capture everything, skipping change analysis                                      |
 | `jux approve --all`                  | promote the last run's captures to baselines (hash and structure; image to cache) |
@@ -17,7 +17,7 @@
 | `jux reference [name] [--run <id>]`  | compare configured design PNGs with a saved run, without browser capture          |
 | `jux config --explain <id>`          | the effective settings for one story or variant key, and which layer set each     |
 | `jux snap <url>… --as <name>`        | capture a page (or several with `--as-prefix`): pixels + structure, no workbench  |
-| `jux diff <a> <b> --json`            | tier-0 verdict: what changed between two snaps, no browser                        |
+| `jux diff <a> <b> --json`            | summarize changes between two saved snaps                                         |
 | `jux diff <a> <b> --crops`           | the verdict plus side-by-side PNG strips per changed region, no browser           |
 | `jux diff --runs <runA> <runB>`      | are two runs byte-identical? per-story hash comparison, no browser                |
 | `jux browser install\|status\|path`  | install, inspect or locate the pinned browser                                     |
@@ -58,11 +58,27 @@ Approval still uses exact reviewed IDs; run selection globs do not broaden it.
 
 ## Compare a saved run with design references
 
-Add named `designReferences` to the project config (see [configuration](configuration.md#design-references)), then run `jux run` once to capture the exact story and variant keys. `jux reference` compares configured targets with capture keys present in that saved run; targets outside a subset run or skipped there are counted as `notCaptured`. `jux reference mobile --run r1` selects a name and a saved run; an explicitly named target absent from the run is an error. The command never launches Chrome or changes a baseline. Exit 0 means every evaluated target passes, 1 means a visual mismatch or incompatible geometry, and 3 means a missing or unreadable input or no configured target captured in the run. An empty comparison reports `outcome: "no-comparison"` and tells you to capture a referenced story or select another run.
+Add named `designReferences` to the project config (see [configuration](configuration.md#design-references)), then run `jux run` once to capture the exact story and variant keys.
 
-The default output is a short ledger with the `notCaptured` count. It leads with the region containing the most changed pixels, not necessarily the topmost region. For a dominant color change it also shows the observed target/current colors; these are sampled co-located pixels, not inferred CSS values. `--json` returns `juxtapose.design-reference-set/v1`, including measured pixels, geometry, all computed regions ranked by exact changed-pixel count, sampled visible color pairs (at most three), and stable region IDs. The color-pair counts are exact within a deterministic sample of at most one million image pixels and exclude antialias-only differences. `jux reference mobile --region <id> --json` returns one paired target/current PNG crop as base64. Add `--padding 96` for more surrounding page-pixel context; the returned crop bounds are clamped to both saved images, and the existing output scaling still applies. Padding requires `--region` and a non-negative integer. A region ID is derived from the image hashes and comparison settings; it remains valid after a process restart while those inputs remain the same.
+`jux reference` compares configured targets with capture keys present in that saved run; targets outside a subset run or skipped there are counted as `notCaptured`. `jux reference mobile --run r1` selects a name and a saved run; an explicitly named target absent from the run is an error.
 
-The design-reference policy is Pixelmatch threshold `0.1` with antialiasing excluded. It is separate from approved-baseline `comparison` settings. A full-page capture whose size differs from its target (and nothing else does) returns `fail` with an `extent` block, `{ current, reference, dw, dh, missingAreaPixels }` where `dw`/`dh` are current minus target; the overlap is compared top-left aligned and pixels in only one image count as mismatched. Viewport, device scale factor, capture-kind and target-geometry differences remain `incompatible`. This `fail` carries no `reason`; `extent` is the signal, and `missingAreaPixels` counts pixels present in exactly one image. A design PNG has no DOM snapshot, so these results report pixel evidence without claiming a CSS cause.
+The command never launches Chrome or changes a baseline. Exit 0 means every evaluated target passes, 1 means a visual mismatch or incompatible geometry, and 3 means a missing or unreadable input or no configured target captured in the run. An empty comparison reports `outcome: "no-comparison"` and tells you to capture a referenced story or select another run.
+
+The default output is a short ledger with the `notCaptured` count. It leads with the region containing the most changed pixels, not necessarily the topmost region.
+
+For a dominant color change it also shows the observed target/current colors; these are sampled co-located pixels, not inferred CSS values.
+
+`--json` returns `juxtapose.design-reference-set/v1`, including measured pixels, geometry, all computed regions ranked by exact changed-pixel count, sampled visible color pairs (at most three), and stable region IDs. The color-pair counts are exact within a deterministic sample of at most one million image pixels and exclude antialias-only differences.
+
+`jux reference mobile --region <id> --json` returns one paired target/current PNG crop as base64. Add `--padding 96` for more surrounding page-pixel context; the returned crop bounds are clamped to both saved images, and the existing output scaling still applies. Padding requires `--region` and a non-negative integer.
+
+A region ID is derived from the image hashes and comparison settings; it remains valid after a process restart while those inputs remain the same.
+
+The design-reference policy is Pixelmatch threshold `0.1` with antialiasing excluded. It is separate from approved-baseline `comparison` settings.
+
+A full-page capture whose size differs from its target (and nothing else does) returns `fail` with an `extent` block, `{ current, reference, dw, dh, missingAreaPixels }` where `dw`/`dh` are current minus target; the overlap is compared top-left aligned and pixels in only one image count as mismatched.
+
+Viewport, device scale factor, capture-kind and target-geometry differences remain `incompatible`. This `fail` carries no `reason`; `extent` is the signal, and `missingAreaPixels` counts pixels present in exactly one image. A design PNG has no DOM snapshot, so these results report pixel evidence without claiming a CSS cause.
 
 ## Hosted uploads
 
@@ -292,8 +308,8 @@ compared by hashing its `images/*-current.webp`. Skipped and errored stories
 have no hash and compare equal only to the same status. This is the
 determinism check: run twice, then `jux diff --runs <first> <second>`.
 
-All commands accept `--json` for machine-readable output. `jux run` exits
-non-zero when any story fails, is new, or has a stale baseline.
+Commands with structured results support `--json`; `jux handoff` produces text.
+`jux run` exits nonzero when any story fails, is new, or has a stale baseline.
 
 `jux snap` and `jux run` take settle options that override the config and the
 story for that command: `--settle-timeout <ms>`, `--settle-ready` or
@@ -307,8 +323,8 @@ which is faster, but a story's pixels can depend on the story captured before it
 
 `jux snap` takes `--viewport WxH`, `--device <name>` and
 `--orientation portrait|landscape`. `jux snap <url> --as phone --device mobile`
-captures at 393×852 as an iPhone 15 would load the page: mobile layout, touch,
-its user agent. `--orientation landscape` rotates it, and `--viewport` with a
+captures at 393×852 with Chrome emulating mobile layout, touch, and the
+iPhone 15 user agent. This tests the emulated layout in Chrome. `--orientation landscape` rotates it, and `--viewport` with a
 device overrides only the size. A misspelled device exits 2 with the closest
 names. See [Devices](configuration.md#devices) for the list, your own devices
 and how they layer. Snap output records the `device` and `emulation` it used.
@@ -369,11 +385,10 @@ out or is cut short by an abort, the result carries
 `unstable: { hashes: [a], unconfirmed: "<reason>" }` instead: stability is
 unknown, so it is refused the same way (fail closed).
 
-What it costs: a green run captures nothing extra, and `stale` stories are not
-rechecked (their hash already matches a recorded baseline). Every `new` or
-`fail` story is captured twice, so a first run and `jux init` take about 2x as
-long (measured 1.7-2.0x on examples/storybook, linear in the story count), and
-so does a run after a toolchain bump that fails everything.
+Under the default `recheck: "changed"` policy, passing and `stale` stories need
+no stability recheck. Each `new` or `fail` story takes a second capture. That
+adds work when many stories are new or changed, such as during `jux init` or
+after a toolchain upgrade.
 
 ### Choose what gets rechecked
 
@@ -428,8 +443,8 @@ story `unstable`.
 
 ### Why it flaked
 
-An unstable story's result also carries `flake`, which says why the two
-captures differed and what to change:
+An unstable story's result can include `flake`: a candidate cause, its
+confidence and supporting evidence, and a suggested configuration change:
 
 ```json
 {
@@ -456,9 +471,9 @@ captures differed and what to change:
 Unstable: external image from picsum.photos in img.cover; fix: stories["card--basic"].network.external.images = "placeholder"
 ```
 
-`fix` is a patch for `juxtapose.config.json`: merge it in. It is scoped to the
-one story, so it changes nothing for the others. It is `null` when no config
-change helps. `jux diff --runs` explains each story that differs the same way
+`fix` is a suggested patch for `juxtapose.config.json`, scoped to one story.
+Check that the change matches your intended capture before applying it. `null`
+means the diagnostic has no configuration suggestion. `jux diff --runs` explains each story that differs the same way
 (`flake` in its `--json` output, keyed by story id), and `jux handoff` prints
 the line.
 
@@ -487,8 +502,8 @@ recognition covers numeric, English, German, French, Spanish, Italian,
 Portuguese, Dutch and CJK dates, weekday names, and "today", "yesterday" and
 "tomorrow"; a changed label that holds a weekday word counts as a clock.
 
-`confidence` is `high`, `medium` or `low`. The cause is a diagnosis from the two
-captures, not a proof (partial evidence, such as a truncated request list, is `low`): check that the fix is what you intend before you apply
+`confidence` is `high`, `medium` or `low`. The cause is inferred from the two
+captures (partial evidence, such as a truncated request list, is `low`): check that the fix is what you intend before you apply
 it. An `async-element` fix waits for the element that is in only one capture,
 which is the wrong one if that element is a spinner that went away.
 
