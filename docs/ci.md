@@ -36,8 +36,8 @@ otherwise passed.
 
 ## Cache the baseline images
 
-With the default exact comparison, a matching image hash passes without reading
-the approved image. Committed structure sidecars can still describe changes
+The default exact comparison checks image hashes without reading the approved
+image. Committed structure sidecars can still describe changes
 when baseline images are unavailable. To also
 get pixel diffs, crops and the report's overlay for a failing story, give the
 run the approved image by saving and restoring the cache directory.

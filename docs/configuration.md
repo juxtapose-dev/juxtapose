@@ -1002,8 +1002,8 @@ than treating it as empty.
 - `"fs"`: the repo-backed store pointed at a `dir` you choose.
 - `"s3"`: declared, but the CLI throws on it in this version.
 
-The default exact comparison can pass on a matching hash without reading the
-baseline image. Pixel diffs and the review UI need that image; an opt-in visual
+The default exact comparison checks image hashes without reading the baseline
+image. Pixel diffs and the review UI need that image; an opt-in visual
 equivalence check also needs it to evaluate a hash mismatch. When a
 story fails and its approved image is not in the cache (a fresh clone, a CI job
 with a cold cache), jux reports the failure by hash and structure and says
