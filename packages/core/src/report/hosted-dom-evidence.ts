@@ -231,6 +231,8 @@ export function buildHostedDomEvidence(
       }
       return [...included].sort((x, y) => x - y);
     };
+    let domOnlyFallback: HostedDomEvidence | undefined;
+    const byteLimit = Math.min(maxBytes, 64 * 1024);
     for (let limit = 100; limit >= 1; limit--) {
       const ai = select(a, priorityA, limit),
         bi = select(b, priorityB, limit),
@@ -330,8 +332,15 @@ export function buildHostedDomEvidence(
         trees,
         changes,
       };
-      if (size(evidence) <= Math.min(maxBytes, 64 * 1024)) return evidence;
+      if (size(evidence) <= byteLimit) return evidence;
+      // Optional component diagnostics must not discard otherwise usable DOM evidence.
+      if (!domOnlyFallback && evidence.components) {
+        const domOnly = { ...evidence };
+        delete domOnly.components;
+        if (size(domOnly) <= byteLimit) domOnlyFallback = domOnly;
+      }
     }
+    return domOnlyFallback;
   } catch {
     /* Missing/corrupt optional DOM must not break complete image uploads. */
   }

@@ -170,3 +170,29 @@ test('does not publish component identities when any retained capture element is
   });
   expect(JSON.stringify(evidence)).not.toContain('PRIVATE_COMPONENT');
 });
+
+test('keeps usable DOM evidence when optional component headers exceed the report budget', () => {
+  const a = snapshot([node()]);
+  const plain = buildHostedDomEvidence(a, a)!;
+  const budget = Math.max(1024, Buffer.byteLength(JSON.stringify(plain)));
+  a.components = {
+    schema: 'juxtapose.components/v1',
+    trees: [
+      {
+        framework: 'react',
+        parentRelation: 'rendered-parent',
+        elementRelation: 'rendered-by',
+        coverage: 'runtime',
+        status: 'available',
+        truncated: false,
+        nodes: [{ id: 0, parent: null, name: 'App', elements: [0] }],
+      },
+    ],
+  };
+  const evidence = buildHostedDomEvidence(a, a, budget);
+  expect(evidence).toBeDefined();
+  expect(evidence?.components).toBeUndefined();
+  expect(evidence?.trees).toEqual(plain.trees);
+  expect(evidence?.currentStructureHash).toBe(a.structureHash);
+  expect(Buffer.byteLength(JSON.stringify(evidence))).toBeLessThanOrEqual(budget);
+});
