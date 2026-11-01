@@ -155,7 +155,12 @@ it('keeps ordinary upload free of status reads, waits upload-only, and resumes t
   vi.stubEnv('JUXTAPOSE_TOKEN', 'preview-token');
   vi.stubEnv('GITHUB_REF', 'refs/heads/main');
   try {
-    const flags = { experimental: true, project: root, 'build-dir': build };
+    const flags = {
+      experimental: true,
+      project: root,
+      branch: 'main',
+      'build-dir': build,
+    };
     const ordinary = captureIo();
     expect(await submitCommand(flags, ordinary)).toBe(0);
     expect(ordinary.stdout()).toContain('If preview publication is enabled');
