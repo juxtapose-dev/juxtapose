@@ -9,6 +9,7 @@
 // Everything here is a pure function of the CDP response so it can be tested
 // against real Chromium output committed as a fixture.
 
+import { parseComponentSnapshot } from '../components/evidence.js';
 import type { Protocol } from 'devtools-protocol';
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -767,6 +768,10 @@ export function decodeStructure(b: Buffer): StructureSnapshot {
   const parsed: unknown = JSON.parse((isGzip(b) ? gunzipSync(b) : b).toString('utf8'));
   if (!isStructureSnapshot(parsed))
     throw new Error('not a juxtapose.structure/v1 sidecar');
+  // Invalid optional diagnostics must not discard independently valid DOM.
+  const components = parseComponentSnapshot(parsed.components, parsed.elements.length);
+  if (components) parsed.components = components;
+  else delete parsed.components;
   return parsed;
 }
 

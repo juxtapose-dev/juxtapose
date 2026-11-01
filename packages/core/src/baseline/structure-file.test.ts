@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test } from 'vitest';
 import type { StructureSnapshot } from '../types.js';
+import type { ComponentSnapshot } from '../components/evidence.js';
 import {
   compactStructure,
   formatCompactStructure,
@@ -178,4 +179,45 @@ test('inline migration and capture field order produce identical file bytes', ()
   expect(formatCompactStructure({ ...inline, structureHash })).toEqual(
     formatCompactStructure(snapshot),
   );
+});
+
+test('compact and saved baselines retain sanitized components without changing structureHash', async () => {
+  const components: ComponentSnapshot = {
+    schema: 'juxtapose.components/v1',
+    trees: [
+      {
+        framework: 'vue',
+        parentRelation: 'rendered-parent',
+        elementRelation: 'rendered-by',
+        coverage: 'runtime',
+        status: 'available',
+        truncated: false,
+        nodes: [{ id: 0, parent: null, name: 'Card', elements: [0, 1] }],
+      },
+    ],
+  };
+  const enriched: StructureSnapshot = { ...snapshot, components };
+  expect(expandStructure(compactStructure(enriched))).toEqual(enriched);
+  const root = await mkdtemp(path.join(tmpdir(), 'jux-component-baseline-'));
+  try {
+    const receipt = await writeStructureFile(root, 'card--default', enriched);
+    const bytes = await readStructureFile(root, 'card--default', {
+      ...receipt,
+      structureHash: snapshot.structureHash,
+      hash: 'b'.repeat(64),
+      commit: 'test',
+      approvedBy: 'test',
+      approvedAt: '2026-11-01T00:00:00Z',
+    });
+    expect(bytes).not.toBeNull();
+    expect(JSON.parse(bytes!.toString('utf8'))).toEqual(enriched);
+    expect(JSON.parse(bytes!.toString('utf8')).structureHash).toBe(
+      snapshot.structureHash,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+  const malformed = compactStructure(enriched);
+  Object.assign(malformed.components!.trees[0]!.nodes[0]!, { parent: 0 });
+  expect(expandStructure(malformed)).toEqual(snapshot);
 });
