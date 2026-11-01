@@ -1,5 +1,9 @@
 # Approval batching and manifest size (#255)
 
+Historical contributor measurements from October 16, 2026. These results cover
+the stated replay workload and method, not current end-to-end capture performance.
+See [profiling](../profiling.md) to measure a new revision.
+
 ## Change
 
 `init` and multi-story `approve` use a scoped batch for built-in baseline stores.
@@ -38,7 +42,8 @@ Machine: macOS Apple Silicon, Node 26.11.1. Old implementation: main `2ea88f3`
 
 ## Spectrum: 1,086 real captures
 
-Source: `/private/tmp/jux-renderer-verification-6s8w0mvl/spectrum/.juxtapose/runs/mv9kq7mh`.
+Input: the retained capture corpus described below. Reproduce with your own
+corresponding run directory; the original local scratch path is not a public fixture.
 
 | Trial |  Before | Batched |
 | ----- | ------: | ------: |
@@ -51,7 +56,8 @@ This is a large story count but smaller structures than the issue's 30.4 MB file
 
 ## Chakra: 1,227 real captures
 
-Source: `/private/tmp/jux-renderer-verification-6s8w0mvl/chakra/.juxtapose/runs/mv9kv0x8`.
+Input: the retained capture corpus described below. Reproduce with your own
+corresponding run directory; the original local scratch path is not a public fixture.
 
 | Trial |    Before | Batched |
 | ----- | --------: | ------: |

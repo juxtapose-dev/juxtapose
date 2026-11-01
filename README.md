@@ -1,10 +1,8 @@
 # juxtapose
 
-<!-- [YOUR COPY] Tagline: one line on why someone would use this. -->
-
-juxtapose tells you and your coding agent exactly what changed in a UI: which
-element, which property, and the old and new values. It checks any page by URL,
-and every story in Storybook or Ladle.
+Check the UI your code actually renders. Juxtapose compares screenshots and
+records DOM changes so people and coding agents can investigate differences
+before merging. It works with pages by URL, Storybook and Ladle.
 
 ```text
 style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure explains the changed region.
@@ -14,33 +12,28 @@ style-only (color): button[name="Save"] color #ffffff→#fef08a. Structure expla
 
 ## Why use it
 
-<!-- [YOUR COPY] Optional: one or two sentences framing the list below. -->
-
-- **Your agent can check its own UI work.** A verdict is a few hundred
-  characters of JSON that names the change, so the agent acts on facts instead
-  of describing a screenshot. It opens pixels only when the structure can't
-  explain them.
+- **Give your agent visual feedback.** Start with a bounded change summary, then
+  inspect recorded properties and images where needed.
 - **Choose exact or visual comparison.** Exact SHA-256 comparison is the default.
   An opt-in [Pixelmatch policy](docs/configuration.md#visual-equivalence) can filter
   small color and antialias differences, with every tolerance-based pass reported
   explicitly. Approved baselines stay unchanged.
-- **Failures explain themselves.** Each failure names the element and the
-  property, groups stories that share one change, and with `--since` lists the
-  changed files inside that story's imports.
-- **Green runs are fast.** An exact match costs a hash comparison. `jux run`
-  captures only the stories your change can reach, and a warm browser skips
-  the launch on every run after the first.
-- **Baselines live in your repo.** Approving a change is a diff in the pull
-  request that caused it. No account, no bucket, no service.
+- **Find unexpected changes.** Grouped property and geometry observations help
+  focus review on the differences that need investigation.
+- **Reduce repeated work.** After capture, matching image hashes skip detailed
+  pixel diffing. Affected-story analysis can limit captures, with a full-run
+  fallback when uncertain; a reusable browser avoids some launches.
+- **Local baselines live in your repo.** Local approval updates the manifest and
+  structure files without an account or hosted service. Hosted review decisions
+  are separate.
 - **No Playwright to install.** jux drives a pinned Chrome for Testing build
   directly over the DevTools protocol, and one command downloads it and
   verifies its checksum.
 
 ## Get started with an agent
 
-The MCP server is the best way for an agent to evaluate UI changes. The agent
-gets the snap, diff and review steps as tools, and one browser stays warm for
-the whole session.
+The local MCP server exposes this loop as agent tools. It provides snap, diff
+and review steps and can reuse a browser across captures.
 
 1. Install the CLI and the browser:
 
@@ -117,7 +110,11 @@ The `jux` command comes from `@juxtapose/cli`. Without it installed, run it as
 
 ## In CI
 
+Use Node.js 22.2 or later and install the project dependencies first. Linux
+runners also need the [browser system libraries](docs/browser.md).
+
 ```yaml
+- run: npx -p @juxtapose/cli jux browser install
 - run: npx storybook build --quiet --disable-telemetry --loglevel error
 - run: npx -p @juxtapose/cli jux run --comment --html
   env:
@@ -131,12 +128,13 @@ and `--comment` posts the results on the pull request. See [CI](docs/ci.md).
 
 ## Documentation
 
+Start with the [documentation index](docs/README.md).
+
 - [MCP server](docs/mcp.md): setup for each client, and every tool
 - [Agents](docs/agents.md): the CLI loop, the verdict, crops, groups and cause
 - [Commands](docs/cli.md): every `jux` command
 - [Configuration](docs/configuration.md): config file, masks, dynamic content
 - [Browser](docs/browser.md): install, your own Chromium, the warm browser
-- [Field tests](docs/field-tests.md): stability on three public Storybooks, and how to reproduce it
 - [CI](docs/ci.md): pull request comments and the HTML report
 - [Hosted uploads](docs/hosted-uploads.md): opt-in hosted review and upload retries
 - [Watch mode](docs/watch-mode.md): the Storybook addon
@@ -146,6 +144,9 @@ and `--comment` posts the results on the pull request. See [CI](docs/ci.md).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) to get set up, and
 [ARCHITECTURE.md](ARCHITECTURE.md) for the design and the reasoning behind it.
+Contributor measurement guides cover [field tests](docs/field-tests.md) and
+[profiling](docs/profiling.md); historical measurements are scoped evidence, not
+current product performance guarantees.
 
 ## License
 
