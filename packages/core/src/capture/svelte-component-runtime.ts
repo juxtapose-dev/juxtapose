@@ -3,7 +3,7 @@ export interface SvelteComponentNode {
   id: string;
   parent: string | null;
   name?: string;
-  source?: { file: string; provenance: 'compiler-instrumented' };
+  source?: { file: string; provenance: 'compiler' };
   elements: number[];
 }
 export interface SvelteComponentEvidence {
@@ -32,7 +32,7 @@ export const SVELTE_COMPONENT_REGISTRY = 'juxtapose.svelte.components/v1';
 /** Self-contained so the build plugin can serialize this function into a virtual module. */
 export function installSvelteComponentRegistry(
   version: string,
-  maxNodes = 5000,
+  maxNodes = 1024,
 ): SvelteComponentRegistry {
   const key = Symbol.for('juxtapose.svelte.components/v1');
   const previous: unknown = Reflect.get(globalThis, key);
@@ -50,7 +50,7 @@ export function installSvelteComponentRegistry(
   const nodes = new Map<string, Omit<SvelteComponentNode, 'elements'>>();
   const owners = new WeakMap<Element, string>();
   const limit =
-    Number.isSafeInteger(maxNodes) && maxNodes > 0 ? Math.min(maxNodes, 5000) : 5000;
+    Number.isSafeInteger(maxNodes) && maxNodes > 0 ? Math.min(maxNodes, 1024) : 1024;
   const runtimeVersion = /^5\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(version)
     ? version
     : undefined;
@@ -67,13 +67,13 @@ export function installSvelteComponentRegistry(
       const id = `s${++next}`;
       const safeName =
         name.length > 0 &&
-        name.length <= 160 &&
+        name.length <= 120 &&
         ![...name].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
       const safeFile =
         file !== null &&
         file.length > 0 &&
         file.length <= 512 &&
-        !/[\\:]/.test(file) &&
+        !/[\\:%?#]/.test(file) &&
         ![...file].some(
           (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
         ) &&
@@ -83,9 +83,7 @@ export function installSvelteComponentRegistry(
         id,
         parent: typeof parent === 'string' && nodes.has(parent) ? parent : null,
         ...(safeName ? { name } : {}),
-        ...(safeFile
-          ? { source: { file, provenance: 'compiler-instrumented' as const } }
-          : {}),
+        ...(safeFile ? { source: { file, provenance: 'compiler' as const } } : {}),
       });
       return id;
     },
@@ -117,7 +115,7 @@ export function installSvelteComponentRegistry(
           nodes: [],
         };
       const indices = new Map<string, number[]>();
-      for (let i = 0; i < Math.min(elements.length, 10000); i++) {
+      for (let i = 0; i < Math.min(elements.length, 5000); i++) {
         const element = elements[i];
         if (!element) continue;
         const owner = owners.get(element);
@@ -131,7 +129,7 @@ export function installSvelteComponentRegistry(
         ...base,
         status: 'partial',
         reason: 'instrumented-components-only',
-        truncated: truncated || elements.length > 10000,
+        truncated: truncated || elements.length > 5000,
         nodes: [...nodes.values()].map((node) => ({
           id: node.id,
           parent: node.parent !== null && nodes.has(node.parent) ? node.parent : null,

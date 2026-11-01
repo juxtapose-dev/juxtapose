@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import MagicString, { type SourceMap } from 'magic-string';
 import { installSvelteComponentRegistry } from '../capture/svelte-component-runtime.js';
 
 interface SvelteCompiler {
@@ -43,7 +44,7 @@ export function instrumentSvelteComponent(
   filename: string,
   root: string,
   compiler: SvelteCompiler,
-): { code: string; map: null } | null {
+): { code: string; map: SourceMap } | null {
   if (!filename.endsWith('.svelte') || filename.includes('?') || filename.includes('\0'))
     return null;
   const ast = compiler.parse(source, { modern: true });
@@ -60,7 +61,7 @@ export function instrumentSvelteComponent(
     relative &&
     !relative.startsWith('../') &&
     !path.isAbsolute(relative) &&
-    !/[\\:]/.test(relative) &&
+    !/[\\:%?#]/.test(relative) &&
     ![...relative].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
       ? relative
       : null;
@@ -96,11 +97,13 @@ export function instrumentSvelteComponent(
     }
   };
   visit(ast['fragment']);
-  let code = source;
-  for (const [position, text] of insertions.sort((a, b) => b[0] - a[0]))
-    code = code.slice(0, position) + text + code.slice(position);
-  // We report only authored file identity, never potentially shifted source columns.
-  return { code, map: null };
+  const code = new MagicString(source);
+  for (const [position, text] of insertions) code.appendLeft(position, text);
+  // Preserve consumer debugging without embedding source contents in our map/evidence.
+  return {
+    code: code.toString(),
+    map: code.generateMap({ hires: true, source: filename, includeContent: false }),
+  };
 }
 
 /** Prepend before vite-plugin-svelte; only client component source is instrumented. */

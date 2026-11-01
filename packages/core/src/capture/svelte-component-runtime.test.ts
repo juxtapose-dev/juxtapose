@@ -30,28 +30,28 @@ it('keeps separate instances for repeated and zero-element components with expli
       id: root,
       parent: null,
       name: 'App',
-      source: { file: 'src/App.svelte', provenance: 'compiler-instrumented' },
+      source: { file: 'src/App.svelte', provenance: 'compiler' },
       elements: [],
     },
     {
       id: first,
       parent: root,
       name: 'Fragment',
-      source: { file: 'src/Fragment.svelte', provenance: 'compiler-instrumented' },
+      source: { file: 'src/Fragment.svelte', provenance: 'compiler' },
       elements: [0],
     },
     {
       id: second,
       parent: root,
       name: 'Fragment',
-      source: { file: 'src/Fragment.svelte', provenance: 'compiler-instrumented' },
+      source: { file: 'src/Fragment.svelte', provenance: 'compiler' },
       elements: [1],
     },
     {
       id: empty,
       parent: root,
       name: 'Empty',
-      source: { file: 'src/Empty.svelte', provenance: 'compiler-instrumented' },
+      source: { file: 'src/Empty.svelte', provenance: 'compiler' },
       elements: [],
     },
   ]);
@@ -97,4 +97,28 @@ it('reuses one registry and a unique context symbol per browser realm', () => {
   const first = installSvelteComponentRegistry('5.55.7');
   expect(installSvelteComponentRegistry('5.55.7')).toBe(first);
   expect(Symbol.keyFor(first.contextKey)).toBeUndefined();
+});
+
+it('clamps schema bounds and marks dropped component/element evidence truncated', () => {
+  const registry = installSvelteComponentRegistry('5.55.7', 5000);
+  const first = registry.register('A', null, null);
+  for (let i = 1; i < 1024; i++) registry.register('A', null, first);
+  expect(registry.register('Overflow', null, first)).toBeNull();
+  const element = {} as Element;
+  registry.own(element, first);
+  const evidence = registry.collect(Array.from({ length: 5001 }, () => element));
+  expect(evidence.truncated).toBe(true);
+  expect(evidence.nodes).toHaveLength(1024);
+  expect(evidence.nodes[0]?.elements).toHaveLength(5000);
+  expect(evidence.nodes[0]?.elements.at(-1)).toBe(4999);
+});
+it('omits overlong names and URL-delimited source paths', () => {
+  const registry = installSvelteComponentRegistry('5.55.7');
+  for (const file of ['src/A%20.svelte', 'src/A?part.svelte', 'src/A#part.svelte'])
+    registry.register('A'.repeat(121), file, null);
+  expect(
+    registry
+      .collect([])
+      .nodes.every((node) => node.name === undefined && node.source === undefined),
+  ).toBe(true);
 });

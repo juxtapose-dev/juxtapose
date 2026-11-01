@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { SourceMap } from 'node:module';
 import {
   instrumentSvelteComponent,
   loadSvelteComponentCompiler,
@@ -29,7 +30,7 @@ it('injects lifecycle and actions with collision-free bindings, without wrappers
   expect(result?.code).toContain('<span use:__jux_svelte_1action>');
   expect(result?.code).not.toContain('data-');
   expect(result?.code).not.toContain('/project');
-  expect(result?.map).toBeNull();
+  expect(result?.map.sourcesContent).toBeUndefined();
 });
 it('registers empty/text-only components without fabricating DOM associations', () => {
   const result = instrumentSvelteComponent(
@@ -65,4 +66,55 @@ it('fails explicitly on unsupported parser shapes', () => {
   expect(() =>
     instrumentSvelteComponent('x', '/project/A.svelte', root, compiler({})),
   ).toThrow('Unsupported Svelte component AST');
+});
+
+it('preserves authored statement and markup locations in a high-resolution source map', () => {
+  const source = '<script>\nconst answer = 42;\n</script>\n<p>{answer}</p>';
+  const filename = '/project/Answer.svelte';
+  const result = instrumentSvelteComponent(
+    source,
+    filename,
+    root,
+    compiler({
+      instance: { content: { start: 8 } },
+      fragment: { nodes: [{ type: 'RegularElement', start: source.indexOf('<p>') }] },
+    }),
+  );
+  if (!result) throw new Error('Expected transformed component.');
+  const { map } = result;
+  const consumer = new SourceMap({
+    file: filename,
+    version: map.version,
+    sources: map.sources,
+    names: map.names,
+    mappings: map.mappings,
+    sourcesContent: [],
+    sourceRoot: '',
+  });
+  for (const text of ['const answer', '<p', '{answer}']) {
+    const originalIndex = source.indexOf(text);
+    const generatedIndex = result.code.indexOf(text);
+    const originalLines = source.slice(0, originalIndex).split('\n');
+    const generatedLines = result.code.slice(0, generatedIndex).split('\n');
+    expect(
+      consumer.findEntry(generatedLines.length - 1, generatedLines.at(-1)?.length ?? 0),
+    ).toMatchObject({
+      originalSource: filename,
+      originalLine: originalLines.length - 1,
+      originalColumn: originalLines.at(-1)?.length ?? 0,
+    });
+  }
+  expect(map.sourcesContent).toBeUndefined();
+});
+it('omits source identity containing URL delimiters', () => {
+  for (const name of ['name%20', 'name#fragment']) {
+    expect(
+      instrumentSvelteComponent(
+        '',
+        `/project/${name}.svelte`,
+        root,
+        compiler({ fragment: { nodes: [] } }),
+      )?.code,
+    ).toContain(`registry.register("${name}",null`);
+  }
 });
