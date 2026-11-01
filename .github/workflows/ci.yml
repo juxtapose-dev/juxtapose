@@ -167,7 +167,7 @@ jobs:
       # Structure sidecars must be as stable as the pixels they explain, or the
       # structural diff reports phantom changes.
       - name: Structure determinism (Storybook, React)
-        run: node scripts/check-structure-determinism.mjs examples/storybook 3
+        run: node scripts/check-structure-determinism.mjs examples/storybook 3 --react-components
 
       - name: Structure determinism (Ladle)
         run: node scripts/check-structure-determinism.mjs examples/ladle 3
