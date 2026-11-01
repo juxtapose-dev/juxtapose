@@ -31,6 +31,7 @@ export const SPECS: Record<string, Spec> = {
       'experimental',
       'review-in-github',
       'wait',
+      'wait-preview',
       'resume',
       'wait-timeout',
       'poll-interval',

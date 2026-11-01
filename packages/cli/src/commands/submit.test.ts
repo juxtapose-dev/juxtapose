@@ -370,3 +370,15 @@ it('requires waiting for GitHub review handoff', async () => {
     submitCommand({ experimental: true, 'review-in-github': true }, captureIo()),
   ).rejects.toThrow(/requires --wait or --resume/);
 });
+
+it.each(['wait', 'review-in-github'] as const)(
+  'refuses --wait-preview with --%s before any upload',
+  async (flag) => {
+    await expect(
+      submitCommand(
+        { experimental: true, 'wait-preview': true, [flag]: true },
+        captureIo(),
+      ),
+    ).rejects.toThrow('--wait-preview cannot be combined');
+  },
+);
