@@ -1,4 +1,4 @@
-// Per-story capture variants (spec 2026-10-13-variants-design.md).
+// Per-story capture variants; see ARCHITECTURE.md#capture-identity-and-recovery.
 //
 // A variant is just another capture job: expansion happens once, after the
 // platform enumerates, and everything downstream (pool, shuffle, warm browser,

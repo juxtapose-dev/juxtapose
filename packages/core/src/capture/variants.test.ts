@@ -1,6 +1,5 @@
-// Variant expansion, live-param precedence and selection (spec
-// 2026-10-13-variants-design.md). Pure functions; the real-Chrome half of the
-// contract is in variants-capture.test.ts.
+// Variant expansion, live-param precedence and selection. Pure functions; the
+// real-Chrome half of the contract is in variants-capture.test.ts.
 
 import { describe, expect, it } from 'vitest';
 import type { StoryManifest, StoryParams, VariantSpec } from '../types.js';
