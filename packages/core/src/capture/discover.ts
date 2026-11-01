@@ -27,7 +27,9 @@ export interface PrepareOptions {
   platform: Platform;
   /** Base story IDs to discover; omitted requests the whole store. */
   storyIds?: readonly string[];
-  browser: Browser;
+  browser: Pick<Browser, 'newContext'>;
+  /** Stop waiting for discovery and discard results after the owning call is cancelled. */
+  signal?: AbortSignal;
   baseUrl: string;
   viewport: Viewport;
   /** `ProjectConfig.variants`. */
@@ -63,12 +65,12 @@ export async function discoverParams(
   opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories' | 'trace'>,
 ): Promise<StoryManifest[]> {
   const discover = opts.platform.discoverParams?.bind(opts.platform);
-  if (!discover || stories.length === 0) return [...stories];
+  if (!discover || stories.length === 0 || opts.signal?.aborted) return [...stories];
 
   const key = await cacheKey(opts);
   const cached = key ? await readCache(opts.cache!.dir, key) : undefined;
   const found = cached ?? (await discoverLive(discover, opts));
-  if (!found) return [...stories];
+  if (!found || opts.signal?.aborted) return [...stories];
   if (key && !cached) await writeCache(opts.cache!.dir, key, found);
 
   return stories.map((s) => {
@@ -82,14 +84,24 @@ async function discoverLive(
   discover: NonNullable<Platform['discoverParams']>,
   opts: Omit<PrepareOptions, 'projectVariants' | 'projectStories' | 'trace'>,
 ): Promise<Map<string, StoryParams> | undefined> {
-  let found: Map<string, StoryParams>;
+  let found: Map<string, StoryParams> | undefined;
   const context = await opts.browser.newContext({ viewport: opts.viewport });
   let timer: NodeJS.Timeout | undefined;
+  let abortListener: (() => void) | undefined;
   try {
-    const page = await context.newPage();
+    if (opts.signal?.aborted) return undefined;
+    const cancelled = new Promise<undefined>((resolve) => {
+      abortListener = () => resolve(undefined);
+      opts.signal?.addEventListener('abort', abortListener, { once: true });
+    });
     const timeoutMs = opts.timeoutMs ?? DISCOVER_TIMEOUT_MS;
     found = await Promise.race([
-      discover(page, opts.baseUrl, opts.storyIds),
+      (async () => {
+        const page = await context.newPage();
+        if (opts.signal?.aborted) return undefined;
+        return discover(page, opts.baseUrl, opts.storyIds);
+      })(),
+      cancelled,
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error(`no answer within ${timeoutMs} ms`)),
@@ -106,6 +118,7 @@ async function discoverLive(
     return undefined;
   } finally {
     clearTimeout(timer);
+    if (abortListener) opts.signal?.removeEventListener('abort', abortListener);
     await context.close().catch(() => {});
   }
   return found;
