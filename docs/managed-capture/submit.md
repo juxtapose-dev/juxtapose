@@ -52,3 +52,27 @@ source, branch, PR number, service origin or archive create a new identity. Keep
 `.juxtapose/` ignored as with other local jux artifacts. Without `--wait`, `--json`
 emits the upload receipt, including `captureStatus: "not_started"`; automation
 must not interpret an upload-only exit code as visual approval.
+
+## Wait for a private preview
+
+With a CLI release that supports `--wait-preview` and preview publication enabled
+on the service, upload a compiled build and wait for its private preview URL:
+
+```sh
+jux submit --experimental --build-dir storybook-static --wait-preview --json
+```
+
+This needs `ingest` and `read`. It never requests capture or produces a visual
+verdict. To resume after an interruption, use
+`jux submit --experimental --resume <buildId> --wait-preview`; that command needs
+only `read` and works without a checkout or local build files. The URL requires
+sign-in and project review access.
+
+`--wait-preview` cannot be combined with `--wait` or `--review-in-github`. It
+returns zero only for a published preview with a usable URL; disabled,
+unrequested, expired, failed, or viewer-blocked publication returns nonzero.
+An unsupported service endpoint also stops without requesting capture or
+reuploading. The wait uses one 30-minute deadline (`--wait-timeout`, at most
+3 hours) and respects the service's polling interval. Resuming does not renew
+publication or retention. Ordinary upload remains successful without polling
+preview status; preview publication depends on service enablement.

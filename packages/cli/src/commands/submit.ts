@@ -14,6 +14,7 @@ import {
   ManagedWaitError,
 } from '../managed-wait.js';
 import { EXIT } from '../exit-codes.js';
+import { waitForPreview, PreviewWaitError } from '../preview-wait.js';
 import { firstSymlink, writeFresh } from '../symlink-guard.js';
 
 interface SubmitFlags extends CommonFlags {
@@ -21,6 +22,7 @@ interface SubmitFlags extends CommonFlags {
   branch?: string;
   pr?: string;
   wait?: boolean;
+  'wait-preview'?: boolean;
   resume?: string;
   'wait-timeout'?: string;
   'poll-interval'?: string;
@@ -30,6 +32,10 @@ export async function submitCommand(flags: SubmitFlags, io: Io = stdio): Promise
   if (flags.experimental !== true)
     throw new UserError(
       'Managed build submission is experimental. Use --experimental with an enabled service; --wait requires hosted execution.',
+    );
+  if (flags['wait-preview'] && (flags.wait || flags['review-in-github']))
+    throw new UserError(
+      '--wait-preview cannot be combined with --wait or --review-in-github.',
     );
   const numeric = (
     value: string | undefined,
@@ -48,10 +54,11 @@ export async function submitCommand(flags: SubmitFlags, io: Io = stdio): Promise
   };
   if (
     !flags.wait &&
+    !flags['wait-preview'] &&
     !flags.resume &&
     (flags['wait-timeout'] !== undefined || flags['poll-interval'] !== undefined)
   )
-    throw new UserError('Wait timing flags require --wait.');
+    throw new UserError('Wait timing flags require --wait, --wait-preview or --resume.');
   const timeoutMs = numeric(
     flags['wait-timeout'],
     30 * 60_000,
@@ -71,6 +78,16 @@ export async function submitCommand(flags: SubmitFlags, io: Io = stdio): Promise
     if (flags['build-dir'] || flags.branch || flags.pr || flags.project)
       throw new UserError(
         '--resume cannot be combined with local build or source arguments.',
+      );
+    if (flags['wait-preview'])
+      return completePreviewWait(
+        flags,
+        io,
+        config,
+        null,
+        flags.resume,
+        timeoutMs,
+        pollMs,
       );
     return completeManagedWait(flags, io, config, null, flags.resume, timeoutMs, pollMs);
   }
@@ -169,6 +186,16 @@ export async function submitCommand(flags: SubmitFlags, io: Io = stdio): Promise
     },
     config,
   );
+  if (flags['wait-preview'])
+    return completePreviewWait(
+      flags,
+      io,
+      config,
+      result,
+      result.build.id,
+      timeoutMs,
+      pollMs,
+    );
   if (flags.wait)
     return completeManagedWait(
       flags,
@@ -182,7 +209,7 @@ export async function submitCommand(flags: SubmitFlags, io: Io = stdio): Promise
   if (flags.json) io.out(`${JSON.stringify(result)}\n`);
   else
     io.out(
-      `jux: build ${result.build.id} uploaded and byte-verified. Capture has not started; this is not a visual test result.\n`,
+      `jux: build ${result.build.id} uploaded and byte-verified. Capture has not started; this is not a visual test result. If preview publication is enabled, use --resume ${result.build.id} --wait-preview to wait for its URL.\n`,
     );
   return 0;
 }
@@ -266,6 +293,67 @@ async function completeManagedWait(
     if (flags.json)
       io.out(
         `${JSON.stringify({ ...(result ?? {}), buildId, workflow: failure.lastStatus, error: { code: failure.code, message: failure.message } })}\n`,
+      );
+    io.err(`jux: ${failure.message}\n`);
+    return EXIT.failure;
+  } finally {
+    process.removeListener('SIGINT', interrupt);
+    process.removeListener('SIGTERM', interrupt);
+  }
+}
+
+async function completePreviewWait(
+  flags: SubmitFlags,
+  io: Io,
+  config: UploadConfig,
+  result: BuildReceipt | null,
+  buildId: string,
+  timeoutMs: number,
+  pollMs: number,
+): Promise<number> {
+  const controller = new AbortController();
+  const interrupt = () => controller.abort();
+  process.once('SIGINT', interrupt);
+  process.once('SIGTERM', interrupt);
+  try {
+    let progress = '';
+    const preview = await waitForPreview(result ?? buildId, config, {
+      timeoutMs,
+      pollMs,
+      signal: controller.signal,
+      onProgress: (status) => {
+        const next = `${status.state}:${status.reason ?? ''}`;
+        if (next !== progress) {
+          progress = next;
+          io.err(
+            `jux: preview ${status.state}${status.reason ? ` (${status.reason})` : ''}\n`,
+          );
+        }
+      },
+    });
+    const usable = preview.state === 'ready' && preview.url !== null;
+    if (flags.json)
+      io.out(`${JSON.stringify({ ...(result ?? {}), buildId, preview })}\n`);
+    else if (usable)
+      io.out(
+        `jux: private preview published (not a visual test result).\n${preview.url}\n`,
+      );
+    else
+      io.err(
+        `jux: preview unavailable (${preview.reason ?? preview.state}). No capture was requested.\n`,
+      );
+    return usable ? EXIT.clean : EXIT.failure;
+  } catch (error) {
+    const failure =
+      error instanceof PreviewWaitError
+        ? error
+        : new PreviewWaitError(
+            'preview_wait_failed',
+            `Preview waiting failed. Resume with jux submit --experimental --resume ${buildId} --wait-preview. No capture was requested.`,
+          );
+    if (flags.json)
+      io.out(
+        `${JSON.stringify({ ...(result ?? {}), buildId, preview: failure.lastStatus, error: { code: failure.code, message: failure.message } })}\n`,
       );
     io.err(`jux: ${failure.message}\n`);
     return EXIT.failure;
