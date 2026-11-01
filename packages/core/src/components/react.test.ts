@@ -302,3 +302,16 @@ it('is serializable as a self-contained browser function', () => {
   )() as typeof collectReactComponents;
   expect(copy([], chain(1))).toEqual(collectReactComponents([], chain(1)));
 });
+it('declines unsupported tree features instead of presenting an incomplete graph as complete', () => {
+  const root = {};
+  const p = provider(
+    root,
+    new Map([[root, { kind: 'unsupported', child: null, sibling: null }]]),
+  );
+  expect(collectReactComponents([], p)).toMatchObject({
+    status: 'unavailable',
+    reason: 'unsupported_tree',
+    truncated: false,
+    nodes: [],
+  });
+});

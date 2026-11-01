@@ -1,5 +1,5 @@
 export interface ReactFiberView {
-  kind: 'component' | 'host' | 'transparent' | 'hidden';
+  kind: 'component' | 'host' | 'transparent' | 'hidden' | 'unsupported';
   child: object | null;
   sibling: object | null;
   name?: string;
@@ -23,6 +23,8 @@ export type ReactSnapshotReason =
   | 'masked'
   | 'provider_missing'
   | 'unsupported_runtime'
+  | 'unsupported_tree'
+  | 'renderer_limit'
   | 'no_roots'
   | 'provider_error'
   | 'invalid_tree'
@@ -138,11 +140,14 @@ export function collectReactComponents(
       }
       if (
         !view ||
-        !['component', 'host', 'transparent', 'hidden'].includes(view.kind) ||
+        !['component', 'host', 'transparent', 'hidden', 'unsupported'].includes(
+          view.kind,
+        ) ||
         !(view.child === null || typeof view.child === 'object') ||
         !(view.sibling === null || typeof view.sibling === 'object')
       )
         return unavailable('invalid_tree');
+      if (view.kind === 'unsupported') return unavailable('unsupported_tree');
       if (view.sibling)
         stack.push({ fiber: view.sibling, parent: item.parent, depth: item.depth });
       if (view.kind === 'hidden') continue;
