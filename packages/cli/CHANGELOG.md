@@ -1,5 +1,11 @@
 # @juxtapose/cli
 
+## 0.31.4
+
+### Patch Changes
+
+- 8efe037: Print capture warnings during `jux init` and local review-server runs so renderer reuse and other capture diagnostics are visible. Warnings go to stderr, preserving JSON output.
+
 ## 0.31.3
 
 ### Patch Changes
