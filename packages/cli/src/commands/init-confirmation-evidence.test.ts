@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   root: '',
   approved: [] as string[],
   failWrite: false,
+  warning: '',
 }));
 vi.mock('../context.js', () => ({
   resolveContext: async () => ({
@@ -42,7 +43,9 @@ vi.mock('@juxtapose/core', async (original) => ({
   runCapture: async (opts: {
     onArtifact: (a: unknown) => Promise<void>;
     onUnstableCapture?: (a: unknown) => Promise<void>;
+    onWarning?: (message: string) => void;
   }) => {
+    if (state.warning) opts.onWarning?.(state.warning);
     await opts.onArtifact({ storyId: 'spinner--small', current: Buffer.from('first') });
     if (state.failWrite) {
       const runs = path.join(state.root, '.juxtapose', 'runs');
@@ -68,7 +71,25 @@ afterEach(async () => {
   if (state.root) await rm(state.root, { recursive: true, force: true });
   state.approved = [];
   state.failWrite = false;
+  state.warning = '';
+  vi.restoreAllMocks();
 });
+test('init emits capture warnings on stderr while keeping JSON stdout parseable', async () => {
+  state.root = await mkdtemp(path.join(os.tmpdir(), 'jux-init-warning-'));
+  state.warning = 'renderer-reused: a fresh renderer could not be obtained';
+  const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  expect(await initCommand({ json: true })).toBe(1);
+  expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join('')).toContain(
+    `${state.warning}\n`,
+  );
+  expect(
+    JSON.parse(stdout.mock.calls.map(([chunk]) => String(chunk)).join('')),
+  ).toMatchObject({
+    unstable: ['spinner--small'],
+  });
+});
+
 test('refused unstable init preserves both images and approves no baseline', async () => {
   state.root = await mkdtemp(path.join(os.tmpdir(), 'jux-init-confirm-'));
   expect(await initCommand({ json: true })).toBe(1);

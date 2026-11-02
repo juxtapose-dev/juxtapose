@@ -19,6 +19,7 @@ vi.mock('@juxtapose/core', async (original) => ({
 const roots: string[] = [];
 afterEach(async () => {
   capture.mockReset();
+  vi.restoreAllMocks();
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -50,6 +51,22 @@ const report = {
 };
 
 describe('review run lifecycle', () => {
+  it('emits capture warnings without changing a completed review run', async () => {
+    const src = await source();
+    const warning = 'renderer-reused: a fresh renderer could not be obtained';
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    capture.mockImplementationOnce(
+      async (opts: Parameters<typeof import('@juxtapose/core').runCapture>[0]) => {
+        opts.onWarning?.(warning);
+        return report;
+      },
+    );
+    await src.run();
+    expect(stderr).toHaveBeenCalledWith(`juxtapose: ${warning}\n`);
+    expect((await src.progress()).run?.status).toBe('completed');
+    expect((await src.bundle()).report?.results).toEqual([]);
+  });
+
   it('reserves discovery and honours cancellation before capture starts', async () => {
     let release!: (stories: StoryManifest[]) => void;
     const enumerate = vi.fn(

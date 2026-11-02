@@ -451,6 +451,7 @@ export class RunDirSource implements ReviewSource {
         branch: this.opts.branch,
         commitSha: this.opts.commitSha,
         signal: this.abort.signal,
+        onWarning: (m) => process.stderr.write(`juxtapose: ${m}\n`),
         onProgress: (done, total, storyId) => {
           this.done = done;
           this.total = total;

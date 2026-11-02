@@ -204,6 +204,7 @@ export async function initCommand(flags: CommonFlags): Promise<number> {
       runId,
       branch: gitBranch(ctx.projectRoot),
       commitSha: gitSha(ctx.projectRoot),
+      onWarning: (m) => process.stderr.write(`jux: ${m}\n`),
       onArtifact: (a) => writeArtifact(runDir, a),
       onUnstableCapture: async ({ storyId, image }) => {
         const file = path.join(
